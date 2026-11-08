@@ -1,3 +1,10 @@
+> **Historical implementation — integrated terminal removed.**
+> This page summarizes the immutable implementation sources linked below, not
+> current product availability. Current acceptance is the
+> [Open Terminal removal checklist](../../../tests/theme-layout-terminal/open-terminal-removal.md).
+> The architecture, dependencies, shortcuts, endpoints and verification below
+> describe the former feature and must not be used for current setup.
+
 # Integrated Terminal
 
 ## Summary

@@ -1,3 +1,8 @@
+> **Historical — retired Sentry integration, excluded from current acceptance.**
+> Current dependencies contain no Sentry SDK and the CLI has no instrumentation
+> bootstrap. Do not configure a Sentry project or restore dependencies for these
+> steps. The original checklist below records former behavior only.
+
 ### Feature: Sentry error tracking and encrypted auth context
 
 #### Prerequisites

@@ -37,8 +37,12 @@ Start the external app-server as described in the [connection guide](external-ap
 > **The main event.**
 
 ```bash
-# 🔓 Build and run locally (recommended)
-pnpm install
+# Use Node.js 22 and the pinned pnpm version (see development.md).
+# In a separate terminal, same user and CODEX_HOME:
+# codex login  # if authentication is needed
+# codex app-server --listen ws://127.0.0.1:4500
+# Build and run the web backend:
+pnpm install --frozen-lockfile
 pnpm run build
 node dist-cli/index.js
 
@@ -46,10 +50,10 @@ node dist-cli/index.js
 # http://localhost:5900
 ```
 
-Start the local server with:
+After starting and authenticating the external server, start the web backend with:
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm run build
 node dist-cli/index.js
 ```
@@ -70,7 +74,7 @@ If you want to use codexUI from iPhone or iPad Safari, serving it over HTTPS is 
 A practical private setup is to run codexUI locally and publish it inside your tailnet with Tailscale Serve:
 
 ```powershell
-pnpm install
+pnpm install --frozen-lockfile
 pnpm run build
 node dist-cli/index.js --port 5900
 tailscale serve --bg 5900
@@ -104,7 +108,7 @@ Notes:
 - 🚀 Build and launch locally:
 
   ```bash
-  pnpm install
+  pnpm install --frozen-lockfile
   pnpm run build
   node dist-cli/index.js
   ```

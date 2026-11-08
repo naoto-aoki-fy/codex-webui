@@ -7,7 +7,7 @@
 - [entities/codex-web-local.md](./entities/codex-web-local.md): project identity, stack, and operational profile.
 
 ## Concepts
-- [concepts/integrated-terminal.md](./concepts/integrated-terminal.md): Codex.app-style integrated xterm/PTY terminal architecture, edge cases, and verification.
+- [concepts/integrated-terminal.md](./concepts/integrated-terminal.md): historical, removed xterm/PTY terminal architecture and verification.
 - [concepts/directory-hub-composio-skills.md](./concepts/directory-hub-composio-skills.md): Directory Hub tab routing, the integration removal boundary, Skills search/install semantics, and edge-case testing.
 - [concepts/merge-to-main-workflow.md](./concepts/merge-to-main-workflow.md): branch integration and conflict-resolution workflow.
 - [concepts/opencode-zen-big-pickle.md](./concepts/opencode-zen-big-pickle.md): retired alternative-provider integration and the current Codex-only boundary.
@@ -25,7 +25,7 @@
 - [../raw/features/single-active-codex-account.md](../raw/features/single-active-codex-account.md): current single-account authentication boundary and preservation of active credentials/Keyring.
 - [../raw/features/local-skills-without-github-sync.md](../raw/features/local-skills-without-github-sync.md): local Skills without manual GitHub synchronization or Firebase authentication.
 - [../raw/features/directory-composio-removal.md](../raw/features/directory-composio-removal.md): current DirectoryHub integration boundary and preserved local Skills, Apps, Plugins, and MCP behavior.
-- [../raw/features/integrated-terminal.md](../raw/features/integrated-terminal.md): source facts for the integrated terminal implementation and follow-up tests.
+- [../raw/features/integrated-terminal.md](../raw/features/integrated-terminal.md): historical source facts for the removed integrated terminal.
 - [../raw/features/directory-hub-composio-skills-search.md](../raw/features/directory-hub-composio-skills-search.md): source facts for Directory Hub, Composio connectors, Skills search/install, and edge-case tests.
 - [../raw/features/realtime-chat-rendering-inline-media.md](../raw/features/realtime-chat-rendering-inline-media.md): source facts for realtime chat rendering and inline media sanitization.
 - [../raw/features/skills-route-ui-and-first-launch-card.md](../raw/features/skills-route-ui-and-first-launch-card.md): source facts for the Skills route rename, first-launch Plugins card, dark-theme fix, and dev-server workflow adjustment.

@@ -1,3 +1,9 @@
+> **Historical packaging checklist — excluded from current acceptance.**
+> Both legacy and replacement PTY integrations are removed. Steps below preserve
+> the former install investigation; integrated-terminal availability is no longer
+> expected. See [terminal removal checks](../theme-layout-terminal/open-terminal-removal.md)
+> and [current setup](../../README.md) for external-server requirements.
+
 ### Feature: Windows npx install no longer depends on legacy PTY package
 
 #### Prerequisites

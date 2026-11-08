@@ -6,7 +6,7 @@ This wiki tracks knowledge about the `codex-web-local` project and related workf
 - Project architecture and tooling
 - Release/sync workflow on `main`
 - Manual verification practices (`tests.md` root index plus domain folders under `tests/`)
-- Codex.app-style integrated terminal implementation and tests
+- Historical integrated terminal implementation (removed; not current acceptance)
 - Realtime chat rendering performance and inline media sanitization
 - Skills route UI, first-launch Plugins card behavior, and dark-theme verification lessons
 - Directory Hub tab routing, the integration removal boundary, and Skills registry search/install semantics

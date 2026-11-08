@@ -12,7 +12,7 @@
 - Frequent branch merges into local `main`
 - Strong conflict-resolution policy (intentional per-file merges)
 - Manual regression documentation uses `tests.md` as the root index and domain folders under `tests/` for detailed test sections
-- Integrated terminal uses a Node PTY bridge plus an xterm frontend for local/worktree threads
+- Historical integrated terminal used a Node PTY bridge and xterm frontend; it is removed (see the [current removal checklist](../../../tests/theme-layout-terminal/open-terminal-removal.md))
 - Realtime chat rendering uses cached markdown/highlight output and bridge-side inline media sanitization to keep browser payloads bounded
 - User-visible UI work is expected to include dark-theme verification, not only light-theme checks
 - Worktree dev startup may reuse a shared `node_modules` tree; forcing reinstall is not always the right default
