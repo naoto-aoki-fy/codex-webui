@@ -1,3 +1,9 @@
+> **Historical authentication workflow — not current acceptance criteria.**
+> Local login, token promotion and retired provider fallback were removed.
+> Authentication is managed in the external server environment; see
+> [current verification](../website-docs-misc/external-app-server.md).
+> Any still-relevant error rendering must be exercised with that server.
+
 ### Docker auth startup live-state pending read
 
 #### Feature/Change Name

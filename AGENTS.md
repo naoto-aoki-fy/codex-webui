@@ -10,7 +10,7 @@
   - branch delta: `git diff --stat main...HEAD` and `git log --oneline main..HEAD`
 - Keep both worktrees clean before merge/rebase. Checkpoint local changes in main with `git add -A && git commit -m "temp-before-merge-<branch>"`; skip only if main is clean.
 - Prefer GitHub PR update/rebase/merge when a PR or GitHub merge path exists. Use local `main` merge only when no PR/GitHub path exists or the user explicitly asks for a local merge.
-- Standard path: commit task, create/switch feature branch, rebase on `main`, then use the chosen PR/local merge path.
+- Work and commit on the current branch. Create/switch branches only when explicitly authorized; merge/rebase only when requested.
 - Never use automatic conflict-bias strategies blindly (`-X theirs`, `-X ours`, `git checkout --theirs .`, `git checkout --ours .`). Inspect conflicts intentionally.
 - Avoid rebasing long-lived mixed-history branches if it pulls broad unrelated conflicts. Abort and use a fresh branch from `main` plus task-relevant cherry-picks.
 - If `package.json`, `tests.md`, or files under `tests/` conflict during merge/rebase, start from the local/checkpoint version, then explicitly compare incoming changes and reconcile required updates before continuing.
@@ -86,12 +86,12 @@
 - Browser assertions must inspect the real changed UI, not sidebar previews or base page load.
 - For refresh-persistence fixes, include post-refresh evidence that the state persisted.
 
-## Provider/Auth Docker Workflow
+## External App-Server Verification
 
-- Use this only when changes touch Docker startup, Codex auth detection, OpenCode Zen/OpenRouter/custom providers, provider model loading, app-server config, chat send/reply handling, or failed-turn error rendering.
-- Build/package first: `pnpm run build`, `pnpm pack --pack-destination /tmp`, then build an OrbStack/Docker image installing the packed `codexapp` tarball plus `@openai/codex`, using `CODEX_HOME=/codex-home` and command `codexapp --port ${PORT:-4190} --no-password --no-open --no-login`.
-- Test isolated containers on unique localhost ports for: no auth Zen fallback, invalid/expired auth Codex error persistence after reload, malformed auth fallback, and provider switch from Zen to OpenRouter.
-- Before success, report tested ports, provider/config summary, exact commands, screenshot paths, whether invalid auth persisted after reload, and whether duplicate live overlay count was zero.
+- Use `pnpm run test:unit` and, after build, `pnpm run test:integration:fixture` for credential-free protocol/entry-point checks. The fixture is not a real Codex server.
+- Live authentication, turns, approvals, reconnect and process survival require an independently managed server with matching user, CODEX_HOME and paths. Follow `tests/website-docs-misc/external-app-server.md` and report the Codex version and actual results.
+- Historical Docker matrices for Zen/OpenRouter fallback and locally spawned Codex are retired. Do not restore those providers or local process management to satisfy old tests.
+- CI must not require credentials, Docker, a Codex installation or a running external service.
 
 ## Fast Docker Feature Tests
 

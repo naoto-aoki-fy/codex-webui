@@ -1,15 +1,15 @@
 ### Official Codex models and authentication
 
 #### Setup
-- Use a disposable home and a supported Codex CLI. Keep a copy of any legacy `webui-custom-providers.json` and Codex config for byte-for-byte preservation checks.
+- Start a supported external Codex app-server independently with a disposable home shared by the web backend. Keep a copy of any legacy `webui-custom-providers.json` and Codex config for byte-for-byte preservation checks.
 - Test signed-out, file-authenticated, and Keyring-authenticated states without placing real tokens in reports.
 
 #### Actions and expected results
-1. Start the app, open Settings in both themes, and refresh. Only Codex authentication is shown; no provider picker, API format controls, or OpenRouter/Zen/custom endpoint key fields remain. Sign in with Codex or a personal official `OPENAI_API_KEY`.
+1. Start the app, open Settings in both themes, and refresh. Only Codex authentication is shown; no provider picker, API format controls, or OpenRouter/Zen/custom endpoint key fields remain. Manage login or API credentials in the external server environment; the web UI must explain external ownership.
 2. Load and search the model picker. Models and reasoning capabilities must come only from paginated Codex `model/list`; no external model endpoint or provider proxy is contacted. Pick two models, choose supported reasoning efforts, reload, and verify their saved Codex choices remain available.
 3. Start a normal and Plan turn, exercise a tool approval, and observe streamed output. Send a second message during generation and verify immediate submission with the selected model/reasoning settings.
 4. Legacy persisted prompt entries, including entries marked with an alternative provider, must remain inert after reload and backend restart.
-5. Existing conversation history remains readable, including historical provider metadata. New/resumed/forked runtime threads use official `openai` configuration. Application startup does not read, rewrite or delete old alternative-provider config files. Those files must remain unchanged.
+5. Existing conversation history remains readable, including historical provider metadata. New/resumed/forked runtime threads use the external server configuration. Application startup does not read, rewrite or delete old alternative-provider config files. Those files must remain unchanged.
 6. Requests to removed free-mode, provider-model catalog and alternative proxy paths fall through without handling. Missing credentials show actionable Codex authentication errors.
 
 #### Cleanup
@@ -18,7 +18,7 @@ Remove disposable fixtures only. Do not delete user config files, conversation l
 #### Performance audit
 All external provider catalog fetches, provider proxy streaming/format conversion, key state reads, and provider-scoped refresh branches are removed. Models use only Codex app-server RPC. Existing pagination/capability handling and race guards remain; no upstream HTTP fanout or replacement polling/cache is added. Live latency was not measured.
 
-#### Validation and remaining limits
+#### Historical provider-removal validation and remaining limits
 - Production build including frontend typecheck, package creation and public ESM CLI smoke `node dist-cli/index.js --help` pass.
 - Focused model/reasoning/queue/route/auth/history suites: 138 passed. Full suite: 298 passed, one failed, no unhandled errors. The remaining `refreshes a loaded optimistic thread when completion events arrive` duplicate-user-row failure reproduces in a clean pre-change archive with the same updated test fixtures. It is not introduced by this removal and remains a separate follow-up.
 - Server-only typecheck retains ten pre-existing browser-type errors in `codexRpcClient.ts`.

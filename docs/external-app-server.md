@@ -46,8 +46,8 @@ from the checked-in `documentation/app-server-schemas/json` snapshot. It is advi
 not feature negotiation. Update it with protocol schema changes; no runtime schema
 command is executed. The snapshot's originating Codex version is not recorded.
 
-Validation uses a local `ws` protocol fixture. No Codex executable or Docker is
-available in this environment, so no real Codex version, authenticated turns,
+Historical migration audit: validation used a local `ws` protocol fixture. No Codex executable or Docker was
+available in that audit environment, so no real Codex version, authenticated turns,
 provider Docker matrix, or external Codex process survival has been validated.
 
 Performance audit: the regression fixture asserts three concurrent connection

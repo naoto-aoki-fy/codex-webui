@@ -1,18 +1,22 @@
-### Feature: npm run dev2 uses a random Codex home
+### Feature: dev2 preserves the external server environment
+
+The filename is historical; random-home isolation was retired.
 
 #### Prerequisites / Setup
-- Dependencies are installed.
-- Port `4187` is available, or choose another free port.
+- Frozen dependencies installed; port 4187 free.
+- Set CODEX_HOME to the same existing directory as an independently started server.
+- Set CODEXUI_APP_SERVER_URL to its endpoint.
 
 #### Actions
-1. Run `npm run dev2 -- --host 127.0.0.1 --port 4187`.
-2. Read the startup output.
-3. Stop the dev server after Vite reports the local URL.
+1. Run `pnpm run dev2 --host 127.0.0.1 --port 4187`.
+2. Read the preservation warning and open the printed URL.
+3. Read the server's model list and threads.
+4. Repeat with CODEX_HOME unset on both processes to use their normal default.
 
 #### Expected Results
-- Startup prints `Using temporary CODEX_HOME:` with a unique directory under the system temp folder.
-- The command forwards flags to the normal dev wrapper and starts Vite on the requested host and port.
-- The normal `npm run dev` command remains unchanged and uses the caller's existing `CODEX_HOME`.
+- Flags reach Vite; it listens on the requested host/port.
+- CODEX_HOME and endpoint are preserved; no temporary home is created.
+- The same server state is visible; dev2 does not launch or authenticate Codex.
 
 #### Rollback / Cleanup
-- Delete the printed temporary `CODEX_HOME` directory if it is no longer needed.
+Stop the test Vite process and unset test environment variables. Do not delete the shared home.

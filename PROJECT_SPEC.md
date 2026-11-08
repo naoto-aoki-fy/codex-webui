@@ -1,4 +1,8 @@
-# codex-web-local — Project Specification
+# codexapp — Project Specification
+
+Current connection contract: [external app-server](docs/external-app-server.md).
+The frontend structure below includes original implementation context; exact
+package versions and scripts are defined in `package.json`.
 
 ## Overview
 
@@ -6,43 +10,29 @@
 
 - **Author:** Pavel Voronin
 - **License:** MIT
-- **Repository:** https://github.com/pavel-voronin/codex-web-local
+- **Repository:** https://github.com/vast-cow/friuns2-codexapp
 
 ## Architecture
 
+```text
+Browser (Vue SPA)
+  │ HTTP RPC + WebSocket notifications (SSE fallback)
+Express / Vite bridge (/codex-api/*)
+  │ JSON-RPC over ws/wss, initialize handshake
+Independently managed Codex app-server
 ```
-┌──────────────────────────────────────────────────────────┐
-│  Browser (Vue 3 SPA)                                     │
-│  ┌────────────┐  ┌──────────────┐  ┌──────────────────┐ │
-│  │ App.vue     │  │ Composables  │  │ API Layer        │ │
-│  │ (Router)    │──│ useDesktop   │──│ codexGateway     │ │
-│  │             │  │ State        │  │ codexRpcClient   │ │
-│  └────────────┘  └──────────────┘  └────────┬─────────┘ │
-└─────────────────────────────────────────────┼───────────┘
-                                              │ HTTP/SSE
-┌─────────────────────────────────────────────┼───────────┐
-│  Node.js Server                             │           │
-│  ┌──────────────────────────────────────────┼─────────┐ │
-│  │ Express / Vite Middleware                │         │ │
-│  │  ┌───────────────────┐  ┌───────────────┴───────┐ │ │
-│  │  │ Auth Middleware    │  │ Codex Bridge          │ │ │
-│  │  │ (password, cookie) │  │ /codex-api/*          │ │ │
-│  │  └───────────────────┘  └───────────┬───────────┘ │ │
-│  └─────────────────────────────────────┼─────────────┘ │
-│                                        │ stdin/stdout   │
-│  ┌─────────────────────────────────────┼─────────────┐ │
-│  │ codex app-server (child process)    │             │ │
-│  │ JSON-RPC over newline-delimited I/O │             │ │
-│  └───────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────┘
-```
+
+The backend does not install, launch, authenticate, or terminate Codex. Both
+processes require the same user, CODEX_HOME and filesystem paths. A remote URL
+alone does not provide split-host support.
+
 
 ### Key Architectural Decisions
 
 - **No Pinia / Vuex**: All state lives in a single composable (`useDesktopState`). Reactive refs + computed properties manage thread, message, model, and UI state.
 - **Realtime transport**: Client prefers **WebSocket** on `/codex-api/ws` for server-to-client notifications, with automatic fallback to **SSE** (`EventSource`) on `/codex-api/events`. Client-to-server RPC stays on HTTP POST.
-- **Single child process**: The Node server spawns exactly one `codex app-server` child process and multiplexes all RPC calls through it via stdin/stdout.
-- **Shared bridge state**: A global singleton (`AppServerProcess` + `MethodCatalog`) survives Vite HMR reloads during development.
+- **External connection**: RPC calls share a WebSocket connection to the configured app-server. Disconnects fail pending calls; requests are never replayed.
+- **Shared bridge state**: A global singleton (connection client + method catalog) survives Vite HMR reloads during development.
 
 ## Tech Stack
 
@@ -211,13 +201,10 @@ Forking creates a new thread from an existing thread so users can branch the con
 
 ### Bridge → App-Server
 
-Communication uses newline-delimited JSON-RPC 2.0 over stdin/stdout of the `codex app-server` child process. The bridge:
-
-1. Receives HTTP requests from the frontend
-2. Translates them into JSON-RPC calls on stdin
-3. Reads JSON-RPC responses from stdout
-4. Forwards server-initiated requests to the frontend via SSE
-5. Routes client responses back to the app-server
+Communication uses JSON-RPC over the external server's WebSocket endpoint.
+The CLI `--app-server-url` overrides `CODEXUI_APP_SERVER_URL`, defaulting to
+`ws://127.0.0.1:4500`. Browser `/codex-api/ws` is a separate notification socket.
+See the connection guide for validation, reconnect, authentication and lifecycle.
 
 ### RPC Methods Used by the Frontend
 
@@ -302,13 +289,14 @@ Bidirectional sync between `selectedThreadId` state and URL is handled via Vue `
 ### Prerequisites
 
 - Node.js >= 18
-- `codex` CLI installed and in PATH
+- pnpm version pinned in `package.json`
+- Independently started Codex app-server for live workflows (not isolated tests)
 
 ### Scripts
 
 | Command | Description |
 |---|---|
-| `pnpm run dev` | Install deps + start Vite dev server (port 5173) |
+| `pnpm run dev` | Start Vite (port 5173); install only if Vite/vue-tsc is missing |
 | `pnpm run build` | Type-check + build frontend + build CLI |
 | `pnpm run build:frontend` | `vue-tsc --noEmit && vite build` |
 | `pnpm run build:cli` | `tsup` (builds CLI to `dist-cli/`) |
@@ -316,12 +304,12 @@ Bidirectional sync between `selectedThreadId` state and URL is handled via Vue `
 
 ### Dev Mode
 
-`pnpm run dev` installs dependencies and starts a Vite dev server that includes the codex bridge as middleware. The bridge spawns `codex app-server` as a child process. The frontend calls `/codex-api/*` endpoints on the same origin.
+`pnpm run dev` starts Vite with bridge middleware and connects to the external app-server on demand. Run a frozen dependency install first. The frontend calls `/codex-api/*` endpoints on the same origin.
 
 ### Production Mode
 
 ```bash
-npx codex-web-local [--port 5999] [--password mypass] [--no-password]
+node dist-cli/index.js [--port 5900] [--password mypass] [--no-password]
 ```
 
 The CLI starts an Express server that serves the built frontend from `dist/` and uses the same bridge middleware. Password authentication is disabled by default. Pass `--password <pass>` to require login for all connections, including localhost and Tailscale. Passwords are neither generated nor printed at startup.
@@ -341,3 +329,5 @@ The CLI starts an Express server that serves the built frontend from `dist/` and
 3. **Offline-resilient**: localStorage persistence ensures the UI recovers gracefully from disconnections
 4. **Reference equality optimization**: Extensive use of identity checks and shallow merging to minimize unnecessary Vue re-renders
 5. **Single composable pattern**: All state and logic in one place for discoverability, at the cost of file size (~2000 LOC)
+
+Verification and reproducible installation: [development guide](docs/development.md).

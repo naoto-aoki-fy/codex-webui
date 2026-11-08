@@ -2,6 +2,10 @@
 
 This file is the manual test index. Detailed regression and feature verification steps live in domain folders under [`tests/`](tests/).
 
+Current automated commands and isolation boundaries: [development guide](docs/development.md#verification).
+Live acceptance: [external server](tests/website-docs-misc/external-app-server.md).
+Files marked historical preserve former behavior and are not current acceptance criteria.
+
 ## Architecture
 
 - Keep one root index (`tests.md`) so existing links and contributor habits keep working.
