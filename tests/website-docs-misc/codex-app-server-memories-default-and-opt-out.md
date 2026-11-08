@@ -1,3 +1,7 @@
+> **Historical locally managed configuration.** Memories defaults now belong
+> to the external server. Backend launch flags must not configure them.
+> See [current contract](../../docs/external-app-server.md).
+
 # External ownership of memories
 
 Prerequisites: build CLI with `pnpm run build:cli` and start an external Codex

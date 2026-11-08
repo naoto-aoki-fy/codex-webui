@@ -6,11 +6,11 @@ responsive UI is available in desktop and mobile browsers.
 
 ## Quick start
 
-Install Node.js 18+ and pnpm for the web backend. Separately install Codex for the external server.
+For source development, use Node.js 22 and the pinned pnpm version (see the development guide). Separately install Codex for the external server.
 From the repository root, in a Linux shell or Windows PowerShell:
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 pnpm run build
 # Separate terminal, same user and CODEX_HOME:
 codex app-server --listen ws://127.0.0.1:4500

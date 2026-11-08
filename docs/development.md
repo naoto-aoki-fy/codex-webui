@@ -4,7 +4,19 @@ First start `codex app-server --listen ws://127.0.0.1:4500` independently, using
 same user, `CODEX_HOME`, and workspace paths. See [connection details](external-app-server.md).
 Development honors `CODEXUI_APP_SERVER_URL`; `dev2` now preserves `CODEX_HOME`.
 
-Install dependencies with `pnpm install`. Normal HTTP development needs no TLS
+Use Node.js 22 for development/CI (the runtime minimum in package.json is separate).
+Enable Corepack (`corepack enable`), then use the exact pnpm version in
+`package.json`. Install dependencies with `pnpm install --frozen-lockfile`.
+Commit `pnpm-lock.yaml` alongside intentional dependency changes; use
+`pnpm install --lockfile-only` to update it and review the diff. Do not mix npm
+lockfiles into this pnpm workspace. The dev wrapper only installs when Vite or
+vue-tsc is missing; it does not verify an existing dependency tree.
+
+`dev2` is a compatibility alias for `dev`, with a preservation warning. Its
+historical random-home filename does not imply isolation: it forwards flags and
+preserves CODEX_HOME and CODEXUI_APP_SERVER_URL.
+
+ Normal HTTP development needs no TLS
 credentials:
 
 ```sh
@@ -59,3 +71,43 @@ requires an explicit `--host` and a certificate covering that hostname.
 custom credentials outside the repository even when using another extension;
 never force-add ignored credentials. Delete `.cert/` when local HTTPS is no
 longer needed, and unset the two environment variables after testing.
+
+## Verification
+
+Run from the repository root:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run typecheck
+pnpm run test:unit
+pnpm run build
+pnpm run test:integration:fixture
+```
+
+Typecheck covers Vue/frontend and server/CLI TypeScript. Build includes frontend
+checking, Vite/precompression and tsup; tsup alone does not check server types.
+Unit tests use local mocks/protocol fixtures. The integration command is a CJS
+harness launching the public ESM CLI and Vite against a local WebSocket fixture;
+it requires free ports 4198/4199 and a POSIX process-group environment. No public
+CJS exports exist. It verifies HTTP RPC, metadata, browser socket readiness,
+endpoint precedence, single initialization and fixture survival after shutdown.
+CI runs these commands on Linux without Codex, credentials or external services.
+No browser installation is required for this fixture.
+
+Real-server tests are separate and manual: follow
+[external server verification](../tests/website-docs-misc/external-app-server.md).
+Record Codex version, endpoint, shared home/path setup and results. Fixture success
+does not validate authentication, real turns, approvals or real process survival.
+Browser profilers require a working UI and server; they are optional diagnostics,
+not isolated CI checks. There is currently no separate lint command.
+
+Known baseline at this documentation alignment: `test:unit` reports 312 passing
+and one failing test, `refreshes a loaded optimistic thread when completion events
+arrive` in `useDesktopState.test.ts` (duplicate user row). The same focused test
+fails against unchanged HEAD with the same dependencies. CI deliberately reports
+this failure; it is not excluded or marked as an expected failure.
+
+Infrastructure performance review: no application runtime paths changed. The
+fixture measured one upstream connection/initialize per built/dev backend (two
+total), with no duplicate initialization. No live-server or browser latency was
+measured for this documentation/verification change.

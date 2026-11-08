@@ -1,3 +1,8 @@
+> **Historical / retired — not a current acceptance test.** These expectations
+> describe the former locally managed Codex runtime. Current defaults belong to
+> the external server; missing local Codex is not a backend error. Follow
+> [external server verification](../website-docs-misc/external-app-server.md).
+
 ### Feature: Default runtime uses workspace-write sandbox with on-request approvals
 
 #### Prerequisites

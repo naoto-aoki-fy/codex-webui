@@ -7,11 +7,9 @@ test-results/
 *.tsbuildinfo
 
 package-lock.json
-pnpm-lock.yaml
 .codex/
 .env.local
 
-package.json
 .omx/
 
 # Local development TLS material (including custom certificate paths).
