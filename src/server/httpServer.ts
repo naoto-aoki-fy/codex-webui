@@ -1,13 +1,13 @@
 import { precompressedStatic, sendPrecompressed } from './precompressedStatic.js'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import type { Server as HttpServer, IncomingMessage } from 'node:http'
+import type { Server as HttpServer } from 'node:http'
 import { existsSync } from 'node:fs'
 import express, { type Express } from 'express'
 import { createCodexBridgeMiddleware } from './codexAppServerBridge.js'
 import { createAuthSession } from './authMiddleware.js'
 import { createLocalFileMiddleware } from './localFileHttp.js'
-import { WebSocketServer, type WebSocket } from 'ws'
+import { attachBrowserNotificationTransport } from './browserNotificationTransport.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distDir = join(__dirname, '..', 'dist')
@@ -84,39 +84,20 @@ export function createServer(options: ServerOptions = {}): ServerInstance {
     return sendPrecompressed(req, res, next, spaEntryFile)
   })
 
+  const transports = new Set<() => void>()
   return {
     app,
-    dispose: () => bridge.dispose(),
+    dispose: () => {
+      for (const dispose of transports) dispose()
+      transports.clear()
+      bridge.dispose()
+    },
     attachWebSocket: (server: HttpServer) => {
-      const wss = new WebSocketServer({ noServer: true })
-
-      server.on('upgrade', (req: IncomingMessage, socket, head) => {
-        const url = new URL(req.url ?? '', 'http://localhost')
-        if (url.pathname !== '/codex-api/ws') {
-          return
-        }
-
-        if (authSession && !authSession.isRequestAuthorized(req)) {
-          socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
-          socket.destroy()
-          return
-        }
-
-        wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-          wss.emit('connection', ws, req)
-        })
-      })
-
-      wss.on('connection', (ws: WebSocket) => {
-        ws.send(JSON.stringify({ method: 'ready', params: { ok: true }, atIso: new Date().toISOString() }))
-        const unsubscribe = bridge.subscribeNotifications((notification) => {
-          if (ws.readyState !== 1) return
-          ws.send(JSON.stringify(notification))
-        })
-
-        ws.on('close', unsubscribe)
-        ws.on('error', unsubscribe)
-      })
+      transports.add(attachBrowserNotificationTransport(
+        server,
+        bridge.subscribeNotifications,
+        authSession ? (req) => authSession.isRequestAuthorized(req) : undefined,
+      ))
     },
   }
 }

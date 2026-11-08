@@ -43,3 +43,42 @@ Cleanup: the script terminates only its own backend process groups and fixture.
 Real-server checks require stopping the independently launched server separately.
 A fixture result does not establish real Codex process survival or authenticated
 streaming/approval behavior.
+
+## Shared browser notification transport
+
+Prerequisites: install dependencies; use the independent Codex server setup above
+for live notifications. Automated connection/cleanup checks need no credentials:
+`pnpm exec vitest run src/server/browserNotificationTransport.test.ts src/api/codexRpcClient.notifications.test.ts`.
+
+1. Start development with `CODEXUI_APP_SERVER_URL=ws://127.0.0.1:4500 pnpm run dev`
+   and repeat against the built production CLI. Connect to `/codex-api/ws` using a
+   WebSocket client. Expect one JSON `ready` frame with `{ok:true}` and `atIso`.
+2. Trigger a turn in another client. Expect unchanged notification methods, params
+   and timestamps. Close/reconnect the browser socket repeatedly; expect one active
+   subscription per connection and no duplicate notifications.
+3. In production with `--password`, connect without a session: expect HTTP 401.
+   Log in through `/auth/login`, then connect with its session cookie: expect ready
+   and notifications. Development remains unauthenticated. Vite HMR still works.
+4. Block the WebSocket handshake in a test proxy, leaving `/codex-api/events`
+   available. Expect the existing SSE fallback immediately after handshake failure
+   or after the 2500 ms connection timeout. Close the client; expect no reconnect.
+5. Stop the web server. Expect notification subscriptions and owned upgrade listeners
+   to be released. The external Codex server remains independently managed.
+
+Cleanup: close all test sockets, remove any proxy rules, and stop only test processes.
+The automated tests cover repeated error/close/dispose cleanup and host shutdown;
+the fixture covers actual development and built production WebSocket readiness.
+
+`browserNotificationTransport.ts` owns upgrade endpoint selection, optional auth
+checks, ready/message forwarding and idempotent subscription cleanup. Adapter code
+retains Vite's duplicate-attachment guard and production's auth-session predicate.
+SSE endpoints, browser reconnect/fallback logic and application messages are unchanged.
+Disposal uses `WebSocketServer.close()` without forcing active browser sockets closed.
+
+Performance audit (code-path analysis): each connected browser still creates exactly
+one bridge subscription and performs one JSON serialization per notification. Closed
+and errored clients retire their subscription; the transport's active cleanup set
+shrinks on retirement. No extra upstream connections, requests, timers, blocking I/O,
+message queues, payload copies or persistent caches are introduced. Broadcast fanout
+remains proportional to connected subscribers; payloads and cache invalidation are
+unchanged. Browser render timing and sustained-load throughput were not measured.
