@@ -10,56 +10,6 @@ export type RpcMethodCatalog = {
   data: string[]
 }
 
-export type ThreadListResult = {
-  data: ThreadSummary[]
-  nextCursor?: string | null
-}
-
-export type ThreadSummary = {
-  id: string
-  preview: string
-  title?: string
-  name?: string
-  cwd: string
-  updatedAt: number
-  createdAt: number
-  source?: unknown
-}
-
-export type ThreadReadResult = {
-  thread: ThreadDetail
-}
-
-export type ThreadDetail = {
-  id: string
-  cwd: string
-  preview: string
-  turns: ThreadTurn[]
-  updatedAt: number
-  createdAt: number
-}
-
-export type ThreadTurn = {
-  id: string
-  status: string
-  items: ThreadItem[]
-}
-
-export type ThreadItem = {
-  id: string
-  type: string
-  text?: string
-  content?: unknown
-  summary?: string[]
-}
-
-export type UserInput = {
-  type: string
-  text?: string
-  path?: string
-  url?: string
-}
-
 export type UiThread = {
   id: string
   title: string

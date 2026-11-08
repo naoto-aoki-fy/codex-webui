@@ -11,7 +11,6 @@ const gateway = vi.hoisted(() => ({
   startThreadTurn: vi.fn(),
   interruptThreadTurn: vi.fn(),
   startThread: vi.fn(),
-  generateThreadTitle: vi.fn(),
   subscribeCodexNotifications: vi.fn(),
   getPendingServerRequests: vi.fn(),
   getThreadTitleCache: vi.fn(),
@@ -119,7 +118,6 @@ beforeEach(() => {
   gateway.getThreadDetail.mockResolvedValue(activeDetail)
   gateway.startThreadTurn.mockResolvedValue('turn-2')
   gateway.startThread.mockResolvedValue({ threadId: thread.id, model: 'gpt-5.5', modelProvider: 'openai' })
-  gateway.generateThreadTitle.mockResolvedValue('')
   gateway.subscribeCodexNotifications.mockImplementation((handler) => { notificationHandler = handler; return vi.fn() })
 })
 

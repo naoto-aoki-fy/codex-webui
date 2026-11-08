@@ -24,7 +24,6 @@ const gatewayMocks = vi.hoisted(() => ({
   getThreadGroupsPage: vi.fn(),
   getThreadTitleCache: vi.fn(),
   getWorkspaceRootsState: vi.fn(),
-  generateThreadTitle: vi.fn(),
   interruptThreadTurn: vi.fn(),
   persistThreadTitle: vi.fn(),
   renameThread: vi.fn(),
@@ -465,6 +464,21 @@ describe('Codex CLI availability', () => {
 })
 
 describe('startup request deduplication', () => {
+  it('preserves manual renaming and persists the trimmed title', async () => {
+    installTestWindow()
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({
+      groups: [{ projectName: 'Project', threads: [thread('thread-1', '/tmp/project')] }],
+      nextCursor: null,
+    })
+    const state = useDesktopState()
+    await state.refreshAll({ includeSelectedThreadMessages: false })
+    await state.renameThreadById('thread-1', '  Manual title  ')
+
+    expect(gatewayMocks.renameThread).toHaveBeenCalledWith('thread-1', 'Manual title')
+    expect(gatewayMocks.persistThreadTitle).toHaveBeenCalledWith('thread-1', 'Manual title')
+    expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('Manual title')
+  })
+
   it('reloads cached thread titles on forced thread refresh', async () => {
     installTestWindow()
     gatewayMocks.getThreadGroupsPage.mockResolvedValue({
@@ -607,6 +621,8 @@ describe('startup request deduplication', () => {
       await Promise.resolve()
       await Promise.resolve()
 
+      expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('Updated title')
+      expect(gatewayMocks.persistThreadTitle).toHaveBeenCalledWith('thread-1', 'Updated title')
       expect(gatewayMocks.getThreadGroupsPage.mock.calls.length).toBeGreaterThan(callsBeforeNotification)
     } finally {
       nowSpy.mockRestore()

@@ -24,7 +24,7 @@ import type {
   ThreadStartResponse,
   Turn,
 } from './appServerDtos'
-import { extractErrorMessage, normalizeCodexApiError } from './codexErrors'
+import { normalizeCodexApiError } from './codexErrors'
 import {
   readActiveTurnIdFromResponse,
   normalizeThreadGroupsV2,
@@ -37,7 +37,6 @@ import type {
   CollaborationModeKind,
   CollaborationModeOption,
   UiCreditsSnapshot,
-  UiFileChange,
   UiMessage,
   UiProjectGroup,
   UiThread,
@@ -71,7 +70,6 @@ export type ComposerPromptInfo = {
   description: string
 }
 
-
 export type WorkspaceRootsState = {
   order: string[]
   labels: Record<string, string>
@@ -90,7 +88,6 @@ let workspaceRootsRequestId = 0
 let workspaceRootsRequest: { generation: number; id: number; promise: Promise<WorkspaceRootsState> } | null = null
 let workspaceRootsMutation: Promise<unknown> = Promise.resolve()
 let cachedWorkspaceRootsState: WorkspaceRootsState | null = null
-
 
 export type ComposerFileSuggestion = {
   path: string
@@ -119,8 +116,6 @@ export type GitRepositoryStatus = {
   gitRoot: string
 }
 
-
-
 export type ThreadSearchResult = {
   threadIds: string[]
   indexedThreadCount: number
@@ -147,12 +142,6 @@ export type LocalDirectoryListing = {
   path: string
   parentPath: string
   entries: LocalDirectoryEntry[]
-}
-
-type ThreadFileChangeFallbackEntry = {
-  turnId: string
-  turnIndex: number
-  fileChanges: UiFileChange[]
 }
 
 type ThreadTurnIndexById = Record<string, number>
@@ -245,50 +234,6 @@ async function callRpc<T>(method: string, params?: unknown): Promise<T> {
   }
 }
 
-function normalizeFallbackFileChange(value: unknown): UiFileChange | null {
-  const record = asRecord(value)
-  if (!record) return null
-
-  const path = readString(record.path)
-  const operation = readString(record.operation)
-  if (!path || (operation !== 'add' && operation !== 'delete' && operation !== 'update')) {
-    return null
-  }
-
-  return {
-    path,
-    operation,
-    movedToPath: readString(record.movedToPath) ?? null,
-    diff: readString(record.diff) ?? '',
-    addedLineCount: readNumber(record.addedLineCount) ?? 0,
-    removedLineCount: readNumber(record.removedLineCount) ?? 0,
-  }
-}
-
-function normalizeThreadFileChangeFallback(value: unknown): ThreadFileChangeFallbackEntry[] {
-  const payload = asRecord(value)
-  const rows = Array.isArray(payload?.data) ? payload.data : []
-  const normalized: ThreadFileChangeFallbackEntry[] = []
-
-  for (const row of rows) {
-    const record = asRecord(row)
-    if (!record) continue
-
-    const turnId = readString(record.turnId)
-    const turnIndex = readNumber(record.turnIndex)
-    const fileChanges = Array.isArray(record.fileChanges)
-      ? record.fileChanges
-        .map((entry) => normalizeFallbackFileChange(entry))
-        .filter((entry): entry is UiFileChange => entry !== null)
-      : []
-
-    if (!turnId || turnIndex === null || fileChanges.length === 0) continue
-    normalized.push({ turnId, turnIndex, fileChanges })
-  }
-
-  return normalized
-}
-
 function buildTurnIndexByTurnId(payload: ThreadReadResponse, baseTurnIndex = 0): ThreadTurnIndexById {
   const turns = Array.isArray(payload.thread.turns) ? payload.thread.turns : []
   const lookup: ThreadTurnIndexById = {}
@@ -307,86 +252,6 @@ function readThreadTurnStartIndex(payload: ThreadReadResponse): number {
   const record = asRecord(payload)
   const raw = record?.threadTurnStartIndex
   return Math.max(0, Math.floor(typeof raw === 'number' ? raw : 0))
-}
-
-async function fetchThreadFileChangeFallback(threadId: string): Promise<ThreadFileChangeFallbackEntry[]> {
-  const response = await fetch(`/codex-api/thread-file-change-fallback?threadId=${encodeURIComponent(threadId)}`)
-  if (!response.ok) {
-    throw new Error(`Fallback request failed with ${response.status}`)
-  }
-  return normalizeThreadFileChangeFallback(await response.json())
-}
-
-function mergeRecoveredFileChangeMessages(messages: UiMessage[], fallbackEntries: ThreadFileChangeFallbackEntry[]): UiMessage[] {
-  if (fallbackEntries.length === 0) return messages
-
-  const localTurnIndexByTurnId = new Map<string, number>()
-  const coveredTurnIds = new Set<string>()
-
-  for (const message of messages) {
-    const tid = typeof message.turnId === 'string' && message.turnId.length > 0 ? message.turnId : undefined
-    const tIdx = typeof message.turnIndex === 'number' ? message.turnIndex : undefined
-    if (tid && tIdx !== undefined) localTurnIndexByTurnId.set(tid, tIdx)
-
-    const hasFileData =
-      message.messageType === 'fileChange' ||
-      (Array.isArray(message.fileChanges) && message.fileChanges.length > 0)
-    if (hasFileData && tid) coveredTurnIds.add(tid)
-  }
-
-  const extraMessages = fallbackEntries
-    .filter((entry) => localTurnIndexByTurnId.has(entry.turnId) && !coveredTurnIds.has(entry.turnId))
-    .map<UiMessage>((entry) => ({
-      id: `session-file-change:${entry.turnId}`,
-      role: 'system',
-      text: '',
-      messageType: 'fileChange',
-      fileChangeStatus: 'completed',
-      fileChanges: entry.fileChanges,
-      turnId: entry.turnId,
-      turnIndex: localTurnIndexByTurnId.get(entry.turnId) ?? entry.turnIndex,
-    }))
-
-  if (extraMessages.length === 0) return messages
-
-  const extrasByTurnIndex = new Map<number, UiMessage[]>()
-  for (const message of extraMessages) {
-    const turnIndex = message.turnIndex
-    if (typeof turnIndex !== 'number') continue
-    const current = extrasByTurnIndex.get(turnIndex)
-    if (current) current.push(message)
-    else extrasByTurnIndex.set(turnIndex, [message])
-  }
-
-  const insertedTurnIndices = new Set<number>()
-  const merged: UiMessage[] = []
-
-  for (let index = 0; index < messages.length; index += 1) {
-    const message = messages[index]
-    merged.push(message)
-
-    const turnIndex = message.turnIndex
-    if (typeof turnIndex !== 'number' || insertedTurnIndices.has(turnIndex)) continue
-    const nextTurnIndex = messages[index + 1]?.turnIndex
-    if (nextTurnIndex === turnIndex) continue
-
-    const extras = extrasByTurnIndex.get(turnIndex)
-    if (!extras || extras.length === 0) continue
-
-    merged.push(...extras)
-    insertedTurnIndices.add(turnIndex)
-  }
-
-  return merged
-}
-
-async function enrichThreadMessagesWithFallback(threadId: string, messages: UiMessage[]): Promise<UiMessage[]> {
-  try {
-    const fallbackEntries = await fetchThreadFileChangeFallback(threadId)
-    return mergeRecoveredFileChangeMessages(messages, fallbackEntries)
-  } catch {
-    return messages
-  }
 }
 
 function normalizeReasoningEffort(value: unknown): ReasoningEffort | '' {
@@ -1776,15 +1641,6 @@ export async function persistPinnedThreadIds(threadIds: string[]): Promise<void>
     })
   } catch {
     // Best-effort persist
-  }
-}
-
-export async function generateThreadTitle(prompt: string, cwd: string | null): Promise<string> {
-  try {
-    const result = await callRpc<{ title?: string }>('generate-thread-title', { prompt, cwd })
-    return result.title?.trim() ?? ''
-  } catch {
-    return ''
   }
 }
 
