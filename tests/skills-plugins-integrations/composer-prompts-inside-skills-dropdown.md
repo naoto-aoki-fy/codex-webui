@@ -35,3 +35,10 @@ The composer control row uses one `Skills` dropdown for both skills and saved pr
 - Delete any temporary verification prompt created during the test
 
 ---
+
+## Backend prompt storage extraction regression
+
+- Prerequisites: run the app with a disposable `CODEX_HOME` and an independently managed external app-server. Keep any existing prompt files backed up.
+- Actions: create a prompt with whitespace around its name/content; create another with the same name; reload the prompt list; remove both prompts and reload again.
+- Expected: content is trimmed with a trailing newline, duplicate names receive `-2`, prompts remain sorted and persist across reload, and removed entries stay absent. GET/POST/DELETE `/codex-api/prompts` retain their existing data envelopes and errors. A DELETE path outside `CODEX_HOME/prompts` returns 400 and leaves the file intact.
+- Cleanup: remove the disposable home and restore the prior `CODEX_HOME`. Automated storage coverage: `pnpm exec vitest run src/server/composerPromptFiles.test.ts`.
