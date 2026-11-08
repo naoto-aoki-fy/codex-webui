@@ -20,7 +20,8 @@ node dist-cli/index.js --app-server-url ws://127.0.0.1:4500
 
 Open the printed URL (default: `http://localhost:5900`). If the port is occupied,
 the CLI tries the next available port. Authentication and runtime defaults belong
-to the external server. See the [connection guide](docs/external-app-server.md).
+to the external server. Unix sockets (`unix:///absolute/path.sock`) are also supported
+on Linux/macOS. See the [connection guide](docs/external-app-server.md).
 
 Password protection is disabled by default. Use `--password <pass>` to enable it,
 and configure a private network or external reverse proxy for remote access.

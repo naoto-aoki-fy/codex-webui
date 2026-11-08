@@ -1,10 +1,30 @@
 import WebSocket from 'ws'
+import { createConnection } from 'node:net'
 
 export function resolveAppServerUrl(cli?: string, env = process.env.CODEXUI_APP_SERVER_URL): string {
   const value = cli ?? env ?? 'ws://127.0.0.1:4500'
-  const url = new URL(value)
+  let url: URL
+  try { url = new URL(value) } catch {
+    throw new Error('Invalid app-server URL; use ws://, wss://, or unix:///absolute/path.sock')
+  }
+  if (url.protocol === 'unix:') {
+    if (process.platform === 'win32') {
+      throw new Error('Unix app-server sockets are unsupported on Windows; use ws:// or wss://')
+    }
+    let path: string
+    try { path = decodeURIComponent(url.pathname) } catch {
+      throw new Error('Invalid percent encoding in Unix app-server socket path')
+    }
+    if (!/^unix:\/\/\//i.test(value) || url.host || url.username || url.password ||
+      value.includes('?') || value.includes('#') || !path.startsWith('/') ||
+      path === '/' || path.endsWith('/') || /[\x00-\x1f\x7f\\]/.test(path) ||
+      /[\x00-\x20\x7f\\]/.test(value)) {
+      throw new Error('Unix app-server URL must use unix:///absolute/path.sock without host, query, fragment, or control characters')
+    }
+    return url.href
+  }
   if (!['ws:', 'wss:'].includes(url.protocol) || url.hash || url.username || url.password) {
-    throw new Error('App-server URL must use ws:// or wss:// without credentials or a fragment')
+    throw new Error('App-server URL must use ws://, wss://, or unix:///absolute/path.sock without credentials or a fragment')
   }
   return url.href
 }
@@ -33,7 +53,13 @@ export class AppServerWebSocketClient {
   connect(): Promise<void> {
     if (this.disposed) return Promise.reject(new Error('App-server client disposed'))
     if (this.ready) return this.ready
-    const socket = new WebSocket(this.url, { handshakeTimeout: this.timeoutMs })
+    const endpoint = resolveAppServerUrl(this.url)
+    const unixPath = endpoint.startsWith('unix:') ? decodeURIComponent(new URL(endpoint).pathname) : null
+    // ws performs its normal HTTP Upgrade and framing over this AF_UNIX stream.
+    const socket = new WebSocket(unixPath ? 'ws://localhost/' : endpoint, {
+      handshakeTimeout: this.timeoutMs,
+      ...(unixPath ? { createConnection: () => createConnection({ path: unixPath }) } : {}),
+    })
     this.socket = socket
     this.ready = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => this.fail(socket, new Error(`App-server connection/initialization timed out: ${this.url}`)), this.timeoutMs)

@@ -1,12 +1,23 @@
 const assert = require('node:assert/strict')
 const { spawn } = require('node:child_process')
 const { once } = require('node:events')
+const { createServer } = require('node:http')
+const { mkdtempSync, rmSync } = require('node:fs')
+const { tmpdir } = require('node:os')
+const { join } = require('node:path')
 const { WebSocketServer, WebSocket } = require('ws')
 
 async function run() {
-  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
-  await once(server, 'listening')
-  const endpoint = 'ws://127.0.0.1:' + server.address().port
+  const unix = process.env.CODEXAPP_FIXTURE_TRANSPORT === 'unix'
+  if (unix && process.platform === 'win32') throw new Error('Unix fixture requires Linux/macOS')
+  const directory = unix ? mkdtempSync(join(tmpdir(), 'uds-fixture-')) : null
+  const path = directory ? join(directory, 'codex.sock') : null
+  const http = createServer()
+  const server = new WebSocketServer({ server: http })
+  if (path) http.listen(path)
+  else http.listen(0, '127.0.0.1')
+  await once(http, 'listening')
+  const endpoint = path ? 'unix://' + path : 'ws://127.0.0.1:' + http.address().port
   const frames = []
   let connections = 0
   server.on('connection', socket => {
@@ -73,6 +84,8 @@ async function run() {
   } finally {
     for (const socket of server.clients) socket.terminate()
     await new Promise(resolve => server.close(resolve))
+    await new Promise(resolve => http.close(resolve))
+    if (directory) rmSync(directory, { recursive: true, force: true })
   }
 }
 run().catch(error => { console.error(error); process.exitCode = 1 })
