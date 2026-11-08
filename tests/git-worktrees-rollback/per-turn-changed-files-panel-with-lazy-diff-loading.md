@@ -25,3 +25,23 @@
 
 #### Rollback/Cleanup
 - No cleanup required.
+
+### Regression: Extracted diff viewer line parser
+
+#### Prerequisites / Setup
+- Run `pnpm exec vitest run src/utils/diffViewerLines.test.ts`.
+- For manual checks, use a thread containing added, deleted, and updated files, including a multi-hunk update.
+
+#### Exact Actions
+1. Open each file in the conversation diff viewer in light theme.
+2. Check unified headers, context, additions, removals, and old/new line numbers across multiple hunks.
+3. Check added/deleted file contents and switch between files in the viewer.
+4. Repeat in dark theme, then close the viewer and switch threads.
+
+#### Expected Results
+- All seven parser regression cases pass.
+- Diff text, row markers, line numbers, selected file, and styling remain unchanged.
+- Closing the viewer and switching threads preserve existing conversation behavior.
+
+#### Rollback / Cleanup
+- Close the viewer. No persistent data is created by parsing or the automated tests.

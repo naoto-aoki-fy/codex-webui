@@ -948,6 +948,7 @@ import { updateThreadFileChanges } from '../../api/codexGateway'
 import { useMobile } from '../../composables/useMobile'
 import { copyTextToClipboard, copyTextWithSelectionFallback } from '../../utils/clipboard'
 import { buildUserMessageCopyText } from '../../utils/userMessageCopy'
+import { buildDiffViewerLines, fileChangeKey, type DiffViewerLine } from '../../utils/diffViewerLines'
 
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
@@ -1237,10 +1238,6 @@ function isFileChangeSummaryExpanded(message: UiMessage): boolean {
   return expandedFileChangeSummaryIds.value.has(message.id)
 }
 
-function fileChangeKey(change: UiFileChange): string {
-  return `${change.path}\u0000${change.movedToPath ?? ''}`
-}
-
 function openDiffViewer(summary: TurnFileChangeSummary | null, change: UiFileChange): void {
   if (!summary) return
   activeDiffViewerSummary.value = summary
@@ -1466,14 +1463,6 @@ type TurnFileChangeSummary = {
   sourceMessageIds: string[]
   source: 'assistant' | 'metadata'
   turnId: string
-}
-type DiffViewerLineKind = 'meta' | 'hunk' | 'add' | 'remove' | 'context'
-type DiffViewerLine = {
-  key: string
-  kind: DiffViewerLineKind
-  oldLine: number | null
-  newLine: number | null
-  text: string
 }
 
 function isFilePath(value: string): boolean {
@@ -2230,108 +2219,6 @@ function inferDiffViewerLanguage(change: UiFileChange): string {
   const targetPath = change.movedToPath || change.path
   const extension = targetPath.split('.').pop()?.toLowerCase() ?? ''
   return CODE_LANGUAGE_ALIASES[extension] ?? extension ?? ''
-}
-
-function hasStructuredUnifiedDiff(change: UiFileChange): boolean {
-  return change.operation === 'update' && /^diff --git |^@@ |^--- |^\+\+\+ |^[ +-]|^\*\*\* (Move to:|End of File)/mu.test(change.diff)
-}
-
-function buildSyntheticDiffLines(change: UiFileChange): DiffViewerLine[] {
-  const normalized = change.diff.replace(/\r\n/g, '\n')
-  const lines = normalized.length > 0 ? normalized.split('\n') : []
-  if (lines.length > 0 && lines[lines.length - 1] === '') {
-    lines.pop()
-  }
-  return lines.map((line, index) => ({
-    key: `${fileChangeKey(change)}:synthetic:${index}`,
-    kind: change.operation === 'delete' ? 'remove' : 'add',
-    oldLine: change.operation === 'delete' ? index + 1 : null,
-    newLine: change.operation === 'delete' ? null : index + 1,
-    text: line,
-  }))
-}
-
-function buildUnifiedDiffLines(change: UiFileChange): DiffViewerLine[] {
-  const normalized = change.diff.replace(/\r\n/g, '\n')
-  const lines = normalized.length > 0 ? normalized.split('\n') : []
-  if (lines.length > 0 && lines[lines.length - 1] === '') {
-    lines.pop()
-  }
-
-  const output: DiffViewerLine[] = []
-  let oldLine = 0
-  let newLine = 0
-
-  for (const [index, line] of lines.entries()) {
-    const hunkMatch = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/u)
-    if (hunkMatch) {
-      oldLine = Number(hunkMatch[1])
-      newLine = Number(hunkMatch[2])
-      output.push({
-        key: `${fileChangeKey(change)}:hunk:${index}`,
-        kind: 'hunk',
-        oldLine: null,
-        newLine: null,
-        text: line,
-      })
-      continue
-    }
-
-    if (line.startsWith('+') && !line.startsWith('+++')) {
-      output.push({
-        key: `${fileChangeKey(change)}:add:${index}`,
-        kind: 'add',
-        oldLine: null,
-        newLine,
-        text: line.slice(1),
-      })
-      newLine += 1
-      continue
-    }
-
-    if (line.startsWith('-') && !line.startsWith('---')) {
-      output.push({
-        key: `${fileChangeKey(change)}:remove:${index}`,
-        kind: 'remove',
-        oldLine,
-        newLine: null,
-        text: line.slice(1),
-      })
-      oldLine += 1
-      continue
-    }
-
-    if (line.startsWith(' ')) {
-      output.push({
-        key: `${fileChangeKey(change)}:context:${index}`,
-        kind: 'context',
-        oldLine,
-        newLine,
-        text: line.slice(1),
-      })
-      oldLine += 1
-      newLine += 1
-      continue
-    }
-
-    output.push({
-      key: `${fileChangeKey(change)}:meta:${index}`,
-      kind: 'meta',
-      oldLine: null,
-      newLine: null,
-      text: line,
-    })
-  }
-
-  return output
-}
-
-function buildDiffViewerLines(change: UiFileChange | null): DiffViewerLine[] {
-  if (!change || !change.diff.trim()) return []
-  if (hasStructuredUnifiedDiff(change)) {
-    return buildUnifiedDiffLines(change)
-  }
-  return buildSyntheticDiffLines(change)
 }
 
 const activeDiffViewerLines = computed<DiffViewerLine[]>(() => buildDiffViewerLines(activeDiffViewerChange.value))
