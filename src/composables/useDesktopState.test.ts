@@ -859,18 +859,22 @@ describe('Codex model selection', () => {
           role: 'user',
           text: 'hi',
           messageType: 'userMessage',
+          turnId: 'turn-1',
+          turnIndex: 0,
         },
         {
           id: 'assistant-1',
           role: 'assistant',
           text: 'Hi.',
           messageType: 'agentMessage',
+          turnId: 'turn-1',
+          turnIndex: 0,
         },
       ],
       inProgress: false,
       activeTurnId: '',
       hasMoreOlder: false,
-      turnIndexByTurnId: {},
+      turnIndexByTurnId: { 'turn-1': 0 },
     })
 
     const state = useDesktopState()
