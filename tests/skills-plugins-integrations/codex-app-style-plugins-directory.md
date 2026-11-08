@@ -4,7 +4,7 @@ Prerequisites: run the current dev server; configure a local skill and MCP serve
 
 1. Open `#/skills`, including stale `?tab=plugins` and `?tab=apps` links.
 2. Verify Skills & MCPs appears with no catalog tabs, plugin cards, or app controls.
-3. Search Skills, inspect a result, install it, toggle the local skill and remove the test installation.
+3. Inspect an already-installed skill, toggle it, browse its files, and use Try it to select it in a conversation. Verify no search, install or uninstall controls appear.
 4. Expand an MCP server and inspect tools/resources. Authenticate if required, then Refresh.
 5. Repeat at 1440x1000, 375x812 and 768x1024 in light and dark themes.
 6. Inspect network traffic: no `plugin/*`, `app/list`, or connector-logo requests; Skills and MCP requests remain.

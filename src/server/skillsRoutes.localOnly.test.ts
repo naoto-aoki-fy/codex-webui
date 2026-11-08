@@ -1,6 +1,5 @@
 import { mkdtemp, mkdir, writeFile, readFile, lstat, readlink, symlink, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { EventEmitter } from 'node:events'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -57,80 +56,22 @@ it.each(['file', 'symlink', 'missing'].flatMap((kind) => [false, true].map((auth
   if (kind === 'symlink') expect(await readlink(agents)).toBe('skills/AGENTS.md')
 })
 
-it('uninstalls locally and reloads discovery without starting a GitHub push', async () => {
-  const path = join(home, 'skills', 'sample')
-  await mkdir(path, { recursive: true })
-  await writeFile(join(path, 'SKILL.md'), 'sample')
-  const savedCredentials = JSON.stringify({ githubToken: 'test-only', repoOwner: 'test', repoName: 'skills', installedOwners: { sample: 'test' } })
-  await writeFile(join(home, 'skills-sync.json'), savedCredentials)
-  const rpc = vi.fn(async () => ({ data: [] }))
-  const end = vi.fn()
-  const res = { setHeader: vi.fn(), end } as unknown as ServerResponse
-  expect(await handleSkillsRoutes({ method: 'POST' } as IncomingMessage, res,
-    new URL('http://localhost/codex-api/skills-hub/uninstall'),
-    { appServer: { rpc }, readJsonBody: async () => ({ name: 'sample', path }) })).toBe(true)
-  expect(res.statusCode).toBe(200)
-  await expect(lstat(path)).rejects.toMatchObject({ code: 'ENOENT' })
-  expect(await readFile(join(home, 'skills-sync.json'), 'utf8')).toBe(savedCredentials)
-  expect(rpc).toHaveBeenCalledExactlyOnceWith('skills/list', { forceReload: true })
-  await new Promise((resolve) => setTimeout(resolve, 10))
+it.each([['GET', 'search?q=sample'], ['POST', 'install'], ['POST', 'uninstall']])('retires %s %s without touching local data or executing commands', async (method, suffix) => {
+  const path = join(home, 'skills', 'sample', 'SKILL.md')
+  await mkdir(join(home, 'skills', 'sample'), { recursive: true })
+  await writeFile(path, 'Keep local instructions')
+  const rpc = vi.fn()
+  const readJsonBody = vi.fn()
+  const res = { setHeader: vi.fn(), end: vi.fn() } as unknown as ServerResponse
+  expect(await handleSkillsRoutes({ method } as IncomingMessage, res,
+    new URL(`http://localhost/codex-api/skills-hub/${suffix}`),
+    { appServer: { rpc }, readJsonBody })).toBe(false)
+  expect(res.end).not.toHaveBeenCalled()
+  expect(readJsonBody).not.toHaveBeenCalled()
+  expect(rpc).not.toHaveBeenCalled()
   expect(spawn).not.toHaveBeenCalled()
   expect(fetch).not.toHaveBeenCalled()
-})
-
-it.each([false, true])('installs locally without GitHub authentication or sync (legacy credentials=%s)', async (configured) => {
-  const skillPath = join(home, 'skills', 'sample', 'SKILL.md')
-  await mkdir(join(home, 'skills', 'sample'), { recursive: true })
-  await writeFile(skillPath, '---\nname: sample\ndescription: Local sample\n---\nSample')
-  if (configured) await writeFile(join(home, 'skills-sync.json'), JSON.stringify({ githubToken: 'test-only', repoOwner: 'test', repoName: 'skills' }))
-  spawn.mockImplementation(() => {
-    const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), kill: vi.fn() })
-    queueMicrotask(() => child.emit('close', 0))
-    return child
-  })
-  const rpc = vi.fn(async () => ({ data: [{ skills: [{ name: 'sample', path: skillPath, enabled: true }] }] }))
-  const res = { setHeader: vi.fn(), end: vi.fn() } as unknown as ServerResponse
-  expect(await handleSkillsRoutes({ method: 'POST' } as IncomingMessage, res,
-    new URL('http://localhost/codex-api/skills-hub/install'),
-    { appServer: { rpc }, readJsonBody: async () => ({ source: 'example/skills@sample', name: 'sample' }) })).toBe(true)
-  expect(res.statusCode).toBe(200)
-  await new Promise((resolve) => setTimeout(resolve, 10))
-  expect(spawn).toHaveBeenCalledOnce()
-  expect(spawn.mock.calls[0]?.[0]).toBe('npx')
-  if (!configured) await expect(lstat(join(home, 'skills-sync.json'))).rejects.toMatchObject({ code: 'ENOENT' })
-  expect(fetch).not.toHaveBeenCalled()
-})
-
-it('returns all registry search results without GitHub metadata requests', async () => {
-  const skillPath = join(home, 'skills', 'sample', 'SKILL.md')
-  const rpc = vi.fn(async () => ({ data: [{ skills: [{ name: 'sample', path: skillPath, enabled: true }] }] }))
-  const rows = Array.from({ length: 22 }, (_, index) => index === 0
-    ? 'example/skills@sample 1.2K installs\n└ https://skills.sh/example/skills/sample'
-    : `example/skills@sample-${index} 5 installs`)
-  spawn.mockImplementation(() => {
-    const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), kill: vi.fn() })
-    queueMicrotask(() => {
-      child.stdout.emit('data', Buffer.from(rows.join('\n')))
-      child.emit('close', 0)
-    })
-    return child
-  })
-  const end = vi.fn()
-  const res = { setHeader: vi.fn(), end } as unknown as ServerResponse
-  expect(await handleSkillsRoutes({ method: 'GET' } as IncomingMessage, res,
-    new URL('http://localhost/codex-api/skills-hub/search?q=sample'),
-    { appServer: { rpc }, readJsonBody: async () => ({}) })).toBe(true)
-  expect(res.statusCode).toBe(200)
-  const { results } = JSON.parse(end.mock.calls[0]![0])
-  expect(results).toHaveLength(22)
-  expect(results[0]).toMatchObject({
-    name: 'sample', source: 'example/skills@sample', description: '1.2K installs',
-    installCountLabel: '1.2K installs', avatarUrl: '', installed: true, path: skillPath,
-    url: 'https://skills.sh/example/skills/sample',
-  })
-  expect(results[21]).toMatchObject({ name: 'sample-21', url: '', installed: false })
-  expect(spawn).toHaveBeenCalledOnce()
-  expect(fetch).not.toHaveBeenCalled()
+  expect(await readFile(path, 'utf8')).toBe('Keep local instructions')
 })
 
 it('reads installed SKILL.md content locally without metadata requests', async () => {

@@ -9,7 +9,7 @@
 1. Open the home/new-thread screen and inspect the `Local project / New worktree` runtime selector trigger.
 2. Open the runtime selector and verify menu title, options, selected state, and checkmark visibility in dark mode.
 3. Trigger a worktree action that shows worktree status and verify running/error status blocks remain readable in dark mode.
-4. Open `Skills Hub` and verify header/subtitle, search bar, search/sort buttons, sync panel, badges, and status text.
+4. Open `Skills Hub` and verify header/subtitle, installed cards, local details, and status text.
 5. Verify at least one skill card surface (title, owner, description, date, browse icon) in dark mode.
 6. Open a skill detail modal and verify panel, title/owner, close button, README/body text, and footer actions in dark mode.
 
