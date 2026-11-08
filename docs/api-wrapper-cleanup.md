@@ -4,7 +4,7 @@ The application loads thread lists through `getThreadGroupsPage` and conversatio
 
 The unused `getThreadReviewResult` and `startThreadReview` wrappers, private review text parsers, and UI review result types have been removed. Generic RPC transport remains available for `review/start`; upstream protocol schemas and documentation remain unchanged.
 
-The unused `getNotificationCatalog` and `fetchRpcNotificationCatalog` frontend wrappers have been removed. `getMethodCatalog` and its server schema generation remain available for capability detection. Notification subscriptions and handling are unchanged.
+The unused `getNotificationCatalog` and `fetchRpcNotificationCatalog` frontend wrappers have been removed. `getMethodCatalog` remains available using bundled advisory metadata; it is not live capability negotiation. Notification subscriptions and handling are unchanged.
 
 The `/codex-api/meta/notifications` HTTP API is retained, using the bundled method catalog.
 

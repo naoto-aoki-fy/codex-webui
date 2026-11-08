@@ -27,4 +27,4 @@ Return to the [manual test index](../../tests.md).
 
 ## Historical references (excluded from acceptance)
 
-| [Feature: Windows npx install no longer depends on legacy PTY package](windows-npx-install-no-longer-depends-on-legacy-pty-package.md) |
+- [Feature: Windows npx install no longer depends on legacy PTY package](windows-npx-install-no-longer-depends-on-legacy-pty-package.md)
