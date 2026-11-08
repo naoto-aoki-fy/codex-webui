@@ -1,4 +1,4 @@
-import { listComposerPrompts, createComposerPromptFile, removeComposerPromptFile } from './composerPromptFiles.js'
+import { handlePromptRoutes } from './promptRoutes.js'
 import appServerMethods from './appServerMethods.json'
 import { AppServerWebSocketClient } from './appServerWebSocketClient.js'
 import { PersistentThreadIndex } from './persistentThreadIndex.js'
@@ -4798,40 +4798,11 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
-      if (req.method === 'GET' && url.pathname === '/codex-api/prompts') {
-        setJson(res, 200, { data: await listComposerPrompts(join(getCodexHomeDir(), 'prompts')) })
-        return
-      }
-
-      if (req.method === 'POST' && url.pathname === '/codex-api/prompts') {
-        const payload = asRecord(await readJsonBody(req))
-        const name = typeof payload?.name === 'string' ? payload.name.trim() : ''
-        const content = typeof payload?.content === 'string' ? payload.content : ''
-        if (!name || !content.trim()) {
-          setJson(res, 400, { error: 'Prompt name and content are required' })
-          return
-        }
-        try {
-          const prompt = await createComposerPromptFile(join(getCodexHomeDir(), 'prompts'), name, content)
-          setJson(res, 200, { data: prompt })
-        } catch (error) {
-          setJson(res, 500, { error: getErrorMessage(error, 'Failed to create prompt') })
-        }
-        return
-      }
-
-      if (req.method === 'DELETE' && url.pathname === '/codex-api/prompts') {
-        const promptPath = url.searchParams.get('path')?.trim() ?? ''
-        if (!promptPath) {
-          setJson(res, 400, { error: 'Missing path' })
-          return
-        }
-        try {
-          const removed = await removeComposerPromptFile(join(getCodexHomeDir(), 'prompts'), promptPath)
-          setJson(res, 200, { data: { removed } })
-        } catch (error) {
-          setJson(res, 400, { error: getErrorMessage(error, 'Failed to remove prompt') })
-        }
+      if (await handlePromptRoutes(req, res, url, {
+        readJsonBody,
+        getPromptsDirectory: () => join(getCodexHomeDir(), 'prompts'),
+        getErrorMessage,
+      })) {
         return
       }
 
