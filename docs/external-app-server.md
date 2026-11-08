@@ -83,7 +83,9 @@ checks listener survival after shutdown, not survival of a real Codex process.
 No Codex executable or Docker was available for this audit.
 
 Runtime audit: remaining subprocesses run git, ripgrep, filesystem helpers and
-the optional `npx skills` installer; these do not manage Codex. The old
-`ensureCodexInstalled` and `checkCodexLoginStatus` helpers have no runtime
-callers. Development preserves `CODEX_HOME`. Schema method metadata is bundled
+the optional `npx skills` installer; these do not manage Codex. Unused local
+installer, CLI login probe, write-only authentication cache,
+launch-argument helpers and unreachable callback modal have been removed. Legacy
+HTTP login routes retain only an external-authentication error for compatibility.
+Development preserves `CODEX_HOME`. Schema method metadata is bundled
 into the CLI, with no CLI schema-generation dependency at runtime.

@@ -7,10 +7,6 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import { Command } from 'commander'
-import {
-  parseApprovalPolicy,
-  parseSandboxMode,
-} from '../server/appServerRuntimeConfig.js'
 import { updateCodexGlobalState } from '../server/codexGlobalState.js'
 import { createServer as createApp } from '../server/httpServer.js'
 
@@ -127,10 +123,6 @@ async function startServer(options: {
   port: string
   password: string | boolean
   open: boolean
-  login: boolean
-  memories: boolean
-  sandboxMode?: string
-  approvalPolicy?: string
   projectPath?: string
 }) {
   const version = await readCliVersion()
@@ -218,10 +210,6 @@ program
       port: string
       password: string | boolean
       open: boolean
-      login: boolean
-      memories: boolean
-      sandboxMode?: string
-      approvalPolicy?: string
       openProject?: string
     },
   ) => {
@@ -243,20 +231,6 @@ program
     }
 
     const launchProject = (projectPath ?? '').trim()
-    if (opts.sandboxMode) {
-      const parsedSandboxMode = parseSandboxMode(opts.sandboxMode)
-      if (!parsedSandboxMode) {
-        throw new Error(`Invalid sandbox mode: ${opts.sandboxMode}`)
-      }
-      opts.sandboxMode = parsedSandboxMode
-    }
-    if (opts.approvalPolicy) {
-      const parsedApprovalPolicy = parseApprovalPolicy(opts.approvalPolicy)
-      if (!parsedApprovalPolicy) {
-        throw new Error(`Invalid approval policy: ${opts.approvalPolicy}`)
-      }
-      opts.approvalPolicy = parsedApprovalPolicy
-    }
     await startServer({ ...opts, projectPath: launchProject })
   })
 

@@ -95,13 +95,12 @@
               <div class="sidebar-settings-account-section">
                 <div class="sidebar-settings-account-header">
                   <span class="sidebar-settings-account-title">{{ t('Codex account') }}</span>
-                  <button class="sidebar-settings-account-refresh" type="button" :disabled="isRefreshingCodexAuth || isStartingCodexLogin || isCompletingCodexLogin" @click="onRefreshCodexAuth">{{ isRefreshingCodexAuth ? t('Reloading…') : t('Reload') }}</button>
+                  <button class="sidebar-settings-account-refresh" type="button" :disabled="isRefreshingCodexAuth" @click="onRefreshCodexAuth">{{ isRefreshingCodexAuth ? t('Reloading…') : t('Reload') }}</button>
                 </div>
                 <p class="sidebar-settings-account-empty">{{ codexAuthAvailable === true ? t('Signed in to Codex') : codexAuthAvailable === false ? t('Authentication is managed by the external Codex app-server. Sign in there, then reconnect.') : t('External Codex authentication status unavailable. Check the app-server connection.') }}</p>
                 <div v-if="accountActionError" class="sidebar-settings-account-error">{{ accountActionError }}</div>
                 <div class="sidebar-settings-account-login">
                   <button v-if="codexAuthAvailable === true" class="sidebar-settings-account-login-button" type="button" :disabled="isCodexAuthChangeBlocked || isRefreshingCodexAuth" @click="onLogoutCodex">{{ t('Logout') }}</button>
-                  <a v-if="codexLoginUrl" class="sidebar-settings-account-login-link" :href="codexLoginUrl" target="_blank" rel="noreferrer">{{ t('Open login URL') }}</a>
                 </div>
               </div>
 
@@ -628,75 +627,6 @@
       </section>
     </template>
   </DesktopLayout>
-  <div
-    v-if="isCodexLoginModalOpen"
-    class="codex-login-modal-backdrop"
-    role="presentation"
-    @click="onCancelCodexLoginModal"
-  >
-    <form
-      class="codex-login-modal"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="t('Complete Codex login')"
-      @submit.prevent="onSubmitCodexLoginCallback"
-      @click.stop
-    >
-      <div class="codex-login-modal-header">
-        <h2 class="codex-login-modal-title">{{ t('Complete Codex login') }}</h2>
-        <button
-          class="codex-login-modal-close"
-          type="button"
-          :aria-label="t('Close')"
-          :disabled="isCompletingCodexLogin"
-          @click="onCancelCodexLoginModal"
-        >
-          ×
-        </button>
-      </div>
-      <p class="codex-login-modal-copy">
-        {{ t('Finish login in the browser, then paste the localhost callback URL here.') }}
-      </p>
-      <a
-        v-if="codexLoginUrl"
-        class="codex-login-modal-link"
-        :href="codexLoginUrl"
-        target="_blank"
-        rel="noreferrer"
-      >
-        {{ t('Open login URL') }}
-      </a>
-      <input
-        ref="codexLoginCallbackInputRef"
-        v-model="codexLoginCallbackUrl"
-        class="codex-login-modal-input"
-        type="url"
-        inputmode="url"
-        :placeholder="t('Paste localhost callback URL')"
-        :disabled="isCompletingCodexLogin"
-      >
-      <div v-if="accountActionError" class="codex-login-modal-error">
-        <span>{{ accountActionError }}</span>
-      </div>
-      <div class="codex-login-modal-actions">
-        <button
-          class="codex-login-modal-cancel"
-          type="button"
-          :disabled="isCompletingCodexLogin"
-          @click="onCancelCodexLoginModal"
-        >
-          {{ t('Cancel') }}
-        </button>
-        <button
-          class="codex-login-modal-submit"
-          type="submit"
-          :disabled="isCompletingCodexLogin || codexLoginCallbackUrl.trim().length === 0"
-        >
-          {{ isCompletingCodexLogin ? t('Completing…') : t('Complete') }}
-        </button>
-      </div>
-    </form>
-  </div>
 </template>
 
 <script setup lang="ts">
@@ -727,7 +657,6 @@ import {
   createProjectlessThreadDirectory,
   getGitRepositoryStatus,
   getWorktreeBranchOptions,
-  completeCodexLogin,
   logoutCodex,
   createLocalDirectory,
   getHomeDirectory,
@@ -738,7 +667,6 @@ import {
   getWorkspaceRootsState,
   listLocalDirectories,
   openProjectRoot,
-  startCodexLogin,
   searchThreads,
 } from './api/codexGateway'
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
@@ -898,12 +826,6 @@ const defaultNewProjectName = ref('New Project (1)')
 const homeDirectory = ref('')
 const isSettingsOpen = ref(false)
 const createFolderInputRef = ref<HTMLInputElement | null>(null)
-const isStartingCodexLogin = ref(false)
-const isCompletingCodexLogin = ref(false)
-const isCodexLoginModalOpen = ref(false)
-const codexLoginUrl = ref('')
-const codexLoginCallbackUrl = ref('')
-const codexLoginCallbackInputRef = ref<HTMLInputElement | null>(null)
 const accountActionError = ref('')
 const codexAuthAvailable = ref<boolean | null>(null)
 const isRefreshingCodexAuth = ref(false)
@@ -1570,60 +1492,6 @@ function isPaymentRequiredErrorMessage(value: string | null): boolean {
   if (!value) return false
   const normalized = value.toLowerCase()
   return normalized.includes('payment required') || /\b402\b/.test(normalized)
-}
-
-async function onStartCodexLogin(): Promise<void> {
-  if (isRefreshingCodexAuth.value || isStartingCodexLogin.value || isCompletingCodexLogin.value) return
-  accountActionError.value = ''
-  codexLoginCallbackUrl.value = ''
-  isStartingCodexLogin.value = true
-  try {
-    const loginUrl = await startCodexLogin()
-    codexLoginUrl.value = loginUrl
-    isCodexLoginModalOpen.value = true
-    window.open(loginUrl, '_blank', 'noopener,noreferrer')
-    await nextTick()
-    codexLoginCallbackInputRef.value?.focus()
-  } catch (error) {
-    accountActionError.value = error instanceof Error ? error.message : t('Failed to start Codex login')
-  } finally {
-    isStartingCodexLogin.value = false
-  }
-}
-
-function onCancelCodexLoginModal(): void {
-  if (isCompletingCodexLogin.value) return
-  isCodexLoginModalOpen.value = false
-  codexLoginCallbackUrl.value = ''
-}
-
-async function onSubmitCodexLoginCallback(): Promise<void> {
-  const callbackUrl = codexLoginCallbackUrl.value.trim()
-  if (!callbackUrl) return
-  await completeCodexLoginFromCallback(callbackUrl)
-}
-
-async function completeCodexLoginFromCallback(callbackUrl: string): Promise<void> {
-  if (isCompletingCodexLogin.value || callbackUrl.length === 0) return
-  accountActionError.value = ''
-  isCompletingCodexLogin.value = true
-  try {
-    await completeCodexLogin(callbackUrl)
-    codexAuthAvailable.value = true
-    await loadCodexAuthStatus()
-    codexLoginUrl.value = ''
-    codexLoginCallbackUrl.value = ''
-    isCodexLoginModalOpen.value = false
-    stopPolling()
-    startPolling()
-    void refreshAll({
-      includeSelectedThreadMessages: true,
-    })
-  } catch (error) {
-    accountActionError.value = error instanceof Error ? error.message : t('Failed to complete Codex login')
-  } finally {
-    isCompletingCodexLogin.value = false
-  }
 }
 
 function onArchiveThread(threadId: string): void {
@@ -3429,95 +3297,11 @@ async function onLogoutCodex(): Promise<void> {
   @apply shrink-0 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-default disabled:opacity-60;
 }
 
-.sidebar-settings-account-login-link {
-  @apply min-w-0 truncate text-xs text-blue-600 hover:text-blue-700 hover:underline;
-}
-
 .sidebar-settings-account-empty {
   @apply text-xs text-zinc-500;
 }
 
-.codex-login-modal-backdrop {
-  @apply fixed inset-0 z-[100] flex items-center justify-center bg-black/35 px-4;
-}
 
-.codex-login-modal {
-  @apply flex w-full max-w-md flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-2xl;
-}
-
-.codex-login-modal-header {
-  @apply flex items-center justify-between gap-3;
-}
-
-.codex-login-modal-title {
-  @apply text-base font-semibold text-zinc-900;
-}
-
-.codex-login-modal-close {
-  @apply inline-flex h-7 w-7 items-center justify-center rounded-full border border-zinc-200 bg-white text-lg leading-none text-zinc-600 transition hover:bg-zinc-50 disabled:cursor-default disabled:opacity-60;
-}
-
-.codex-login-modal-copy {
-  @apply text-sm leading-5 text-zinc-600;
-}
-
-.codex-login-modal-link {
-  @apply min-w-0 truncate text-sm text-blue-600 hover:text-blue-700 hover:underline;
-}
-
-.codex-login-modal-input {
-  @apply w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 disabled:cursor-default disabled:opacity-60;
-}
-
-.codex-login-modal-error {
-  @apply rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700;
-}
-
-.codex-login-modal-actions {
-  @apply flex items-center justify-end gap-2;
-}
-
-.codex-login-modal-cancel,
-.codex-login-modal-submit {
-  @apply rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-default disabled:opacity-60;
-}
-
-.codex-login-modal-submit {
-  @apply border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800;
-}
-
-:global(:root.dark) .codex-login-modal {
-  @apply border-zinc-700 bg-zinc-900;
-}
-
-:global(:root.dark) .codex-login-modal-title {
-  @apply text-zinc-100;
-}
-
-:global(:root.dark) .codex-login-modal-close,
-:global(:root.dark) .codex-login-modal-cancel {
-  @apply border-zinc-600 bg-zinc-800 text-zinc-200 hover:bg-zinc-700;
-}
-
-:global(:root.dark) .codex-login-modal-copy {
-  @apply text-zinc-300;
-}
-
-:global(:root.dark) .codex-login-modal-link {
-  @apply text-sky-300 hover:text-sky-200;
-}
-
-:global(:root.dark) .codex-login-modal-input {
-  @apply border-zinc-600 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-400;
-}
-
-:global(:root.dark) .codex-login-modal-error {
-  @apply bg-rose-950/40 text-rose-200;
-}
-
-:global(:root.dark) .codex-login-modal-submit {
-  @apply border-zinc-200 bg-zinc-100 text-zinc-900 hover:bg-white;
-}
 
 
 

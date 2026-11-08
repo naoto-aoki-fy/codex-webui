@@ -1,12 +1,10 @@
-import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { handleAccountRoutes } from './accountRoutes'
-import { getCachedCodexAuthStatus, recordCodexAuthStatus } from './codexAuthStatus'
 const mocks = vi.hoisted(() => ({ spawn: vi.fn() }))
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
 let home: string
@@ -42,18 +40,11 @@ it.each(['start', 'complete'])('explains external ownership for login %s without
   expect(mocks.spawn).not.toHaveBeenCalled()
   expect(appServer.dispose).not.toHaveBeenCalled()
 })
-it('preserves the active credential file when an explicit login attempt fails', async () => {
-  vi.useFakeTimers()
-  recordCodexAuthStatus(true)
+it('preserves credentials when legacy callback completion is rejected', async () => {
   await writeFile(join(home, 'auth.json'), 'existing active credential bytes')
-  const proc = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), stdin: { end: vi.fn() }, kill: vi.fn() })
-  mocks.spawn.mockImplementation(() => { queueMicrotask(() => proc.stdout.emit('data', 'https://auth.openai.com/oauth/authorize?test=1')); return proc })
-  const starting = route('/codex-api/accounts/login/start', {})
-  await vi.advanceTimersByTimeAsync(100)
-  await starting
-  proc.emit('exit', 1, null)
-  expect((await route('/codex-api/accounts/login/complete', { callbackUrl: 'http://localhost:1455/auth/callback?code=test' })).status).toBe(409)
+  const result = await route('/codex-api/accounts/login/complete', { callbackUrl: 'http://localhost:1455/auth/callback?code=test' })
+  expect(result.status).toBe(409)
   expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe('existing active credential bytes')
-  expect(getCachedCodexAuthStatus()).toBe(true)
+  expect(mocks.spawn).not.toHaveBeenCalled()
   expect(appServer.dispose).not.toHaveBeenCalled()
 })
