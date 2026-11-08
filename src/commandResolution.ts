@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { join } from 'node:path'
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
   const unique: string[] = []
@@ -46,23 +46,6 @@ function getPotentialCodexPackageDirs(prefix: string): string[] {
   return dirs
 }
 
-function getPotentialCodexExecutables(prefix: string): string[] {
-  return getPotentialCodexPackageDirs(prefix).map((packageDir) => (
-    process.platform === 'win32'
-      ? join(
-          packageDir,
-          'node_modules',
-          '@openai',
-          'codex-win32-x64',
-          'vendor',
-          'x86_64-pc-windows-msvc',
-          'codex',
-          'codex.exe',
-        )
-      : join(packageDir, 'bin', 'codex')
-  ))
-}
-
 function getPotentialRipgrepExecutables(prefix: string): string[] {
   return getPotentialCodexPackageDirs(prefix).map((packageDir) => (
     process.platform === 'win32'
@@ -90,46 +73,6 @@ export function canRunCommand(command: string, args: string[] = []): boolean {
 
 export function getUserNpmPrefix(): string {
   return join(homedir(), '.npm-global')
-}
-
-export function getNpmGlobalBinDir(prefix: string): string {
-  return process.platform === 'win32' ? prefix : join(prefix, 'bin')
-}
-
-export function prependPathEntry(existingPath: string, entry: string): string {
-  const normalizedEntry = entry.trim()
-  if (!normalizedEntry) return existingPath
-
-  const parts = existingPath
-    .split(delimiter)
-    .map((value) => value.trim())
-    .filter(Boolean)
-
-  if (parts.includes(normalizedEntry)) {
-    return existingPath
-  }
-
-  return existingPath ? `${normalizedEntry}${delimiter}${existingPath}` : normalizedEntry
-}
-
-export function getCodexCommandCandidates(): string[] {
-  const explicit = process.env.CODEXUI_CODEX_COMMAND?.trim()
-  const packageCandidates = getPotentialNpmPrefixes().flatMap(getPotentialCodexExecutables)
-  const fallbackCandidates = process.platform === 'win32'
-    ? [...packageCandidates, 'codex']
-    : ['codex', ...packageCandidates]
-
-  return uniqueStrings([explicit, ...fallbackCandidates])
-}
-
-export function resolveCodexCommand(): string | null {
-  for (const candidate of getCodexCommandCandidates()) {
-    if (isRunnableCommand(candidate, ['--version'])) {
-      return candidate
-    }
-  }
-
-  return null
 }
 
 export function resolveRipgrepCommand(): string | null {

@@ -5,8 +5,8 @@ import { PersistentThreadIndex } from './persistentThreadIndex.js'
 import { sessionMessageTimes, mergeMessageTimes } from './messageTimestamps.js'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rename, rm, mkdir, stat, cp, lstat, readlink, symlink, realpath, utimes } from 'node:fs/promises'
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
+import { mkdtemp, readFile, readdir, rename, rm, mkdir, stat, lstat, realpath } from 'node:fs/promises'
+import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
 import { tmpdir } from 'node:os'
@@ -23,8 +23,6 @@ import { TelegramNotificationService } from './telegramNotificationService.js'
 import { normalizeTelegramCompletionConfig, type TelegramCompletionConfig } from '../telegramCompletionConfig.js'
 import { inheritForkTurnMetadata, SessionGenerationMetadataCache, TurnGenerationMetadataStore } from './turnGenerationMetadata.js'
 import { submittedGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata.js'
-import { getSpawnInvocation } from '../utils/commandInvocation.js'
-import { buildTextWithAttachments } from '../utils/attachmentPrompt.js'
 import {
   resolveRipgrepCommand,
 } from '../commandResolution.js'
@@ -108,7 +106,6 @@ type ThreadSearchIndex = {
   docsById: Map<string, ThreadSearchDocument>
 }
 
-const AUTHENTICATION_REQUIRED_MESSAGE = 'Authentication required. Sign in with Codex or set your personal OPENAI_API_KEY.'
 
 const THREAD_RESPONSE_TURN_LIMIT = 10
 const THREAD_TURN_PAGE_READ_CACHE_TTL_MS = 30_000
@@ -2250,10 +2247,6 @@ function getCodexHomeDir(): string {
   return codexHome && codexHome.length > 0 ? codexHome : join(homedir(), '.codex')
 }
 
-function getSkillsInstallDir(): string {
-  return join(getCodexHomeDir(), 'skills')
-}
-
 async function runCommand(command: string, args: string[], options: { cwd?: string; timeoutMs?: number } = {}): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const proc = spawn(command, args, {
@@ -2403,31 +2396,6 @@ async function allocatePermanentWorktreeBranchName(gitRoot: string, worktreeName
   }
   throw new Error('Failed to allocate a unique branch name for worktree')
 }
-
-async function runCommandWithOutput(command: string, args: string[], options: { cwd?: string } = {}): Promise<string> {
-  return await new Promise<string>((resolve, reject) => {
-    const proc = spawn(command, args, {
-      cwd: options.cwd,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
-    let stderr = ''
-    proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
-    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
-    proc.on('error', reject)
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout.trim())
-        return
-      }
-      const details = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n')
-      const suffix = details.length > 0 ? `: ${details}` : ''
-      reject(new Error(`Command failed (${command} ${args.join(' ')})${suffix}`))
-    })
-  })
-}
-
 
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -2760,12 +2728,6 @@ async function writePinnedThreadIds(threadIds: string[]): Promise<void> {
   })
 }
 
-
-function fileNameFromPath(pathValue: string): string {
-  const normalized = pathValue.replace(/\\/g, '/')
-  const segments = normalized.split('/').filter(Boolean)
-  return segments.at(-1) ?? normalized
-}
 
 function getSessionIndexFileSignature(stats: { mtimeMs: number; size: number }): string {
   return `${String(stats.mtimeMs)}:${String(stats.size)}`
