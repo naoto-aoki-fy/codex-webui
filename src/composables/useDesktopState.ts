@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import {
 
   archiveThread,
@@ -30,7 +30,6 @@ import {
   invalidateWorkspaceRootsStateCache,
   getThreadTitleCache,
   persistThreadTitle,
-  generateThreadTitle,
   resumeThread,
 
   startThread,
@@ -157,11 +156,6 @@ function loadUnreadCutoffIso(): string {
   const initialCutoff = new Date().toISOString()
   window.localStorage.setItem(UNREAD_CUTOFF_STORAGE_KEY, initialCutoff)
   return initialCutoff
-}
-
-function saveUnreadCutoffIso(cutoffIso: string): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(UNREAD_CUTOFF_STORAGE_KEY, cutoffIso)
 }
 
 function isThreadUpdatedAfterCutoff(updatedAtIso: string, cutoffIso: string): boolean {
@@ -800,12 +794,6 @@ function removeRedundantLiveAgentMessages(previous: UiMessage[], incoming: UiMes
   return next.length === previous.length ? previous : next
 }
 
-function removePersistedLiveMessages(previous: UiMessage[], incoming: UiMessage[]): UiMessage[] {
-  const incomingIds = new Set(incoming.map((message) => message.id))
-  const next = previous.filter((message) => !incomingIds.has(message.id))
-  return next.length === previous.length ? previous : next
-}
-
 function upsertMessage(previous: UiMessage[], nextMessage: UiMessage): UiMessage[] {
   const existingIndex = previous.findIndex((message) => message.id === nextMessage.id)
   if (existingIndex < 0) {
@@ -935,20 +923,6 @@ function omitKey<TValue>(record: Record<string, TValue>, key: string): Record<st
   const next = { ...record }
   delete next[key]
   return next
-}
-
-function omitKeys<TValue>(record: Record<string, TValue>, keys: Set<string>): Record<string, TValue> {
-  if (keys.size === 0) return record
-  let changed = false
-  const next: Record<string, TValue> = {}
-  for (const [key, value] of Object.entries(record)) {
-    if (keys.has(key)) {
-      changed = true
-      continue
-    }
-    next[key] = value
-  }
-  return changed ? next : record
 }
 
 function areThreadFieldsEqual(first: UiThread, second: UiThread): boolean {
@@ -1510,10 +1484,8 @@ export function useDesktopState() {
   let workspaceRootsRefreshPromise: Promise<WorkspaceRootsState | null> | null = null
   const projectRenameTimers = new Map<string, ReturnType<typeof setTimeout>>()
   let activeReasoningItemId = ''
-  let shouldAutoScrollOnNextAgentEvent = false
   const pendingTurnStartsById = new Map<string, TurnStartedInfo>()
   const fallbackRetryInFlightThreadIds = new Set<string>()
-
 
   const allThreads = computed(() => flattenThreads(projectGroups.value))
   const selectedThread = computed(() =>
@@ -1659,7 +1631,6 @@ export function useDesktopState() {
       nextThreadId,
     )
     activeReasoningItemId = ''
-    shouldAutoScrollOnNextAgentEvent = false
   }
 
   function setSelectedModelIdForThread(threadId: string, modelId: string): void {
@@ -1773,8 +1744,6 @@ export function useDesktopState() {
     if (!pendingTurnRequestByThreadId.value[threadId]) return
     pendingTurnRequestByThreadId.value = omitKey(pendingTurnRequestByThreadId.value, threadId)
   }
-
-
 
   async function retryPendingTurnWithFallback(threadId: string): Promise<void> {
     if (fallbackRetryInFlightThreadIds.has(threadId)) return
@@ -2642,70 +2611,6 @@ export function useDesktopState() {
 
   function readNumber(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null
-  }
-
-  function getRateLimitSnapshotKey(snapshot: UiRateLimitSnapshot): string {
-    return snapshot.limitId?.trim() || snapshot.limitName?.trim() || '__default__'
-  }
-
-  function normalizeRateLimitWindow(value: unknown): UiRateLimitSnapshot['primary'] {
-    const record = asRecord(value)
-    if (!record) return null
-
-    const windowValue = readNumber(record.windowDurationMins)
-    return {
-      usedPercent: clamp(readNumber(record.usedPercent) ?? 0, 0, 100),
-      windowDurationMins: windowValue,
-      windowMinutes: windowValue,
-      resetsAt: readNumber(record.resetsAt),
-    }
-  }
-
-  function normalizeRateLimitSnapshot(value: unknown): UiRateLimitSnapshot | null {
-    const record = asRecord(value)
-    if (!record) return null
-
-    const credits = asRecord(record.credits)
-    return {
-      limitId: readString(record.limitId) || null,
-      limitName: readString(record.limitName) || null,
-      primary: normalizeRateLimitWindow(record.primary),
-      secondary: normalizeRateLimitWindow(record.secondary),
-      credits: credits
-        ? {
-            hasCredits: credits.hasCredits === true,
-            unlimited: credits.unlimited === true,
-            balance: readString(credits.balance) || null,
-          }
-        : null,
-      planType: readString(record.planType) || null,
-    }
-  }
-
-  function normalizeRateLimitSnapshotsPayload(value: unknown): UiRateLimitSnapshot[] {
-    const record = asRecord(value)
-    if (!record) return []
-
-    const next: UiRateLimitSnapshot[] = []
-    const seen = new Set<string>()
-    const pushSnapshot = (snapshot: UiRateLimitSnapshot | null): void => {
-      if (!snapshot) return
-      const key = getRateLimitSnapshotKey(snapshot)
-      if (seen.has(key)) return
-      seen.add(key)
-      next.push(snapshot)
-    }
-
-    pushSnapshot(normalizeRateLimitSnapshot(record.rateLimits))
-
-    const byLimitId = asRecord(record.rateLimitsByLimitId)
-    if (byLimitId) {
-      for (const snapshot of Object.values(byLimitId)) {
-        pushSnapshot(normalizeRateLimitSnapshot(snapshot))
-      }
-    }
-
-    return next
   }
 
   function normalizeTokenUsageBreakdown(value: unknown): UiTokenUsageBreakdown | null {
@@ -3899,7 +3804,6 @@ export function useDesktopState() {
 
     if (notification.method === 'turn/completed') {
       activeReasoningItemId = ''
-      shouldAutoScrollOnNextAgentEvent = false
       clearLiveReasoningForThread(notificationThreadId)
       if (liveCommandsByThreadId.value[notificationThreadId]) {
         liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, notificationThreadId)
@@ -4019,41 +3923,6 @@ export function useDesktopState() {
       error.value = cause instanceof Error ? cause.message : 'Failed to load projects'
       return loadedThreadListRootsState
     }
-  }
-
-  async function requestThreadTitleGeneration(threadId: string, prompt: string, cwd: string | null): Promise<void> {
-    if (threadTitleById.value[threadId]) return
-    const trimmed = prompt.trim()
-    if (!trimmed) return
-    const truncated = trimmed.length > 300 ? trimmed.slice(0, 300) : trimmed
-    try {
-      const title = await generateThreadTitle(truncated, cwd)
-      if (!title || threadTitleById.value[threadId]) return
-      threadTitleById.value = { ...threadTitleById.value, [threadId]: title }
-      applyThreadFlags()
-      void persistThreadTitle(threadId, title)
-    } catch {
-      // Title generation is best-effort.
-    }
-  }
-
-  function filterGroupsByWorkspaceRoots(
-    groups: UiProjectGroup[],
-    rootsState: WorkspaceRootsState | null,
-  ): UiProjectGroup[] {
-    const duplicateLeafNames = collectDuplicateProjectLeafNames(groups, rootsState)
-    const disambiguatedGroups = disambiguateProjectGroupsByCwd(groups, rootsState)
-    const groupsWithWorkspaceRoots = addWorkspaceRootPlaceholderGroups(disambiguatedGroups, rootsState, duplicateLeafNames)
-    if (!rootsState || (rootsState.order.length === 0 && (rootsState.remoteProjects ?? []).length === 0)) return groupsWithWorkspaceRoots
-    const allowedProjectNames = new Set<string>()
-    for (const projectName of getWorkspaceProjectOrderNames(rootsState, duplicateLeafNames)) {
-      allowedProjectNames.add(projectName)
-    }
-    const filteredGroups = groupsWithWorkspaceRoots.filter((group) => {
-      if (allowedProjectNames.has(group.projectName)) return true
-      return isProjectlessGroup(group)
-    })
-    return orderGroupsByWorkspaceProjectOrder(filteredGroups, rootsState, duplicateLeafNames)
   }
 
   function applyThreadGroups(groups: UiProjectGroup[], rootsState: WorkspaceRootsState | null): void {
@@ -4783,7 +4652,6 @@ export function useDesktopState() {
     const optimisticMessageId = appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments)
 
     if (isInProgress) {
-      shouldAutoScrollOnNextAgentEvent = true
       void startTurnForThread(
         threadId,
         nextText,
@@ -4801,7 +4669,6 @@ export function useDesktopState() {
     }
 
     error.value = ''
-    shouldAutoScrollOnNextAgentEvent = true
     setTurnSummaryForThread(threadId, null)
     setTurnActivityForThread(
       threadId,
@@ -4832,7 +4699,6 @@ export function useDesktopState() {
         optimisticMessageId,
       )
     } catch (unknownError) {
-      shouldAutoScrollOnNextAgentEvent = false
       setThreadInProgress(threadId, false)
       setTurnActivityForThread(threadId, null)
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
@@ -4890,7 +4756,6 @@ export function useDesktopState() {
         [threadId]: true,
       }
       setSelectedThreadId(threadId)
-      shouldAutoScrollOnNextAgentEvent = true
       setTurnSummaryForThread(threadId, null)
       setTurnActivityForThread(
         threadId,
@@ -4905,12 +4770,8 @@ export function useDesktopState() {
       )
       setTurnErrorForThread(threadId, null)
       setThreadInProgress(threadId, true)
-      const capturedThreadId = threadId
-      const capturedCwd = targetCwd || null
-      const capturedPrompt = nextText
       void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode, optimisticMessageId)
         .catch((unknownError) => {
-          shouldAutoScrollOnNextAgentEvent = false
           setThreadInProgress(threadId, false)
           setTurnActivityForThread(threadId, null)
           const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
@@ -4920,10 +4781,8 @@ export function useDesktopState() {
         .finally(() => {
           isSendingMessage.value = false
         })
-      void requestThreadTitleGeneration(capturedThreadId, capturedPrompt, capturedCwd)
       return threadId
     } catch (unknownError) {
-      shouldAutoScrollOnNextAgentEvent = false
       if (threadId) {
         setThreadInProgress(threadId, false)
         setTurnActivityForThread(threadId, null)
@@ -5221,31 +5080,6 @@ export function useDesktopState() {
     })
   }
 
-  async function syncThreadStatus(): Promise<void> {
-    if (isPolling.value) return
-    isPolling.value = true
-
-    try {
-      await loadThreads()
-
-      if (!selectedThreadId.value) return
-
-      const threadId = selectedThreadId.value
-      const currentVersion = currentThreadVersion(threadId)
-      const loadedVersion = loadedVersionByThreadId.value[threadId] ?? ''
-      const hasVersionChange = currentVersion.length > 0 && currentVersion !== loadedVersion
-      const isInProgress = inProgressById.value[threadId] === true
-
-      if (isInProgress || hasVersionChange) {
-        await loadMessages(threadId, { silent: true })
-      }
-    } catch {
-      // ignore poll failures and keep last known state
-    } finally {
-      isPolling.value = false
-    }
-  }
-
   async function syncFromNotifications(): Promise<void> {
     if (isPolling.value) {
       if (typeof window !== 'undefined' && eventSyncTimer === null) {
@@ -5397,7 +5231,6 @@ export function useDesktopState() {
     }
     delayedTurnSyncTimerByThreadId.clear()
     activeReasoningItemId = ''
-    shouldAutoScrollOnNextAgentEvent = false
     persistedMessagesByThreadId.value = {}
     livePlanMessagesByThreadId.value = {}
     liveAgentMessagesByThreadId.value = {}
