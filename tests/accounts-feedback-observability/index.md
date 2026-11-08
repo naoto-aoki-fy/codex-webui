@@ -17,4 +17,4 @@ Return to the [manual test index](../../tests.md).
 
 ## Historical references (excluded from acceptance)
 
-| [Historical: Sentry error tracking and encrypted auth context](sentry-error-tracking-and-encrypted-auth-context.md) |
+- [Historical: Sentry error tracking and encrypted auth context](sentry-error-tracking-and-encrypted-auth-context.md)
