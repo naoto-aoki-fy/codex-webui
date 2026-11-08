@@ -71,7 +71,9 @@ not support a split-host deployment; paths, credentials and `CODEX_HOME` must ma
 Method-picker metadata is packaged in `src/server/appServerMethods.json`, extracted
 from the checked-in `documentation/app-server-schemas/json` snapshot. It is advisory,
 not feature negotiation. Update it with protocol schema changes; no runtime schema
-command is executed. The snapshot's originating Codex version is not recorded.
+command is executed. The snapshot's originating Codex version is not recorded. See the
+[schema provenance inventory](../documentation/app-server-schemas/README.md);
+there is no maintained regeneration/extraction command in this repository.
 
 Historical migration audit: validation used a local `ws` protocol fixture. No Codex executable or Docker was
 available in that audit environment, so no real Codex version, authenticated turns,

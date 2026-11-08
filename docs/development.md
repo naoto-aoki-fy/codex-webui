@@ -101,13 +101,13 @@ does not validate authentication, real turns, approvals or real process survival
 Browser profilers require a working UI and server; they are optional diagnostics,
 not isolated CI checks. There is currently no separate lint command.
 
-Known baseline at this documentation alignment: `test:unit` reports 312 passing
-and one failing test, `refreshes a loaded optimistic thread when completion events
-arrive` in `useDesktopState.test.ts` (duplicate user row). The same focused test
-fails against unchanged HEAD with the same dependencies. CI deliberately reports
-this failure; it is not excluded or marked as an expected failure.
+Use command output for current test totals and failures. Results quoted in older
+migration/refactoring records describe those revisions, not the current branch.
 
-Infrastructure performance review: no application runtime paths changed. The
-fixture measured one upstream connection/initialize per built/dev backend (two
-total), with no duplicate initialization. No live-server or browser latency was
-measured for this documentation/verification change.
+Protocol snapshot provenance and generation boundaries are documented in the
+[schema inventory](../documentation/app-server-schemas/README.md).
+
+The one-off `output/playwright/verify-bug-032-approval-panel.mjs` was removed:
+it depended on the retired `.composer-with-queue` layout and stale API mocks.
+Use the [maintained approval checklist](../tests/chat-composer-rendering/sandbox-approval-requests-recognize-newer-codex-payloads.md)
+and external-server acceptance instead. Existing screenshots remain historical evidence.

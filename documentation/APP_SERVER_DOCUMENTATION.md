@@ -1,3 +1,7 @@
+> Protocol snapshot reference; not current UI acceptance guidance. See the
+> [artifact provenance and generation boundary](app-server-schemas/README.md).
+> A listed protocol method does not imply a supported application feature.
+
 # APP SERVER DOCUMENTATION
 
 Документ основан на исходниках [openai/codex](https://github.com/openai/codex) (app-server protocol).

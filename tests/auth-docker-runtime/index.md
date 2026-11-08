@@ -1,10 +1,12 @@
 # Auth and Docker Runtime
 
-Codex auth, Docker-packaged runtime cases, copied auth behavior, invalid auth errors, and official-only Codex runtime behavior.
+Current authentication checks: [external server](../website-docs-misc/external-app-server.md) and [account panel](../accounts-feedback-observability/accounts-panel-codex-login-callback-modal.md).
+
+The former local-process/provider Docker matrix below is historical; do not run it as current acceptance. Retained refresh compatibility is covered by `src/server/codexAppServerBridge.authRefresh.test.ts`.
 
 Return to the [manual test index](../../tests.md).
 
-## Test Sections
+## Historical references (excluded from current acceptance)
 
 | Section |
 | --- |

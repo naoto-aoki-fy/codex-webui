@@ -15,7 +15,6 @@ Return to the [manual test index](../../tests.md).
 | [Private network password access](private-network-password-access.md) |
 | [Feature: Login is required for local, reverse tunnel, and Tailscale requests](reverse-tunnel-login-is-required-unless-request-is-trusted-local-or-tailscale.md) |
 | [Feature: Default runtime uses workspace-write sandbox with on-request approvals](default-runtime-uses-workspace-write-sandbox-with-on-request-approvals.md) |
-| [Feature: Windows npx install no longer depends on legacy PTY package](windows-npx-install-no-longer-depends-on-legacy-pty-package.md) |
 | [Feature: Default runtime uses unrestricted sandbox and no approvals](default-runtime-uses-unrestricted-sandbox-and-no-approvals.md) |
 | [Feature: npm run dev exports unrestricted runtime defaults](npm-run-dev-exports-unrestricted-runtime-defaults.md) |
 | [Feature: npm run dev2 uses a random Codex home](npm-run-dev2-uses-random-codex-home.md) |
@@ -25,3 +24,7 @@ Return to the [manual test index](../../tests.md).
 | [Precompressed frontend assets](precompressed-frontend-assets.md) |
 | [Windows and Linux CLI support](windows-linux-cli-support.md) |
 | [Local development TLS credentials](local-development-tls.md) |
+
+## Historical references (excluded from acceptance)
+
+| [Feature: Windows npx install no longer depends on legacy PTY package](windows-npx-install-no-longer-depends-on-legacy-pty-package.md) |
