@@ -11,9 +11,36 @@ CODEXUI_APP_SERVER_URL=ws://127.0.0.1:4500 pnpm run dev --host 127.0.0.1 --port 
 ```
 
 Endpoint precedence is CLI `--app-server-url`, then `CODEXUI_APP_SERVER_URL`,
-then `ws://127.0.0.1:4500`. Both `ws` and `wss` are supported. URL credentials
+then `ws://127.0.0.1:4500`. The `ws`, `wss`, and `unix` transports are supported. URL credentials
 and fragments are rejected. The browser's `/codex-api/ws` is a separate socket.
 The backend requires no Codex installation and never launches or kills app-server.
+
+## Unix domain sockets (AF_UNIX)
+
+On Linux/macOS, connect directly to an independently started Unix socket listener:
+
+```sh
+# Start the official Codex app-server:
+codex app-server --listen unix:///tmp/codex.sock
+# Another terminal, after building this project:
+node dist-cli/index.js --app-server-url unix:///tmp/codex.sock
+# Or development:
+CODEXUI_APP_SERVER_URL=unix:///tmp/codex.sock pnpm run dev --host 127.0.0.1 --port 4173
+```
+
+The existing `ws` client performs HTTP Upgrade and WebSocket framing over AF_UNIX;
+there is no TCP proxy or raw JSONL transport. Initialization, RPCs, notifications,
+approvals, deadlines, and reconnect behavior are shared with TCP connections.
+The browser-facing HTTP and WebSocket endpoints do not change.
+
+Use an explicit absolute socket-file path with no host, credentials, query or
+fragment. Percent-encode special path characters (for example `%20` for a space).
+Bare `unix://` is rejected: this client does not infer Codex's default socket path.
+Windows hosts must use `ws://` or `wss://`; WSL can use Unix sockets within Linux.
+The backend user must have access to the socket and its parent directories.
+The operating system's Unix socket path-length limit applies; use a short path
+if connection fails. The backend never creates, removes, or owns the socket file.
+
 
 Authentication and provider, sandbox, approval, and memories defaults belong to
 Codex. Manage authentication in the server environment (for example `codex login`).
@@ -89,3 +116,31 @@ launch-argument helpers and unreachable callback modal have been removed. Legacy
 HTTP login routes retain only an external-authentication error for compatibility.
 Development preserves `CODEX_HOME`. Schema method metadata is bundled
 into the CLI, with no CLI schema-generation dependency at runtime.
+
+## Unix transport verification and performance
+
+Run `pnpm exec vitest run src/server/appServerWebSocketClient.test.ts` for real
+AF_UNIX HTTP Upgrade fixtures alongside the TCP fixtures. Coverage includes shared
+initialization, RPC replies, notification/approval frames, concurrent reconnects,
+initialization deadlines, a missing listener followed by recovery, URL validation,
+and an explicit Windows error. Unix listener tests are skipped on Windows.
+
+Performance audit: both transports assert three simultaneous connects create one
+socket and one initialize exchange, and three reconnects create one replacement.
+Transport setup adds URL parsing and one `net.createConnection` per connection;
+there are no filesystem probes, blocking I/O, additional requests, retry loops,
+message payload changes, fanout, or new caches. Existing disconnect invalidation
+is unchanged. Real Codex latency/throughput and authenticated turns were not
+measured; fixtures establish transport/protocol behavior only.
+
+Run the CommonJS entry-point integration fixture for each transport (after build):
+
+```sh
+pnpm run test:integration:fixture
+CODEXAPP_FIXTURE_TRANSPORT=unix pnpm run test:integration:fixture
+```
+
+Both runs exercise HTTP RPC, browser WebSocket readiness, initialization counts,
+and independent listener survival through the built CLI and development server.
+The CLI is ESM and has no public CJS export; this CJS fixture launches its public
+`dist-cli/index.js` executable instead of using `require()` on the CLI bundle.

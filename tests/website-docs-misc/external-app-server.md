@@ -82,3 +82,40 @@ shrinks on retirement. No extra upstream connections, requests, timers, blocking
 message queues, payload copies or persistent caches are introduced. Broadcast fanout
 remains proportional to connected subscribers; payloads and cache invalidation are
 unchanged. Browser render timing and sustained-load throughput were not measured.
+
+## AF_UNIX transport
+
+Prerequisites: Linux/macOS, a Codex version supporting `--listen unix:///path`,
+a production build, and matching server/backend users and paths. Use a short
+unused socket path, such as `/tmp/codex-uds-test.sock`.
+
+1. Run `codex app-server --listen unix:///tmp/codex-uds-test.sock` independently.
+2. Run `node dist-cli/index.js --app-server-url unix:///tmp/codex-uds-test.sock`.
+   List/read threads, send a streaming turn, and accept/reject an approval.
+   Expect the same replies, notifications, and approval behavior as TCP.
+3. Stop the external server. Expect pending operations to fail. Restart it and
+   POST `/codex-api/reconnect`; inspect the thread before sending again.
+   Expect one handshake with no replay of the previous turn.
+4. Repeat using `CODEXUI_APP_SERVER_URL`; supply a CLI URL to verify precedence.
+   Try `unix://`, a relative path, query, and fragment; expect clear errors.
+   On native Windows expect an unsupported-platform error and use TCP instead.
+5. Stop the backend; expect the external server and its socket to remain owned
+   by the independently started server.
+
+Automated: `pnpm exec vitest run src/server/appServerWebSocketClient.test.ts`
+checks actual Unix WebSocket handshakes and TCP compatibility without Codex.
+Cleanup: stop only test processes, remove test threads if desired, and remove
+any stale test socket only after its owning server is stopped. Return the URL
+configuration to its previous value. No browser UI or theme changes are involved.
+
+Run the CommonJS entry-point integration fixture for each transport (after build):
+
+```sh
+pnpm run test:integration:fixture
+CODEXAPP_FIXTURE_TRANSPORT=unix pnpm run test:integration:fixture
+```
+
+Both runs exercise HTTP RPC, browser WebSocket readiness, initialization counts,
+and independent listener survival through the built CLI and development server.
+The CLI is ESM and has no public CJS export; this CJS fixture launches its public
+`dist-cli/index.js` executable instead of using `require()` on the CLI bundle.

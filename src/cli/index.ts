@@ -196,7 +196,7 @@ program
   .option('--no-password', 'disable password protection (default)')
   .option('--open', 'open browser on startup', true)
   .option('--no-open', 'do not open browser on startup')
-  .option('--app-server-url <url>', 'external Codex app-server WebSocket URL')
+  .option('--app-server-url <url>', 'external Codex app-server URL (ws://, wss://, unix:///path.sock)')
   .option('--login', 'deprecated compatibility flag; authentication is managed externally', true)
   .option('--no-login', 'deprecated compatibility flag; authentication is managed externally')
   .option('--memories', 'deprecated; configure memories on the external server', true)
