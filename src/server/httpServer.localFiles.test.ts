@@ -23,6 +23,9 @@ it('preserves local navigation, image and edit routes without direct-file servin
   await mkdir(join(root, 'subdirectory'))
   await writeFile(textPath, text)
   await writeFile(imagePath, image)
+  await writeFile(join(root, 'binary.bin'), Buffer.from([0, 1, 2]))
+  await writeFile(join(root, '.hidden.txt'), text)
+  await writeFile(join(root, 'literal%20name.txt'), text)
   const production = createServer()
   // Load the real dev configuration so both route implementations are exercised.
   const { createServer: createViteServer } = await import('vite')
@@ -49,6 +52,50 @@ it('preserves local navigation, image and edit routes without direct-file servin
       expect((await fetch(edit)).status).toBe(200)
       expect((await fetch(edit, { method: 'PUT', headers: { 'Content-Type': 'text/plain' }, body: text })).status).toBe(200)
       expect(await readFile(textPath, 'utf8')).toBe(text)
+      // Run the same contract against the real development and production mounts.
+      for (const route of [
+        '/codex-local-browse' + encodeURI(join(root, 'missing.txt')),
+        '/codex-local-edit' + encodeURI(join(root, 'missing.txt')),
+        '/codex-local-image?path=' + encodeURIComponent(join(root, 'missing.png')),
+        '/codex-local-directories?path=' + encodeURIComponent(join(root, 'missing')),
+      ]) expect((await fetch(base + route)).status).toBe(404)
+      for (const path of ['relative.png', root + '/..' + '/example.svg', root + '/bad\0.png']) {
+        const response = await fetch(base + '/codex-local-image?path=' + encodeURIComponent(path))
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({ error: 'Expected absolute local file path.' })
+      }
+      expect((await fetch(base + '/codex-local-browse/%ZZ')).status).toBe(400)
+      expect((await fetch(base + '/codex-local-browse' + encodeURI(root) + '/%2e%2e%2fexample.txt')).status).toBe(400)
+      expect((await fetch(base + '/codex-local-directories?path=' + encodeURIComponent(textPath))).status).toBe(400)
+      expect((await fetch(base + '/codex-local-edit' + encodeURI(root))).status).toBe(400)
+      const head = await fetch(base + browse, { method: 'HEAD' })
+      expect(head.status).toBe(200)
+      expect(head.headers.get('content-type')).toContain('text/plain')
+      expect(await head.text()).toBe('')
+      const range = await fetch(base + browse, { headers: { Range: 'bytes=0-5' } })
+      expect(range.status).toBe(206)
+      expect(await range.text()).toBe(text.slice(0, 6))
+      expect(await (await fetch(base + '/codex-local-browse' + encodeURI(join(root, '.hidden.txt')))).text()).toBe(text)
+      expect(await (await fetch(base + '/codex-local-browse' + encodeURI(join(root, 'literal%20name.txt')))).text()).toBe(text)
+      expect((await fetch(base + '/codex-local-edit' + encodeURI(join(root, 'binary.bin')), { method: 'PUT', body: 'replace' })).status).toBe(415)
+      expect((await fetch(edit, { method: 'PUT', headers: { 'Content-Encoding': 'gzip' }, body: 'invalid compressed data' })).status).toBe(415)
+      expect((await fetch(edit, { method: 'PUT', body: 'x'.repeat(10 * 1024 * 1024) })).status).toBe(200)
+      expect((await readFile(textPath)).length).toBe(10 * 1024 * 1024)
+      const changed = 'edited text: 日本語'
+      expect((await fetch(edit, { method: 'PUT', body: changed })).status).toBe(200)
+      expect(await readFile(textPath, 'utf8')).toBe(changed)
+      const oversized = await fetch(edit, { method: 'PUT', body: 'x'.repeat(10 * 1024 * 1024 + 1) })
+      expect(oversized.status).toBe(413)
+      expect(await oversized.json()).toEqual({ error: 'Request body too large.' })
+      expect(await readFile(textPath, 'utf8')).toBe(changed)
+      // A chunked body must obey the same limit without Content-Length.
+      const chunked = await fetch(edit, {
+        method: 'PUT', duplex: 'half',
+        body: (async function* () { for (let i = 0; i < 11; i++) yield Buffer.alloc(1024 * 1024, 120) })(),
+      } as unknown as RequestInit)
+      expect(chunked.status).toBe(413)
+      expect(await readFile(textPath, 'utf8')).toBe(changed)
+      await writeFile(textPath, text)
       for (const method of ['GET', 'HEAD']) {
         const retired = await fetch(base + '/codex-local-file?path=' + encodeURIComponent(textPath), { method })
         expect(retired.headers.get('content-disposition')).toBeNull()
