@@ -193,6 +193,8 @@ Connection logs redact bot tokens.
 ## 🖼️ Screenshots
 
 ### Skills Hub
+
+See [installed skills](installed-skills.md) for the external installation boundary and available local actions.
 ![Skills Hub](screenshots/skills-hub.png)
 
 ### Chat

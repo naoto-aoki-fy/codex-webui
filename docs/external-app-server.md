@@ -111,8 +111,7 @@ exports. Both backends use one connection and initialization each. The fixture
 checks listener survival after shutdown, not survival of a real Codex process.
 No Codex executable or Docker was available for this audit.
 
-Runtime audit: remaining subprocesses run git, ripgrep, filesystem helpers and
-the optional `npx skills` installer; these do not manage Codex. Unused local
+Runtime audit: remaining subprocesses run git, ripgrep and filesystem helpers; these do not manage Codex. Unused local
 installer, CLI login probe, write-only authentication cache,
 launch-argument helpers and unreachable callback modal have been removed. Legacy
 HTTP login routes retain only an external-authentication error for compatibility.

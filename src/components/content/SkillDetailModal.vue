@@ -37,28 +37,8 @@
           <div class="sdm-footer-actions">
             <button
               v-if="skill.installed"
-              class="sdm-btn sdm-btn-danger"
-              type="button"
-              :disabled="isActing"
-              @click="onUninstall"
-            >
-              {{ props.isUninstalling ? t('Uninstalling...') : t('Uninstall') }}
-            </button>
-            <button
-              v-else
-              class="sdm-btn sdm-btn-primary"
-              type="button"
-              :disabled="isActing"
-              @click="onInstall"
-            >
-              {{ props.isInstalling ? t('Installing...') : t('Install') }}
-            </button>
-
-            <button
-              v-if="skill.installed"
               class="sdm-btn sdm-btn-secondary"
               type="button"
-              :disabled="isActing"
               @click="onToggleEnabled"
             >
               {{ effectiveEnabled ? t('Disable') : t('Enable') }}
@@ -68,7 +48,7 @@
               v-if="skill.installed && effectiveEnabled"
               class="sdm-btn sdm-btn-primary"
               type="button"
-              :disabled="isActing || props.isTrying"
+              :disabled="props.isTrying"
               @click="onTry"
             >
               {{ props.isTrying ? 'Starting...' : 'Try it!' }}
@@ -103,24 +83,18 @@ export type HubSkill = {
   avatarUrl?: string
   url: string
   installed: boolean
-  source?: string
   path?: string
   enabled?: boolean
-  installCountLabel?: string
 }
 
 const props = defineProps<{
   skill: HubSkill
   visible: boolean
-  isInstalling?: boolean
-  isUninstalling?: boolean
   isTrying?: boolean
 }>()
 
 const emit = defineEmits<{
   close: []
-  install: [skill: HubSkill]
-  uninstall: [skill: HubSkill]
   'toggle-enabled': [skill: HubSkill, enabled: boolean]
   try: [skill: HubSkill]
 }>()
@@ -132,7 +106,6 @@ const isLoadingReadme = ref(false)
 const { t } = useUiLanguage()
 
 const effectiveEnabled = computed(() => localEnabled.value ?? props.skill.enabled ?? true)
-const isActing = computed(() => (props.isInstalling === true) || (props.isUninstalling === true))
 const effectiveDescription = computed(() => localDescription.value || props.skill.description)
 const skillDirPath = computed(() => {
   const p = props.skill.path
@@ -193,14 +166,6 @@ watch(() => props.visible, (v) => {
     void fetchReadme()
   }
 })
-
-function onInstall(): void {
-  emit('install', props.skill)
-}
-
-function onUninstall(): void {
-  emit('uninstall', props.skill)
-}
 
 function onToggleEnabled(): void {
   const next = !effectiveEnabled.value
@@ -333,10 +298,6 @@ function onBrowseFiles(): void {
 
 .sdm-btn-primary {
   @apply bg-zinc-900 text-white hover:bg-black;
-}
-
-.sdm-btn-danger {
-  @apply bg-rose-600 text-white hover:bg-rose-700;
 }
 
 .sdm-btn-secondary {

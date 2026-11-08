@@ -32,3 +32,24 @@ it('does not reload or sync when the local update fails', async () => {
   expect(fetchSkills).not.toHaveBeenCalled()
   expect(showToast).toHaveBeenCalledWith('Failed to update skill', 'error')
 })
+
+it('selects an enabled installed skill with its local path and closes details', () => {
+  const node = ast.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'handleTrySkill')!
+  const tryCode = ts.transpileModule(node.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+  const emit = vi.fn()
+  const isDetailOpen = { value: true }
+  const props: { tryInFlightKey?: string } = {}
+  const trySkill = new Function('props', 'emit', 'isDetailOpen', `${tryCode}; return handleTrySkill`)(props, emit, isDetailOpen)
+  const skill = { installed: true, enabled: true, name: 'sample', path: '/local/skills/sample/SKILL.md' }
+  trySkill(skill)
+  expect(emit).toHaveBeenCalledExactlyOnceWith('try-item', {
+    kind: 'skill', name: 'sample', displayName: 'sample', skillPath: skill.path,
+  })
+  expect(isDetailOpen.value).toBe(false)
+  emit.mockClear()
+  trySkill({ ...skill, enabled: false })
+  trySkill({ ...skill, installed: false })
+  props.tryInFlightKey = 'skill:another'
+  trySkill(skill)
+  expect(emit).not.toHaveBeenCalled()
+})

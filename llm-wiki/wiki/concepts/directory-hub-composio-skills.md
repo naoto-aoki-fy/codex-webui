@@ -1,6 +1,8 @@
 # Directory Hub and Skills Search
 
-This page documents the current Directory Hub behavior under `#/skills`, with Plugins, Apps, the native Skills tab, and registry-backed Skills search.
+The registry search/install description below is historical. Current behavior is documented in [installed skills](../../../docs/installed-skills.md): skills are installed outside the web app; only installed skills are listed.
+
+This page records historical Directory Hub behavior under `#/skills`, with Plugins, Apps, the native Skills tab, and registry-backed Skills search.
 
 ## Route Model
 
