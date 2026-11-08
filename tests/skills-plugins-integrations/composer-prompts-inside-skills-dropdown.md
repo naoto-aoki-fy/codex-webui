@@ -42,3 +42,11 @@ The composer control row uses one `Skills` dropdown for both skills and saved pr
 - Actions: create a prompt with whitespace around its name/content; create another with the same name; reload the prompt list; remove both prompts and reload again.
 - Expected: content is trimmed with a trailing newline, duplicate names receive `-2`, prompts remain sorted and persist across reload, and removed entries stay absent. GET/POST/DELETE `/codex-api/prompts` retain their existing data envelopes and errors. A DELETE path outside `CODEX_HOME/prompts` returns 400 and leaves the file intact.
 - Cleanup: remove the disposable home and restore the prior `CODEX_HOME`. Automated storage coverage: `pnpm exec vitest run src/server/composerPromptFiles.test.ts`.
+
+## Backend prompt route extraction regression
+
+- Prerequisites: use a disposable `CODEX_HOME` with the app running as above. Back up any existing prompts.
+- Actions: send GET `/codex-api/prompts`; POST the same path with `{"name":" route-test ","content":" text "}`; list again; DELETE using the returned URL-encoded `path`; repeat deletion. POST with a whitespace-only name or content; DELETE without `path` and with a path outside the prompt store. Send malformed JSON in a POST.
+- Expected: successful calls return 200 with the existing `data` envelope; create trims the name and stores `text\n`; deletion returns `data.removed` true then false. Invalid creation and deletion return 400 with the existing errors. Malformed JSON reaches the bridge's 502 error response. Outside files remain untouched.
+- Storage errors: with the app stopped, replace the disposable `prompts` directory with a regular file, restart, then GET and POST. Expect listing failure 502 and creation failure 500 with the storage error message. The automated route suite also verifies deletion storage errors remain 400 and each operation invokes its persistence helper once.
+- Cleanup: stop the disposable instance, delete the disposable home, and restore the previous environment. Run `pnpm exec vitest run src/server/promptRoutes.test.ts src/server/composerPromptFiles.test.ts` for route and persistence regressions.
