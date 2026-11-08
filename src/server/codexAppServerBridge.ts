@@ -15,7 +15,6 @@ import { isDeepStrictEqual } from 'node:util'
 import { writeFile } from 'node:fs/promises'
 import { readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState.js'
 import { handleAccountRoutes } from './accountRoutes.js'
-import { recordCodexAccountRead, recordCodexAuthStatus } from './codexAuthStatus.js'
 import { CodexCredentialError, readCodexCredentialStore, readPublicAuthStatus, requireFileCredentialStore } from './codexCredentials.js'
 import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
@@ -3340,7 +3339,6 @@ export class AppServerClient {
     this.threadTurnPageReadPromiseByThreadId.clear()
     this.capturedItemsByThreadId.clear()
     this.liveStateCache.clear()
-    recordCodexAuthStatus(null)
     this.emitNotification({ method: 'app-server/disconnected', params: null })
   })
 
@@ -3383,10 +3381,6 @@ export class AppServerClient {
   }
 
   private emitNotification(notification: { method: string; params: unknown }): void {
-    if (notification.method === 'account/updated') {
-      const params = asRecord(notification.params)
-      if (params && 'authMode' in params) recordCodexAuthStatus(params.authMode !== null)
-    }
     if (notification.method === 'turn/started') {
       const params = asRecord(notification.params)
       const turn = asRecord(params?.turn)
@@ -3732,8 +3726,6 @@ export class AppServerClient {
         const id = readNonEmptyString(asRecord(params)?.threadId)
         this.subscribedThreads.delete(id)
       }
-      if (method === 'account/read') recordCodexAccountRead(result)
-      if (method === 'account/logout') recordCodexAuthStatus(false)
       return result
     }
     const threadId = readNonEmptyString(asRecord(params)?.threadId)
