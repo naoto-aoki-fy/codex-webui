@@ -5,7 +5,7 @@ import { createLocalFileMiddleware } from "./src/server/localFileHttp";
 import tailwindcss from "@tailwindcss/vite";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { WebSocketServer, type WebSocket } from "ws";
+import { attachBrowserNotificationTransport } from "./src/server/browserNotificationTransport";
 import pkg from "./package.json";
 
 function getWorktreeName(): string {
@@ -118,36 +118,7 @@ export default defineConfig({
           };
           if (!hostScope[WS_UPGRADE_ATTACHED_KEY]) {
             hostScope[WS_UPGRADE_ATTACHED_KEY] = true;
-            const wss = new WebSocketServer({ noServer: true });
-
-            httpServer.on("upgrade", (req, socket, head) => {
-              const requestUrl = new URL(req.url ?? "", "http://localhost");
-              if (requestUrl.pathname !== "/codex-api/ws") return;
-              wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-                wss.emit("connection", ws, req);
-              });
-            });
-
-            wss.on("connection", (ws: WebSocket) => {
-              ws.send(
-                JSON.stringify({
-                  method: "ready",
-                  params: { ok: true },
-                  atIso: new Date().toISOString(),
-                }),
-              );
-              const unsubscribe = bridge.subscribeNotifications((notification) => {
-                if (ws.readyState !== ws.OPEN) return;
-                ws.send(JSON.stringify(notification));
-              });
-
-              ws.on("close", unsubscribe);
-              ws.on("error", unsubscribe);
-            });
-
-            httpServer.once("close", () => {
-              wss.close();
-            });
+            attachBrowserNotificationTransport(httpServer, bridge.subscribeNotifications);
           }
         }
         server.middlewares.use(createLocalFileMiddleware());
