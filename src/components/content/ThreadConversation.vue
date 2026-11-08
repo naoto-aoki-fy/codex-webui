@@ -1030,18 +1030,6 @@ function isPlanMessage(message: UiMessage): boolean {
   return message.messageType === 'plan' || message.messageType === 'plan.live'
 }
 
-function buildPlanMessageText(explanation: string, steps: UiPlanStep[]): string {
-  const lines: string[] = []
-  if (explanation.trim()) {
-    lines.push(explanation.trim())
-  }
-  for (const step of steps) {
-    const marker = step.status === 'completed' ? 'x' : step.status === 'inProgress' ? '~' : ' '
-    lines.push(`- [${marker}] ${step.step}`)
-  }
-  return lines.join('\n').trim()
-}
-
 function showImplementPlanButton(message: UiMessage): boolean {
   return isPlanMessage(message)
     && message.messageType !== 'plan.live'

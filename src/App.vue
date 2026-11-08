@@ -935,15 +935,6 @@ const filteredMessages = computed(() =>
     return true
   }),
 )
-const latestUserTurnId = computed(() => {
-  for (let index = messages.value.length - 1; index >= 0; index -= 1) {
-    const message = messages.value[index]
-    if (message.role !== 'user') continue
-    const turnId = message.turnId?.trim() ?? ''
-    if (turnId.length > 0) return turnId
-  }
-  return ''
-})
 const liveOverlay = computed(() => selectedLiveOverlay.value)
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
 const composerReasoningEffort = computed(() => readReasoningEffortForThread(composerThreadContextId.value))
@@ -1302,10 +1293,6 @@ watch(sidebarSearchQuery, (value) => {
   }, 220)
 })
 
-watch(isVirtualKeyboardOpen, (open) => {
-  if (open) return
-})
-
 function onSkillsChanged(): void {
   void refreshSkills({ force: true })
 }
@@ -1486,12 +1473,6 @@ async function onCopyThreadChat(threadId: string): Promise<void> {
   if (!threadId) return
   if (selectedThreadId.value !== threadId) return
   await copySelectedThreadChat()
-}
-
-function isPaymentRequiredErrorMessage(value: string | null): boolean {
-  if (!value) return false
-  const normalized = value.toLowerCase()
-  return normalized.includes('payment required') || /\b402\b/.test(normalized)
 }
 
 function onArchiveThread(threadId: string): void {
