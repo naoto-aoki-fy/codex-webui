@@ -1,191 +1,82 @@
-# codexapp — Project Specification
+# Implementation specification
 
-Current connection contract: [external app-server](docs/external-app-server.md).
-The frontend structure below includes original implementation context; exact
-package versions and scripts are defined in `package.json`.
-
-## Overview
-
-**codex-web-local** is a lightweight, browser-based web UI for [OpenAI Codex](https://github.com/openai/codex). It mirrors the Codex Desktop experience and runs on top of the Codex `app-server`, allowing remote access to a local Codex instance from any browser.
-
-- **Author:** Pavel Voronin
-- **License:** MIT
-- **Repository:** https://github.com/vast-cow/friuns2-codexapp
+This document describes the repository implementation, not every capability in the
+upstream protocol. Source and automated tests take precedence over protocol snapshots.
 
 ## Architecture
 
 ```text
-Browser (Vue SPA)
-  │ HTTP RPC + WebSocket notifications (SSE fallback)
-Express / Vite bridge (/codex-api/*)
-  │ JSON-RPC over ws/wss, initialize handshake
-Independently managed Codex app-server
+Browser: Vue SPA (hash routes)
+  | HTTP RPC and local APIs; WebSocket notifications, SSE fallback
+Express (production) / Vite middleware (development)
+  | AppServerClient -> AppServerWebSocketClient; JSON-RPC initialization
+Independently managed Codex app-server (ws/wss or Unix socket)
 ```
 
-The backend does not install, launch, authenticate, or terminate Codex. Both
-processes require the same user, CODEX_HOME and filesystem paths. A remote URL
-alone does not provide split-host support.
+The backend does not install, launch, authenticate, or terminate Codex. Use the same
+user, CODEX_HOME and filesystem paths for both processes. A remote endpoint alone
+is not split-host support. See [connection and lifecycle details](docs/external-app-server.md).
+Web password authentication protects the browser backend separately from Codex authentication.
 
+## Responsibility boundaries
 
-### Key Architectural Decisions
+- `src/App.vue`: application composition, route synchronization, dialogs and settings.
+- `src/composables/useDesktopState.ts`: shared reactive state, optimistic messages,
+  history coordination, preferences and notification reconciliation; no Pinia/Vuex.
+- `src/api/codexGateway.ts`: typed UI operations and normalization;
+  `codexRpcClient.ts`: browser HTTP and notification transport.
+- `src/server/codexAppServerBridge.ts`: local HTTP dispatch and shared connection state;
+  account, skills and prompt routes delegate to dedicated modules.
+- `AppServerClient` in the bridge: RPC correlation, snapshots and history recovery;
+  `appServerWebSocketClient.ts`: external transport and reconnect.
+- `src/server/httpServer.ts` and `src/cli/index.ts`: production hosting and CLI.
+- `documentation/`: retained upstream protocol reference and generated schemas.
 
-- **No Pinia / Vuex**: All state lives in a single composable (`useDesktopState`). Reactive refs + computed properties manage thread, message, model, and UI state.
-- **Realtime transport**: Client prefers **WebSocket** on `/codex-api/ws` for server-to-client notifications, with automatic fallback to **SSE** (`EventSource`) on `/codex-api/events`. Client-to-server RPC stays on HTTP POST.
-- **External connection**: RPC calls share a WebSocket connection to the configured app-server. Disconnects fail pending calls; requests are never replayed.
-- **Shared bridge state**: A global singleton (connection client + method catalog) survives Vite HMR reloads during development.
+See [frontend boundaries](docs/refactoring/frontend-boundaries.md),
+[backend boundaries](docs/refactoring/backend-boundaries.md) and the
+[schema inventory](documentation/app-server-schemas/README.md). Protocol presence
+and bundled method metadata do not guarantee UI support or live server capability.
 
-## Tech Stack
+## Feature status
 
-| Layer | Technology | Version |
-|---|---|---|
-| Frontend framework | Vue 3 (Composition API, `<script setup>`) | ^3.5 |
-| Routing | Vue Router 4 | ^4.6 |
-| Styling | Tailwind CSS 4 (via `@tailwindcss/vite`) | ^4.1 |
-| Build tool | Vite 6 | ^6.1 |
-| CLI build | tsup 8 | ^8.4 |
-| Type checking | TypeScript 5, vue-tsc 2 | ^5.7 / ^2.2 |
-| Server | Express 5 | ^5.1 |
-| CLI framework | Commander 13 | ^13.1 |
-| Runtime | Node.js >= 18 | — |
+| Status | Capabilities |
+| --- | --- |
+| Implemented | Thread listing/pagination, create/resume/archive, manual naming, forking and rollback; pins, unread state and project grouping |
+| Implemented | Streaming chat, interrupt, immediate steering during active turns, approval requests, plans, token usage, command output and file-change/diff presentation |
+| Implemented | Official Codex model catalog, per-context model/reasoning choices and collaboration modes; effort choices follow model capabilities |
+| Implemented | Project creation/clone, worktrees, file attachments/search, installed skills and composer prompts, MCP status/authentication |
+| Implemented | External account status/quotas, optional web password, optional Telegram completion alerts, responsive light/dark UI |
+| Removed | OpenRouter/Zen/custom provider proxies, local Codex process management and automatic authentication |
+| Removed | Automation management, deferred prompt queue, built-in tunnels, Open Terminal action, ZIP import/export, external skill catalog/install UI, Telegram conversation control |
+| Not surfaced | Dedicated code-review workflow (`review/start`); generic RPC and protocol definitions remain |
+| Unsupported deployment | Split-host filesystem operation based solely on an external app-server URL |
 
-## Project Structure
+The Skills route manages already installed skills; installation is external.
+See [installed skills](docs/installed-skills.md). Removed UI does not imply removal
+of compatibility data, generic RPC methods or generated protocol schemas.
+Telegram sends completion notifications only; see [usage](docs/usage.md#telegram-completion-notifications-optional).
 
-```
-codex-web-local/
-├── src/
-│   ├── api/                          # Backend communication layer
-│   │   ├── codexGateway.ts           # High-level API (threads, turns, models)
-│   │   ├── codexRpcClient.ts         # HTTP/SSE transport for /codex-api/*
-│   │   ├── codexErrors.ts            # Error normalization
-│   │   ├── appServerDtos.ts          # Raw DTO types from app-server
-│   │   └── normalizers/v2.ts         # DTO → UI type transformers
-│   ├── components/
-│   │   ├── content/                  # Main content area
-│   │   │   ├── ThreadConversation.vue  # Message list with scroll management
-│   │   │   ├── ThreadComposer.vue      # Input + model/reasoning selectors
-│   │   │   ├── ComposerDropdown.vue    # Reusable dropdown (model, folder)
-│   │   │   └── ContentHeader.vue       # Page title bar
-│   │   ├── sidebar/                  # Left panel
-│   │   │   ├── SidebarThreadTree.vue   # Thread list grouped by project
-│   │   │   └── SidebarThreadControls.vue # New thread, auto-refresh toggle
-│   │   ├── layout/
-│   │   │   └── DesktopLayout.vue       # Sidebar + content split layout
-│   │   └── icons/                    # Tabler icon components
-│   ├── composables/
-│   │   └── useDesktopState.ts        # Central state composable (~2000 LOC)
-│   ├── server/                       # Node.js server (production + dev)
-│   │   ├── codexAppServerBridge.ts   # Spawns/proxies codex app-server
-│   │   ├── httpServer.ts             # Express app for production
-│   │   ├── authMiddleware.ts         # Password-based auth
-│   ├── cli/
-│   │   └── index.ts                  # CLI entry point (Commander)
-│   ├── types/
-│   │   └── codex.ts                  # UI-layer TypeScript types
-│   ├── router/
-│   │   └── index.ts                  # Vue Router config
-│   ├── App.vue                       # Root component
-│   ├── main.ts                       # Vue app bootstrap
-│   └── style.css                     # Global Tailwind styles
-├── documentation/                    # Codex app-server protocol docs
-│   ├── APP_SERVER_DOCUMENTATION.md   # Full protocol reference (66 methods, 7 server requests, 34 notifications)
-│   └── app-server-schemas/           # Materialized JSON + TypeScript schemas
-│       ├── json/                     # JSON Schema files (v1, v2, root)
-│       └── typescript/               # TypeScript type definitions (v1, v2, root)
-├── index.html                        # SPA entry point
-├── vite.config.ts                    # Vite config (Vue, Tailwind, bridge middleware)
-├── tsup.config.ts                    # CLI build config
-└── package.json                      # Scripts, deps, bin entry
-```
+## History, events and persistence
 
-## Features
+Thread lists load in pages (initial limit 50, background limit 100). Detail loading
+uses `thread/read` with `includeTurns: true`; the bridge bounds RPC history to the
+latest 10 turns. Older turns load through `/codex-api/thread-turn-page`. The retained
+`/codex-api/thread-live-state` diagnostic/recovery endpoint can return full recovered
+history; it is not the frontend's primary detail request.
 
-### Implemented
+Notifications arrive on `/codex-api/ws`, falling back to `/codex-api/events`.
+Realtime updates apply immediately; event-driven reconciliation is debounced
+(220 ms). This is coordinated with history caches and active-thread loading, not
+an unconditional full-history fetch on every event. External disconnects fail
+pending RPC calls; requests are not replayed automatically.
 
-| Feature | Description |
-|---|---|
-| Thread management | List, create, archive, select threads; resume inactive threads on demand |
-| Chat conversation | Send messages, view full conversation history with user/assistant/system roles |
-| Real-time streaming | SSE-based live updates for agent messages, reasoning text, and turn lifecycle |
-| Model selection | Dropdown to choose from available models (`model/list` RPC) |
-| Reasoning effort | Configurable reasoning effort level (none → xhigh) |
-| Turn interrupt | Stop in-progress agent turns |
-| Server request handling | Approve/reject server-initiated requests (command approvals, file changes, tool calls) |
-| Project grouping | Threads organized by working directory (project) |
-| Project customization | Rename, reorder, remove projects (persisted to localStorage) |
-| Unread indicators | Track read/unread state per thread |
-| Auto-refresh | Optional 4-second polling with visual countdown |
-| Collapsible sidebar | Resizable (260–620px), toggle with Ctrl/Cmd+B |
-| Scroll state persistence | Remember scroll position per thread across navigation |
-| Password auth | Optional password protection enabled explicitly with --password |
-| New thread creation | "Let's build" hero view with folder selector |
-| Live overlay | Reasoning text, activity labels, and error messages during agent work |
-| Turn duration display | "Worked for Xm Ys" summary after turn completion |
+Browser storage retains read state, model/reasoning/collaboration preferences and
+layout state, including legacy migration keys. Opening home does not restore the
+last selected thread. Shared titles, pins and workspace roots use server-side global
+state; attachment-only history has an [app-owned index](docs/persistent-thread-index.md).
+Persistence does not make sending messages available while disconnected.
 
-### Not Yet Implemented
-
-Based on the app-server protocol (`documentation/APP_SERVER_DOCUMENTATION.md`), the following capabilities are available in the protocol but not yet surfaced in the UI:
-
-| Feature | Relevant RPC Methods |
-|---|---|
-| Thread forking | `thread/fork` |
-| Thread rollback | `thread/rollback` |
-| Thread naming | `thread/name/set` |
-| Thread unarchiving | `thread/unarchive` |
-| Context compaction | `thread/compact/start` |
-| Code review | `review/start` |
-| Skills management | `skills/list`, `skills/remote/read`, `skills/remote/write`, `skills/config/write` |
-| Apps management | `app/list` |
-| MCP server status | `mcpServerStatus/list`, `config/mcpServer/reload` |
-| Account management | `account/login/start`, `account/logout`, `account/read`, `account/rateLimits/read` |
-| Configuration UI | `config/read`, `config/value/write`, `config/batchWrite`, `configRequirements/read` |
-| Command execution | `command/exec` |
-| Git diff view | `gitDiffToRemote` |
-| Fuzzy file search | `fuzzyFileSearch`, session-based search |
-| Feedback upload | `feedback/upload` |
-| Collaboration modes | `collaborationMode/list` |
-| Experimental features | `experimentalFeature/list` |
-| Turn diff view | `turn/diff/updated` notification |
-| Turn plan view | `turn/plan/updated` notification |
-| Token usage display | `thread/tokenUsage/updated` notification |
-| Command output streaming | `item/commandExecution/outputDelta` notification |
-| File change output | `item/fileChange/outputDelta` notification |
-| MCP tool call progress | `item/mcpToolCall/progress` notification |
-| Terminal interaction | `item/commandExecution/terminalInteraction` notification |
-
-### Planned: Thread Forking
-
-Forking creates a new thread from an existing thread so users can branch the conversation without mutating the original.
-
-#### UX Requirements
-
-- Add a `Fork thread` action in thread row controls and thread header controls.
-- On success, navigate to the new forked thread immediately.
-- Show lineage metadata in the forked thread header:
-  - `Forked from: <source thread title or id>`
-- Preserve lineage information in thread list tooltips/details where available.
-
-#### RPC Contract
-
-- Method: `thread/fork`
-- Primary input: `threadId` of the source thread (preferred over `path`)
-- Optional overrides: `cwd`, `model`, `approvalPolicy`, `sandbox`, `baseInstructions`, `developerInstructions`
-- Expected response: `ThreadForkResponse` with a new `thread.id`
-
-#### State + Routing Behavior
-
-- Insert the new thread into `sourceGroups` / `projectGroups` immediately after fork returns.
-- Set `selectedThreadId` to the new forked thread id.
-- Route to `/thread/:threadId` for the new thread.
-- Keep original thread unchanged and still selectable.
-
-#### Acceptance Criteria
-
-- User can fork from any existing thread.
-- Forked thread has a different id from the source thread.
-- Source thread history remains intact.
-- UI displays the fork origin for the selected forked thread.
-
-## Communication Protocol
+## Bridge contracts
 
 ### HTTP Endpoints (Bridge)
 
@@ -199,135 +90,23 @@ Forking creates a new thread from an existing thread so users can branch the con
 | GET | `/codex-api/events` | SSE fallback stream for real-time notifications |
 | WS upgrade | `/codex-api/ws` | Primary WebSocket channel for real-time notifications |
 
-### Bridge → App-Server
-
-Communication uses JSON-RPC over the external server's WebSocket endpoint.
-The CLI `--app-server-url` overrides `CODEXUI_APP_SERVER_URL`, defaulting to
-`ws://127.0.0.1:4500`. Browser `/codex-api/ws` is a separate notification socket.
-See the connection guide for validation, reconnect, authentication and lifecycle.
-
-### RPC Methods Used by the Frontend
-
-| Method | Purpose |
-|---|---|
-| `initialize` | Handshake with app-server (automatic) |
-| `thread/list` | Fetch all non-archived threads |
-| `thread/read` | Fetch thread detail with turns and items |
-| `thread/start` | Create a new thread |
-| `thread/resume` | Resume an inactive thread |
-| `thread/archive` | Archive a thread |
-| `turn/start` | Send a user message and start agent turn |
-| `turn/interrupt` | Interrupt an in-progress turn |
-| `model/list` | List available models |
-| `config/read` | Read current model and reasoning effort |
-
-### Notifications Handled by the Frontend
-
-| Notification | Action |
-|---|---|
-| `turn/started` | Mark thread in-progress, show "Thinking" |
-| `turn/completed` | Mark complete, show duration summary |
-| `item/started` | Update activity label (Thinking / Writing) |
-| `item/completed` | Finalize agent message or reasoning |
-| `item/agentMessage/delta` | Append to live agent message text |
-| `item/reasoning/summaryTextDelta` | Append to live reasoning overlay |
-| `item/reasoning/summaryPartAdded` | Insert reasoning section break |
-| `server/request` | Show pending approval in UI |
-| `server/request/resolved` | Remove resolved request from UI |
-| `error` | Display error notification |
-| `thread/name/updated` | (Queued for thread list refresh) |
-
-## State Management
-
-All frontend state is managed by `useDesktopState()` — a single Vue composable that provides:
-
-### Reactive State
-
-- `projectGroups` / `sourceGroups` — thread list grouped by project
-- `selectedThreadId` / `selectedThread` — currently active thread
-- `persistedMessagesByThreadId` — loaded messages from server
-- `liveAgentMessagesByThreadId` — streaming agent messages
-- `liveReasoningTextByThreadId` — streaming reasoning text
-- `inProgressById` — per-thread turn-in-progress flags
-- `availableModelIds` / `selectedModelId` / `selectedReasoningEffort`
-- `pendingServerRequestsByThreadId` — approval requests
-- `turnSummaryByThreadId` / `turnActivityByThreadId` / `turnErrorByThreadId`
-- Loading/sending/interrupting boolean flags
-
-### Persistence (localStorage)
-
-| Key | Data |
-|---|---|
-| `codex-web-local.thread-read-state.v1` | Per-thread read timestamps |
-| `codex-web-local.thread-scroll-state.v1` | Per-thread scroll positions |
-| `codex-web-local.selected-thread-id.v1` | Last selected thread |
-| `codex-web-local.project-order.v1` | Custom project ordering |
-| `codex-web-local.project-display-name.v1` | Custom project names |
-| `codex-web-local.auto-refresh-enabled.v1` | Auto-refresh preference |
-| `codex-web-local.sidebar-collapsed.v1` | Sidebar collapse state |
-
-### Event Processing Pipeline
-
-1. Realtime events arrive via WebSocket on `/codex-api/ws` (fallback: `EventSource` on `/codex-api/events`)
-2. Each event is passed to `applyRealtimeUpdates()` for immediate UI effects (activity labels, live text, in-progress flags)
-3. Events are also passed to `queueEventDrivenSync()` which debounces (220ms) a full data refresh
-4. The debounced `syncFromNotifications()` calls `loadThreads()` and `loadMessages()` to reconcile server state
+These are the core transport endpoints, not an exhaustive local API inventory.
+The notification catalog endpoint is retained for compatibility, even without an
+internal caller. Metadata is bundled advisory information, not live negotiation.
+Local file routes are documented in [API compatibility notes](docs/api-wrapper-cleanup.md).
 
 ## Routing
 
-| Route | Path | Behavior |
-|---|---|---|
-| Home | `/` | New thread creation view with folder selector |
-| Thread | `/thread/:threadId` | Thread conversation view |
-| Redirect | `/new-thread` | Redirects to Home |
-| Fallback | `/:pathMatch(.*)*` | Redirects to Home |
+Routes use hash history: `/#/` (new chat), `/#/thread/:threadId` (conversation),
+and `/#/skills` (installed skills/MCP). `/new-thread` and unknown hash paths redirect
+to home. `App.vue` synchronizes selection and routing.
 
-Bidirectional sync between `selectedThreadId` state and URL is handled via Vue `watch`ers in `App.vue`.
+## Development and verification
 
-## Development
+Use the [development guide](docs/development.md) for the pinned pnpm/Node setup,
+build, typecheck, unit tests, isolated fixture, optional HTTPS and live-test boundaries.
+The package exposes an ESM CLI, not a public CJS library. Build output is `dist/`
+and `dist-cli/`; frontend build includes asset precompression.
 
-### Prerequisites
-
-- Node.js >= 18
-- pnpm version pinned in `package.json`
-- Independently started Codex app-server for live workflows (not isolated tests)
-
-### Scripts
-
-| Command | Description |
-|---|---|
-| `pnpm run dev` | Start Vite (port 5173); install only if Vite/vue-tsc is missing |
-| `pnpm run build` | Type-check + build frontend + build CLI |
-| `pnpm run build:frontend` | `vue-tsc --noEmit && vite build` |
-| `pnpm run build:cli` | `tsup` (builds CLI to `dist-cli/`) |
-| `pnpm run preview` | Preview production build |
-
-### Dev Mode
-
-`pnpm run dev` starts Vite with bridge middleware and connects to the external app-server on demand. Run a frozen dependency install first. The frontend calls `/codex-api/*` endpoints on the same origin.
-
-### Production Mode
-
-```bash
-node dist-cli/index.js [--port 5900] [--password mypass] [--no-password]
-```
-
-The CLI starts an Express server that serves the built frontend from `dist/` and uses the same bridge middleware. Password authentication is disabled by default. Pass `--password <pass>` to require login for all connections, including localhost and Tailscale. Passwords are neither generated nor printed at startup.
-
-### Auth (Production)
-
-- Default: no password protection (`--no-password`); opt in with `--password <pass>`
-- No IP-based authentication exemptions for HTTP or WebSocket requests
-- Login: POST `/auth/login` with `{ password }` body
-- Session: HttpOnly cookie `codex_web_local_token`
-- Uses constant-time comparison to prevent timing attacks
-
-## Design Principles
-
-1. **Minimal dependencies**: Only essential packages — no state management library, no component library, no CSS framework beyond Tailwind
-2. **Protocol-first**: The UI is designed around the Codex app-server protocol; all features map directly to RPC methods and notifications
-3. **Offline-resilient**: localStorage persistence ensures the UI recovers gracefully from disconnections
-4. **Reference equality optimization**: Extensive use of identity checks and shallow merging to minimize unnecessary Vue re-renders
-5. **Single composable pattern**: All state and logic in one place for discoverability, at the cost of file size (~2000 LOC)
-
-Verification and reproducible installation: [development guide](docs/development.md).
+Use the [manual test index](tests.md) for acceptance workflows. Historical tests and
+refactoring measurements describe their recorded revisions, not current results.

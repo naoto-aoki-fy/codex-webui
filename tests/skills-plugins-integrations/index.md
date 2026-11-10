@@ -18,7 +18,7 @@ Return to the [manual test index](../../tests.md).
 | [Feature: SkillHub shows detailed skill load errors](skillhub-shows-detailed-skill-load-errors.md) |
 | [Skills and MCP directory](codex-app-style-plugins-directory.md) |
 | [Feature: Nested skill bundles are grouped in discovery](nested-skill-bundles-are-grouped-in-discovery.md) |
-| [First-launch home card for Plugins and Apps](first-launch-home-card-for-plugins-and-apps.md) |
+| [Removal of first-launch Plugins and Apps card](first-launch-home-card-for-plugins-and-apps.md) |
 | [Composer prompts inside Skills dropdown](composer-prompts-inside-skills-dropdown.md) |
 
 | [Telegram notification test and status](telegram-notification-test-and-status.md) |

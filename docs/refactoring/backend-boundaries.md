@@ -49,8 +49,8 @@ move. The CLI build and public entry smoke check validate the added module bound
 
 ## Recommended next steps
 
-1. Extract prompt HTTP dispatch using the established account/skills handler pattern;
-   first add route-level tests for status codes, envelopes and fallthrough.
+1. Prompt HTTP dispatch is now extracted into `promptRoutes.ts`, with route-level
+   tests in `promptRoutes.test.ts`; preserve this boundary in future changes.
 2. Separate gateway model/account normalization and operations behind existing exports;
    keep reactive catalog identity and RPC error normalization intact.
 3. Extract project/Git commands from HTTP dispatch with explicit workspace persistence

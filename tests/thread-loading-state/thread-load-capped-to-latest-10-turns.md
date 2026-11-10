@@ -2,18 +2,19 @@
 
 #### Prerequisites
 - App is running from this repository.
-- At least one thread exists with more than 10 turns/messages.
+- At least one thread exists with more than 10 turns (a turn can contain multiple messages).
 
 #### Steps
 1. Open a long thread that previously caused UI lag during initial load.
 2. While the thread is loading, immediately click another thread in the sidebar.
 3. Return to the long thread.
-4. Count visible loaded history blocks and confirm only the newest portion is shown.
+4. Confirm only the latest 10 turns are initially loaded, then use Load earlier messages to retrieve older pages.
 5. Call `/codex-api/rpc` with method `thread/read` for the same thread and inspect `result.thread.turns.length`.
 6. Call `/codex-api/rpc` with method `thread/resume` for the same thread and inspect `result.thread.turns.length`.
 
 #### Expected Results
 - Initial thread load renders only the most recent 10 turns.
+- Older turns remain available through Load earlier messages; the cap is not history deletion.
 - UI remains responsive during thread load.
 - You can switch to another thread without the UI freezing.
 - `thread/read` and `thread/resume` RPC responses contain at most 10 turns.
