@@ -111,3 +111,5 @@ and `dist-cli/`; frontend build includes asset precompression.
 
 Use the [manual test index](tests.md) for acceptance workflows. Historical tests and
 refactoring measurements describe their recorded revisions, not current results.
+
+The legacy `/codex-api/thread-stream-events` buffered-event diagnostic HTTP API is intentionally retired with JSON 404 and no replacement. Internal event buffering and history-error recovery remain; WebSocket/SSE deliver live notifications without historical buffered-event replay.

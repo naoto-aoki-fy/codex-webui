@@ -1,6 +1,6 @@
 # Legacy API and Optional Feature Audit
 
-This began as a static repository audit; endpoint status below reflects the subsequent authorized fallback and live-state retirements. Repository searches do not establish whether independently maintained external clients use an endpoint, and production traffic was not measured.
+This began as a static repository audit; endpoint status below reflects the subsequent authorized fallback, live-state and stream-events retirements. Repository searches do not establish whether independently maintained external clients use an endpoint, and production traffic was not measured.
 
 ## Part A: Legacy HTTP endpoints
 
@@ -10,11 +10,11 @@ The remaining handlers and explicit retirement responses are in `src/server/code
 |---|---|---|
 | `/codex-api/thread-file-change-fallback` | Retired by explicit compatibility-breaking decision; external use was not established absent. | Returns HTTP 404 JSON, with no replacement. Exclusive builder/type/merge helpers removed; shared parsing and rollback remain. |
 | `/codex-api/thread-live-state` | Retired by explicit authorization; all methods return JSON 404 without RPC. | Exclusive response reconstruction, live-state cache and captured-item cache removed. Normal history, earlier-page caches, snapshots, materialization handling, timestamps, generation metadata, skills and inline payload recovery remain. No replacement for diagnostic command/file-change reconstruction. |
-| `/codex-api/thread-stream-events` | No frontend caller. Manual stream-parity tests query it directly during active turns. | The HTTP adapter is route-specific. `getStreamEvents`, event buffering and `mergeStreamTurnErrorsIntoThreadResult` also support normal thread history/error recovery. Retain shared stream recovery; investigate external use before retiring route. |
+| `/codex-api/thread-stream-events` | Intentionally retired by explicit authorization; all methods return JSON 404 without RPC or HTML fallback. | Buffered-event HTTP diagnostics are removed without replacement. `getStreamEvents`, buffering, error merging and WS/SSE live delivery remain; live transports do not replay historical buffered events. |
 
-Relevant tests include `tests/thread-loading-state/thread-stream-parity-stream-first-hydration-with-full-turn-history.md`, `thread-stream-parity-works-on-linux-oracle-a1-arm64.md`, and `thread-detail-load-avoids-duplicate-live-state-history-fetch.md`. The latter shows normal detail loading avoids a redundant live-state history fetch. The external-server fixture checks both retired paths in built and development servers. Repository silence is not evidence that external clients do not depend on them.
+Relevant tests include `tests/thread-loading-state/thread-stream-parity-stream-first-hydration-with-full-turn-history.md`, `thread-stream-parity-works-on-linux-oracle-a1-arm64.md`, and `thread-detail-load-avoids-duplicate-live-state-history-fetch.md`. The latter shows normal detail loading avoids a redundant live-state history fetch. The external-server fixture checks all three retired paths in built and development servers. Repository silence is not evidence that external clients do not depend on them.
 
-The fallback and live-state response builders and their exclusive implementations are removed. The stream-events response adapter remains supported. Shared code to retain includes stream event buffering/error merging, thread-read snapshots and pending-materialization recovery, session timestamp/generation metadata, and `parseApplyPatchInput` where used by retained recovery and file actions.
+The fallback and live-state response builders and their exclusive implementations are removed. The stream-events HTTP response adapter is also removed. Shared code to retain includes stream event buffering/error merging, thread-read snapshots and pending-materialization recovery, session timestamp/generation metadata, and `parseApplyPatchInput` where used by retained recovery and file actions.
 
 ## Part B: Optional features
 
@@ -52,11 +52,11 @@ Caller checks confirmed the text eligibility helpers were editor-only and they w
 
 ## Prioritized recommendations
 
-1. The file-change fallback and live-state endpoints are retired by explicit decision. Before retiring the remaining stream-events endpoint, seek external-client and access-log evidence and choose a deprecation policy. External use remains unknown.
+1. All three legacy endpoints are retired by explicit compatibility-breaking decisions. External clients must stop calling them; external use remains unknown.
 2. Telegram is the clearest optional subsystem to evaluate first: it has a coherent boundary and is the only apparent consumer of `undici`.
 3. Browser editing is retired; preserve browsing and file-link behavior in future cleanup.
 4. Evaluate clone and worktree creation separately. Preserve support for already-existing worktrees and shared workspace-root state.
 5. Treat Undo/Redo backend removal as the riskiest feature decision because conversation rollback uses the same service.
 6. Retain shared thread recovery code: stream error buffers, snapshots, pending-materialization handling, timestamp/generation recovery and shared patch parsing.
 
-The remaining stream-events endpoint is not established as safe dead code. No production usage, performance profile, or external-client inventory was available for this static audit. The live-state retirement performance assessment is documented in [API wrapper cleanup](api-wrapper-cleanup.md).
+The stream-events endpoint was removed by explicit authorization, not on the assumption that it was safe dead code. No production usage, performance profile, or external-client inventory was available for this static audit. The live-state retirement performance assessment is documented in [API wrapper cleanup](api-wrapper-cleanup.md).

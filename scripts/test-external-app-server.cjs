@@ -54,7 +54,7 @@ async function run() {
           await new Promise(resolve => setTimeout(resolve, 100))
         }
         assert(ready, output)
-        for (const path of ['/codex-api/thread-file-change-fallback', '/codex-api/thread-live-state']) {
+        for (const path of ['/codex-api/thread-file-change-fallback', '/codex-api/thread-live-state', '/codex-api/thread-stream-events']) {
           for (const method of ['GET', 'HEAD', 'POST']) {
             for (const query of ['', '?threadId=fixture-thread']) {
               const retired = await fetch(url + path + query, { method })
