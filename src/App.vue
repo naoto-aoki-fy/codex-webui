@@ -456,6 +456,7 @@ import IconTablerSearch from './components/icons/IconTablerSearch.vue'
 import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
 import { useDesktopState } from './composables/useDesktopState'
+import { useNewThreadRuntime } from './composables/useNewThreadRuntime'
 import { useMobile } from './composables/useMobile'
 import { useUiLanguage } from './composables/useUiLanguage'
 import {
@@ -465,7 +466,6 @@ import {
   createWorktree,
   createProjectlessThreadDirectory,
   getGitRepositoryStatus,
-  getWorktreeBranchOptions,
   logoutCodex,
   createLocalDirectory,
   getHomeDirectory,
@@ -480,7 +480,7 @@ import {
 } from './api/codexGateway'
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
-import type { LocalDirectoryEntry, TelegramStatus, WorktreeBranchOption } from './api/codexGateway'
+import type { LocalDirectoryEntry, TelegramStatus } from './api/codexGateway'
 import { getCodexAuthenticationStatus } from './api/codexGateway'
 import { getPathLeafName, getPathParent, isProjectlessChatPath, normalizePathForUi } from './pathUtils.js'
 import { copyTextToClipboard } from './utils/clipboard'
@@ -602,12 +602,8 @@ const directoryTryInFlightKey = ref('')
 let hasPendingRouteSync = false
 const hasInitialized = ref(false)
 const newThreadCwd = ref('')
-const newThreadRuntime = ref<'local' | 'worktree'>('local')
 const gitRepoStatusByCwd = ref<Record<string, boolean>>({})
 const gitRepoStatusRequestByCwd = new Map<string, Promise<boolean>>()
-const newWorktreeBaseBranch = ref('')
-const worktreeBranchOptions = ref<WorktreeBranchOption[]>([])
-const isLoadingWorktreeBranches = ref(false)
 const workspaceRootOptionsState = ref<{ order: string[]; labels: Record<string, string>; projectOrder: string[] }>({
   order: [],
   labels: {},
@@ -922,20 +918,13 @@ const projectGitRepoByName = computed<Record<string, boolean>>(() => {
   }
   return result
 })
-const newWorktreeBranchDropdownOptions = computed<Array<{ value: string; label: string }>>(() => {
-  const selectedBranch = newWorktreeBaseBranch.value.trim()
-  const options = [...worktreeBranchOptions.value]
-  if (selectedBranch && !options.some((option) => option.value === selectedBranch)) {
-    options.unshift({ value: selectedBranch, label: selectedBranch })
-  }
-  return options
-})
-const selectedWorktreeBranchLabel = computed(() => {
-  const selectedBranch = newWorktreeBaseBranch.value.trim()
-  if (!selectedBranch) return ''
-  const selected = newWorktreeBranchDropdownOptions.value.find((option) => option.value === selectedBranch)
-  return selected?.label ?? selectedBranch
-})
+const {
+  newThreadRuntime,
+  newWorktreeBaseBranch,
+  newWorktreeBranchDropdownOptions,
+  selectedWorktreeBranchLabel,
+  isLoadingWorktreeBranches,
+} = useNewThreadRuntime(newThreadCwd, isNewThreadCwdGitRepo)
 const createFolderParentPath = computed(() => existingFolderBrowsePath.value.trim())
 const isCreateFolderNameValid = computed(() => {
   const draft = createFolderDraft.value.trim()
@@ -2355,15 +2344,6 @@ watch(
 )
 
 watch(
-  () => [newThreadRuntime.value, newThreadCwd.value] as const,
-  ([runtime, cwd]) => {
-    if (runtime !== 'worktree' || !isNewThreadCwdGitRepo.value) return
-    void loadWorktreeBranches(cwd)
-  },
-  { immediate: true },
-)
-
-watch(
   () => newThreadRuntime.value,
   (runtime) => {
     if (runtime === 'local') {
@@ -2377,9 +2357,6 @@ watch(
         }
       }
       return
-    }
-    if (isNewThreadCwdGitRepo.value) {
-      void loadWorktreeBranches(newThreadCwd.value)
     }
   },
 )
@@ -2484,32 +2461,6 @@ async function onTryDirectoryItem(payload: DirectoryTryItemPayload): Promise<voi
     // Error is already reflected in shared thread state.
   } finally {
     directoryTryInFlightKey.value = ''
-  }
-}
-
-async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
-  const normalizedSourceCwd = sourceCwd.trim()
-  if (!normalizedSourceCwd) {
-    worktreeBranchOptions.value = []
-    newWorktreeBaseBranch.value = ''
-    return
-  }
-
-  isLoadingWorktreeBranches.value = true
-  try {
-    const options = await getWorktreeBranchOptions(normalizedSourceCwd)
-    worktreeBranchOptions.value = options
-    const currentSelection = newWorktreeBaseBranch.value.trim()
-    const hasCurrentSelection = currentSelection.length > 0 && options.some((option) => option.value === currentSelection)
-    if (!hasCurrentSelection) {
-      const preferredMainOption = options.find((option) => option.value.trim() === 'main')
-      newWorktreeBaseBranch.value = preferredMainOption?.value ?? options[0]?.value ?? ''
-    }
-  } catch {
-    worktreeBranchOptions.value = []
-    newWorktreeBaseBranch.value = ''
-  } finally {
-    isLoadingWorktreeBranches.value = false
   }
 }
 
