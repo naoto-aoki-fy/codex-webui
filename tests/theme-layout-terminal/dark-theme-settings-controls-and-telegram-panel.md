@@ -28,3 +28,17 @@ Prerequisites: Run the current checkout and open Settings. Record the current ap
 4. Change UI language and verify account labels update. Reload the page and confirm saved language/appearance still apply.
 
 Cleanup: Restore language and appearance. Reauthenticate the test account if logout was exercised. The component owns no credentials or persisted state.
+
+### General preferences component extraction
+
+Prerequisites: Run the current checkout, record the four general preferences, and open the sidebar and Settings. No authenticated server is needed for these local preferences.
+
+1. At 1440x900, 375x812, and 768x1024, repeat in Light and Dark appearance. Verify send shortcut, Appearance, UI language, and Chat width are readable, retain row separators, and fit inside the panel.
+2. Focus the send shortcut button and press Enter. Expect the toggle to change and focus to stay on the button. Cycle Appearance with Space through all three modes; System must follow the OS preference.
+3. Open UI language, choose Simplified Chinese, and confirm translated settings labels. Select English again. Tab through the controls and press Escape to close Settings.
+4. Cycle Chat width and verify the conversation/composer width follows the existing presets. Reload and reopen Settings; verify shortcut, appearance, language, and chat width persisted.
+5. Confirm account, Telegram, context, and rate-limit controls remain in their existing positions. These checks do not require saving Telegram configuration or changing authentication.
+
+Expected: The extracted controls retain their existing labels, help titles, custom dropdown, keyboard actions, theme styles, and local persistence. They have no loading/error/validation states; the language menu continues to restrict selection to supported options. API calls and persistence remain owned by App.vue and the existing language composable.
+
+Cleanup: Restore all four recorded preferences. Automated checks should use an isolated browser context; local preference checks do not prove live backend authentication or filesystem behavior.
