@@ -49,3 +49,27 @@ Expected results:
 
 Rollback/cleanup:
 - Close the modal. Remove only disposable projects created for this check and their project-list entries.
+
+### Phase 9-A: FolderPickerModal presentation extraction
+
+Prerequisites/setup:
+- Open the new chat screen with a disposable folder tree containing a child directory and a hidden directory.
+- Check 1440x900, 375x812, and 768x1024 in light and dark themes.
+
+Actions:
+1. Click `Select folder`; confirm loading disables browsing/selection, then the current path receives focus.
+2. Click a child directory and `..`; edit the current path and press Enter or Browse. Toggle hidden folders and filter the list.
+3. Enter an unmatched filter in a directory without a parent entry, then browse an empty directory. Confirm the appropriate empty messages.
+4. Browse an invalid path, check the inline error and Retry, then browse a valid path to recover.
+5. Click `New folder`; confirm the name input receives focus. Enter a valid disposable name and press Enter; confirm the created directory becomes the current path. Repeat with an invalid name to check validation.
+6. Confirm using the current-path Select button and a directory-row Select button separately; confirm the chosen path appears on the new chat screen.
+7. Reopen and dismiss separately using Cancel, backdrop, and Escape from path, filter, and create inputs. Preserve the existing bubbling behavior: Escape in the create input closes the picker as well as its create panel.
+8. At each viewport/theme, check the actual dialog surface, inputs, list, scrolling, and buttons for readable contrast and containment.
+
+Expected results:
+- App.vue owns all drafts, filtering, directory APIs, creation/opening, request IDs, and project updates. The component only renders props and emits edits/actions.
+- Focus still runs after the parent's nextTick. No new watchers, subscriptions, or requests are added.
+- Loading/error/empty states and selection/cancellation behavior remain unchanged; ProjectSetupModal still opens and retains shared styles.
+
+Rollback/cleanup:
+- Close the picker, remove only disposable directories created during testing, and remove test project entries. Mock-backed browser checks do not verify real filesystem creation or opening.
