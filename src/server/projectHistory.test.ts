@@ -158,3 +158,39 @@ it('explicitly rebuilds attachment-only history without sending or changing sess
   expect(rpc.mock.calls.some(([method]) => method === 'turn/start')).toBe(false)
   await expectPreservedFiles()
 })
+
+it('rejects legacy workspace PUT without reading its body or changing state', async () => {
+  const statePath = join(home, '.codex-global-state.json')
+  const raw = JSON.stringify({ unknown: { preserved: true } })
+  await writeFile(statePath, raw)
+  const response = await request('/codex-api/workspace-roots-state', 'PUT', { order: [project] })
+  expect(response.res.statusCode).toBe(409)
+  expect(response.json).toEqual({ error: 'Workspace updates have changed. Reload this tab before editing projects.' })
+  expect(await readFile(statePath, 'utf8')).toBe(raw)
+  expect(rpc).not.toHaveBeenCalled()
+})
+
+it('serializes concurrent workspace rename, reorder and delete without losing unrelated state', async () => {
+  const statePath = join(home, '.codex-global-state.json')
+  const other = join(home, 'other')
+  await writeFile(statePath, JSON.stringify({
+    'electron-saved-workspace-roots': [project, other],
+    'active-workspace-roots': [other], 'project-order': [project, other],
+    'remote-projects': [{ id: 'remote', future: { keep: true } }], unknown: { keep: true },
+  }))
+  const responses = await Promise.all([
+    request('/codex-api/workspace-roots-state', 'PATCH', { type: 'rename', path: project, label: ' Renamed ' }),
+    request('/codex-api/workspace-roots-state', 'PATCH', { type: 'reorder', order: ['remote', other, project] }),
+    request('/codex-api/workspace-roots-state', 'PATCH', { type: 'delete', path: other }),
+  ])
+  expect(responses.map(response => response.res.statusCode)).toEqual([200, 200, 200])
+  const response = await request('/codex-api/workspace-roots-state')
+  expect(response.json).toEqual({ data: {
+    order: [project], active: [project], labels: { [project]: 'Renamed' },
+    projectOrder: ['remote', project], remoteProjects: [{ id: 'remote', hostId: '', remotePath: '', label: '' }],
+  } })
+  const saved = JSON.parse(await readFile(statePath, 'utf8'))
+  expect(saved.unknown).toEqual({ keep: true })
+  expect(saved['remote-projects']).toEqual([{ id: 'remote', future: { keep: true } }])
+  expect(rpc).not.toHaveBeenCalled()
+})

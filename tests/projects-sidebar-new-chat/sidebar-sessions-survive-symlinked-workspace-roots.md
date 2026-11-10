@@ -33,3 +33,27 @@ Workspace roots and thread-list cwd values are canonicalized through local `real
 - None.
 
 ---
+
+### Workspace roots store extraction compatibility (9-C-5)
+
+#### Prerequisites/Setup
+- Use an isolated `CODEX_HOME` and a server pointed at the usual external app-server fixture.
+- Create two temporary directories and a symlink to one. Register both directories through the project UI.
+- Add an unrelated sentinel field and an unknown field in a remote-project record to `.codex-global-state.json`.
+
+#### Steps
+1. GET `/codex-api/workspace-roots-state`; confirm the existing `{ data: { order, labels, active, projectOrder, remoteProjects } }` envelope.
+2. Send concurrent PATCH requests to that endpoint: rename the symlinked root, reorder both roots, and delete the other root. Use `{ type: 'rename', path, label }`, `{ type: 'reorder', order }`, and `{ type: 'delete', path }` bodies.
+3. GET the state again and inspect the persisted file. Confirm the rename and deletion both remain, ordering contains only surviving local roots plus remote IDs, and both unknown fields are intact.
+4. PUT a legacy state body to the endpoint; confirm HTTP 409 with `Workspace updates have changed. Reload this tab before editing projects.` and no file change.
+5. Repeat a no-op rename and confirm the file modification time does not change.
+6. With the server idle, temporarily replace the global-state JSON with malformed JSON. GET and PATCH must report errors without replacing the file. Restore the original file and confirm subsequent PATCH succeeds.
+
+#### Expected Results
+- Alias and canonical paths retain one identity; canonical labels win collisions.
+- Concurrent operations preserve unrelated fields and use the existing global-state transaction.
+- GET/PATCH response envelopes and legacy PUT rejection remain unchanged.
+- Failed persistence is reported and leaves recoverable state.
+
+#### Rollback/Cleanup
+Stop the isolated server, remove its temporary `CODEX_HOME`, directories, and symlink. Do not edit normal user state.
