@@ -456,6 +456,7 @@ import IconTablerSearch from './components/icons/IconTablerSearch.vue'
 import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
 import { useDesktopState } from './composables/useDesktopState'
+import { useFolderPicker } from './composables/useFolderPicker'
 import { useNewThreadRuntime } from './composables/useNewThreadRuntime'
 import { useMobile } from './composables/useMobile'
 import { useUiLanguage } from './composables/useUiLanguage'
@@ -467,20 +468,18 @@ import {
   createProjectlessThreadDirectory,
   getGitRepositoryStatus,
   logoutCodex,
-  createLocalDirectory,
   getHomeDirectory,
   getTelegramConfig,
   getProjectRootSuggestion,
   getTelegramStatus,
   sendTelegramTestNotification,
   getWorkspaceRootsState,
-  listLocalDirectories,
   openProjectRoot,
   searchThreads,
 } from './api/codexGateway'
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
-import type { LocalDirectoryEntry, TelegramStatus } from './api/codexGateway'
+import type { TelegramStatus } from './api/codexGateway'
 import { getCodexAuthenticationStatus } from './api/codexGateway'
 import { getPathLeafName, getPathParent, isProjectlessChatPath, normalizePathForUi } from './pathUtils.js'
 import { copyTextToClipboard } from './utils/clipboard'
@@ -668,10 +667,6 @@ const telegramNotificationStatusText = computed(() => {
   if (status.lastTestResult === 'success') return t('Test notification sent successfully')
   return t('Last notification sent successfully')
 })
-const isCreateFolderOpen = ref(false)
-const createFolderDraft = ref('')
-const createFolderError = ref('')
-const isCreatingFolder = ref(false)
 const isProjectSetupModalOpen = ref(false)
 const projectSetupMode = ref<'create' | 'clone'>('create')
 const projectSetupBaseDir = ref('')
@@ -680,17 +675,39 @@ const githubCloneUrlDraft = ref('')
 const projectSetupError = ref('')
 const isProjectSetupSubmitting = ref(false)
 const projectSetupModalRef = ref<InstanceType<typeof ProjectSetupModal> | null>(null)
-const isExistingFolderPickerOpen = ref(false)
 const folderPickerModalRef = ref<InstanceType<typeof FolderPickerModal> | null>(null)
-const existingFolderPathDraft = ref('')
-const existingFolderBrowsePath = ref('')
-const existingFolderParentPath = ref('')
-const existingFolderEntries = ref<LocalDirectoryEntry[]>([])
-const existingFolderError = ref('')
-const isExistingFolderLoading = ref(false)
-const isOpeningExistingFolder = ref(false)
-const showHiddenFolders = ref(false)
-const existingFolderFilter = ref('')
+const {
+  isCreateFolderOpen,
+  createFolderDraft,
+  createFolderError,
+  isCreatingFolder,
+  isExistingFolderPickerOpen,
+  existingFolderPathDraft,
+  existingFolderBrowsePath,
+  existingFolderError,
+  isExistingFolderLoading,
+  isOpeningExistingFolder,
+  showHiddenFolders,
+  existingFolderFilter,
+  canCreateFolder,
+  resolvedExistingFolderPath,
+  createFolderSubmitLabel,
+  existingFolderFilteredEntries,
+  onOpenExistingFolder,
+  onCloseExistingFolderPanel,
+  onBrowseExistingFolder,
+  onToggleHiddenFolders,
+  onRetryExistingFolderBrowse,
+  onOpenCreateFolderPanel,
+  onCloseCreateFolderPanel,
+  onCreateFolder,
+} = useFolderPicker({
+  resolveStartPath: async () => newThreadCwd.value.trim() || await resolveProjectBaseDirectory(),
+  defaultFolderName: () => defaultNewProjectName.value,
+  resolveCreationPath: (parent, name) => normalizeAbsolutePath(joinPath(parent, name)),
+  focusPathInput: () => folderPickerModalRef.value?.focusPathInput(),
+  focusCreateInput: () => folderPickerModalRef.value?.focusCreateInput(),
+})
 const telegramStatus = ref<TelegramStatus>({
   configured: false,
   active: false,
@@ -702,7 +719,6 @@ let lastWorkspaceRootsResumeAt = 0
 const visualViewportHeight = ref(typeof window !== 'undefined' ? window.visualViewport?.height ?? window.innerHeight : 0)
 const visualViewportOffsetTop = ref(typeof window !== 'undefined' ? window.visualViewport?.offsetTop ?? 0 : 0)
 const layoutViewportHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 0)
-let existingFolderBrowseRequestId = 0
 
 const routeThreadId = computed(() => {
   const rawThreadId = route.params.threadId
@@ -925,16 +941,6 @@ const {
   selectedWorktreeBranchLabel,
   isLoadingWorktreeBranches,
 } = useNewThreadRuntime(newThreadCwd, isNewThreadCwdGitRepo)
-const createFolderParentPath = computed(() => existingFolderBrowsePath.value.trim())
-const isCreateFolderNameValid = computed(() => {
-  const draft = createFolderDraft.value.trim()
-  if (!draft) return false
-  if (draft === '.' || draft === '..') return false
-  return !/[\\/]/u.test(draft)
-})
-const canCreateFolder = computed(() => {
-  return isCreateFolderNameValid.value && createFolderParentPath.value.trim().length > 0 && !existingFolderError.value
-})
 const isProjectNameDraftValid = computed(() => {
   const draft = projectNameDraft.value.trim()
   if (!draft) return false
@@ -947,15 +953,6 @@ const canSubmitProjectSetup = computed(() => {
   if (projectSetupMode.value === 'create') return isProjectNameDraftValid.value
   return githubCloneUrlDraft.value.trim().length > 0
 })
-const resolvedExistingFolderPath = computed(() => {
-  const draftedPath = normalizePathForUi(existingFolderPathDraft.value).trim()
-  if (draftedPath) return draftedPath
-  return existingFolderBrowsePath.value.trim()
-})
-const createFolderSubmitLabel = computed(() => {
-  if (isCreatingFolder.value) return 'Creating…'
-  return 'Create'
-})
 const projectSetupSubmitLabel = computed(() => {
   if (isProjectSetupSubmitting.value) {
     if (projectSetupMode.value === 'clone') return t('Cloning…')
@@ -963,38 +960,6 @@ const projectSetupSubmitLabel = computed(() => {
   }
   if (projectSetupMode.value === 'clone') return t('Clone repository')
   return t('Create project')
-})
-const canBrowseExistingFolderParent = computed(() => {
-  const current = existingFolderBrowsePath.value.trim()
-  const parent = existingFolderParentPath.value.trim()
-  return Boolean(current && parent && current !== parent)
-})
-const existingFolderDisplayEntries = computed(() => {
-  const entries: Array<{ key: string; name: string; path: string; kind: 'parent' | 'directory' }> = []
-  if (canBrowseExistingFolderParent.value) {
-    entries.push({
-      key: `parent:${existingFolderParentPath.value}`,
-      name: '..',
-      path: existingFolderParentPath.value,
-      kind: 'parent',
-    })
-  }
-  for (const entry of existingFolderEntries.value) {
-    entries.push({
-      key: `directory:${entry.path}`,
-      name: entry.name,
-      path: entry.path,
-      kind: 'directory',
-    })
-  }
-  return entries
-})
-const existingFolderFilteredEntries = computed(() => {
-  const filter = existingFolderFilter.value.trim().toLowerCase()
-  if (!filter) return existingFolderDisplayEntries.value
-  return existingFolderDisplayEntries.value.filter((entry) =>
-    entry.kind === 'parent' || entry.name.toLowerCase().includes(filter),
-  )
 })
 const darkModeMediaQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
 const chatWidthLabel = computed(() => t(CHAT_WIDTH_PRESETS[chatWidth.value].label))
@@ -1687,46 +1652,6 @@ async function onSubmitProjectSetup(): Promise<void> {
   }
 }
 
-async function onOpenExistingFolder(): Promise<void> {
-  const startPath = newThreadCwd.value.trim() || await resolveProjectBaseDirectory()
-  if (!startPath) return
-  isCreateFolderOpen.value = false
-  isExistingFolderPickerOpen.value = true
-  existingFolderFilter.value = ''
-  await loadExistingFolderListing(startPath)
-  if (!existingFolderError.value) {
-    void nextTick(() => folderPickerModalRef.value?.focusPathInput())
-  }
-}
-
-function onCloseExistingFolderPanel(): void {
-  existingFolderBrowseRequestId += 1
-  isExistingFolderPickerOpen.value = false
-  isExistingFolderLoading.value = false
-  existingFolderError.value = ''
-  existingFolderFilter.value = ''
-  existingFolderPathDraft.value = ''
-  onCloseCreateFolderPanel()
-}
-
-async function onBrowseExistingFolder(path: string): Promise<void> {
-  if (!path || isExistingFolderLoading.value) return
-  existingFolderFilter.value = ''
-  await loadExistingFolderListing(path)
-}
-
-function onToggleHiddenFolders(): void {
-  const currentPath = existingFolderBrowsePath.value.trim()
-  if (!isExistingFolderPickerOpen.value || !currentPath) return
-  void loadExistingFolderListing(currentPath)
-}
-
-function onRetryExistingFolderBrowse(): void {
-  const currentPath = resolvedExistingFolderPath.value
-  if (!isExistingFolderPickerOpen.value || !currentPath || isExistingFolderLoading.value || isOpeningExistingFolder.value) return
-  void loadExistingFolderListing(currentPath)
-}
-
 async function onConfirmExistingFolder(path = resolvedExistingFolderPath.value): Promise<void> {
   const targetPath = normalizePathForUi(path).trim()
   if (!targetPath) return
@@ -1753,76 +1678,6 @@ async function onConfirmExistingFolder(path = resolvedExistingFolderPath.value):
     existingFolderError.value = error instanceof Error ? error.message : 'Failed to open the selected folder.'
   } finally {
     isOpeningExistingFolder.value = false
-  }
-}
-
-async function onOpenCreateFolderPanel(): Promise<void> {
-  createFolderError.value = ''
-  if (isCreateFolderOpen.value) {
-    onCloseCreateFolderPanel()
-    return
-  }
-  if (!isExistingFolderPickerOpen.value) {
-    const startPath = newThreadCwd.value.trim() || await resolveProjectBaseDirectory()
-    if (!startPath) return
-    isExistingFolderPickerOpen.value = true
-    existingFolderFilter.value = ''
-    await loadExistingFolderListing(startPath)
-    if (existingFolderError.value) return
-  }
-  if (existingFolderError.value) return
-  createFolderDraft.value = defaultNewProjectName.value
-  isCreateFolderOpen.value = true
-  void nextTick(() => folderPickerModalRef.value?.focusCreateInput())
-}
-
-function onCloseCreateFolderPanel(): void {
-  createFolderError.value = ''
-  createFolderDraft.value = ''
-  isCreateFolderOpen.value = false
-}
-
-async function onCreateFolder(): Promise<void> {
-  const normalizedInput = createFolderDraft.value.trim()
-  if (!normalizedInput) return
-
-  createFolderError.value = ''
-  if (existingFolderError.value) {
-    createFolderError.value = 'Reload the current folder before creating a new one.'
-    return
-  }
-  isCreatingFolder.value = true
-
-  const baseDir = createFolderParentPath.value.trim()
-  const targetPath = normalizeAbsolutePath(joinPath(baseDir, normalizedInput))
-
-  if (!targetPath) {
-    createFolderError.value = 'Unable to determine where the new folder should be created.'
-    isCreatingFolder.value = false
-    return
-  }
-
-  if (!isCreateFolderNameValid.value) {
-    createFolderError.value = 'Enter a single folder name.'
-    isCreatingFolder.value = false
-    return
-  }
-
-  try {
-    const normalizedPath = await createLocalDirectory(targetPath)
-    if (!normalizedPath) {
-      createFolderError.value = 'Failed to create the folder.'
-      return
-    }
-
-    createFolderError.value = ''
-    existingFolderFilter.value = ''
-    await loadExistingFolderListing(normalizedPath)
-    onCloseCreateFolderPanel()
-  } catch (error) {
-    createFolderError.value = error instanceof Error ? error.message : 'Failed to create folder.'
-  } finally {
-    isCreatingFolder.value = false
   }
 }
 
@@ -1906,34 +1761,6 @@ async function loadWorkspaceRootOptionsState(): Promise<void> {
     }
   } catch (cause) {
     desktopError.value = cause instanceof Error ? cause.message : 'Failed to load projects'
-  }
-}
-
-async function loadExistingFolderListing(path: string): Promise<void> {
-  const requestId = ++existingFolderBrowseRequestId
-  const normalizedRequestedPath = normalizePathForUi(path).trim()
-  existingFolderPathDraft.value = normalizedRequestedPath
-  existingFolderBrowsePath.value = normalizedRequestedPath
-  existingFolderError.value = ''
-  isExistingFolderLoading.value = true
-
-  try {
-    const listing = await listLocalDirectories(path, { showHidden: showHiddenFolders.value })
-    if (requestId !== existingFolderBrowseRequestId) return
-    existingFolderPathDraft.value = listing.path
-    existingFolderBrowsePath.value = listing.path
-    existingFolderParentPath.value = listing.parentPath
-    existingFolderEntries.value = listing.entries
-  } catch (error) {
-    if (requestId !== existingFolderBrowseRequestId) return
-    existingFolderError.value = error instanceof Error ? error.message : 'Failed to load local folders.'
-    existingFolderParentPath.value = getPathParent(existingFolderBrowsePath.value)
-    existingFolderEntries.value = []
-    onCloseCreateFolderPanel()
-  } finally {
-    if (requestId === existingFolderBrowseRequestId) {
-      isExistingFolderLoading.value = false
-    }
   }
 }
 
