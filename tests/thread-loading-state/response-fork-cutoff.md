@@ -21,13 +21,67 @@ user message and assistant response. Load earlier messages.
 Cleanup: archive test forks and the source conversation. No workspace file
 rollback is performed by Fork.
 
-Automated coverage: `src/server/forkThreadCutoff.test.ts` checks authoritative
-history counts, inclusive cutoffs, read/resume and continuation against a
-stateful fixture, invalid input, and incomplete-fork cleanup. Fixture checks do
-not establish live Codex context behavior.
+Automated coverage: `src/server/forkThreadCutoff.test.ts` checks native
+`lastTurnId`, rejects ignored cutoffs, changed turn IDs and history reappearing
+on read, and archives incomplete forks. `threadLiveStateRetirement.test.ts`
+checks pagination/cache ordering. `src/api/codexGateway.test.ts` rejects missing
+cutoff metadata. These are mocked checks, not evidence of server persistence.
 
-Performance audit: the successful cutoff path uses one fork plus at most one
-rollback, calculated from the full server snapshot before response pagination.
-Only the final snapshot reaches the browser and its pagination cache. Existing
-metadata enrichment remains in place. No extra polling, connections or fanout
-are introduced. Live render timing and Codex latency were not measured.
+Compatibility: the browser calls `thread/fork-at-response`; older backends
+reject the unknown operation. Successful results require `forkCutoff` metadata.
+An app-server ignoring native `lastTurnId` is rejected by comparing all retained
+turn IDs in both the initial response and a fresh durable read.
+
+Performance audit (code path): a successful response fork now uses three serial
+RPCs: source read, native fork, fork read. It removes rollback and avoids copying
+later turns into the fork response. Reads hydrate full histories, so source read
+cost grows with history size. No polling, new connections, unbounded fanout or
+new cache is introduced. Existing pagination/cache enrichment runs only after
+verification. Render timings and large-history latency were not measured.
+
+## Real-server investigation, 2026-11-10
+
+Source baseline: `62acb2aa52bf38dd01cfb21e1b73c74c1d3269ab`.
+Codex endpoint: `ws://127.0.0.1:4500`; initialize reports
+`codex-web-local/0.166.0`, Linux x86_64. App version: `0.1.87`.
+The existing HTTP endpoint was `http://127.0.0.1:5900`; its served asset
+`index-C-ziJuL1.js` contains `forkFromTurnIndex`, and its backend rejects a
+negative cutoff with `Invalid fork response cutoff`, proving interception.
+Its exact process cwd/revision and any external reverse proxy could not be
+established: host listener PIDs were unavailable in the execution namespace.
+Thus a stale deployment elsewhere has not been ruled out.
+
+A disposable five-turn source was created through the real backend:
+`01a1c3cb-eb71-7162-9309-24d7764119ff`. Selecting the second response uses
+turnIndex `1`, turn ID `01a1c3cb-ff82-72d1-9068-90fad3336b1b`.
+The old backend forks all five turns, computes rollback numTurns `3`, then
+fails because this server rejects `thread/rollback` as an unknown operation.
+The backend reports an error and archives the incomplete fork. Silent success
+with later history was not reproduced on this endpoint. The confirmed failure
+is a protocol mismatch, alongside the independently observable missing browser
+verification of cutoff support. Mocked rollback tests concealed the mismatch.
+
+The installed binary's generated `ThreadForkParams` documents inclusive
+`lastTurnId`. Verification used the current Vite backend on
+`http://127.0.0.1:4173`, connected to the same independent server.
+Playwright Chromium was used because Browser Use was unavailable. The actual
+second-response Fork button sent:
+
+```json
+{"method":"thread/fork-at-response","params":{"threadId":"01a1c3cb-eb71-7162-9309-24d7764119ff","forkFromTurnIndex":1,"persistExtendedHistory":true}}
+```
+
+The resulting fork `01a1c3ce-bb66-7692-961e-c313259710f7` retained only:
+
+- `01a1c3cb-eb90-71e3-9362-ef05ad3a7250`
+- `01a1c3cb-ff82-72d1-9068-90fad3336b1b`
+
+The initial native fork and durable read both pass the backend ID checks.
+Immediate display and page reload show OK1/OK2 and exclude OK5. Separate
+real-server read/resume/read checks also retain exactly those two IDs.
+After resume, continuation asking for the largest prior OK number answers OK2;
+its durable history contains the two retained IDs plus one new turn.
+The source still has its original five IDs. No rollback RPC is used by the fix.
+These are real-server observations, not fixture simulations. Existing UI styles
+were not changed; theme-specific rendering and production deployment of the new
+build were not verified in this investigation.

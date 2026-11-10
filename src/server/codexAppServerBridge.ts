@@ -1226,25 +1226,34 @@ export async function forkThreadAtCutoff(appServer: RpcExecutor, params: Record<
   if (!Number.isSafeInteger(forkFromTurnIndex) || (forkFromTurnIndex as number) < 0) {
     throw new Error('Invalid fork response cutoff')
   }
-  const result = await callRpcWithArchiveRecovery(appServer, 'thread/fork', forkParams)
+  const source = asRecord(await callRpcWithArchiveRecovery(appServer, 'thread/read', {
+    threadId: params.threadId, includeTurns: true,
+  }))
+  const sourceTurns = asRecord(source?.thread)?.turns
+  const cutoff = forkFromTurnIndex as number
+  const prefix = Array.isArray(sourceTurns) ? sourceTurns.slice(0, cutoff + 1) : []
+  const ids = prefix.map(turn => readNonEmptyString(asRecord(turn)?.id))
+  if (ids.length !== cutoff + 1 || ids.some(id => !id)) {
+    throw new Error('Fork response cutoff is outside the source history')
+  }
+  const result = await callRpcWithArchiveRecovery(appServer, 'thread/fork', {
+    ...forkParams, lastTurnId: ids[cutoff],
+  })
   const record = asRecord(result)
   const thread = asRecord(record?.thread)
   const id = readNonEmptyString(thread?.id)
   if (!id || id === readNonEmptyString(params.threadId)) throw new Error('Invalid fork thread id')
   try {
-    const turns = thread?.turns
-    if (!Array.isArray(turns) || (forkFromTurnIndex as number) >= turns.length) {
-      throw new Error('Fork response cutoff is outside the fork history')
+    // Read durable history too: an ignored lastTurnId must never look successful.
+    const persisted = asRecord(await appServer.rpc('thread/read', { threadId: id, includeTurns: true }))
+    for (const snapshot of [thread, asRecord(persisted?.thread)]) {
+      const turns = snapshot?.turns
+      if (!Array.isArray(turns) || turns.length !== ids.length
+        || turns.some((turn, index) => readNonEmptyString(asRecord(turn)?.id) !== ids[index])) {
+        throw new Error('Response fork cutoff was not applied by the app-server')
+      }
     }
-    const numTurns = turns.length - (forkFromTurnIndex as number) - 1
-    if (numTurns === 0) return result
-    const rollback = asRecord(await appServer.rpc('thread/rollback', { threadId: id, numTurns }))
-    const rolledThread = asRecord(rollback?.thread)
-    if (rolledThread?.id !== id || !Array.isArray(rolledThread.turns)
-      || rolledThread.turns.length !== (forkFromTurnIndex as number) + 1) {
-      throw new Error('Fork rollback did not retain the selected response')
-    }
-    return { ...record, ...rollback, thread: { ...thread, ...rolledThread } }
+    return { ...record, forkCutoff: { sourceThreadId: params.threadId, turnIndex: cutoff, turnId: ids[cutoff], turnCount: ids.length } }
   } catch (error) {
     try {
       await callRpcWithArchiveRecovery(appServer, 'thread/archive', { threadId: id })
@@ -3557,11 +3566,14 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           return
         }
 
+        const responseFork = body.method === 'thread/fork-at-response'
+        if (responseFork) body.method = 'thread/fork'
+
         let rpcResult: unknown
         try {
           const params = asRecord(body.params)
-          rpcResult = body.method === 'thread/fork' && params && Object.prototype.hasOwnProperty.call(params, 'forkFromTurnIndex')
-            ? await forkThreadAtCutoff(appServer, params)
+          rpcResult = responseFork || (body.method === 'thread/fork' && params && Object.prototype.hasOwnProperty.call(params, 'forkFromTurnIndex'))
+            ? await forkThreadAtCutoff(appServer, params ?? {})
             : await callRpcWithArchiveRecovery(appServer, body.method, body.params ?? null)
         } catch (error) {
 	          if (body.method === 'account/rateLimits/read' && isUnauthenticatedRateLimitError(error)) {

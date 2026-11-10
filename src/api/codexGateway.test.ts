@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { reasoningCatalog, getAvailableModelIds, getThreadDetail, resumeThread, startThreadTurn } from './codexGateway'
+import { forkThreadFromResponse, reasoningCatalog, getAvailableModelIds, getThreadDetail, resumeThread, startThreadTurn } from './codexGateway'
 
 function mockRpcFetch(): { requests: Array<{ method: string, params: Record<string, unknown> }> } {
   const requests: Array<{ method: string, params: Record<string, unknown> }> = []
@@ -229,4 +229,18 @@ it('loads normal frontend history with one RPC and no legacy diagnostic request'
     expect(url).toBe('/codex-api/rpc')
     expect(JSON.parse(init.body as string)).toMatchObject({ method: 'thread/read', params: { threadId: 'normal-history', includeTurns: true } })
   } finally { vi.unstubAllGlobals() }
+})
+
+
+describe('response fork operation support', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('rejects an old backend response without verified cutoff metadata', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      result: { thread: { id: 'full-fork', turns: [] } },
+    }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(forkThreadFromResponse('source', 1)).rejects.toThrow('Backend did not verify')
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string).method).toBe('thread/fork-at-response')
+  })
 })

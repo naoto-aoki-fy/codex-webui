@@ -202,16 +202,16 @@ it('truncates a response fork before pagination and snapshot caching', async () 
   rpc.mockImplementation(async (method, params) => {
     if (method === 'thread/fork') {
       expect(params).not.toHaveProperty('forkFromTurnIndex')
-      return { model: 'fixture', thread: { id: 'fork-cutoff-test', turns } }
+      expect(params).toMatchObject({ lastTurnId: 'turn-14' })
+      return { model: 'fixture', thread: { id: 'fork-cutoff-test', turns: turns.slice(0, 15) } }
     }
-    if (method === 'thread/rollback') {
-      expect(params).toEqual({ threadId: 'fork-cutoff-test', numTurns: 10 })
+    if (method === 'thread/read' && (params as Record<string, unknown>).threadId === 'fork-cutoff-test') {
       return { thread: { id: 'fork-cutoff-test', turns: turns.slice(0, 15) } }
     }
     return { thread: { id: 'source', turns } }
   })
   const response = await request('/codex-api/rpc', 'POST', {
-    method: 'thread/fork', params: { threadId: 'source', forkFromTurnIndex: 14 },
+    method: 'thread/fork-at-response', params: { threadId: 'source', forkFromTurnIndex: 14 },
   })
   expect(response.res.statusCode).toBe(200)
   expect(response.json.result.thread.turns).toEqual(turns.slice(5, 15))
