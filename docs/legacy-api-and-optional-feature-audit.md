@@ -46,15 +46,15 @@ This is active shared functionality: `src/composables/useDesktopState.ts` invoke
 
 ### Browser-based file editing
 
-Frontend entry points are the “Edit file” context action in `src/components/content/ThreadConversation.vue` and generated directory/editor pages in `src/server/localBrowseUi.ts`. `src/server/localFileHttp.ts` handles editor GET/HEAD and PUT save requests and is mounted by both Vite and production HTTP server. Runtime uses Node filesystem and browser APIs; Express is shared infrastructure. Tests: `src/server/httpServer.localFiles.test.ts`, `tests/website-docs-misc/shared-local-file-http.md`, and `tests/chat-composer-rendering/chat-file-link-context-menu-open-copy-edit.md`.
+Browser editing has been removed after caller revalidation: the conversation action, directory edit links, standalone editor, and GET/HEAD/PUT handlers are retired. Read-only browsing, images, downloads, directory selection, shared HTTP/path validation, and other application filesystem operations remain. See `tests/website-docs-misc/shared-local-file-http.md` for the current contract.
 
-The editor can be removed while retaining file browsing, image serving, directory selection and shared path/transfer code. Check text-file detection helper use before removing it.
+Caller checks confirmed the text eligibility helpers were editor-only and they were removed.
 
 ## Prioritized recommendations
 
 1. Before retiring any legacy endpoint, seek external-client and access-log evidence and choose a deprecation policy. The file-change fallback route has the smallest repository-level dependency footprint, but external use remains unknown.
 2. Telegram is the clearest optional subsystem to evaluate first: it has a coherent boundary and is the only apparent consumer of `undici`.
-3. Browser editing is another separable product decision; preserve browsing and file-link behavior if only editing is removed.
+3. Browser editing is retired; preserve browsing and file-link behavior in future cleanup.
 4. Evaluate clone and worktree creation separately. Preserve support for already-existing worktrees and shared workspace-root state.
 5. Treat Undo/Redo backend removal as the riskiest feature decision because conversation rollback uses the same service.
 6. Retain shared thread recovery code: stream error buffers, snapshots, pending-materialization handling, timestamp/generation recovery and shared patch parsing.

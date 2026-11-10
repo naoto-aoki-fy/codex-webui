@@ -8,9 +8,9 @@ The unused `getNotificationCatalog` and `fetchRpcNotificationCatalog` frontend w
 
 The `/codex-api/meta/notifications` HTTP API is retained, using the bundled method catalog.
 
-The unused `/codex-local-file` endpoint has been retired from production and development, along with its service-worker bypass. Repository-wide searches found no callers or supported external API contract; the prior cleanup note deferred removal solely because external use was unknown. Local images use `/codex-local-image`, conversation file links use `/codex-local-browse`, text editing uses `/codex-local-edit`, and folder selection uses `/codex-local-directories`. Attachments retain their existing upload and image paths.
+The unused `/codex-local-file` endpoint has been retired from production and development, along with its service-worker bypass. Repository-wide searches found no callers or supported external API contract; the prior cleanup note deferred removal solely because external use was unknown. Local images use `/codex-local-image`, conversation file links use `/codex-local-browse`, and folder selection uses `/codex-local-directories`. Attachments retain their existing upload and image paths.
 
-The active `/codex-local-browse` and `/codex-local-edit` routes remain unchanged. No persisted preference data is deleted.
+The active `/codex-local-browse` route retains read-only browsing. Browser editing and `/codex-local-edit` have been removed. No persisted preference data is deleted.
 
 The obsolete GET/PUT `/codex-api/preferences/first-launch-plugins-card` handlers, dismissal key constant, and exclusive read/write helpers have been removed. Repository-wide caller searches found only these handlers and historical feature documentation; the announcement UI and its callers were already removed. Historical wiki sources describe the former implementation, not a supported preference API. External clients using this obsolete route must stop calling it. No persisted keys or files are migrated or deleted; shared global-state persistence remains for titles, pins, and workspace roots.
 

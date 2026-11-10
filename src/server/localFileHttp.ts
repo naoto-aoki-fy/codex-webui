@@ -1,10 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isAbsolute, extname } from 'node:path'
-import { stat, writeFile } from 'node:fs/promises'
+import { stat } from 'node:fs/promises'
 import express from 'express'
-import { createDirectoryListingHtml, createTextEditorHtml, getLocalDirectoryListing, isTextEditableFile, normalizeLocalPath } from './localBrowseUi.js'
+import { createDirectoryListingHtml, getLocalDirectoryListing, normalizeLocalPath } from './localBrowseUi.js'
 
-export const LOCAL_EDIT_BODY_LIMIT = 10 * 1024 * 1024
 const imageTypes: Record<string, string> = {
   '.avif': 'image/avif', '.bmp': 'image/bmp', '.gif': 'image/gif',
   '.jpeg': 'image/jpeg', '.jpg': 'image/jpeg', '.png': 'image/png',
@@ -24,39 +23,6 @@ function validatePath(value: string, directory: boolean): string {
   return value
 }
 
-async function readEditBody(req: IncomingMessage): Promise<string> {
-  if (Number(req.headers['content-length']) > LOCAL_EDIT_BODY_LIMIT) {
-    req.resume()
-    throw new RequestError(413, 'Request body too large.')
-  }
-  if (req.headers['content-encoding'] && req.headers['content-encoding'] !== 'identity') {
-    req.resume()
-    throw new RequestError(415, 'Unsupported content encoding.')
-  }
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    let size = 0
-    const cleanup = () => {
-      req.off('data', onData)
-      req.off('end', onEnd)
-      req.off('error', onError)
-      req.off('aborted', onAborted)
-    }
-    const onError = () => { cleanup(); reject(new RequestError(500, 'Write failed.')) }
-    const onAborted = () => { cleanup(); reject(new RequestError(400, 'Request aborted.')) }
-    const onEnd = () => { cleanup(); resolve(Buffer.concat(chunks, size).toString('utf8')) }
-    const onData = (chunk: Buffer) => {
-      size += chunk.length
-      if (size > LOCAL_EDIT_BODY_LIMIT) {
-        cleanup()
-        req.resume()
-        reject(new RequestError(413, 'Request body too large.'))
-      } else chunks.push(chunk)
-    }
-    req.on('data', onData).once('end', onEnd).once('error', onError).once('aborted', onAborted)
-  })
-}
-
 /** Connect and Express both accept this Node HTTP middleware directly. */
 export function createLocalFileMiddleware() {
   // Reuse the existing transfer implementation for MIME types, HEAD and ranges.
@@ -66,9 +32,8 @@ export function createLocalFileMiddleware() {
     const pathname = rawUrl.split('?')[0] ?? ''
     const kind = pathname === '/codex-local-image' ? 'image'
       : pathname === '/codex-local-directories' ? 'directories'
-      : pathname.startsWith('/codex-local-browse/') ? 'browse'
-      : pathname.startsWith('/codex-local-edit/') ? 'edit' : null
-    if (!kind || !(['GET', 'HEAD'].includes(req.method ?? '') || (kind === 'edit' && req.method === 'PUT'))) return next()
+      : pathname.startsWith('/codex-local-browse/') ? 'browse' : null
+    if (!kind || !['GET', 'HEAD'].includes(req.method ?? '')) return next()
     const send = (status: number, body: string, type = 'application/json; charset=utf-8') => {
       if (res.destroyed || res.writableEnded) return
       res.statusCode = status
@@ -91,14 +56,6 @@ export function createLocalFileMiddleware() {
         if (!info.isDirectory()) throw new RequestError(400, 'Expected directory path.')
         const showHidden = ['1', 'true', 'yes', 'on'].includes((query.get('showHidden') ?? '').toLowerCase())
         json(200, { data: await getLocalDirectoryListing(localPath, { showHidden }) })
-      } else if (kind === 'edit') {
-        if (!info.isFile()) throw new RequestError(400, 'Expected file path.')
-        if (req.method === 'PUT') {
-          if (!(await isTextEditableFile(localPath))) throw new RequestError(415, 'Only text-like files are editable.')
-          const body = await readEditBody(req)
-          await writeFile(localPath, body, 'utf8')
-          json(200, { ok: true })
-        } else send(200, await createTextEditorHtml(localPath), 'text/html; charset=utf-8')
       } else {
         res.setHeader('Cache-Control', kind === 'image' ? 'private, max-age=300' : 'private, no-store')
         if (kind === 'browse' && info.isDirectory()) {
@@ -119,7 +76,6 @@ export function createLocalFileMiddleware() {
         })
       }
     })().catch((error: unknown) => {
-      if (req.method === 'PUT') req.resume()
       if (res.headersSent) { res.destroy(); return }
       json(error instanceof RequestError ? error.status : 404, {
         error: error instanceof RequestError ? error.message

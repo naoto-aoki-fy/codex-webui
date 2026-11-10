@@ -810,14 +810,6 @@
       <button type="button" class="file-link-context-menu-item" @click="copyFileLinkContextLink">
         Copy link
       </button>
-      <button
-        v-if="fileLinkContextEditUrl"
-        type="button"
-        class="file-link-context-menu-item"
-        @click="openFileLinkContextEdit"
-      >
-        Edit file
-      </button>
     </div>
 
     <div v-if="activeDiffViewerChange" class="diff-viewer-backdrop" @click="closeDiffViewer">
@@ -972,7 +964,6 @@ const isFileLinkContextMenuVisible = ref(false)
 const fileLinkContextMenuX = ref(0)
 const fileLinkContextMenuY = ref(0)
 const fileLinkContextBrowseUrl = ref('')
-const fileLinkContextEditUrl = ref('')
 const { isMobile } = useMobile()
 
 function parsePlanFromMessageText(text: string): { explanation: string; steps: UiPlanStep[] } | null {
@@ -2786,19 +2777,6 @@ const fileLinkContextMenuStyle = computed(() => ({
   top: `${String(fileLinkContextMenuY.value)}px`,
 }))
 
-function toEditUrlFromBrowseHref(href: string): string {
-  const normalizedHref = href.trim()
-  if (!normalizedHref) return ''
-  try {
-    const resolved = new URL(normalizedHref, window.location.href)
-    if (!resolved.pathname.startsWith('/codex-local-browse')) return ''
-    const editPath = `/codex-local-edit${resolved.pathname.slice('/codex-local-browse'.length)}`
-    return `${editPath}${resolved.search}${resolved.hash}`
-  } catch {
-    return ''
-  }
-}
-
 function onConversationContextMenu(event: MouseEvent): void {
   const target = event.target
   if (!(target instanceof Element)) return
@@ -2813,7 +2791,6 @@ function onConversationContextMenu(event: MouseEvent): void {
   event.stopPropagation()
 
   fileLinkContextBrowseUrl.value = href
-  fileLinkContextEditUrl.value = toEditUrlFromBrowseHref(href)
   fileLinkContextMenuX.value = event.clientX
   fileLinkContextMenuY.value = event.clientY
   isFileLinkContextMenuVisible.value = true
@@ -2826,13 +2803,6 @@ function closeFileLinkContextMenu(): void {
 
 function openFileLinkContextBrowse(): void {
   const href = fileLinkContextBrowseUrl.value
-  closeFileLinkContextMenu()
-  if (!href || href === '#') return
-  window.open(href, '_blank', 'noopener,noreferrer')
-}
-
-function openFileLinkContextEdit(): void {
-  const href = fileLinkContextEditUrl.value
   closeFileLinkContextMenu()
   if (!href || href === '#') return
   window.open(href, '_blank', 'noopener,noreferrer')

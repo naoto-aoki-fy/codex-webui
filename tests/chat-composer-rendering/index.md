@@ -24,7 +24,7 @@ Return to the [manual test index](../../tests.md).
 | [Feature: MCP elicitation requests and thread status labels](mcp-elicitation-requests-and-thread-status-labels.md) |
 | [Feature: Stop button interrupts active turn without missing turnId](stop-button-interrupts-active-turn-without-missing-turnid.md) |
 | [Feature: Backticked HTTP(S) URL renders as clickable link](backticked-http-s-url-renders-as-clickable-link.md) |
-| [Feature: Chat file-link context menu (open/copy/edit)](chat-file-link-context-menu-open-copy-edit.md) |
+| [Feature: Chat file-link context menu (open/copy)](chat-file-link-context-menu-open-copy-edit.md) |
 | [Feature: Restore composer drag-and-drop file attach on input field](restore-composer-drag-and-drop-file-attach-on-input-field.md) |
 | [Feature: Restore clipboard image paste attachments in composer](restore-clipboard-image-paste-attachments-in-composer.md) |
 | [Feature: Show user file attachments as visible chips in chat](show-user-file-attachments-as-visible-chips-in-chat.md) |
