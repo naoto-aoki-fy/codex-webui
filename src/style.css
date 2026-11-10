@@ -1334,3 +1334,11 @@
 :root.dark .content-header .content-project-name {
   color: #94a3b8;
 }
+
+:root.dark .file-link-context-menu {
+  @apply border-zinc-700 bg-zinc-900;
+}
+
+:root.dark .file-link-context-menu-item {
+  @apply text-zinc-200 hover:bg-zinc-800;
+}

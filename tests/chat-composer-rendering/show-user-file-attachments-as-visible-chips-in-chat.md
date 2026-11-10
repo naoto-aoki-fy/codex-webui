@@ -11,7 +11,7 @@
 3. Locate the sent user message in conversation.
 4. Verify file attachment chips are rendered above message text.
 5. Click a file chip and confirm it opens the browse URL in a new tab/window.
-6. Right-click the chip link and verify file-link context actions still appear (`Open link`, `Copy link`, and `Edit file` when applicable).
+6. Right-click the chip link and verify file-link context actions still appear (`Open link` and `Copy link`).
 
 #### Expected Results
 - Sent user messages with `fileAttachments` show visible file chips in chat.

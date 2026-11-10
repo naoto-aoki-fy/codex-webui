@@ -25,7 +25,7 @@
 
 #### Steps
 1. Select the project using the folder picker and navigate into its subdirectory.
-2. Open a conversation file link; browse the directory, open the text file, choose Edit file, change its contents, save, and reopen it.
+2. Open a conversation file link; browse the directory, open the text file, verify its contents and download it. Confirm no Edit file action is present.
 3. Render a local image in conversation markdown and attach both an image and a text file; send the message and reopen the thread.
 4. Request `/codex-local-file?path=<absolute-text-file-path>` with GET and HEAD against each server.
 
