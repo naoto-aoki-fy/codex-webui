@@ -586,7 +586,7 @@
                       <pre class="message-code-pre"><code class="hljs" v-html="renderCachedHighlightedCodeAsHtml(block.language, block.value)"></code></pre>
                     </div>
                     <hr v-else-if="block.kind === 'thematicBreak'" class="message-divider" />
-                    <p v-else-if="isMarkdownImageFailed(message.id, blockIndex)" class="message-text">{{ block.markdown }}</p>
+                    <p v-else-if="isMarkdownImageFailed(message.id, blockIndex, block.url)" class="message-text">{{ block.markdown }}</p>
                     <button
                       v-else
                       class="message-image-button"
@@ -598,7 +598,7 @@
                         :src="block.url"
                         :alt="block.alt || 'Embedded message image'"
                         loading="lazy"
-                        @error="onMarkdownImageError(message.id, blockIndex)"
+                        @error="onMarkdownImageError(message.id, blockIndex, block.url)"
                       />
                     </button>
                   </template>
@@ -1283,6 +1283,7 @@ type MessageBlock =
   | { kind: 'thematicBreak' }
   | { kind: 'image'; url: string; alt: string; markdown: string }
 
+let conversationScrollResolve: (() => void) | null = null
 let conversationScrollFrame = 0
 let bottomLockFrame = 0
 let bottomLockFramesLeft = 0
@@ -1290,8 +1291,13 @@ let copiedMessageResetTimer: ReturnType<typeof setTimeout> | null = null
 let copiedUserMessageResetTimer: ReturnType<typeof setTimeout> | null = null
 let copiedPlanResetTimer: ReturnType<typeof setTimeout> | null = null
 let conversationUnmounted = false
+// A generation also invalidates work across rapid A → B → A switches.
+let threadGeneration = 0
+function isCurrentThreadGeneration(generation: number): boolean {
+  return !conversationUnmounted && generation === threadGeneration
+}
 let conversationScrollPromise: Promise<void> | null = null
-const trackedPendingImages = new WeakSet<HTMLImageElement>()
+let trackedPendingImages = new WeakSet<HTMLImageElement>()
 const highlightJsModule = ref<HighlightJsModule | null>(null)
 const highlightCacheVersion = ref(0)
 const markdownImageFailureVersion = ref(0)
@@ -1394,6 +1400,7 @@ function readPlan(message: UiMessage) {
 }
 
 async function copyPlan(message: UiMessage): Promise<void> {
+  const generation = threadGeneration
   const content = readPlan(message).copyText || message.text.trim()
   if (!content) return
 
@@ -1402,7 +1409,7 @@ async function copyPlan(message: UiMessage): Promise<void> {
   } catch {
     return
   }
-  if (conversationUnmounted) return
+  if (!isCurrentThreadGeneration(generation)) return
 
   copiedPlanId.value = message.id
   if (copiedPlanResetTimer) clearTimeout(copiedPlanResetTimer)
@@ -1560,6 +1567,7 @@ function fileChangeActionLabel(summary: TurnFileChangeSummary | null): string {
 }
 
 async function runFileChangeAction(summary: TurnFileChangeSummary | null, action: 'undo' | 'redo'): Promise<void> {
+  const generation = threadGeneration
   const key = fileChangeActionKey(summary)
   if (!summary || !key || !props.activeThreadId || !props.cwd) return
   const previousState = fileChangeActionStatus(summary)
@@ -1579,6 +1587,7 @@ async function runFileChangeAction(summary: TurnFileChangeSummary | null, action
       'single_turn',
     )
   } catch (error) {
+    if (!isCurrentThreadGeneration(generation)) return
     fileChangeActionState.value = { ...fileChangeActionState.value, [key]: previousState }
     fileChangeActionError.value = {
       ...fileChangeActionError.value,
@@ -1587,6 +1596,7 @@ async function runFileChangeAction(summary: TurnFileChangeSummary | null, action
     return
   }
 
+  if (!isCurrentThreadGeneration(generation)) return
   if (result.errors.length > 0) {
     if (action === 'undo') {
       fileChangeRedoPatchIds.value = { ...fileChangeRedoPatchIds.value, [key]: result.revertedPatchIds ?? [] }
@@ -1749,6 +1759,7 @@ function diffViewerMarker(line: DiffViewerLine): string {
 }
 
 async function copyUserMessage(message: UiMessage): Promise<void> {
+  const generation = threadGeneration
   const content = buildUserMessageCopyText(message)
   if (!content) return
   try {
@@ -1756,7 +1767,7 @@ async function copyUserMessage(message: UiMessage): Promise<void> {
   } catch {
     return
   }
-  if (conversationUnmounted) return
+  if (!isCurrentThreadGeneration(generation)) return
   copiedUserMessageId.value = message.id
   if (copiedUserMessageResetTimer) clearTimeout(copiedUserMessageResetTimer)
   copiedUserMessageResetTimer = setTimeout(() => {
@@ -1766,6 +1777,7 @@ async function copyUserMessage(message: UiMessage): Promise<void> {
 }
 
 async function copyResponse(anchorMessageId: string): Promise<void> {
+  const generation = threadGeneration
   const content = copyableResponseContentByAnchorId.value[anchorMessageId] ?? ''
   if (!content) return
 
@@ -1777,6 +1789,7 @@ async function copyResponse(anchorMessageId: string): Promise<void> {
     copied = false
   }
 
+  if (!isCurrentThreadGeneration(generation)) return
   if (!copied) {
     copied = copyTextWithSelectionFallback(content)
   }
@@ -3191,10 +3204,6 @@ function scheduleBottomLock(frames = 6): void {
   bottomLockFrame = requestAnimationFrame(runBottomLockFrame)
 }
 
-function onPendingImageSettled(): void {
-  scheduleBottomLock(3)
-}
-
 function jumpToLatest(): void {
   autoFollowOutput.value = true
   enforceBottomState()
@@ -3207,6 +3216,7 @@ async function loadMoreAbove(): Promise<void> {
 
   isLoadingMore.value = true
   const threadIdAtStart = props.activeThreadId
+  const generation = threadGeneration
 
   const prevScrollHeight = container.scrollHeight
   const prevScrollTop = container.scrollTop
@@ -3221,11 +3231,11 @@ async function loadMoreAbove(): Promise<void> {
     await nextTick()
 
     // Discard scroll restoration if the thread changed while we were awaiting.
-    if (props.activeThreadId === threadIdAtStart) {
+    if (isCurrentThreadGeneration(generation)) {
       container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight)
     }
   } finally {
-    isLoadingMore.value = false
+    if (isCurrentThreadGeneration(generation)) isLoadingMore.value = false
   }
 }
 
@@ -3242,6 +3252,10 @@ function bindPendingImageHandlers(): void {
   for (const image of images) {
     if (image.complete || trackedPendingImages.has(image)) continue
     trackedPendingImages.add(image)
+    const generation = threadGeneration
+    const onPendingImageSettled = () => {
+      if (isCurrentThreadGeneration(generation)) scheduleBottomLock(3)
+    }
     image.addEventListener('load', onPendingImageSettled, { once: true })
     image.addEventListener('error', onPendingImageSettled, { once: true })
   }
@@ -3250,19 +3264,24 @@ function bindPendingImageHandlers(): void {
 async function scheduleConversationScroll(): Promise<void> {
   if (conversationScrollPromise) return conversationScrollPromise
 
-  conversationScrollPromise = nextTick().then(() => new Promise<void>((resolve) => {
-    if (conversationScrollFrame) {
-      cancelAnimationFrame(conversationScrollFrame)
-    }
+  const generation = threadGeneration
+  const pending = nextTick().then(() => new Promise<void>((resolve) => {
+    if (!isCurrentThreadGeneration(generation)) { resolve(); return }
+    conversationScrollResolve = resolve
     conversationScrollFrame = requestAnimationFrame(() => {
       conversationScrollFrame = 0
-      conversationScrollPromise = null
-      applyConversationScrollState()
-      bindPendingImageHandlers()
-      scheduleBottomLock()
+      conversationScrollResolve = null
+      if (isCurrentThreadGeneration(generation)) {
+        applyConversationScrollState()
+        bindPendingImageHandlers()
+        scheduleBottomLock()
+      }
       resolve()
     })
-  }))
+  })).finally(() => {
+    if (conversationScrollPromise === pending) conversationScrollPromise = null
+  })
+  conversationScrollPromise = pending
 
   return conversationScrollPromise
 }
@@ -3347,7 +3366,9 @@ watch(
   async (overlay) => {
     if (!overlay) return
     if (!autoFollowOutput.value) return
+    const generation = threadGeneration
     await nextTick()
+    if (!isCurrentThreadGeneration(generation)) return
     enforceBottomState()
     scheduleBottomLock(8)
   },
@@ -3363,15 +3384,53 @@ watch(
   },
 )
 
+function invalidateThreadWork(): void {
+  threadGeneration += 1
+  trackedPendingImages = new WeakSet<HTMLImageElement>()
+  if (conversationScrollFrame) cancelAnimationFrame(conversationScrollFrame)
+  conversationScrollFrame = 0
+  conversationScrollResolve?.()
+  conversationScrollResolve = null
+  conversationScrollPromise = null
+  if (bottomLockFrame) cancelAnimationFrame(bottomLockFrame)
+  bottomLockFrame = 0
+  bottomLockFramesLeft = 0
+}
+
+watch(
+  () => props.activeThreadId,
+  () => {
+    invalidateThreadWork()
+    modalImageUrl.value = ''
+    isLoadingMore.value = false
+    closeDiffViewer()
+    closeFileLinkContextMenu()
+    fileLinkContextBrowseUrl.value = ''
+    expandedCommandIds.value = new Set()
+    collapsedAutoCommandIds.value = new Set()
+    expandedCommandGroupIds.value = new Set()
+    expandedWorkedIds.value = new Set()
+    expandedFileChangeSummaryIds.value = new Set()
+    failedMarkdownImages.value = new Set()
+    markdownImageFailureVersion.value += 1
+    copiedResponseAnchorId.value = ''
+    copiedUserMessageId.value = ''
+    copiedPlanId.value = ''
+    if (copiedMessageResetTimer) clearTimeout(copiedMessageResetTimer)
+    if (copiedUserMessageResetTimer) clearTimeout(copiedUserMessageResetTimer)
+    if (copiedPlanResetTimer) clearTimeout(copiedPlanResetTimer)
+    copiedMessageResetTimer = copiedUserMessageResetTimer = copiedPlanResetTimer = null
+    fileChangeActionState.value = {}
+    fileChangeActionError.value = {}
+    fileChangeRedoPatchIds.value = {}
+  },
+  { flush: 'sync' },
+)
+
 watch(
   () => props.activeThreadId,
   async () => {
     autoFollowOutput.value = true
-    modalImageUrl.value = ''
-    isLoadingMore.value = false
-    fileChangeActionState.value = {}
-    fileChangeActionError.value = {}
-    fileChangeRedoPatchIds.value = {}
     // Apply immediately for cached threads where isLoading never toggles.
     renderWindowStart.value = Math.max(0, props.messages.length - RENDER_WINDOW_SIZE)
     await scheduleConversationScroll()
@@ -3390,17 +3449,17 @@ function onConversationScroll(): void {
 
 const failedMarkdownImages = ref(new Set<string>())
 
-function markdownImageKey(messageId: string, blockIndex: number): string {
-  return `${messageId}:${blockIndex}`
+function markdownImageKey(messageId: string, blockIndex: number, url: string): string {
+  return JSON.stringify([messageId, blockIndex, url])
 }
 
-function isMarkdownImageFailed(messageId: string, blockIndex: number): boolean {
-  return failedMarkdownImages.value.has(markdownImageKey(messageId, blockIndex))
+function isMarkdownImageFailed(messageId: string, blockIndex: number, url: string): boolean {
+  return failedMarkdownImages.value.has(markdownImageKey(messageId, blockIndex, url))
 }
 
-function onMarkdownImageError(messageId: string, blockIndex: number): void {
+function onMarkdownImageError(messageId: string, blockIndex: number, url: string): void {
   const next = new Set(failedMarkdownImages.value)
-  next.add(markdownImageKey(messageId, blockIndex))
+  next.add(markdownImageKey(messageId, blockIndex, url))
   failedMarkdownImages.value = next
   markdownImageFailureVersion.value += 1
 }
@@ -3421,6 +3480,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   conversationUnmounted = true
+  invalidateThreadWork()
   if (copiedUserMessageResetTimer) {
     clearTimeout(copiedUserMessageResetTimer)
     copiedUserMessageResetTimer = null
