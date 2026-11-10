@@ -3223,7 +3223,7 @@ watch(
 )
 
 watch(
-  () => props.messages.some((message) => message.text.includes('```')),
+  () => props.messages.some((message) => (message.text.includes('```') || message.text.includes('~~~'))),
   (hasCodeBlocks) => {
     if (!hasCodeBlocks || highlightJsModule.value) return
     void ensureHighlightJsLoaded()
