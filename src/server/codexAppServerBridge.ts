@@ -993,10 +993,6 @@ function getErrorCode(error: unknown): string | null {
     : null
 }
 
-export async function hasUsableCodexAuth(): Promise<boolean | null> {
-  return null // Authentication belongs to the connected server.
-}
-
 function setJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode
   res.setHeader('Content-Type', 'application/json; charset=utf-8')

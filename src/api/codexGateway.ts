@@ -14,7 +14,6 @@ import {
 import type {
   CollaborationModeListResponse,
   ConfigReadResponse,
-  GetAccountRateLimitsResponse,
   ModelListResponse,
   ReasoningEffort,
   ThreadForkResponse,
@@ -818,10 +817,6 @@ export async function interruptThreadTurn(threadId: string, turnId?: string): Pr
   }
 }
 
-export async function setDefaultModel(model: string): Promise<void> {
-  await callRpc('setDefaultModel', { model })
-}
-
 export async function setCodexSpeedMode(mode: SpeedMode): Promise<void> {
   const normalizedMode: SpeedMode = mode === 'fast' ? 'fast' : 'standard'
   await callRpc('config/batchWrite', {
@@ -981,10 +976,6 @@ export async function startDirectoryMcpLogin(name: string): Promise<DirectoryMcp
   return {
     authorizationUrl: readString(payload.authorizationUrl ?? payload.authorization_url) ?? '',
   }
-}
-
-export async function getAccountRateLimitsResponse(): Promise<GetAccountRateLimitsResponse> {
-  return await callRpc<GetAccountRateLimitsResponse>('account/rateLimits/read')
 }
 
 function normalizeCollaborationModeLabel(value: string): string {
