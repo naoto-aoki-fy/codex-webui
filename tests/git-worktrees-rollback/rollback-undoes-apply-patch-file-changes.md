@@ -62,3 +62,21 @@
 
 #### Rollback/Cleanup
 - Click `Undo` again if the test should leave the worktree without the assistant's file changes.
+
+### Verification: Pure patch helper extraction
+
+#### Prerequisites
+- Dependencies are installed in the current checkout.
+
+#### Steps
+1. Run `pnpm exec vitest run src/server/turnFilePatches.test.ts src/server/threadFileChangeRetirement.test.ts`.
+2. Run `pnpm run typecheck`, `pnpm run build`, and `pnpm run test:unit`.
+3. Run `pnpm run test:integration:fixture`, then run `CODEXAPP_FIXTURE_TRANSPORT=unix pnpm run test:integration:fixture` sequentially.
+
+#### Expected Results
+- Characterization tests preserve ordered additions, deletions, updates, moves, malformed headers, missing context, whitespace, EOF handling, and forward/reverse asymmetry.
+- Public rollback-files requests preserve patch filtering, operation counts, partial failure errors, patch IDs, and tracked-file Git fallback.
+- Both transport fixtures pass for the built CLI and dev entry point.
+
+#### Rollback/Cleanup
+- Automated file-operation tests use temporary repositories and remove them after each case. No user worktree files need restoration.

@@ -117,3 +117,39 @@ it.each(['single_turn', 'turn_and_later'])('preserves patch redo/undo for %s sco
     expect(rpc).toHaveBeenCalledWith('thread/rollback', { threadId: 'historical-thread', numTurns: 1 })
   }
 })
+
+it('preserves filtered patch order, partial failures and tracked Git fallback', async () => {
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: project })
+  git('init'); git('config', 'user.email', 'test@example.invalid'); git('config', 'user.name', 'Test')
+  await writeFile(join(project, 'tracked.txt'), 'HEAD\n')
+  git('add', '.'); git('commit', '-m', 'fixture')
+  const patches = [
+    ['skip', '*** Add File: skipped.txt\n+skip'],
+    ['first', '*** Add File: ordered.txt\n+one'],
+    ['second', '*** Update File: ordered.txt\n@@ -1 +1 @@\n-one\n+two'],
+    ['partial', '*** Add File: partial.txt\n+ok\n*** Update File: tracked.txt\n@@ -1 +1 @@\n-missing\n+new'],
+  ]
+  await writeFile(sessionPath, [
+    { type: 'turn_context', payload: { turn_id: 't1' } },
+    ...patches.map(([call_id, body]) => ({ type: 'response_item', payload: {
+      type: 'custom_tool_call', name: 'apply_patch', status: 'completed', call_id,
+      input: '*** Begin Patch\n' + body + '\n*** End Patch',
+    } })),
+  ].map(row => JSON.stringify(row)).join('\n'))
+  rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
+  const payload = { threadId: 'historical-thread', turnId: 't1', cwd: project, scope: 'single_turn', patchIds: ['first', 'second', 'partial'] }
+  const redo = await request('/codex-api/thread/rollback-files', 'POST', { ...payload, action: 'redo' })
+  expect(redo.json.applied).toBe(3)
+  expect(redo.json.appliedPatchIds).toEqual(['first', 'second'])
+  expect(redo.json.errors).toEqual(['Could not apply patch for ' + join(project, 'tracked.txt')])
+  expect(await readFile(join(project, 'ordered.txt'), 'utf8')).toBe('two\n')
+  await expect(readFile(join(project, 'skipped.txt'))).rejects.toThrow()
+  await writeFile(join(project, 'tracked.txt'), 'unmatched\n')
+  const undo = await request('/codex-api/thread/rollback-files', 'POST', { ...payload, action: 'undo' })
+  expect(undo.json.errors).toEqual([])
+  expect(undo.json.reverted).toBe(4)
+  expect(undo.json.revertedPatchIds).toEqual(['partial', 'second', 'first'])
+  expect(await readFile(join(project, 'tracked.txt'), 'utf8')).toBe('HEAD\n')
+  await expect(readFile(join(project, 'ordered.txt'))).rejects.toThrow()
+  await expect(readFile(join(project, 'partial.txt'))).rejects.toThrow()
+})
