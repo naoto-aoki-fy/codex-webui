@@ -639,9 +639,15 @@ export async function forkThreadFromResponse(threadId: string, turnIndex: number
   hasMoreOlder: boolean
   turnIndexByTurnId: ThreadTurnIndexById
 }> {
-  const payload = await callRpc<ThreadForkResponse>('thread/fork', {
+  const payload = await callRpc<ThreadForkResponse & { forkCutoff?: { sourceThreadId: string; turnIndex: number; turnId: string; turnCount: number } }>('thread/fork-at-response', {
     threadId, forkFromTurnIndex: turnIndex, persistExtendedHistory: true,
   })
+  if (payload.forkCutoff?.sourceThreadId !== threadId
+    || payload.forkCutoff.turnIndex !== turnIndex
+    || payload.forkCutoff.turnCount !== turnIndex + 1
+    || !payload.forkCutoff.turnId) {
+    throw new Error('Backend did not verify the response fork cutoff; update the web backend')
+  }
   const id = normalizeThreadIdFromPayload(payload)
   if (!id) throw new Error('thread/fork did not return a thread id')
   const start = readThreadTurnStartIndex(payload)
