@@ -635,6 +635,26 @@ export async function startThread(cwd?: string, model?: string): Promise<Started
   }
 }
 
+export async function forkThreadFromResponse(threadId: string, turnIndex: number): Promise<ForkedThread & {
+  hasMoreOlder: boolean
+  turnIndexByTurnId: ThreadTurnIndexById
+}> {
+  const payload = await callRpc<ThreadForkResponse>('thread/fork', {
+    threadId, forkFromTurnIndex: turnIndex, persistExtendedHistory: true,
+  })
+  const id = normalizeThreadIdFromPayload(payload)
+  if (!id) throw new Error('thread/fork did not return a thread id')
+  const start = readThreadTurnStartIndex(payload)
+  return {
+    threadId: id,
+    cwd: normalizeThreadCwdFromPayload(payload),
+    model: normalizeThreadModelFromPayload(payload),
+    messages: normalizeThreadMessagesV2(payload, start),
+    hasMoreOlder: start > 0,
+    turnIndexByTurnId: buildTurnIndexByTurnId(payload, start),
+  }
+}
+
 export async function forkThread(threadId: string): Promise<ForkedThread>
 export async function forkThread(threadId: string, cwd: string | undefined, model: string | undefined): Promise<StartedThread>
 export async function forkThread(

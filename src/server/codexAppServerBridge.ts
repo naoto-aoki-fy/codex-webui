@@ -1221,6 +1221,40 @@ function isArchivedThreadReadResult(threadReadResult: unknown): boolean {
   return sessionPath.split(/[\\/]+/u).includes('archived_sessions')
 }
 
+export async function forkThreadAtCutoff(appServer: RpcExecutor, params: Record<string, unknown>): Promise<unknown> {
+  const { forkFromTurnIndex, ...forkParams } = params
+  if (!Number.isSafeInteger(forkFromTurnIndex) || (forkFromTurnIndex as number) < 0) {
+    throw new Error('Invalid fork response cutoff')
+  }
+  const result = await callRpcWithArchiveRecovery(appServer, 'thread/fork', forkParams)
+  const record = asRecord(result)
+  const thread = asRecord(record?.thread)
+  const id = readNonEmptyString(thread?.id)
+  if (!id || id === readNonEmptyString(params.threadId)) throw new Error('Invalid fork thread id')
+  try {
+    const turns = thread?.turns
+    if (!Array.isArray(turns) || (forkFromTurnIndex as number) >= turns.length) {
+      throw new Error('Fork response cutoff is outside the fork history')
+    }
+    const numTurns = turns.length - (forkFromTurnIndex as number) - 1
+    if (numTurns === 0) return result
+    const rollback = asRecord(await appServer.rpc('thread/rollback', { threadId: id, numTurns }))
+    const rolledThread = asRecord(rollback?.thread)
+    if (rolledThread?.id !== id || !Array.isArray(rolledThread.turns)
+      || rolledThread.turns.length !== (forkFromTurnIndex as number) + 1) {
+      throw new Error('Fork rollback did not retain the selected response')
+    }
+    return { ...record, ...rollback, thread: { ...thread, ...rolledThread } }
+  } catch (error) {
+    try {
+      await callRpcWithArchiveRecovery(appServer, 'thread/archive', { threadId: id })
+    } catch (cleanupError) {
+      throw new Error(`${getErrorMessage(error, 'Fork failed')}; failed to archive incomplete fork ${id}: ${getErrorMessage(cleanupError, 'unknown error')}`)
+    }
+    throw error
+  }
+}
+
 export async function callRpcWithArchiveRecovery(
   appServer: RpcExecutor,
   method: string,
@@ -3525,7 +3559,10 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
         let rpcResult: unknown
         try {
-          rpcResult = await callRpcWithArchiveRecovery(appServer, body.method, body.params ?? null)
+          const params = asRecord(body.params)
+          rpcResult = body.method === 'thread/fork' && params && Object.prototype.hasOwnProperty.call(params, 'forkFromTurnIndex')
+            ? await forkThreadAtCutoff(appServer, params)
+            : await callRpcWithArchiveRecovery(appServer, body.method, body.params ?? null)
         } catch (error) {
 	          if (body.method === 'account/rateLimits/read' && isUnauthenticatedRateLimitError(error)) {
 	            setJson(res, 200, { result: null })
