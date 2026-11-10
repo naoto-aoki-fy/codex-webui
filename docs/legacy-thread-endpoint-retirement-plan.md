@@ -1,4 +1,4 @@
-> Status: `thread-live-state` retirement is implemented. Its candidate-removal and compatibility discussion below records the prior assessment; the route now returns JSON 404. `thread-stream-events` remains supported.
+> Status: `thread-live-state` retirement is implemented. Its candidate-removal and compatibility discussion below records the prior assessment; the route now returns JSON 404. `thread-stream-events` is now also retired with JSON 404; only its HTTP adapter was removed and all shared buffers/error recovery remain. The sections below retain the prior assessment.
 
 # Legacy Thread Endpoint Retirement Plan
 

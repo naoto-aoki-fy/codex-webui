@@ -3650,21 +3650,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       // Retired API: terminate here so SPA middleware cannot serve HTML.
-      if (url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state') {
+      if (url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
         setJson(res, 404, { error: 'Not found' })
-        return
-      }
-
-      if (req.method === 'GET' && url.pathname === '/codex-api/thread-stream-events') {
-        const threadId = url.searchParams.get('threadId')?.trim() ?? ''
-        const limitRaw = url.searchParams.get('limit')?.trim() ?? '80'
-        const limit = Math.max(1, Math.min(400, Number.parseInt(limitRaw, 10) || 80))
-        if (!threadId) {
-          setJson(res, 400, { error: 'Missing threadId' })
-          return
-        }
-        const events = appServer.getStreamEvents(threadId, limit)
-        setJson(res, 200, { events })
         return
       }
 

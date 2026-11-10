@@ -67,6 +67,16 @@ it.each(['GET', 'HEAD', 'POST'])('returns JSON 404 for retired live state (%s) w
     expect(rpc).not.toHaveBeenCalled()
   }
 })
+it.each(['GET', 'HEAD', 'POST'])('returns JSON 404 for retired stream events (%s) without RPC or SPA fallthrough', async method => {
+  for (const query of ['', '?threadId=historical-thread&limit=50', '?threadId=historical-thread&limit=invalid']) {
+    const response = await request('/codex-api/thread-stream-events' + query, method)
+    expect(response.res.statusCode).toBe(404)
+    expect(response.json).toEqual({ error: 'Not found' })
+    expect(response.res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/json; charset=utf-8')
+    expect(response.next).not.toHaveBeenCalled()
+    expect(rpc).not.toHaveBeenCalled()
+  }
+})
 it('keeps normal history and earlier-history pagination available', async () => {
   const turns = Array.from({ length: 15 }, (_, i) => ({ id: `t${i}`, items: [] }))
   rpc.mockResolvedValue({ thread: { id: 'historical-thread', turns } } as never)
@@ -137,4 +147,51 @@ it.each(['normal', 'earlier'])('preserves timestamps, execution metadata, skills
   expect(turn).toMatchObject({ submittedAt: '2026-11-05T00:12:00.000Z', completedAt: '2026-11-05T00:12:00.000Z', generationMetadata: { model: 'gpt-5.4', effort: 'high', modelSource: 'execution' } })
   expect(turn.items[0].content).toContainEqual({ type: 'skill', name: 'test-skill', path: '/tmp/test/SKILL.md' })
   expect(turn.items[0].content[1].url).toMatch(/^\/codex-local-image\?path=/)
+})
+
+
+it('keeps the latest 400 events in arrival order, isolates threads, and returns limited copies', () => {
+  const client = new AppServerClient()
+  const emit = (value: unknown) => (client as unknown as { emitNotification: (value: unknown) => void }).emitNotification(value)
+  const listener = vi.fn()
+  const unsubscribe = client.onNotification(listener)
+  try {
+    for (let i = 0; i < 405; i++) emit({ method: 'item/completed', params: { threadId: 'buffered', sequence: i } })
+    emit({ method: 'error', params: { threadId: 'other', message: 'isolated' } })
+    const all = client.getStreamEvents('buffered', 400)
+    expect(all).toHaveLength(400)
+    expect(all.map(frame => (frame.params as { sequence: number }).sequence)).toEqual(Array.from({ length: 400 }, (_, i) => i + 5))
+    expect(all.every(frame => Number.isFinite(Date.parse(frame.atIso)))).toBe(true)
+    expect(client.getStreamEvents('buffered', 2)).toEqual(all.slice(-2))
+    all.pop()
+    expect(client.getStreamEvents('buffered', 400)).toHaveLength(400)
+    expect(client.getStreamEvents('other', 400)).toHaveLength(1)
+    expect(client.getStreamEvents('missing', 400)).toEqual([])
+    expect(listener).toHaveBeenCalledTimes(406)
+  } finally { unsubscribe(); client.dispose() }
+})
+
+it('delivers live SSE notifications and releases the subscription on close without replay', async () => {
+  const client = new AppServerClient()
+  ;(scope.__codexRemoteSharedBridge__ as { appServer: unknown }).appServer = client
+  const middleware = createCodexBridgeMiddleware()
+  const req = Object.assign(new EventEmitter(), { method: 'GET', url: '/codex-api/events', headers: {}, socket: { remoteAddress: '127.0.0.1' } }) as unknown as IncomingMessage
+  const write = vi.fn()
+  const end = vi.fn()
+  const res = Object.assign(new EventEmitter(), { setHeader: vi.fn(), write, end, writableEnded: false }) as unknown as ServerResponse
+  const emit = (params: unknown) => (client as unknown as { emitNotification: (value: unknown) => void }).emitNotification({ method: 'error', params })
+  try {
+    emit({ threadId: 'sse', message: 'before subscription' })
+    await middleware(req, res, vi.fn())
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(write.mock.calls[0][0]).toContain('event: ready')
+    emit({ threadId: 'sse', message: 'live error' })
+    const frame = JSON.parse(write.mock.calls[1][0].slice(6).trim())
+    expect(frame).toEqual({ method: 'error', params: { threadId: 'sse', message: 'live error' }, atIso: expect.any(String) })
+    req.emit('close')
+    emit({ threadId: 'sse', message: 'after close' })
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(client.getStreamEvents('sse', 400)).toHaveLength(3)
+    expect(end).toHaveBeenCalledOnce()
+  } finally { req.emit('close'); client.dispose() }
 })
