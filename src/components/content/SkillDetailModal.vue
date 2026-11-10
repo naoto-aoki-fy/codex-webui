@@ -4,19 +4,11 @@
       <div class="sdm-panel">
         <div class="sdm-header">
           <div class="sdm-title-area">
-            <img
-              v-if="skill.avatarUrl"
-              class="sdm-avatar"
-              :src="skill.avatarUrl"
-              :alt="skill.owner"
-              loading="lazy"
-            />
             <div class="sdm-title-col">
               <div class="sdm-title-row">
-                <h3 class="sdm-title">{{ skill.displayName || skill.name }}</h3>
-                <span v-if="skill.installed && !effectiveEnabled" class="sdm-badge-disabled">{{ t('Disabled') }}</span>
+                <h3 class="sdm-title">{{ skill.name }}</h3>
+                <span v-if="!effectiveEnabled" class="sdm-badge-disabled">{{ t('Disabled') }}</span>
               </div>
-              <span class="sdm-owner">{{ skill.owner }}</span>
             </div>
           </div>
           <button class="sdm-close" type="button" :aria-label="t('Close')" @click="$emit('close')">
@@ -30,13 +22,11 @@
           <div v-if="isLoadingReadme" class="sdm-readme-loading">{{ t('Loading skill contents...') }}</div>
           <div v-else-if="readmeContent" class="sdm-readme" v-html="renderedReadme"></div>
 
-          <a v-if="skill.url" class="sdm-link" :href="skill.url" target="_blank" rel="noopener noreferrer">{{ t('View on GitHub') }}</a>
         </div>
 
         <div class="sdm-footer">
           <div class="sdm-footer-actions">
             <button
-              v-if="skill.installed"
               class="sdm-btn sdm-btn-secondary"
               type="button"
               @click="onToggleEnabled"
@@ -45,7 +35,7 @@
             </button>
 
             <button
-              v-if="skill.installed && effectiveEnabled"
+              v-if="effectiveEnabled"
               class="sdm-btn sdm-btn-primary"
               type="button"
               :disabled="props.isTrying"
@@ -55,7 +45,7 @@
             </button>
 
             <button
-              v-if="skill.installed && skillDirPath"
+              v-if="skillDirPath"
               class="sdm-btn sdm-btn-secondary"
               type="button"
               @click="onBrowseFiles"
@@ -74,29 +64,18 @@ import { computed, ref, watch } from 'vue'
 import { useUiLanguage } from '../../composables/useUiLanguage'
 import IconTablerX from '../icons/IconTablerX.vue'
 
-export type HubSkill = {
-  name: string
-  owner: string
-  description: string
-  displayName?: string
-  publishedAt?: number
-  avatarUrl?: string
-  url: string
-  installed: boolean
-  path?: string
-  enabled?: boolean
-}
+import type { LocalSkill } from '../../types/skills'
 
 const props = defineProps<{
-  skill: HubSkill
+  skill: LocalSkill
   visible: boolean
   isTrying?: boolean
 }>()
 
 const emit = defineEmits<{
   close: []
-  'toggle-enabled': [skill: HubSkill, enabled: boolean]
-  try: [skill: HubSkill]
+  'toggle-enabled': [skill: LocalSkill, enabled: boolean]
+  try: [skill: LocalSkill]
 }>()
 
 const localEnabled = ref<boolean | null>(null)
@@ -138,13 +117,13 @@ function simpleMarkdown(md: string): string {
 }
 
 async function fetchReadme(): Promise<void> {
-  if (!props.skill.owner || !props.skill.name) return
+  if (!props.skill.name) return
   isLoadingReadme.value = true
   localDescription.value = ''
   readmeContent.value = ''
   try {
-    const params = new URLSearchParams({ owner: props.skill.owner, name: props.skill.name })
-    if (props.skill.installed) params.set('installed', 'true')
+    // Retain the legacy query contract while the UI only represents local skills.
+    const params = new URLSearchParams({ owner: 'local', name: props.skill.name, installed: 'true' })
     if (props.skill.path) params.set('path', props.skill.path)
     const resp = await fetch(`/codex-api/skills-hub/readme?${params}`)
     if (!resp.ok) return
@@ -204,10 +183,6 @@ function onBrowseFiles(): void {
   @apply flex items-center gap-3 min-w-0;
 }
 
-.sdm-avatar {
-  @apply w-10 h-10 rounded-full shrink-0 bg-zinc-100;
-}
-
 .sdm-title-col {
   @apply flex flex-col gap-0.5 min-w-0;
 }
@@ -222,10 +197,6 @@ function onBrowseFiles(): void {
 
 .sdm-badge-disabled {
   @apply shrink-0 rounded-md border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 leading-none;
-}
-
-.sdm-owner {
-  @apply text-xs text-zinc-400;
 }
 
 .sdm-close {
@@ -278,10 +249,6 @@ function onBrowseFiles(): void {
 
 .sdm-readme :deep(strong) {
   @apply font-semibold;
-}
-
-.sdm-link {
-  @apply text-xs text-blue-600 hover:text-blue-700 no-underline hover:underline shrink-0;
 }
 
 .sdm-footer {

@@ -9,19 +9,17 @@
 
     <slot name="before-installed" />
 
-    <div v-if="filteredInstalled.length > 0" class="skills-hub-section">
+    <div v-if="installedSkills.length > 0" class="skills-hub-section">
       <button class="skills-hub-section-toggle" type="button" @click="isInstalledOpen = !isInstalledOpen">
-        <span class="skills-hub-section-title">{{ t('Installed skills ({count})', { count: filteredInstalled.length }) }}</span>
+        <span class="skills-hub-section-title">{{ t('Installed skills ({count})', { count: installedSkills.length }) }}</span>
         <IconTablerChevronRight class="skills-hub-section-chevron" :class="{ 'is-open': isInstalledOpen }" />
       </button>
       <div v-if="isInstalledOpen" class="skills-hub-grid">
         <SkillCard
-          v-for="skill in filteredInstalled"
+          v-for="skill in installedSkills"
           :key="skill.name"
           :skill="skill"
-          :show-status-badge="false"
-          :show-owner="false"
-          @select="(skill) => openDetail(skill as HubSkill)"
+          @select="openDetail"
         />
       </div>
     </div>
@@ -49,18 +47,19 @@
 import { computed, onMounted, ref } from 'vue'
 import IconTablerChevronRight from '../icons/IconTablerChevronRight.vue'
 import SkillCard from './SkillCard.vue'
-import SkillDetailModal, { type HubSkill } from './SkillDetailModal.vue'
+import SkillDetailModal from './SkillDetailModal.vue'
+import type { LocalSkill } from '../../types/skills'
 import { useUiLanguage } from '../../composables/useUiLanguage'
 
-const EMPTY_SKILL: HubSkill = { name: '', owner: '', description: '', url: '', installed: false }
-type SkillsHubPayload = { installed?: HubSkill[] }
+const EMPTY_SKILL: LocalSkill = { name: '', description: '' }
+type SkillsHubPayload = { installed?: LocalSkill[] }
 
-const installedSkills = ref<HubSkill[]>([])
+const installedSkills = ref<LocalSkill[]>([])
 const isLoading = ref(false)
 const error = ref('')
 const isInstalledOpen = ref(true)
 const isDetailOpen = ref(false)
-const detailSkill = ref<HubSkill>(EMPTY_SKILL)
+const detailSkill = ref<LocalSkill>(EMPTY_SKILL)
 const toast = ref<{ text: string; type: 'success' | 'error' } | null>(null)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 const { t } = useUiLanguage()
@@ -75,7 +74,6 @@ const emit = defineEmits<{
 }>()
 
 const toastClass = computed(() => toast.value?.type === 'error' ? 'skills-hub-toast-error' : 'skills-hub-toast-success')
-const filteredInstalled = computed(() => installedSkills.value)
 
 function showToast(text: string, type: 'success' | 'error' = 'success'): void {
   toast.value = { text, type }
@@ -84,7 +82,7 @@ function showToast(text: string, type: 'success' | 'error' = 'success'): void {
 }
 
 function applySkillsPayload(payload: SkillsHubPayload): void {
-  installedSkills.value = payload.installed ?? []
+  installedSkills.value = (payload.installed ?? []).map(({ name, description, path, enabled }) => ({ name, description, path, enabled }))
 }
 
 async function fetchSkills(): Promise<void> {
@@ -102,12 +100,12 @@ async function fetchSkills(): Promise<void> {
   }
 }
 
-function openDetail(skill: HubSkill): void {
+function openDetail(skill: LocalSkill): void {
   detailSkill.value = skill
   isDetailOpen.value = true
 }
 
-async function handleToggleEnabled(skill: HubSkill, enabled: boolean): Promise<void> {
+async function handleToggleEnabled(skill: LocalSkill, enabled: boolean): Promise<void> {
   try {
     const resp = await fetch('/codex-api/rpc', {
       method: 'POST',
@@ -115,26 +113,27 @@ async function handleToggleEnabled(skill: HubSkill, enabled: boolean): Promise<v
       body: JSON.stringify({ method: 'skills/config/write', params: { path: skill.path, enabled } }),
     })
     if (!resp.ok) throw new Error('Failed to update skill')
-    showToast(`${skill.displayName || skill.name} skill ${enabled ? 'enabled' : 'disabled'}`)
+    showToast(`${skill.name} skill ${enabled ? 'enabled' : 'disabled'}`)
+    emit('skills-changed')
     await fetchSkills()
   } catch (e) {
     showToast(e instanceof Error ? e.message : 'Failed to update skill', 'error')
   }
 }
 
-function handleTrySkill(skill: HubSkill): void {
-  if (!skill.installed || skill.enabled === false) return
+function handleTrySkill(skill: LocalSkill): void {
+  if (skill.enabled === false) return
   if (props.tryInFlightKey) return
   emit('try-item', {
     kind: 'skill',
     name: skill.name,
-    displayName: skill.displayName || skill.name,
+    displayName: skill.name,
     skillPath: skill.path,
   })
   isDetailOpen.value = false
 }
 
-function skillTryKey(skill: HubSkill): string {
+function skillTryKey(skill: LocalSkill): string {
   return `skill:${skill.name}:${skill.path ?? ''}`
 }
 
