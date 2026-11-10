@@ -1,20 +1,20 @@
 # Legacy API and Optional Feature Audit
 
-This is a static repository audit. No implementation changes were made. Repository searches do not establish whether independently maintained external clients use an endpoint, and production traffic was not measured.
+This began as a static repository audit; endpoint status below reflects the subsequent authorized fallback retirement. Repository searches do not establish whether independently maintained external clients use an endpoint, and production traffic was not measured.
 
 ## Part A: Legacy HTTP endpoints
 
-All three handlers are in `src/server/codexAppServerBridge.ts`. No current frontend caller was found for any of them.
+The remaining handlers and explicit fallback retirement response are in `src/server/codexAppServerBridge.ts`. No current frontend caller was found for any of them.
 
 | Endpoint | Repository evidence | Backend boundary and recommendation |
 |---|---|---|
-| `/codex-api/thread-file-change-fallback` | No frontend, test, or script URL caller found. | Calls `buildSessionFileChangeFallback`, which appears exclusive to this route. Its patch parser is shared with recovery and Undo/Redo. Compatibility-sensitive: investigate external clients before retirement. |
+| `/codex-api/thread-file-change-fallback` | Retired by explicit compatibility-breaking decision; external use was not established absent. | Returns HTTP 404 JSON, with no replacement. Exclusive builder/type/merge helpers removed; shared parsing and rollback remain. |
 | `/codex-api/thread-live-state` | No frontend caller. `PROJECT_SPEC.md` documents it as a diagnostic/recovery API. Manual tests call it, including stream parity and pending materialization cases. | Live-state assembly/cache and `mergeSessionCommandsIntoTurns` appear route-specific. Keep generic RPC thread-read snapshots, materialization handling, timestamps and generation metadata recovery. Compatibility-sensitive; not dead code. |
 | `/codex-api/thread-stream-events` | No frontend caller. Manual stream-parity tests query it directly during active turns. | The HTTP adapter is route-specific. `getStreamEvents`, event buffering and `mergeStreamTurnErrorsIntoThreadResult` also support normal thread history/error recovery. Retain shared stream recovery; investigate external use before retiring route. |
 
 Relevant tests include `tests/thread-loading-state/thread-stream-parity-stream-first-hydration-with-full-turn-history.md`, `thread-stream-parity-works-on-linux-oracle-a1-arm64.md`, and `thread-detail-load-avoids-duplicate-live-state-history-fetch.md`. The latter shows normal detail loading avoids a redundant live-state history fetch. No executable scripts reference these endpoint URLs. Repository silence is not evidence that external clients do not depend on them.
 
-Potential route-exclusive code: fallback response builder and its route; live-state response/cache path and session-command merge; stream-events response adapter. Shared code to retain includes stream event buffering/error merging, thread-read snapshots and pending-materialization recovery, session timestamp/generation metadata, and `parseApplyPatchInput` where used by retained recovery and file actions.
+The fallback response builder and its route are removed. Potential remaining route-exclusive code: live-state response/cache path and session-command merge; stream-events response adapter. Shared code to retain includes stream event buffering/error merging, thread-read snapshots and pending-materialization recovery, session timestamp/generation metadata, and `parseApplyPatchInput` where used by retained recovery and file actions.
 
 ## Part B: Optional features
 
@@ -52,11 +52,11 @@ Caller checks confirmed the text eligibility helpers were editor-only and they w
 
 ## Prioritized recommendations
 
-1. Before retiring any legacy endpoint, seek external-client and access-log evidence and choose a deprecation policy. The file-change fallback route has the smallest repository-level dependency footprint, but external use remains unknown.
+1. The file-change fallback endpoint is retired by explicit decision. Before retiring either remaining legacy endpoint, seek external-client and access-log evidence and choose a deprecation policy. External use remains unknown.
 2. Telegram is the clearest optional subsystem to evaluate first: it has a coherent boundary and is the only apparent consumer of `undici`.
 3. Browser editing is retired; preserve browsing and file-link behavior in future cleanup.
 4. Evaluate clone and worktree creation separately. Preserve support for already-existing worktrees and shared workspace-root state.
 5. Treat Undo/Redo backend removal as the riskiest feature decision because conversation rollback uses the same service.
 6. Retain shared thread recovery code: stream error buffers, snapshots, pending-materialization handling, timestamp/generation recovery and shared patch parsing.
 
-No candidate is established as safe dead code. No production usage, performance profile, or external-client inventory was available for this static audit.
+Neither remaining endpoint is established as safe dead code. No production usage, performance profile, or external-client inventory was available for this static audit.

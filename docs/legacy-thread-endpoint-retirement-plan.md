@@ -29,7 +29,9 @@ Removing `thread-live-state` cache invalidation must leave earlier-history cache
 
 Each endpoint needs its own compatibility decision, implementation, and validation. Do not proceed to code removal until maintainers decide whether to continue support, deprecate for a defined window, or retire with an explicit compatibility break. Where possible, gather representative deployment access logs over an agreed period, inventory supported integrations and scripts, and ask identified consumers. No traffic during a measured period only covers the deployments and period observed.
 
-### 1. `thread-file-change-fallback`
+### 1. `thread-file-change-fallback` (retired)
+
+The user explicitly authorized this compatibility break with no replacement. The route now returns HTTP 404 JSON and its exclusive implementation is removed. The following original planning details document the boundary; the remaining endpoints still require separate decisions.
 
 This is the smallest repository-level removal and should be considered first.
 
@@ -49,7 +51,7 @@ This endpoint has the strongest documented compatibility signal and needs explic
 
 Current references also make `mergeItemsIntoTurns`, `captureItemFromNotification`, `capturedItemsByThreadId`, `CapturedItem`, and `MERGEABLE_ITEM_TYPES` candidates for removal with their producer call and disconnect cleanup. Confirm references again when implementing. Preserve stream buffering/error merging, snapshots, pending-materialization recovery, timestamps, generation metadata, skill recovery, and shared patch parsing.
 
-**Documentation and manual procedures:** update `PROJECT_SPEC.md`, `docs/legacy-api-and-optional-feature-audit.md`, and `docs/api-wrapper-cleanup.md`. Update `tests/thread-loading-state/thread-stream-parity-stream-first-hydration-with-full-turn-history.md`, `thread-stream-parity-works-on-linux-oracle-a1-arm64.md`, `docker-auth-runtime` live-state pending-read procedure, and `thread-detail-load-avoids-duplicate-live-state-history-fetch.md` so they describe supported behavior. Preserve historical context where useful; do not rewrite immutable `llm-wiki/raw/` sources.
+**Documentation and manual procedures:** update `PROJECT_SPEC.md`, `docs/legacy-api-and-optional-feature-audit.md`, and `docs/api-wrapper-cleanup.md`. Update `tests/thread-loading-state/thread-stream-parity-stream-first-hydration-with-full-turn-history.md`, `thread-stream-parity-works-on-linux-oracle-a1-arm64.md`, `tests/auth-docker-runtime/docker-auth-startup-live-state-pending-read.md`, and `thread-detail-load-avoids-duplicate-live-state-history-fetch.md` so they describe supported behavior. Preserve historical context where useful; do not rewrite immutable `llm-wiki/raw/` sources.
 
 **Compatibility evidence needed:** determine whether consumers require full reconstructed history, captured in-flight items, command/file-change interleaving, or the `conversationState`, `ownerClientId`, `liveStateError`, and `isInProgress` envelope. Generic RPC and paged history are not proven drop-in replacements. Approve withdrawing the documented contract and define any migration.
 

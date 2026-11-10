@@ -54,6 +54,16 @@ async function run() {
           await new Promise(resolve => setTimeout(resolve, 100))
         }
         assert(ready, output)
+        for (const method of ['GET', 'HEAD', 'POST']) {
+          for (const query of ['', '?threadId=fixture-thread']) {
+            const retired = await fetch(url + '/codex-api/thread-file-change-fallback' + query, { method })
+            assert.equal(retired.status, 404)
+            assert.match(retired.headers.get('content-type'), /application\/json/)
+            if (method === 'HEAD') assert.equal(await retired.text(), '')
+            else assert.deepEqual(await retired.json(), { error: 'Not found' })
+          }
+        }
+        console.log('PASS', dev ? 'pnpm run dev' : 'built CLI', 'retired fallback returns JSON 404')
         const before = connections
         for (const method of ['account/read', 'model/list', 'thread/list']) {
           const response = await fetch(url + '/codex-api/rpc', {
