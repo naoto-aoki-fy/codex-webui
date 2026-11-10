@@ -1,4 +1,8 @@
 import { existsSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   mergeSessionSkillInputsIntoTurns,
@@ -346,6 +350,68 @@ describe('thread session skill recovery', () => {
     expect(merged[0].items[2].content).toEqual([
       { type: 'text', text: 'second message', text_elements: [] },
       { type: 'skill', name: 'browser-use:browser', path: '/Users/igor/.codex/plugins/browser/SKILL.md' },
+    ])
+  })
+})
+
+
+describe('inline payload compatibility contracts', () => {
+  const payload = (item: Record<string, unknown>) => ({ thread: { turns: [{ id: 'contract-turn', items: [item] }] } })
+  const sanitize = async (input: ReturnType<typeof payload>, method = 'thread/read') =>
+    await sanitizeThreadTurnsInlinePayloads(method, input) as typeof input
+
+  it.each(['thread/read', 'thread/resume', 'thread/fork', 'thread/rollback'])('sanitizes %s without mutating input and reuses persisted bytes', async method => {
+    const untouched = { text: pngBase64 }
+    const item = { id: 'contract-item', nested: { images: [[pngBase64]] }, untouched }
+    const input = payload(item)
+    const before = structuredClone(input)
+    const result = await sanitize(input, method)
+    const changed = result.thread.turns[0].items[0] as typeof item
+    const hash = createHash('sha1').update(Buffer.from(pngBase64, 'base64')).digest('hex')
+    const path = join(tmpdir(), 'codex-web-inline-media', `inline-image-contract-turn-contract-item-images-0-${hash}.png`)
+    expect(changed.nested.images[0][0]).toBe(`/codex-local-image?path=${encodeURIComponent(path)}`)
+    expect(await readFile(path)).toEqual(Buffer.from(pngBase64, 'base64'))
+    const firstStat = await stat(path)
+    expect(await sanitize(input, method)).toEqual(result)
+    expect((await stat(path)).mtimeMs).toBe(firstStat.mtimeMs)
+    expect(input).toEqual(before)
+    expect(changed.untouched).toBe(untouched)
+    expect(changed).not.toBe(item)
+  })
+
+  it.each(['thread/start', 'thread/list', 'turn/start', 'unknown'])('preserves excluded %s payload identity', async method => {
+    const input = payload({ images: [pngDataUrl] })
+    expect(await sanitize(input, method)).toBe(input)
+  })
+
+  it.each([null, undefined, [], {}, { thread: null }, { thread: { turns: [] } }, { thread: { turns: [null, {}, { items: null }] } }])('preserves unexpected thread shape %#', async input => {
+    expect(await sanitizeThreadTurnsInlinePayloads('thread/read', input)).toBe(input)
+  })
+
+  it('preserves malformed fields and non-image nested payloads by identity', async () => {
+    const input = payload({ images: ['', null, 42, {}, '%%%bad', 'data:text/plain;base64,aGVsbG8='], result: 'short', content: [null, { type: 'image', url: '' }, { type: 'text', text: pngDataUrl }] })
+    expect(await sanitize(input)).toBe(input)
+  })
+
+  it.each([
+    ['image/*', '.png'], ['application/octet-stream', '.png'], [' IMAGE/JPEG ', '.jpg'], ['image/unknown', ''],
+  ])('preserves generated-image MIME handling for %s', async (mime, ext) => {
+    const result = await sanitize(payload({ id: 'generated-contract', type: 'image_generation', result: pngBase64, mime_type: mime }))
+    const item = result.thread.turns[0].items[0]
+    const hash = createHash('sha1').update(Buffer.from(pngBase64, 'base64')).digest('hex')
+    expect(item.type).toBe('imageView')
+    expect(item.path).toBe(join(tmpdir(), 'codex-web-inline-media', `generated-image-contract-turn-generated-contract-${hash}${ext}`))
+    expect(item.result).toBe(pngBase64)
+  })
+
+  it('preserves empty and malformed URL attachment fallbacks', async () => {
+    const result = await sanitize(payload({ content: [
+      { type: 'image', url: 'data:image/png;base64,', filename: 'empty.png' },
+      { type: 'image', url: 'data:image/png,%ZZ', path: '/tmp/bad.png' },
+    ] }))
+    expect(result.thread.turns[0].items[0].content).toEqual([
+      { type: 'text', text: 'Image attachment: attachment://empty.png' },
+      { type: 'text', text: 'Image attachment: file:///tmp/bad.png' },
     ])
   })
 })
