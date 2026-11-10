@@ -1074,27 +1074,6 @@
   @apply text-zinc-400;
 }
 
-:root.dark .skills-hub-search-wrap {
-  @apply border-zinc-700 bg-zinc-800 focus-within:border-zinc-500;
-}
-
-:root.dark .skills-hub-search-icon {
-  @apply text-zinc-500;
-}
-
-:root.dark .skills-hub-search {
-  @apply text-zinc-200 placeholder-zinc-500;
-}
-
-:root.dark .skills-hub-search-btn,
-:root.dark .skills-hub-sort {
-  @apply border-zinc-600 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 hover:border-zinc-500;
-}
-
-:root.dark .skills-hub-count {
-  @apply text-zinc-500;
-}
-
 :root.dark .skills-hub-section-toggle {
   @apply text-zinc-300 hover:text-zinc-100;
 }
@@ -1171,24 +1150,8 @@
   @apply border-zinc-700 bg-zinc-800 hover:border-zinc-600 hover:bg-zinc-700/70;
 }
 
-:root.dark .skill-card-avatar {
-  @apply bg-zinc-700;
-}
-
-:root.dark .skill-card-avatar-fallback {
-  @apply bg-zinc-600 text-zinc-300;
-}
-
 :root.dark .skill-card-name {
   @apply text-zinc-100;
-}
-
-:root.dark .skill-card-badge-disabled {
-  @apply border-zinc-600 bg-zinc-700 text-zinc-300;
-}
-
-:root.dark .skill-card-owner {
-  @apply text-zinc-400;
 }
 
 :root.dark .skill-card-browse {
@@ -1197,10 +1160,6 @@
 
 :root.dark .skill-card-desc {
   @apply text-zinc-300;
-}
-
-:root.dark .skill-card-meta {
-  @apply text-zinc-500;
 }
 
 :root.dark .mcp-skill-name {
@@ -1225,10 +1184,6 @@
 
 :root.dark .sdm-badge-disabled {
   @apply border-zinc-600 bg-zinc-700 text-zinc-300;
-}
-
-:root.dark .sdm-owner {
-  @apply text-zinc-400;
 }
 
 :root.dark .sdm-close {

@@ -89,3 +89,19 @@ it('reads installed SKILL.md content locally without metadata requests', async (
   expect(fetch).not.toHaveBeenCalled()
   expect(spawn).not.toHaveBeenCalled()
 })
+
+it('preserves legacy hub response fields for HTTP consumers', async () => {
+  const path = join(home, 'skills', 'sample', 'SKILL.md')
+  await mkdir(join(home, 'skills', 'sample'), { recursive: true })
+  await writeFile(path, '---\ndescription: Local description\n---\nInstructions')
+  const end = vi.fn()
+  const res = { setHeader: vi.fn(), end } as unknown as ServerResponse
+  await handleSkillsRoutes({ method: 'GET' } as IncomingMessage, res,
+    new URL('http://localhost/codex-api/skills-hub'),
+    { appServer: { rpc: async () => ({ data: [] }) }, readJsonBody: async () => ({}) })
+  expect(res.statusCode).toBe(200)
+  expect(JSON.parse(end.mock.calls[0]![0])).toEqual({ installed: [{
+    name: 'sample', owner: 'local', description: 'Local description', displayName: '',
+    publishedAt: 0, avatarUrl: '', url: '', installed: true, path, enabled: true,
+  }] })
+})

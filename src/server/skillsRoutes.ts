@@ -109,6 +109,7 @@ function getSkillsInstallDir(): string {
   return join(getCodexHomeDir(), 'skills')
 }
 
+// Preserve the legacy HTTP response fields for existing API consumers.
 type SkillHubEntry = {
   name: string
   owner: string

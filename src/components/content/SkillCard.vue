@@ -2,31 +2,17 @@
   <button
     class="skill-card"
     type="button"
-    :class="{ 'is-disabled': skill.installed && skill.enabled === false }"
+    :class="{ 'is-disabled': skill.enabled === false }"
     @click="$emit('select', skill)"
   >
     <div class="skill-card-top">
-      <img
-        v-if="skill.avatarUrl"
-        class="skill-card-avatar"
-        :src="skill.avatarUrl"
-        :alt="skill.owner"
-        loading="lazy"
-        @error="onAvatarError"
-      />
-      <div class="skill-card-avatar-fallback" v-else>{{ skill.owner.charAt(0) }}</div>
       <div class="skill-card-info">
         <div class="skill-card-header">
-          <span class="skill-card-name">{{ skill.displayName || skill.name }}</span>
-          <template v-if="showStatusBadge">
-            <span v-if="skill.installed && skill.enabled === false" class="skill-card-badge-disabled">{{ t('Disabled') }}</span>
-            <span v-else-if="skill.installed" class="skill-card-badge">{{ t('Installed') }}</span>
-          </template>
+          <span class="skill-card-name">{{ skill.name }}</span>
         </div>
-        <span v-if="showOwner" class="skill-card-owner">{{ skill.owner }}</span>
       </div>
       <button
-        v-if="showBrowseAction && skill.installed && skillDirPath"
+        v-if="skillDirPath"
         class="skill-card-browse"
         type="button"
         :title="t('Browse files')"
@@ -44,32 +30,11 @@ import { computed } from 'vue'
 import { useUiLanguage } from '../../composables/useUiLanguage'
 import IconTablerFolder from '../icons/IconTablerFolder.vue'
 
-const props = withDefaults(defineProps<{
-  skill: {
-    name: string
-    owner: string
-    description: string
-    displayName?: string
-    avatarUrl?: string
-    url: string
-    installed: boolean
-    path?: string
-    enabled?: boolean
-  }
-  showStatusBadge?: boolean
-  showBrowseAction?: boolean
-  showOwner?: boolean
-}>(), {
-  showStatusBadge: true,
-  showBrowseAction: true,
-  showOwner: true,
-})
+import type { LocalSkill } from '../../types/skills'
 
-defineEmits<{ select: [skill: unknown] }>()
+const props = defineProps<{ skill: LocalSkill }>()
+defineEmits<{ select: [skill: LocalSkill] }>()
 const { t } = useUiLanguage()
-const showStatusBadge = computed(() => props.showStatusBadge !== false)
-const showBrowseAction = computed(() => props.showBrowseAction !== false)
-const showOwner = computed(() => props.showOwner !== false)
 
 const skillDirPath = computed(() => {
   const p = props.skill.path
@@ -83,10 +48,6 @@ function onBrowse(): void {
   window.open(`/codex-local-browse${encodeURI(dir)}`, '_blank', 'noopener,noreferrer')
 }
 
-function onAvatarError(e: Event): void {
-  const img = e.target as HTMLImageElement
-  img.style.display = 'none'
-}
 </script>
 
 <style scoped>
@@ -104,14 +65,6 @@ function onAvatarError(e: Event): void {
   @apply flex items-start gap-2.5;
 }
 
-.skill-card-avatar {
-  @apply w-8 h-8 rounded-full shrink-0 bg-zinc-100;
-}
-
-.skill-card-avatar-fallback {
-  @apply w-8 h-8 rounded-full shrink-0 bg-zinc-200 text-zinc-500 flex items-center justify-center text-xs font-medium uppercase;
-}
-
 .skill-card-info {
   @apply flex flex-col gap-0.5 min-w-0 flex-1;
 }
@@ -122,18 +75,6 @@ function onAvatarError(e: Event): void {
 
 .skill-card-name {
   @apply text-sm font-medium text-zinc-900 truncate;
-}
-
-.skill-card-badge {
-  @apply shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 leading-none;
-}
-
-.skill-card-badge-disabled {
-  @apply shrink-0 rounded-md border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 leading-none;
-}
-
-.skill-card-owner {
-  @apply text-xs text-zinc-400;
 }
 
 .skill-card-browse {
@@ -148,11 +89,4 @@ function onAvatarError(e: Event): void {
   @apply m-0 text-xs text-zinc-500 line-clamp-2;
 }
 
-.skill-card-meta-row {
-  @apply flex flex-wrap gap-1.5;
-}
-
-.skill-card-meta {
-  @apply text-[10px] text-zinc-300;
-}
 </style>
