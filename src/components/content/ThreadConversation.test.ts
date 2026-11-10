@@ -25,7 +25,7 @@ function setup() {
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++frameId, callback); return frameId })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
   vi.stubGlobal('window', { removeEventListener() {} })
-  const code = ts.transpileModule(source + `\nreturn { activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, runFileChangeAction, fileChangeActionState, fileChangeActionError, fileChangeRedoPatchIds, loadMoreAbove, conversationListRef, renderWindowStart, isLoadingMore, scheduleConversationScroll, editMessage, bindPendingImageHandlers };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+  const code = ts.transpileModule(source + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, runFileChangeAction, fileChangeActionState, fileChangeActionError, fileChangeRedoPatchIds, loadMoreAbove, conversationListRef, renderWindowStart, isLoadingMore, scheduleConversationScroll, editMessage, bindPendingImageHandlers };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const state = scope.run(() => new Function('exports', 'require', 'defineProps', 'defineEmits', 'defineExpose', code)({}, (path: string) => {
     if (path === 'vue') return { ...vue, onMounted() {}, onBeforeUnmount: (fn: () => void) => unmount.push(fn) }
     if (path.includes('codexGateway')) return { updateThreadFileChanges: update }
@@ -57,6 +57,22 @@ describe('conversation thread state isolation', () => {
     expect(s.isFileLinkContextMenuVisible.value).toBe(false)
     expect(s.fileLinkContextBrowseUrl.value).toBe('')
     expect(s.expandedWorkedIds.value.size).toBe(0)
+  })
+  it('keeps viewer selection and close state in the conversation', async () => {
+    const { props, state: s } = setup()
+    const first = { path: 'a.ts', operation: 'update', diff: '+first', addedLineCount: 1, removedLineCount: 0 }
+    const second = { ...first, path: 'b.ts', diff: '+second' }
+    s.openDiffViewer({ turnId: 'turn', changes: [first, second] }, second)
+    expect(s.activeDiffViewerChange.value.path).toBe('b.ts')
+    s.selectDiffViewerChange(first)
+    expect(s.activeDiffViewerChange.value.path).toBe('a.ts')
+    s.closeDiffViewer()
+    expect(s.activeDiffViewerChange.value).toBeNull()
+    s.openDiffViewer({ turnId: 'turn', changes: [first] }, first)
+    props.activeThreadId = 'B'
+    props.activeThreadId = 'A'
+    await vue.nextTick()
+    expect(s.activeDiffViewerChange.value).toBeNull()
   })
   it('scopes failed images to URL and thread while preserving same-thread failures', async () => {
     const { props, state: s } = setup()
