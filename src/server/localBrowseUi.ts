@@ -69,15 +69,6 @@ export function normalizeLocalPath(rawPath: string): string {
   return trimmed
 }
 
-export function decodeBrowsePath(rawPath: string): string {
-  if (!rawPath) return ''
-  try {
-    return decodeURIComponent(rawPath)
-  } catch {
-    return rawPath
-  }
-}
-
 export function isTextEditablePath(pathValue: string): boolean {
   return TEXT_EDITABLE_EXTENSIONS.has(extname(pathValue).toLowerCase())
 }

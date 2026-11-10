@@ -164,10 +164,6 @@ form.addEventListener('submit',async e=>{
 </body>
 </html>`
 
-export function createAuthMiddleware(password: string): RequestHandler {
-  return createAuthSession(password).middleware
-}
-
 export type AuthSession = {
   middleware: RequestHandler
   isRequestAuthorized: (req: IncomingMessage) => boolean
