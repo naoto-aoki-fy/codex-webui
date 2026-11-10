@@ -195,3 +195,27 @@ it('delivers live SSE notifications and releases the subscription on close witho
     expect(end).toHaveBeenCalledOnce()
   } finally { req.emit('close'); client.dispose() }
 })
+
+
+it('truncates a response fork before pagination and snapshot caching', async () => {
+  const turns = Array.from({ length: 25 }, (_, i) => ({ id: `turn-${i}`, items: [] }))
+  rpc.mockImplementation(async (method, params) => {
+    if (method === 'thread/fork') {
+      expect(params).not.toHaveProperty('forkFromTurnIndex')
+      return { model: 'fixture', thread: { id: 'fork-cutoff-test', turns } }
+    }
+    if (method === 'thread/rollback') {
+      expect(params).toEqual({ threadId: 'fork-cutoff-test', numTurns: 10 })
+      return { thread: { id: 'fork-cutoff-test', turns: turns.slice(0, 15) } }
+    }
+    return { thread: { id: 'source', turns } }
+  })
+  const response = await request('/codex-api/rpc', 'POST', {
+    method: 'thread/fork', params: { threadId: 'source', forkFromTurnIndex: 14 },
+  })
+  expect(response.res.statusCode).toBe(200)
+  expect(response.json.result.thread.turns).toEqual(turns.slice(5, 15))
+  expect(response.json.result.threadTurnStartIndex).toBe(5)
+  expect(response.json.result.model).toBe('fixture')
+  expect(storeSnapshot).toHaveBeenCalledWith('fork-cutoff-test', response.json.result)
+})

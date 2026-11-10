@@ -3,6 +3,7 @@ import {
 
   archiveThread,
   forkThread,
+  forkThreadFromResponse,
   getAvailableCollaborationModes,
   getAccountRateLimits,
   renameThread,
@@ -4441,21 +4442,11 @@ export function useDesktopState() {
       }
     }
 
-    const sourceMessages = persistedMessagesByThreadId.value[normalizedThreadId] ?? []
-    let lastTurnIndex = -1
-    for (const message of sourceMessages) {
-      if (typeof message.turnIndex === 'number' && Number.isFinite(message.turnIndex)) {
-        lastTurnIndex = Math.max(lastTurnIndex, message.turnIndex)
-      }
-    }
-
-    if (lastTurnIndex >= 0 && turnIndex > lastTurnIndex) return ''
-
     const sourceThread = flattenThreads(sourceGroups.value).find((row) => row.id === normalizedThreadId) ?? null
 
     try {
       error.value = ''
-      const forked = await forkThread(normalizedThreadId)
+      const forked = await forkThreadFromResponse(normalizedThreadId, turnIndex)
       const forkedThreadId = forked.threadId.trim()
       if (!forkedThreadId) return ''
 
@@ -4483,11 +4474,11 @@ export function useDesktopState() {
       setTurnErrorForThread(forkedThreadId, null)
       setThreadInProgress(forkedThreadId, false)
 
-      const turnsToRollback = lastTurnIndex - turnIndex
-      if (turnsToRollback > 0) {
-        const rolledBackMessages = await rollbackThread(forkedThreadId, turnsToRollback)
-        setPersistedMessagesForThread(forkedThreadId, rolledBackMessages)
+      hasMoreOlderMessagesByThreadId.value = {
+        ...hasMoreOlderMessagesByThreadId.value,
+        [forkedThreadId]: forked.hasMoreOlder,
       }
+      replaceTurnIndexLookupForThread(forkedThreadId, forked.turnIndexByTurnId)
 
       await renameThreadById(forkedThreadId, forkedThreadTitle)
       setSelectedThreadId(forkedThreadId)

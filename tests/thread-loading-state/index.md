@@ -36,3 +36,4 @@ Return to the [manual test index](../../tests.md).
 | [Missing thread route errors render in chat](missing-thread-route-errors-render-in-chat.md) |
 | [Non-thread startup selection priming](non-thread-startup-selection-priming.md) |
 | [Chat workflows after automation management removal](chat-without-automation-management.md) |
+| [Response fork cutoff](response-fork-cutoff.md) |
