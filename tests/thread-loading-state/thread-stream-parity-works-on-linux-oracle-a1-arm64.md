@@ -12,18 +12,15 @@
 3. From A1 locally, call `curl http://localhost:<port>/codex-api/rpc -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"thread/list","params":{},"id":1}'` and verify thread list returns.
 4. Pick a thread with known commands and file edits (e.g., MCP server deploy thread).
 5. Call `curl http://localhost:<port>/codex-api/thread-live-state?threadId=<id>` and inspect response.
-6. Verify `conversationState.turns[*].items` contains `commandExecution` items recovered from session log with correct `command`, `status`, and `aggregatedOutput`.
-7. Verify `fileChange` items recovered from `apply_patch` session log entries with `changes[].path`, `changes[].operation`, and `changes[].diff`.
-8. Verify items are interleaved chronologically with `agentMessage` items (not all commands at the start or end).
-9. Test from Mac via Tailscale: `curl --http1.1 http://100.127.77.25:<port>/codex-api/thread-live-state?threadId=<id>` (use `--http1.1` to avoid Vite HTTP/2 upgrade hang).
+6. Assert HTTP 404 JSON, then open normal thread history in the UI and load earlier pages.
+7. Confirm upstream-provided command/file-change items, timestamps and execution metadata display without duplicate requests. Do not expect removed diagnostic reconstruction.
+8. Repeat normal loading over Tailscale in light and dark themes.
 
 #### Expected Results
 - Bridge connects to the independently managed Codex app-server on Linux ARM64 without launching a Codex process.
 - `thread/list` RPC returns a page of matching threads; follow cursors to inspect the full listing.
-- `thread-live-state` returns full turn history with recovered `commandExecution` and `fileChange` items.
-- Session log parsing works with Linux file paths (`/home/ubuntu/.codex/sessions/...`).
-- Chronological interleaving matches the order seen on macOS (commands appear between agent messages, not appended).
-- Tailscale remote access works with `--http1.1` flag.
+- The retired endpoint returns JSON 404. Normal bounded RPC history and earlier pages remain available.
+- Tailscale history access works without duplicate rows or diagnostic requests.
 
 #### Historical Verified Results (2026-04-08; not current acceptance)
 - A1 server: Ubuntu ARM64, Node v22.22.0, Codex CLI 0.101.0.

@@ -217,3 +217,16 @@ describe('MCP directory transport', () => {
     ])
   })
 })
+
+it('loads normal frontend history with one RPC and no legacy diagnostic request', async () => {
+  const fetcher = vi.fn(async () => new Response(JSON.stringify({ result: { thread: { id: 'normal-history', turns: [] } } }), { headers: { 'Content-Type': 'application/json' } }))
+  vi.stubGlobal('fetch', fetcher)
+  try {
+    const detail = await getThreadDetail('normal-history')
+    expect(detail.messages).toEqual([])
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/codex-api/rpc')
+    expect(JSON.parse(init.body as string)).toMatchObject({ method: 'thread/read', params: { threadId: 'normal-history', includeTurns: true } })
+  } finally { vi.unstubAllGlobals() }
+})

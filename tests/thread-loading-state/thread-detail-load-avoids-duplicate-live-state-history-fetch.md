@@ -1,7 +1,7 @@
 ### Thread detail load avoids duplicate live-state history fetch
 
 #### Feature/Change Name
-Normal thread detail loading calls `thread/read` directly instead of first calling `/codex-api/thread-live-state`, whose server path also reads full thread history.
+Normal thread detail loading calls `thread/read` directly instead of first calling `/codex-api/thread-live-state`, which is now retired with JSON 404.
 
 #### Prerequisites/Setup
 1. Dev server running (`pnpm run dev`)
@@ -32,3 +32,15 @@ Prerequisites: run the current app in development or from a built package; use a
 4. Exercise file Undo/Redo and conversation rollback. Expect added files removed/restored, modified content reversed/reapplied, deleted tracked files restored, and moves reversed/reapplied. Follow the existing rollback procedure under `tests/git-worktrees-rollback/`.
 
 Cleanup: discard only the disposable fixture project and close diagnostics. Leave real sessions intact. The retirement is an intentional compatibility break with no replacement endpoint.
+
+### Retired live-state diagnostic API
+
+Prerequisites: current development or built app; disposable thread with more than 10 turns.
+
+1. Request `/codex-api/thread-live-state` using GET, HEAD and POST, with and without `?threadId=<id>`.
+2. Expect HTTP 404 JSON content type; GET/POST return `{"error":"Not found"}`, never frontend HTML. HEAD has no body.
+3. Load normal history and earlier pages; expect one initial `thread/read`, zero diagnostic requests, stable order and no duplicates.
+4. Verify timestamp, execution metadata, selected skills, inline media and streamed failure messages remain visible after reload.
+5. During pending first-turn materialization, expect empty in-progress normal RPC history. A recognized empty-rollout failure can reuse a saved snapshot.
+
+Cleanup: archive only disposable threads and restore theme. No replacement exists for the removed diagnostic command/file-change reconstruction.

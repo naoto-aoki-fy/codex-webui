@@ -1,37 +1,17 @@
-> **Historical authentication workflow — not current acceptance criteria.**
-> Local login, token promotion and retired provider fallback were removed.
-> Authentication is managed in the external server environment; see
-> [current verification](../website-docs-misc/external-app-server.md).
-> Any still-relevant error rendering must be exercised with that server.
-
-### Docker auth startup live-state pending read
-
-#### Feature/Change Name
-Docker authenticated first-turn live-state pending read handling.
+### Pending first-turn materialization after live-state retirement
 
 #### Prerequisites/Setup
-1. Build the project with `pnpm run build`.
-2. Build a fresh Docker image that installs `@openai/codex` and runs the packed `codexapp` artifact.
-3. Prepare two isolated `CODEX_HOME` states: one empty and one with only `auth.json` mounted.
+Use an independently managed, authenticated Codex app-server with matching user, CODEX_HOME and paths; see [external verification](../website-docs-misc/external-app-server.md). Use a disposable new thread. Local-auth Docker matrices are retired.
 
 #### Steps
-1. Start the no-auth container and open the app in light theme.
-2. Confirm `config/read` uses `model_provider="opencode-zen"` and `model="big-pickle"`.
-3. Send `hi` and wait for the assistant reply.
-4. Start the auth-mounted container and open the app in light theme.
-5. Confirm `config/read` has official `model_provider="openai"` and no alternative proxy configuration.
-6. Send `hi` and poll `/codex-api/thread-live-state?threadId=<id>` while the first turn is starting.
-7. Confirm early live-state responses do not expose `liveStateError.kind="readFailed"` for `not materialized yet; includeTurns is unavailable before first user message`.
-8. Wait for the assistant reply, then switch to dark theme and repeat the visual checks for the composer/thread area.
+1. Open the new thread and send `hi`.
+2. Inspect normal `/codex-api/rpc` `thread/read` requests during first-turn materialization.
+3. If the recognized pending-materialization error occurs, assert empty `turns` and `status.type="inProgress"`, with no visible read error.
+4. Wait for normal completion and reload; verify history in light and dark themes.
+5. Request `/codex-api/thread-live-state?threadId=<id>` and assert JSON 404.
 
 #### Expected Results
-- No-auth Docker startup serves the UI and reports an actionable Codex authentication error for chat; it selects no fallback provider.
-- Auth-mounted Docker startup uses the official Codex app-server path and returns a `hi` response.
-- The transient first-turn materialization window is represented as an in-progress empty live state, not a visible chat error.
-- Real `thread/read` failures still surface through `liveStateError`.
-- Light theme and dark theme keep the chat/composer readable throughout the first-turn transition.
+Normal RPC pending-materialization recovery remains; unrelated failures still surface. The retired diagnostic envelope and reconstruction are intentionally unavailable. Generic reads do not reproduce them.
 
 #### Rollback/Cleanup
-- Stop temporary containers with `docker rm -f codexui-noauth-test codexui-auth-test` when finished.
-
----
+Archive only the disposable thread. Leave persistent servers and authentication state intact.
