@@ -1080,6 +1080,15 @@
   @apply border-zinc-700 bg-zinc-900 text-zinc-100 focus:border-zinc-500;
 }
 
+:root.dark .new-thread-open-folder-item-main,
+:root.dark .new-thread-open-folder-item-open {
+  @apply border-zinc-700 bg-zinc-900 text-zinc-100 hover:border-zinc-600 hover:bg-zinc-800;
+}
+
+:root.dark .new-thread-open-folder-toggle {
+  @apply text-zinc-300;
+}
+
 :root.dark .new-thread-project-mode-tabs {
   @apply border-zinc-700 bg-zinc-900;
 }

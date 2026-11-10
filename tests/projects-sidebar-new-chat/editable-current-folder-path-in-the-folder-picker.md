@@ -30,3 +30,19 @@ The `Select folder` dialog now lets the user edit the current folder path direct
 - Return the chooser to the original folder if the test changed the selected project path
 
 ---
+
+### Folder picker composable regression
+
+Prerequisites: run the current dev server on `127.0.0.1:4173`; use disposable folders with a child and a hidden child. Repeat at 1440x1000, 375x812, and 768x1024 in light and dark themes.
+
+1. Open Select folder. Expect one listing request and focus in Current folder after loading.
+2. Browse a child and retry a typed path. Toggle Show hidden folders rapidly with network throttling. Expect only the latest listing/error and loading state to apply; each toggle requests once.
+3. Filter by a mixed-case name and an absent name. Expect matching children (and the parent entry where available), or the empty-filter message at the filesystem root; filtering makes no requests.
+4. Open New folder, create a child, then create another child inside it. Expect each creation to browse the new folder. Cancel the composer and confirm its draft clears.
+5. Try a forbidden directory and an invalid folder name. Expect permission/validation errors, with no registration. Retry an accessible path to recover.
+6. Close with Escape, Cancel, and the backdrop during pending listings/creation. Reopen. Expect no late response or focus to overwrite the new session. A filesystem creation already submitted may still finish on disk.
+7. Select a child row or typed existing folder. Expect project registration with `createIfMissing: false`, selected cwd update, project ordering/persistence refresh, and dialog dismissal. Cancel instead and expect no registration.
+
+Automation: `pnpm exec vitest run src/composables/useFolderPicker.test.ts` tests mocked gateway responses. `node scripts/test-folder-picker.cjs` checks the real App/modal at all six viewport/theme combinations, with mocked directory listings, project registration, and workspace state. Startup reads use the dev server. Neither suite proves real filesystem creation or permission behavior.
+
+Cleanup: remove only disposable test folders and restore the original selected project. Browser automation does not write projects or directories to disk. Screenshots are saved under `output/playwright/folder-picker-*.png`.
