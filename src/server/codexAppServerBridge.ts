@@ -1016,6 +1016,9 @@ type CodexBridgeMiddleware = ((req: IncomingMessage, res: ServerResponse, next: 
 }
 
 type SharedBridgeState = {
+  // Stored on the shared object so ownership survives compatible module reloads.
+  owners?: number
+  retired?: boolean
   version: string
   appServer: AppServerClient
   methodCatalog: MethodCatalog
@@ -1025,6 +1028,16 @@ type SharedBridgeState = {
 const SHARED_BRIDGE_KEY = '__codexRemoteSharedBridge__'
 const SHARED_BRIDGE_VERSION = 'external-websocket-v1'
 
+function disposeSharedBridgeState(state: SharedBridgeState): void {
+  if (state.retired) return
+  state.retired = true
+  try {
+    state.telegramBridge.stop()
+  } finally {
+    state.appServer.dispose()
+  }
+}
+
 function getSharedBridgeState(): SharedBridgeState {
   const globalScope = globalThis as typeof globalThis & {
     [SHARED_BRIDGE_KEY]?: SharedBridgeState
@@ -1032,7 +1045,7 @@ function getSharedBridgeState(): SharedBridgeState {
 
   const existing = globalScope[SHARED_BRIDGE_KEY]
   if (existing) {
-    if (existing.version === SHARED_BRIDGE_VERSION) {
+    if (existing.version === SHARED_BRIDGE_VERSION && !existing.retired) {
       return existing
     }
     // Old workers may be awaiting disk/RPC work when hot reload replaces the bridge.
@@ -1047,8 +1060,7 @@ function getSharedBridgeState(): SharedBridgeState {
       }
       existing.appServer.rpc = async () => { throw new Error('Retired app-server bridge') }
     }
-    existing.telegramBridge.stop()
-    existing.appServer.dispose()
+    disposeSharedBridgeState(existing)
   }
 
   const appServer = new AppServerClient()
@@ -1141,7 +1153,10 @@ async function buildThreadSearchIndex(appServer: AppServerClient): Promise<Threa
 }
 
 export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
-  const { appServer, methodCatalog, telegramBridge } = getSharedBridgeState()
+  const sharedState = getSharedBridgeState()
+  sharedState.owners = (sharedState.owners ?? 0) + 1
+  let released = false
+  const { appServer, methodCatalog, telegramBridge } = sharedState
   const gitWorkspaceRoutes = createGitWorkspaceRoutes({ readJsonBody, getCodexHomeDir, persistWorkspaceRoot, ensureRealDirectory })
   let threadSearchIndex: ThreadSearchIndex | null = null
   let threadSearchIndexPromise: Promise<ThreadSearchIndex> | null = null
@@ -1162,7 +1177,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   }
   void readTelegramBridgeConfig()
     .then((config) => {
-      if (!config.botToken) return
+      if (released || sharedState.retired || !config.botToken) return
       telegramBridge.configureToken(config.botToken)
       telegramBridge.configureCompletionNotifications(config.completionNotifications)
       telegramBridge.start()
@@ -1848,10 +1863,16 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   }
 
   middleware.dispose = () => {
+    if (released) return
+    released = true
     threadSearchIndex = null
-    telegramBridge.stop()
-    appServer.dispose()
-    delete (globalThis as Record<string, unknown>)[SHARED_BRIDGE_KEY]
+    sharedState.owners = (sharedState.owners ?? 1) - 1
+    if (sharedState.owners > 0) return
+    const globalScope = globalThis as Record<string, unknown>
+    if (globalScope[SHARED_BRIDGE_KEY] === sharedState) {
+      delete globalScope[SHARED_BRIDGE_KEY]
+    }
+    disposeSharedBridgeState(sharedState)
   }
   middleware.subscribeNotifications = (
     listener: (value: { method: string; params: unknown; atIso: string }) => void,

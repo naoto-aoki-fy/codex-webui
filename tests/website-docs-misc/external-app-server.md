@@ -185,10 +185,11 @@ A ready-write failure still leaves its subscription without a cleanup callback.
 Open two mocked SSE connections across two middleware instances plus a browser
 WebSocket subscription (covered by the focused suite). Expect one shared runtime,
 independent subscriptions, and closure of one connection to leave the others live.
-Dispose middleware while SSE is active: expect the bridge to stop Telegram,
-dispose the app-server, and delete the shared global runtime, while the SSE timer
-and response remain active until request close/abort. These are characterization
-checks, not improved disposal semantics. Follow-up work could remove request
+Dispose the final middleware owner while SSE is active: expect the bridge to
+stop Telegram, dispose the app-server, and delete its own shared registration.
+Disposing an earlier owner leaves the shared runtime active. The SSE timer and
+response remain active until request close/abort. These SSE cleanup behaviors
+remain characterization checks. Follow-up work could remove request
 listeners, make cleanup idempotent, protect setup failures, and explicitly close
 active SSE during disposal; none of those changes belong to this extraction.
 
@@ -213,3 +214,55 @@ above. The public CLI is ESM with no CJS exports; verify from CommonJS with
 Cleanup: focused tests restore the shared runtime and fake clock; fixtures stop
 only their child processes and remove their temporary sockets. No persistent
 configuration or rollback is needed.
+
+
+## Shared runtime ownership and disposal safety
+
+Setup: dependencies installed; no credentials or external server required. Run
+`pnpm exec vitest run src/server/sharedBridgeOwnership.test.ts src/server/appServerClient.test.ts`.
+The controlled local WebSocket fixture seeds a compatible legacy registration
+without ownership fields, acquires middleware A and B, and starts a pending RPC.
+
+Actions and expected results:
+
+1. Dispose A twice. Expect no client disposal or service stop; B's HTTP RPC and
+   notification listener still work and the fixture records one upstream connection.
+2. Dispose B twice. Expect one client disposal and one service stop, rejection of
+   the pending RPC, and removal of that runtime's registration.
+3. Replace the registration while an old owner remains, then dispose the old owner.
+   Expect the replacement registration and client to remain intact.
+4. Reload the module with a compatible runtime. Expect the same runtime and owner
+   count; only final release disposes it. A single owner also disposes exactly once.
+5. Mark an owned runtime incompatible and acquire a replacement. Expect immediate
+   retirement, legacy queue cancellation, and rejection of legacy queued RPCs.
+   Releasing retired owners must neither dispose again nor remove the replacement.
+
+Original sequence: each middleware looked up/created the global runtime, captured
+its client/catalog/service, then unconditionally stopped and disposed those shared
+resources and deleted the global key on every disposal. Middleware objects were
+independent but ownership was not tracked. Replacement on version mismatch retired
+the previous client immediately, leaving old middleware closures alive.
+
+Current sequence: each middleware increments an optional count on the actual
+runtime object and releases once. Final release removes only an identical global
+registration and retires the captured runtime once. Version mismatch still retires
+immediately regardless of owners. The runtime owns the client and service; the
+client owns the transport and retains its existing pending-RPC cleanup and
+subscription/reconnect behavior. Notification subscription release remains caller
+owned; SSE cleanup is unchanged. Delayed configuration cannot restart a released
+or retired middleware's service.
+
+Compatibility: registrations without ownership fields are adopted lazily. Ownership
+survives compatible reloads because it lives on the shared object. Disposers from
+code loaded before this fix cannot be retroactively made ownership aware; restart
+the host to eliminate such closures when upgrading.
+
+Performance audit: acquisition/release add constant-time counter/identity checks,
+with constant storage per runtime and middleware. The regression fixture measures
+one upstream connection across both owners and subsequent RPCs. No added RPCs,
+blocking I/O, timers, polling, fanout, payloads, caches, or import edges are introduced;
+search invalidation and reconnect paths are unchanged. Live latency/memory profiling
+was not performed; no performance improvement is claimed.
+
+Cleanup: tests unsubscribe listeners, dispose middleware, restore global registration
+and environment, and close fixture sockets/listeners. No persistent data changes.
