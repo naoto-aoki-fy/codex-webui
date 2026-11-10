@@ -940,6 +940,7 @@ import { updateThreadFileChanges } from '../../api/codexGateway'
 import { useMobile } from '../../composables/useMobile'
 import { copyTextToClipboard, copyTextWithSelectionFallback } from '../../utils/clipboard'
 import { buildUserMessageCopyText } from '../../utils/userMessageCopy'
+import { indexConversationFileChanges, isCopyableAssistantMessage, type TurnFileChangeSummary } from '../../utils/conversationFileChanges'
 import { buildDiffViewerLines, fileChangeKey, type DiffViewerLine } from '../../utils/diffViewerLines'
 
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
@@ -1041,12 +1042,6 @@ function isFileChangeMessage(message: UiMessage): boolean {
     && message.fileChanges.length > 0
 }
 
-function isCopyableAssistantMessage(message: UiMessage): boolean {
-  return message.role === 'assistant'
-    && !isCommandMessage(message)
-    && message.messageType !== 'worked'
-    && !(message.messageType ?? '').endsWith('.live')
-}
 
 const activeCommandMessageId = computed(() => {
   for (let index = props.messages.length - 1; index >= 0; index -= 1) {
@@ -1435,13 +1430,6 @@ function ensureHighlightJsLoaded(): Promise<void> {
       })
   }
   return highlightJsLoader
-}
-
-type TurnFileChangeSummary = {
-  changes: UiFileChange[]
-  sourceMessageIds: string[]
-  source: 'assistant' | 'metadata'
-  turnId: string
 }
 
 function isFilePath(value: string): boolean {
@@ -1849,142 +1837,10 @@ function showForkResponseButton(message: UiMessage): boolean {
   return typeof forkableTurnIndexByAnchorId.value[message.id] === 'number'
 }
 
-function mergeFileChangeDiff(first: string, second: string): string {
-  if (!first) return second
-  if (!second || first === second) return first
-  return `${first}\n${second}`.trim()
-}
-
-function mergeFileChangeEntry(first: UiFileChange, second: UiFileChange): UiFileChange {
-  const operation = first.operation === 'add' || second.operation === 'add'
-    ? 'add'
-    : first.operation === 'delete' || second.operation === 'delete'
-      ? 'delete'
-      : 'update'
-  return {
-    path: second.path || first.path,
-    operation,
-    movedToPath: second.movedToPath ?? first.movedToPath ?? null,
-    diff: mergeFileChangeDiff(first.diff, second.diff),
-    addedLineCount: first.addedLineCount + second.addedLineCount,
-    removedLineCount: first.removedLineCount + second.removedLineCount,
-  }
-}
-
-function compareFileChanges(first: UiFileChange, second: UiFileChange): number {
-  const firstRank = first.operation === 'add' ? 0 : first.operation === 'update' ? 1 : 2
-  const secondRank = second.operation === 'add' ? 0 : second.operation === 'update' ? 1 : 2
-  if (firstRank !== secondRank) return firstRank - secondRank
-  const firstPath = `${first.path}\u0000${first.movedToPath ?? ''}`
-  const secondPath = `${second.path}\u0000${second.movedToPath ?? ''}`
-  return firstPath.localeCompare(secondPath)
-}
-
-function aggregateFileChanges(changes: UiFileChange[]): UiFileChange[] {
-  const byPath = new Map<string, UiFileChange>()
-  for (const change of changes) {
-    const key = `${change.path}\u0000${change.movedToPath ?? ''}`
-    const previous = byPath.get(key)
-    byPath.set(key, previous ? mergeFileChangeEntry(previous, change) : { ...change })
-  }
-  return Array.from(byPath.values()).sort(compareFileChanges)
-}
-
-const anchoredFileChangeSummaryByAnchorId = computed<Record<string, TurnFileChangeSummary>>(() => {
-  const assistantAnchorIdByTurnKey = new Map<string, string>()
-  const assistantSummaryByAnchorId = new Map<string, TurnFileChangeSummary>()
-  const fileChangeMessagesByTurnKey = new Map<string, UiMessage[]>()
-
-  for (const message of props.messages) {
-    if (isCopyableAssistantMessage(message) && typeof message.turnIndex === 'number') {
-      assistantAnchorIdByTurnKey.set(`turn:${message.turnIndex}`, message.id)
-      if (Array.isArray(message.fileChanges) && message.fileChanges.length > 0) {
-        assistantSummaryByAnchorId.set(message.id, {
-          changes: aggregateFileChanges(message.fileChanges),
-          sourceMessageIds: [],
-          source: 'assistant',
-          turnId: message.turnId ?? '',
-        })
-      }
-    }
-
-    if (!isFileChangeMessage(message)) continue
-    const turnKey = typeof message.turnIndex === 'number' ? `turn:${message.turnIndex}` : `message:${message.id}`
-    const current = fileChangeMessagesByTurnKey.get(turnKey)
-    if (current) current.push(message)
-    else fileChangeMessagesByTurnKey.set(turnKey, [message])
-  }
-
-  const summaries: Record<string, TurnFileChangeSummary> = {}
-  for (const [turnKey, messages] of fileChangeMessagesByTurnKey.entries()) {
-    const anchorId = assistantAnchorIdByTurnKey.get(turnKey)
-    if (!anchorId) continue
-    const assistantTurnId = assistantSummaryByAnchorId.get(anchorId)?.turnId ?? ''
-    summaries[anchorId] = {
-      changes: aggregateFileChanges(messages.flatMap((message) => message.fileChanges ?? [])),
-      sourceMessageIds: messages.map((message) => message.id),
-      source: 'metadata',
-      turnId: messages.find((message) => typeof message.turnId === 'string' && message.turnId.length > 0)?.turnId ?? assistantTurnId,
-    }
-  }
-
-  for (const [anchorId, summary] of assistantSummaryByAnchorId.entries()) {
-    if (!summaries[anchorId]) {
-      summaries[anchorId] = summary
-    }
-  }
-
-  return summaries
-})
-
-const standaloneFileChangeSummaryByMessageId = computed<Record<string, TurnFileChangeSummary>>(() => {
-  const assistantAnchorIdByTurnKey = new Map<string, string>()
-  const fileChangeMessagesByTurnKey = new Map<string, UiMessage[]>()
-
-  for (const message of props.messages) {
-    if (isCopyableAssistantMessage(message) && typeof message.turnIndex === 'number') {
-      assistantAnchorIdByTurnKey.set(`turn:${message.turnIndex}`, message.id)
-    }
-
-    if (!isFileChangeMessage(message)) continue
-    const turnKey = typeof message.turnIndex === 'number' ? `turn:${message.turnIndex}` : `message:${message.id}`
-    const current = fileChangeMessagesByTurnKey.get(turnKey)
-    if (current) current.push(message)
-    else fileChangeMessagesByTurnKey.set(turnKey, [message])
-  }
-
-  const summaries: Record<string, TurnFileChangeSummary> = {}
-  for (const [turnKey, messages] of fileChangeMessagesByTurnKey.entries()) {
-    if (assistantAnchorIdByTurnKey.has(turnKey)) continue
-    const visibleMessage = messages[messages.length - 1]
-    if (!visibleMessage) continue
-    summaries[visibleMessage.id] = {
-      changes: aggregateFileChanges(messages.flatMap((message) => message.fileChanges ?? [])),
-      sourceMessageIds: messages.map((message) => message.id),
-      source: 'metadata',
-      turnId: visibleMessage.turnId ?? messages.find((message) => typeof message.turnId === 'string' && message.turnId.length > 0)?.turnId ?? '',
-    }
-  }
-
-  return summaries
-})
-
-const hiddenFileChangeMessageIds = computed(() => {
-  const next = new Set<string>()
-  for (const summary of Object.values(anchoredFileChangeSummaryByAnchorId.value)) {
-    for (const messageId of summary.sourceMessageIds) {
-      next.add(messageId)
-    }
-  }
-  for (const [messageId, summary] of Object.entries(standaloneFileChangeSummaryByMessageId.value)) {
-    for (const sourceMessageId of summary.sourceMessageIds) {
-      if (sourceMessageId !== messageId) {
-        next.add(sourceMessageId)
-      }
-    }
-  }
-  return next
-})
+const fileChangeSummaryIndex = computed(() => indexConversationFileChanges(props.messages))
+const anchoredFileChangeSummaryByAnchorId = computed(() => fileChangeSummaryIndex.value.anchored)
+const standaloneFileChangeSummaryByMessageId = computed(() => fileChangeSummaryIndex.value.standalone)
+const hiddenFileChangeMessageIds = computed(() => fileChangeSummaryIndex.value.hiddenMessageIds)
 
 function readAnchoredFileChangeSummary(message: UiMessage): TurnFileChangeSummary | null {
   return anchoredFileChangeSummaryByAnchorId.value[message.id] ?? null
