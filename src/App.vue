@@ -101,29 +101,18 @@
                 @logout="onLogoutCodex"
               />
 
-              <button class="sidebar-settings-row" type="button" :title="SETTINGS_HELP.sendWithEnter" @click="toggleSendWithEnter">
-                <span class="sidebar-settings-label">{{ t('Require ⌘ + enter to send') }}</span>
-                <span class="sidebar-settings-toggle" :class="{ 'is-on': !sendWithEnter }" />
-              </button>
-              <button class="sidebar-settings-row" type="button" :title="SETTINGS_HELP.appearance" @click="cycleDarkMode">
-                <span class="sidebar-settings-label">{{ t('Appearance') }}</span>
-                <span class="sidebar-settings-value">{{ darkMode === 'system' ? t('System') : darkMode === 'dark' ? t('Dark') : t('Light') }}</span>
-              </button>
-              <div class="sidebar-settings-row sidebar-settings-row--select" :title="t('Choose the interface language for the app.')">
-                <span class="sidebar-settings-label">{{ t('UI language') }}</span>
-                <ComposerDropdown
-                  class="sidebar-settings-picker-dropdown"
-                  :model-value="uiLanguage"
-                  :options="uiLanguageOptions"
-                  :placeholder="t('UI language')"
-                  menu-align="end"
-                  @update:model-value="setUiLanguage($event as 'en' | 'zh-CN')"
-                />
-              </div>
-              <button class="sidebar-settings-row" type="button" :title="SETTINGS_HELP.chatWidth" @click="cycleChatWidth">
-                <span class="sidebar-settings-label">{{ t('Chat width') }}</span>
-                <span class="sidebar-settings-value">{{ chatWidthLabel }}</span>
-              </button>
+              <GeneralPreferencesSettings
+                :send-with-enter="sendWithEnter"
+                :dark-mode="darkMode"
+                :ui-language="uiLanguage"
+                :ui-language-options="uiLanguageOptions"
+                :chat-width-label="chatWidthLabel"
+                :help="SETTINGS_HELP"
+                @toggle-send-with-enter="toggleSendWithEnter"
+                @cycle-dark-mode="cycleDarkMode"
+                @update:ui-language="setUiLanguage"
+                @cycle-chat-width="cycleChatWidth"
+              />
               <button class="sidebar-settings-row" type="button" aria-live="polite" @click="toggleTelegramConfig">
                 <span class="sidebar-settings-label">{{ t('Telegram') }}</span>
                 <span class="sidebar-settings-value">{{ telegramStatusText }}</span>
@@ -449,6 +438,7 @@
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DesktopLayout from './components/layout/DesktopLayout.vue'
+import GeneralPreferencesSettings from './components/sidebar/GeneralPreferencesSettings.vue'
 import AccountSettingsPanel from './components/sidebar/AccountSettingsPanel.vue'
 import SidebarThreadTree from './components/sidebar/SidebarThreadTree.vue'
 import ContentHeader from './components/content/ContentHeader.vue'
@@ -2813,10 +2803,6 @@ async function onLogoutCodex(): Promise<void> {
   @apply flex items-center justify-between w-full px-3 py-2.5 text-sm text-zinc-700 border-0 bg-transparent transition hover:bg-zinc-50 cursor-pointer;
 }
 
-.sidebar-settings-row--select {
-  @apply cursor-default items-center gap-2;
-}
-
 .sidebar-settings-language-dropdown {
   @apply min-w-0 max-w-52;
 }
@@ -2829,7 +2815,7 @@ async function onLogoutCodex(): Promise<void> {
   @apply max-w-32;
 }
 
-.sidebar-settings-row + .sidebar-settings-row {
+.sidebar-settings-panel :deep(.sidebar-settings-row + .sidebar-settings-row) {
   @apply border-t border-zinc-100;
 }
 
@@ -2882,41 +2868,12 @@ async function onLogoutCodex(): Promise<void> {
   @apply text-xs text-zinc-500 bg-zinc-100 rounded px-1.5 py-0.5;
 }
 
-.sidebar-settings-toggle {
-  @apply relative w-9 h-5 rounded-full bg-zinc-300 transition-colors shrink-0;
-}
-
-.sidebar-settings-toggle::after {
-  content: '';
-  @apply absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow-sm;
-}
-
-.sidebar-settings-toggle.is-on {
-  @apply bg-zinc-800;
-}
-
-.sidebar-settings-toggle.is-on::after {
-  transform: translateX(16px);
-}
-
 .sidebar-settings-row--input {
   @apply flex flex-col gap-1 py-1.5;
 }
 
 .sidebar-settings-error {
   @apply text-xs text-red-600 bg-red-50 rounded px-2 py-1.5 break-words;
-}
-
-.sidebar-settings-picker-dropdown {
-  @apply min-w-0 max-w-44;
-}
-
-.sidebar-settings-picker-dropdown :deep(.composer-dropdown-trigger) {
-  @apply h-auto rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700;
-}
-
-.sidebar-settings-picker-dropdown :deep(.composer-dropdown-value) {
-  @apply max-w-36;
 }
 
 .settings-panel-enter-active,
