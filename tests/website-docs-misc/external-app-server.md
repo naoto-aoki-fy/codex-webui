@@ -119,3 +119,18 @@ Both runs exercise HTTP RPC, browser WebSocket readiness, initialization counts,
 and independent listener survival through the built CLI and development server.
 The CLI is ESM and has no public CJS export; this CJS fixture launches its public
 `dist-cli/index.js` executable instead of using `require()` on the CLI bundle.
+
+## Bridge HTTP utility compatibility (9-C-3)
+
+Prerequisites: install dependencies and run `pnpm run build` from this checkout.
+Run `pnpm exec vitest run src/server/bridgeHttpUtils.test.ts src/server/threadLiveStateRetirement.test.ts src/server/threadFileChangeRetirement.test.ts`.
+Expect valid/chunked JSON and whitespace bodies to retain their values, malformed
+JSON to map to the existing RPC 502 error envelope, empty RPC bodies to return
+400, and stream errors/aborts to reject unchanged. Body readers intentionally
+retain their existing lack of an application-level size limit. Error precedence,
+nested error classification, status codes, and JSON headers must remain unchanged.
+All standard HTTP methods for the three retired history endpoints must terminate
+with JSON 404 without invoking RPC or SPA fallback (real HTTP HEAD omits the body).
+Then run the WebSocket and Unix fixtures above sequentially to check both public
+CLI and dev entry points. Cleanup: tests restore temporary state and stop their
+own processes; no persistent configuration changes or rollback are needed.

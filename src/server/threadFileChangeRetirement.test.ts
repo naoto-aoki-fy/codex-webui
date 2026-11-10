@@ -64,7 +64,7 @@ async function request(path: string, method = 'GET', payload?: unknown) {
   return { res, next, body, json: body ? JSON.parse(body) : null }
 }
 
-it.each(['GET', 'HEAD', 'POST'])('returns JSON 404 for retired fallback (%s) without RPC or SPA fallthrough', async method => {
+it.each(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT'])('returns JSON 404 for retired fallback (%s) without RPC or SPA fallthrough', async method => {
   for (const query of ['', '?threadId=historical-thread']) {
     const response = await request('/codex-api/thread-file-change-fallback' + query, method)
     expect(response.res.statusCode).toBe(404)

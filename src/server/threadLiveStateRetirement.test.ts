@@ -44,8 +44,8 @@ afterEach(async () => {
   vi.unstubAllEnvs()
   await rm(home, { recursive: true, force: true })
 })
-async function request(path: string, method = 'GET', payload?: unknown) {
-  const req = Object.assign(Readable.from(payload === undefined ? [] : [JSON.stringify(payload)]), {
+async function request(path: string, method = 'GET', payload?: unknown, rawBody?: string) {
+  const req = Object.assign(Readable.from(rawBody !== undefined ? [rawBody] : payload === undefined ? [] : [JSON.stringify(payload)]), {
     method, url: path, headers: { 'content-type': 'application/json' }, socket: { remoteAddress: '127.0.0.1' },
   }) as unknown as IncomingMessage
   let body = ''
@@ -57,7 +57,7 @@ async function request(path: string, method = 'GET', payload?: unknown) {
   return { res, next, body, json: body ? JSON.parse(body) : null }
 }
 
-it.each(['GET', 'HEAD', 'POST'])('returns JSON 404 for retired live state (%s) without RPC or SPA fallthrough', async method => {
+it.each(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT'])('returns JSON 404 for retired live state (%s) without RPC or SPA fallthrough', async method => {
   for (const query of ['', '?threadId=historical-thread']) {
     const response = await request('/codex-api/thread-live-state' + query, method)
     expect(response.res.statusCode).toBe(404)
@@ -67,7 +67,7 @@ it.each(['GET', 'HEAD', 'POST'])('returns JSON 404 for retired live state (%s) w
     expect(rpc).not.toHaveBeenCalled()
   }
 })
-it.each(['GET', 'HEAD', 'POST'])('returns JSON 404 for retired stream events (%s) without RPC or SPA fallthrough', async method => {
+it.each(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT'])('returns JSON 404 for retired stream events (%s) without RPC or SPA fallthrough', async method => {
   for (const query of ['', '?threadId=historical-thread&limit=50', '?threadId=historical-thread&limit=invalid']) {
     const response = await request('/codex-api/thread-stream-events' + query, method)
     expect(response.res.statusCode).toBe(404)
@@ -218,4 +218,19 @@ it('truncates a response fork before pagination and snapshot caching', async () 
   expect(response.json.result.threadTurnStartIndex).toBe(5)
   expect(response.json.result.model).toBe('fixture')
   expect(storeSnapshot).toHaveBeenCalledWith('fork-cutoff-test', response.json.result)
+})
+
+it('preserves RPC body validation, malformed JSON mapping, and success envelopes', async () => {
+  const empty = await request('/codex-api/rpc', 'POST')
+  expect(empty.res.statusCode).toBe(400)
+  expect(empty.json).toEqual({ error: 'Invalid body: expected { method, params? }' })
+  const malformed = await request('/codex-api/rpc', 'POST', undefined, '{broken')
+  expect(malformed.res.statusCode).toBe(502)
+  expect(malformed.json).toEqual({ error: expect.any(String) })
+  expect(malformed.json.error).not.toBe('Unknown bridge error')
+  expect(rpc).not.toHaveBeenCalled()
+  rpc.mockResolvedValue({ data: ['fixture'] })
+  const valid = await request('/codex-api/rpc', 'POST', { method: 'model/list', params: {} })
+  expect(valid.res.statusCode).toBe(200)
+  expect(valid.json).toEqual({ result: { data: ['fixture'] } })
 })

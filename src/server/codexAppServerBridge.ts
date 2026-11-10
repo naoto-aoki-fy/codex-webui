@@ -1,3 +1,5 @@
+import { asRecord, getErrorMessage, getErrorCode, setJson, readJsonBody, isUnauthenticatedRateLimitError, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
+export { isUnauthenticatedRateLimitError, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
 import { sanitizeThreadTurnsInlinePayloads, THREAD_METHODS_WITH_TURNS } from './threadInlinePayloads.js'
 export { sanitizeThreadTurnsInlinePayloads } from './threadInlinePayloads.js'
 import { handlePromptRoutes } from './promptRoutes.js'
@@ -482,12 +484,6 @@ function getChunkByteLength(chunk: unknown, encoding?: BufferEncoding): number {
   return 0
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null
-}
-
 function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
@@ -511,47 +507,6 @@ function trimThreadTurnsInRpcResult(method: string, result: unknown): unknown {
       turns: turns.slice(startTurnIndex),
     },
   }
-}
-
-function getErrorMessage(payload: unknown, fallback: string): string {
-  if (payload instanceof Error && payload.message.trim().length > 0) {
-    return payload.message
-  }
-
-  const record = asRecord(payload)
-  if (!record) return fallback
-
-  if (typeof record.message === 'string' && record.message.length > 0) return record.message
-
-  const error = record.error
-  if (typeof error === 'string' && error.length > 0) return error
-
-  const nestedError = asRecord(error)
-  if (nestedError && typeof nestedError.message === 'string' && nestedError.message.length > 0) {
-    return nestedError.message
-  }
-
-  return fallback
-}
-
-export function isUnauthenticatedRateLimitError(error: unknown): boolean {
-  const message = getErrorMessage(error, '').toLowerCase()
-  return message.includes('authentication required') && message.includes('rate limits')
-}
-
-export function isEmptyThreadReadError(error: unknown): boolean {
-  const message = getErrorMessage(error, '').toLowerCase()
-  return message.includes('failed to read thread') && message.includes('rollout') && message.includes('is empty')
-}
-
-export function isThreadMaterializationPendingError(error: unknown): boolean {
-  const message = getErrorMessage(error, '').toLowerCase()
-  return message.includes('not materialized yet') && message.includes('includeturns is unavailable before first user message')
-}
-
-export function isThreadNotFoundError(error: unknown): boolean {
-  const message = getErrorMessage(error, '').toLowerCase()
-  return message.includes('thread not found') || message.includes('no rollout found for thread id')
 }
 
 function readStreamTurnId(params: Record<string, unknown>): string {
@@ -624,18 +579,6 @@ function mergeStreamTurnErrorsIntoThreadResult(appServer: AppServerClient, resul
       turns: mergedTurns,
     },
   }
-}
-
-function getErrorCode(error: unknown): string | null {
-  return typeof error === 'object' && error !== null && 'code' in error
-    ? String((error as { code?: unknown }).code ?? '')
-    : null
-}
-
-function setJson(res: ServerResponse, statusCode: number, payload: unknown): void {
-  res.statusCode = statusCode
-  res.setHeader('Content-Type', 'application/json; charset=utf-8')
-  res.end(JSON.stringify(payload))
 }
 
 // Read-only compatibility for historical sessions, including previously imported chats.
@@ -2439,22 +2382,6 @@ function mutateTelegramBridgeConfig(update: (current: TelegramBridgeConfigState)
   })
   telegramBridgeConfigMutation = operation.then(() => {}, () => {})
   return operation
-}
-
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
-  const raw = await readRawBody(req)
-  if (raw.length === 0) return null
-  const text = raw.toString('utf8').trim()
-  if (text.length === 0) return null
-  return JSON.parse(text) as unknown
-}
-
-async function readRawBody(req: IncomingMessage): Promise<Buffer> {
-  const chunks: Uint8Array[] = []
-  for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
-  }
-  return Buffer.concat(chunks)
 }
 
 function bufferIndexOf(buf: Buffer, needle: Buffer, start = 0): number {
