@@ -52,11 +52,11 @@ Caller checks confirmed the text eligibility helpers were editor-only and they w
 
 ## Prioritized recommendations
 
-1. The file-change fallback endpoint is retired by explicit decision. Before retiring either remaining legacy endpoint, seek external-client and access-log evidence and choose a deprecation policy. External use remains unknown.
+1. The file-change fallback and live-state endpoints are retired by explicit decision. Before retiring the remaining stream-events endpoint, seek external-client and access-log evidence and choose a deprecation policy. External use remains unknown.
 2. Telegram is the clearest optional subsystem to evaluate first: it has a coherent boundary and is the only apparent consumer of `undici`.
 3. Browser editing is retired; preserve browsing and file-link behavior in future cleanup.
 4. Evaluate clone and worktree creation separately. Preserve support for already-existing worktrees and shared workspace-root state.
 5. Treat Undo/Redo backend removal as the riskiest feature decision because conversation rollback uses the same service.
 6. Retain shared thread recovery code: stream error buffers, snapshots, pending-materialization handling, timestamp/generation recovery and shared patch parsing.
 
-Neither remaining endpoint is established as safe dead code. No production usage, performance profile, or external-client inventory was available for this static audit.
+The remaining stream-events endpoint is not established as safe dead code. No production usage, performance profile, or external-client inventory was available for this static audit. The live-state retirement performance assessment is documented in [API wrapper cleanup](api-wrapper-cleanup.md).
