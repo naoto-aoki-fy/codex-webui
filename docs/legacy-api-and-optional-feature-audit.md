@@ -1,20 +1,20 @@
 # Legacy API and Optional Feature Audit
 
-This began as a static repository audit; endpoint status below reflects the subsequent authorized fallback retirement. Repository searches do not establish whether independently maintained external clients use an endpoint, and production traffic was not measured.
+This began as a static repository audit; endpoint status below reflects the subsequent authorized fallback and live-state retirements. Repository searches do not establish whether independently maintained external clients use an endpoint, and production traffic was not measured.
 
 ## Part A: Legacy HTTP endpoints
 
-The remaining handlers and explicit fallback retirement response are in `src/server/codexAppServerBridge.ts`. No current frontend caller was found for any of them.
+The remaining handlers and explicit retirement responses are in `src/server/codexAppServerBridge.ts`. No current frontend caller was found for any of them.
 
 | Endpoint | Repository evidence | Backend boundary and recommendation |
 |---|---|---|
 | `/codex-api/thread-file-change-fallback` | Retired by explicit compatibility-breaking decision; external use was not established absent. | Returns HTTP 404 JSON, with no replacement. Exclusive builder/type/merge helpers removed; shared parsing and rollback remain. |
-| `/codex-api/thread-live-state` | No frontend caller. `PROJECT_SPEC.md` documents it as a diagnostic/recovery API. Manual tests call it, including stream parity and pending materialization cases. | Live-state assembly/cache and `mergeSessionCommandsIntoTurns` appear route-specific. Keep generic RPC thread-read snapshots, materialization handling, timestamps and generation metadata recovery. Compatibility-sensitive; not dead code. |
+| `/codex-api/thread-live-state` | Retired by explicit authorization; all methods return JSON 404 without RPC. | Exclusive response reconstruction, live-state cache and captured-item cache removed. Normal history, earlier-page caches, snapshots, materialization handling, timestamps, generation metadata, skills and inline payload recovery remain. No replacement for diagnostic command/file-change reconstruction. |
 | `/codex-api/thread-stream-events` | No frontend caller. Manual stream-parity tests query it directly during active turns. | The HTTP adapter is route-specific. `getStreamEvents`, event buffering and `mergeStreamTurnErrorsIntoThreadResult` also support normal thread history/error recovery. Retain shared stream recovery; investigate external use before retiring route. |
 
-Relevant tests include `tests/thread-loading-state/thread-stream-parity-stream-first-hydration-with-full-turn-history.md`, `thread-stream-parity-works-on-linux-oracle-a1-arm64.md`, and `thread-detail-load-avoids-duplicate-live-state-history-fetch.md`. The latter shows normal detail loading avoids a redundant live-state history fetch. No executable scripts reference these endpoint URLs. Repository silence is not evidence that external clients do not depend on them.
+Relevant tests include `tests/thread-loading-state/thread-stream-parity-stream-first-hydration-with-full-turn-history.md`, `thread-stream-parity-works-on-linux-oracle-a1-arm64.md`, and `thread-detail-load-avoids-duplicate-live-state-history-fetch.md`. The latter shows normal detail loading avoids a redundant live-state history fetch. The external-server fixture checks both retired paths in built and development servers. Repository silence is not evidence that external clients do not depend on them.
 
-The fallback response builder and its route are removed. Potential remaining route-exclusive code: live-state response/cache path and session-command merge; stream-events response adapter. Shared code to retain includes stream event buffering/error merging, thread-read snapshots and pending-materialization recovery, session timestamp/generation metadata, and `parseApplyPatchInput` where used by retained recovery and file actions.
+The fallback and live-state response builders and their exclusive implementations are removed. The stream-events response adapter remains supported. Shared code to retain includes stream event buffering/error merging, thread-read snapshots and pending-materialization recovery, session timestamp/generation metadata, and `parseApplyPatchInput` where used by retained recovery and file actions.
 
 ## Part B: Optional features
 

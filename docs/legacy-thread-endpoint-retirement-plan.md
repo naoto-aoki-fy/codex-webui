@@ -1,3 +1,5 @@
+> Status: `thread-live-state` retirement is implemented. Its candidate-removal and compatibility discussion below records the prior assessment; the route now returns JSON 404. `thread-stream-events` remains supported.
+
 # Legacy Thread Endpoint Retirement Plan
 
 This plan is based on a static repository review. No code was changed during the audit. Repository searches cannot establish whether independently maintained clients use these endpoints, and production traffic was not measured. The absence of repository callers is not evidence that external consumers do not exist.

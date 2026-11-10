@@ -1,6 +1,6 @@
 # Thread Loading, Streaming, and State
 
-Thread list/detail loading, pagination, selected-thread stability, streaming scroll behavior, live-state reads, and missing-thread handling.
+Thread list/detail loading, pagination, selected-thread stability, streaming scroll behavior, retired diagnostic API checks, and missing-thread handling.
 
 Return to the [manual test index](../../tests.md).
 
@@ -22,7 +22,7 @@ Return to the [manual test index](../../tests.md).
 | [Feature: Thread auto-scrolls to latest message after load](thread-auto-scrolls-to-latest-message-after-load.md) |
 | [Feature: Assistant streaming does not force-scroll when user is reading history](assistant-streaming-does-not-force-scroll-when-user-is-reading-history.md) |
 | [Feature: While reading older messages, stream growth keeps viewport pinned](while-reading-older-messages-stream-growth-keeps-viewport-pinned.md) |
-| [Feature: Thread stream parity — stream-first hydration with full turn history](thread-stream-parity-stream-first-hydration-with-full-turn-history.md) |
+| [Feature: Thread detail pagination and retired live-state diagnostics](thread-stream-parity-stream-first-hydration-with-full-turn-history.md) |
 | [Feature: Thread stream parity works on Linux (Oracle A1 ARM64)](thread-stream-parity-works-on-linux-oracle-a1-arm64.md) |
 | [Thread list startup pagination and direct older-thread links](thread-list-startup-pagination-and-direct-older-thread-links.md) |
 | [Thread detail load avoids duplicate live-state history fetch](thread-detail-load-avoids-duplicate-live-state-history-fetch.md) |

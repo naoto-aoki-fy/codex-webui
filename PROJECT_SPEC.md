@@ -60,9 +60,10 @@ Telegram sends completion notifications only; see [usage](docs/usage.md#telegram
 
 Thread lists load in pages (initial limit 50, background limit 100). Detail loading
 uses `thread/read` with `includeTurns: true`; the bridge bounds RPC history to the
-latest 10 turns. Older turns load through `/codex-api/thread-turn-page`. The retained
-`/codex-api/thread-live-state` diagnostic/recovery endpoint can return full recovered
-history; it is not the frontend's primary detail request.
+latest 10 turns. Older turns load through `/codex-api/thread-turn-page`. The legacy
+`/codex-api/thread-live-state` diagnostic/recovery endpoint is retired and returns
+JSON 404. Its full-history command/file-change reconstruction is intentionally
+removed without replacement; normal history and shared recovery remain.
 
 Notifications arrive on `/codex-api/ws`, falling back to `/codex-api/events`.
 Realtime updates apply immediately; event-driven reconciliation is debounced
