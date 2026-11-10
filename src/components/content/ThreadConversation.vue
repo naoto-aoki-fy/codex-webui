@@ -316,7 +316,7 @@
                     <p class="plan-card-title">Plan</p>
                     <span v-if="message.messageType === 'plan.live'" class="plan-card-badge">Updating</span>
                     <button
-                      v-else-if="hasPlanCopyContent(message)"
+                      v-else-if="readPlan(message).hasCopyContent"
                       type="button"
                       class="message-copy-button"
                       :data-copied="copiedPlanId === message.id"
@@ -329,13 +329,13 @@
                     </button>
                   </div>
                   <div
-                    v-if="readPlanExplanation(message)"
+                    v-if="readPlan(message).explanation"
                     class="plan-card-explanation plan-card-markdown"
-                    v-html="renderMarkdownBlocksAsHtml(readPlanExplanation(message))"
+                    v-html="renderMarkdownBlocksAsHtml(readPlan(message).explanation)"
                   />
-                  <ol v-if="readPlanSteps(message).length > 0" class="plan-step-list">
+                  <ol v-if="readPlan(message).steps.length > 0" class="plan-step-list">
                     <li
-                      v-for="(step, stepIndex) in readPlanSteps(message)"
+                      v-for="(step, stepIndex) in readPlan(message).steps"
                       :key="`${message.id}:plan-step:${stepIndex}`"
                       class="plan-step-item"
                       :data-status="step.status"
@@ -935,7 +935,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { generationMetadataLabel } from '../../turnGenerationMetadata'
 import { formatMessageTimestamp } from '../../messageTimestamps'
-import type { UiFileChange, UiLiveOverlay, UiMessage, UiPlanStep, UiServerRequest } from '../../types/codex'
+import type { UiFileChange, UiLiveOverlay, UiMessage, UiServerRequest } from '../../types/codex'
 import { updateThreadFileChanges } from '../../api/codexGateway'
 import { useMobile } from '../../composables/useMobile'
 import { copyTextToClipboard, copyTextWithSelectionFallback } from '../../utils/clipboard'
@@ -946,6 +946,7 @@ import {
   toRenderableImageUrl, toBrowseUrl as buildBrowseUrl, toLocalThreadUrl as buildLocalThreadUrl,
 } from '../../utils/conversationLinks'
 import { indexConversationFileChanges, isCopyableAssistantMessage, type TurnFileChangeSummary } from '../../utils/conversationFileChanges'
+import { indexConversationPlans, interpretConversationPlan, isPlanMessage, showImplementPlanButton, planStepStatusIcon } from '../../utils/conversationPlan'
 import { buildDiffViewerLines, fileChangeKey, type DiffViewerLine } from '../../utils/diffViewerLines'
 
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
@@ -972,66 +973,8 @@ const fileLinkContextMenuY = ref(0)
 const fileLinkContextBrowseUrl = ref('')
 const { isMobile } = useMobile()
 
-function parsePlanFromMessageText(text: string): { explanation: string; steps: UiPlanStep[] } | null {
-  const normalized = text.replace(/\r\n/g, '\n').trim()
-  if (!normalized) return null
-
-  const steps: UiPlanStep[] = []
-  const explanationLines: string[] = []
-
-  for (const line of normalized.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed) {
-      if (steps.length === 0) explanationLines.push('')
-      continue
-    }
-
-    const match = trimmed.match(/^[-*]\s+\[([ xX~>|-])\]\s+(.+)$/)
-    if (match) {
-      const marker = (match[1] ?? ' ').toLowerCase()
-      let status: UiPlanStep['status'] = 'pending'
-      if (marker === 'x') status = 'completed'
-      if (marker === '~' || marker === '>' || marker === '-') status = 'inProgress'
-      steps.push({
-        step: match[2]?.trim() ?? '',
-        status,
-      })
-      continue
-    }
-
-    explanationLines.push(trimmed)
-  }
-
-  if (steps.length === 0) return null
-  return {
-    explanation: explanationLines.join('\n').trim(),
-    steps: steps.filter((step) => step.step.length > 0),
-  }
-}
-
-function readPlanData(message: UiMessage): { explanation: string; steps: UiPlanStep[] } | null {
-  if (message.plan && message.plan.steps.length > 0) {
-    return {
-      explanation: message.plan.explanation?.trim() ?? '',
-      steps: message.plan.steps,
-    }
-  }
-  return parsePlanFromMessageText(message.text)
-}
-
 function isCommandMessage(message: UiMessage): boolean {
   return message.messageType === 'commandExecution' && !!message.commandExecution
-}
-
-function isPlanMessage(message: UiMessage): boolean {
-  return message.messageType === 'plan' || message.messageType === 'plan.live'
-}
-
-function showImplementPlanButton(message: UiMessage): boolean {
-  return isPlanMessage(message)
-    && message.messageType !== 'plan.live'
-    && message.role === 'assistant'
-    && Boolean(message.turnId)
 }
 
 function implementPlan(message: UiMessage): void {
@@ -1101,25 +1044,6 @@ const hiddenGroupedCommandIds = computed(() => {
   }
   return next
 })
-
-function readPlanExplanation(message: UiMessage): string {
-  return readPlanData(message)?.explanation ?? ''
-}
-
-function readPlanSteps(message: UiMessage): UiPlanStep[] {
-  return readPlanData(message)?.steps ?? []
-}
-
-function planStepStatusIcon(status: UiPlanStep['status']): string {
-  switch (status) {
-    case 'completed':
-      return '✓'
-    case 'inProgress':
-      return '•'
-    default:
-      return '○'
-  }
-}
 
 function isCommandAutoExpanded(message: UiMessage): boolean {
   return !hasLiveAssistantText.value && message.id === activeCommandMessageId.value
@@ -1463,40 +1387,14 @@ function headingClass(level: number): string {
   }
 }
 
-function planStepCopyMarker(status: UiPlanStep['status']): string {
-  switch (status) {
-    case 'completed':
-      return '[x]'
-    case 'inProgress':
-      return '[~]'
-    default:
-      return '[ ]'
-  }
-}
+const conversationPlans = computed(() => indexConversationPlans(props.messages))
 
-function buildPlanCopyText(message: UiMessage): string {
-  const planData = readPlanData(message)
-  if (!planData) return ''
-
-  const sections: string[] = []
-  if (planData.explanation?.trim()) {
-    sections.push(planData.explanation.trim())
-  }
-
-  if (planData.steps.length > 0) {
-    sections.push(planData.steps.map((step) => `- ${planStepCopyMarker(step.status)} ${step.step}`.trim()).join('\n'))
-  }
-
-  return sections.join('\n\n').trim()
-}
-
-function hasPlanCopyContent(message: UiMessage): boolean {
-  const planData = readPlanData(message)
-  return planData ? Boolean(planData.explanation || planData.steps.some((step) => step.step.trim())) : Boolean(message.text.trim())
+function readPlan(message: UiMessage) {
+  return conversationPlans.value.get(message) ?? interpretConversationPlan(message)
 }
 
 async function copyPlan(message: UiMessage): Promise<void> {
-  const content = buildPlanCopyText(message) || message.text.trim()
+  const content = readPlan(message).copyText || message.text.trim()
   if (!content) return
 
   try {
@@ -1516,7 +1414,7 @@ async function copyPlan(message: UiMessage): Promise<void> {
 
 function buildCopyableMessageContent(message: UiMessage): string {
   const sections: string[] = []
-  const rawTextContent = message.text.trim() || buildPlanCopyText(message)
+  const rawTextContent = message.text.trim() || readPlan(message).copyText
   const textContent = isPlanMessage(message) && rawTextContent
     ? `Plan\n${rawTextContent}`
     : rawTextContent
