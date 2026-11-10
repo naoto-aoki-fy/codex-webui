@@ -16,7 +16,7 @@ vue-tsc is missing; it does not verify an existing dependency tree.
 historical random-home filename does not imply isolation: it forwards flags and
 preserves CODEX_HOME and CODEXUI_APP_SERVER_URL.
 
- Normal HTTP development needs no TLS
+Normal HTTP development needs no TLS
 credentials:
 
 ```sh
@@ -111,3 +111,16 @@ The one-off `output/playwright/verify-bug-032-approval-panel.mjs` was removed:
 it depended on the retired `.composer-with-queue` layout and stale API mocks.
 Use the [maintained approval checklist](../tests/chat-composer-rendering/sandbox-approval-requests-recognize-newer-codex-payloads.md)
 and external-server acceptance instead. Existing screenshots remain historical evidence.
+
+## Profiling a selected thread
+
+Use a thread ID from the current server rather than the machine-specific ID in
+`profile:thread`:
+
+```sh
+PROFILE_BASE_URL=http://127.0.0.1:4173 PROFILE_ROUTE='#/thread/<thread-id>' PROFILE_WAIT_MS=7000 pnpm run profile:browser
+```
+
+Inspect `duplicateCounts`, `warnings`, `totalApiKB`, `topApiSummary` and
+`slowestApiRows` under `output/playwright/`. Error pages and failed boots do not
+provide valid performance evidence. See [script follow-ups](maintenance-scope.md#script-follow-ups).

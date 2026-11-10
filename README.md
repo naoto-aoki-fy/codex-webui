@@ -30,6 +30,7 @@ and configure a private network or external reverse proxy for remote access.
 
 - [Usage, configuration, mobile access, and troubleshooting](docs/usage.md)
 - [Local development and optional HTTPS](docs/development.md)
+- [Implementation and feature status](PROJECT_SPEC.md)
 - [Maintenance and publishing](docs/maintenance-scope.md)
 - [Manual tests](tests.md)
 

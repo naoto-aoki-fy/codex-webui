@@ -24,4 +24,8 @@ Ordinary listing does not traverse session files or read confirmed thread histor
 
 The sparse attachment index is parsed and sorted in memory on each listing: O(index size) input and O(n log n) sorting. Mutations atomically rewrite that index, with unchanged metadata avoiding writes. Cursor size grows with indexed IDs emitted and one native page buffer. Very large attachment-only histories may warrant a queryable database; this implementation does not expand the existing synchronous 200-row legacy SQLite fallback into a session scan. That legacy fallback remains synchronous and bounded.
 
-Live Codex version/schema, model-facing instrumentation, browser reload/theme checks, Docker provider cases, real restart/resume, and browser/thread profiling require a working Codex executable and Docker where applicable. Neither executable is available in the implementation environment. Follow the [manual test](../tests/chat-composer-rendering/attachment-only-thread-persistence.md) on the deployed runtime.
+Live Codex version/schema, model-facing instrumentation, browser reload/theme checks,
+real restart/resume and browser/thread profiling require an independently managed
+Codex server. Historical Docker provider matrices are retired. Follow the
+[manual test](../tests/chat-composer-rendering/attachment-only-thread-persistence.md)
+on the deployed runtime; fixture tests do not establish live acceptance.
