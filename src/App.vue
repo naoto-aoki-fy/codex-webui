@@ -409,92 +409,20 @@
                     </div>
                   </div>
                 </Teleport>
-                <Teleport to="body">
-                  <div v-if="isProjectSetupModalOpen" class="new-thread-open-folder-overlay" @click.self="onCloseProjectSetupModal">
-                    <div class="new-thread-project-modal" role="dialog" aria-modal="true" :aria-label="t('Create or clone project')" @keydown.esc.prevent="onCloseProjectSetupModal">
-                      <div class="new-thread-open-folder-header">
-                        <p class="new-thread-open-folder-title">{{ t('Create or clone project') }}</p>
-                        <button class="new-thread-open-folder-close" type="button" :disabled="isProjectSetupSubmitting" @click="onCloseProjectSetupModal">
-                          {{ t('Cancel') }}
-                        </button>
-                      </div>
-                      <div class="new-thread-project-mode-tabs" role="tablist" :aria-label="t('Project source')">
-                        <button
-                          class="new-thread-project-mode-tab"
-                          :class="{ 'is-active': projectSetupMode === 'create' }"
-                          type="button"
-                          role="tab"
-                          :aria-selected="projectSetupMode === 'create'"
-                          :disabled="isProjectSetupSubmitting"
-                          @click="projectSetupMode = 'create'"
-                        >
-                          {{ t('New project') }}
-                        </button>
-                        <button
-                          class="new-thread-project-mode-tab"
-                          :class="{ 'is-active': projectSetupMode === 'clone' }"
-                          type="button"
-                          role="tab"
-                          :aria-selected="projectSetupMode === 'clone'"
-                          :disabled="isProjectSetupSubmitting"
-                          @click="projectSetupMode = 'clone'"
-                        >
-                          {{ t('Clone from GitHub') }}
-                        </button>
-                      </div>
-                      <label class="new-thread-project-field">
-                        <span class="new-thread-open-folder-label">{{ t('Destination folder') }}</span>
-                        <input
-                          v-model="projectSetupBaseDir"
-                          class="new-thread-open-folder-path"
-                          type="text"
-                          :disabled="isProjectSetupSubmitting"
-                          :placeholder="t('Destination folder')"
-                        />
-                      </label>
-                      <label v-if="projectSetupMode === 'create'" class="new-thread-project-field">
-                        <span class="new-thread-open-folder-label">{{ t('Project name') }}</span>
-                        <input
-                          ref="projectSetupPrimaryInputRef"
-                          v-model="projectNameDraft"
-                          class="new-thread-open-folder-create-input"
-                          type="text"
-                          :disabled="isProjectSetupSubmitting"
-                          :placeholder="t('Project name')"
-                          @keydown.enter.prevent="onSubmitProjectSetup"
-                        />
-                      </label>
-                      <label v-else-if="projectSetupMode === 'clone'" class="new-thread-project-field">
-                        <span class="new-thread-open-folder-label">{{ t('GitHub repository URL') }}</span>
-                        <input
-                          ref="projectSetupPrimaryInputRef"
-                          v-model="githubCloneUrlDraft"
-                          class="new-thread-open-folder-create-input"
-                          type="url"
-                          :disabled="isProjectSetupSubmitting"
-                          placeholder="https://github.com/owner/repo"
-                          @keydown.enter.prevent="onSubmitProjectSetup"
-                        />
-                      </label>
-                      <div v-if="projectSetupError" class="new-thread-open-folder-error">
-                        <span>{{ projectSetupError }}</span>
-                      </div>
-                      <div class="new-thread-project-modal-actions">
-                        <button class="new-thread-folder-action" type="button" :disabled="isProjectSetupSubmitting" @click="onCloseProjectSetupModal">
-                          {{ t('Cancel') }}
-                        </button>
-                        <button
-                          class="new-thread-folder-action new-thread-folder-action-primary"
-                          type="button"
-                          :disabled="!canSubmitProjectSetup || isProjectSetupSubmitting"
-                          @click="onSubmitProjectSetup"
-                        >
-                          {{ projectSetupSubmitLabel }}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </Teleport>
+                <ProjectSetupModal
+                  v-if="isProjectSetupModalOpen"
+                  ref="projectSetupModalRef"
+                  v-model:mode="projectSetupMode"
+                  v-model:base-dir="projectSetupBaseDir"
+                  v-model:project-name="projectNameDraft"
+                  v-model:clone-url="githubCloneUrlDraft"
+                  :submitting="isProjectSetupSubmitting"
+                  :error="projectSetupError"
+                  :can-submit="canSubmitProjectSetup"
+                  :submit-label="projectSetupSubmitLabel"
+                  @close="onCloseProjectSetupModal"
+                  @submit="onSubmitProjectSetup"
+                />
                 <ComposerRuntimeDropdown
                   v-if="isNewThreadCwdGitRepo"
                   class="new-thread-runtime-dropdown"
@@ -633,6 +561,7 @@ import DesktopLayout from './components/layout/DesktopLayout.vue'
 import AccountSettingsPanel from './components/sidebar/AccountSettingsPanel.vue'
 import SidebarThreadTree from './components/sidebar/SidebarThreadTree.vue'
 import ContentHeader from './components/content/ContentHeader.vue'
+import ProjectSetupModal from './components/content/ProjectSetupModal.vue'
 import ThreadGoalPanel from './components/content/ThreadGoalPanel.vue'
 import ThreadComposer from './components/content/ThreadComposer.vue'
 import ThreadPendingRequestPanel from './components/content/ThreadPendingRequestPanel.vue'
@@ -873,7 +802,7 @@ const projectNameDraft = ref('')
 const githubCloneUrlDraft = ref('')
 const projectSetupError = ref('')
 const isProjectSetupSubmitting = ref(false)
-const projectSetupPrimaryInputRef = ref<HTMLInputElement | null>(null)
+const projectSetupModalRef = ref<InstanceType<typeof ProjectSetupModal> | null>(null)
 const isExistingFolderPickerOpen = ref(false)
 const existingFolderPathInputRef = ref<HTMLInputElement | null>(null)
 const existingFolderFilterInputRef = ref<HTMLInputElement | null>(null)
@@ -1833,7 +1762,7 @@ async function onOpenProjectSetupModal(): Promise<void> {
   projectSetupError.value = ''
   projectSetupMode.value = 'create'
   isProjectSetupModalOpen.value = true
-  void nextTick(() => projectSetupPrimaryInputRef.value?.focus())
+  void nextTick(() => projectSetupModalRef.value?.focusPrimaryInput())
 }
 
 function onCloseProjectSetupModal(): void {
@@ -2870,8 +2799,6 @@ async function onLogoutCodex(): Promise<void> {
   display: none;
 }
 
-
-
 .content-error {
   @apply m-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700;
 }
@@ -2895,8 +2822,6 @@ async function onLogoutCodex(): Promise<void> {
 .composer-runtime-error {
   @apply flex w-full items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-800 shadow-sm;
 }
-
-
 
 .new-thread-empty {
   @apply flex-1 min-h-0 flex flex-col items-center justify-center gap-0.5 px-3 sm:px-6;
@@ -2930,72 +2855,16 @@ async function onLogoutCodex(): Promise<void> {
   @apply mt-3 flex w-full max-w-3xl flex-wrap items-center justify-center gap-2;
 }
 
-.new-thread-folder-action {
-  @apply inline-flex h-9 items-center justify-center rounded-full border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-default disabled:opacity-60;
-}
-
-.new-thread-folder-action-primary {
-  @apply border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800;
-}
-
-.new-thread-open-folder-overlay {
-  @apply fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4;
-}
-
 .new-thread-open-folder {
   @apply flex w-full max-w-3xl max-h-[90vh] flex-col gap-2 overflow-y-auto rounded-2xl border border-zinc-200 bg-white px-4 py-4 text-left shadow-xl;
-}
-
-.new-thread-project-modal {
-  @apply flex w-full max-w-xl max-h-[90vh] flex-col gap-3 overflow-y-auto rounded-2xl border border-zinc-200 bg-white px-4 py-4 text-left shadow-xl;
-}
-
-.new-thread-open-folder-header {
-  @apply flex items-center justify-between gap-3;
-}
-
-.new-thread-open-folder-title {
-  @apply m-0 text-sm font-semibold text-zinc-900;
-}
-
-.new-thread-open-folder-close {
-  @apply border-0 bg-transparent p-0 text-sm text-zinc-500 transition hover:text-zinc-800;
-}
-
-.new-thread-open-folder-label {
-  @apply m-0 text-xs font-medium uppercase tracking-wide text-zinc-500;
 }
 
 .new-thread-open-folder-current {
   @apply flex items-start gap-2;
 }
 
-.new-thread-open-folder-path {
-  @apply min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 font-mono text-xs text-zinc-700 outline-none transition focus:border-zinc-400;
-}
-
 .new-thread-open-folder-actions {
   @apply flex flex-wrap items-center gap-2;
-}
-
-.new-thread-project-mode-tabs {
-  @apply grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-50 p-1;
-}
-
-.new-thread-project-mode-tab {
-  @apply inline-flex h-9 items-center justify-center rounded-lg border-0 bg-transparent px-3 text-sm font-medium text-zinc-600 transition hover:bg-white hover:text-zinc-900 disabled:cursor-default disabled:opacity-60;
-}
-
-.new-thread-project-mode-tab.is-active {
-  @apply bg-white text-zinc-950 shadow-sm;
-}
-
-.new-thread-project-field {
-  @apply flex flex-col gap-1.5;
-}
-
-.new-thread-project-modal-actions {
-  @apply mt-1 flex flex-wrap justify-end gap-2;
 }
 
 .new-thread-open-folder-toggle {
@@ -3044,10 +2913,6 @@ async function onLogoutCodex(): Promise<void> {
   @apply flex items-center gap-2;
 }
 
-.new-thread-open-folder-create-input {
-  @apply w-full min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-400;
-}
-
 .new-thread-open-folder-create-submit {
   @apply shrink-0;
 }
@@ -3058,10 +2923,6 @@ async function onLogoutCodex(): Promise<void> {
 
 .new-thread-open-folder-status {
   @apply m-0 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600;
-}
-
-.new-thread-open-folder-error {
-  @apply m-0 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700;
 }
 
 .new-thread-open-folder-error-actions {
@@ -3244,26 +3105,6 @@ async function onLogoutCodex(): Promise<void> {
   @apply rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-default disabled:opacity-60;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 .sidebar-settings-label {
   @apply text-left;
 }
@@ -3271,7 +3112,6 @@ async function onLogoutCodex(): Promise<void> {
 .sidebar-settings-value {
   @apply text-xs text-zinc-500 bg-zinc-100 rounded px-1.5 py-0.5;
 }
-
 
 .sidebar-settings-toggle {
   @apply relative w-9 h-5 rounded-full bg-zinc-300 transition-colors shrink-0;
@@ -3298,12 +3138,6 @@ async function onLogoutCodex(): Promise<void> {
   @apply text-xs text-red-600 bg-red-50 rounded px-2 py-1.5 break-words;
 }
 
-
-
-
-
-
-
 .sidebar-settings-picker-dropdown {
   @apply min-w-0 max-w-44;
 }
@@ -3315,20 +3149,6 @@ async function onLogoutCodex(): Promise<void> {
 .sidebar-settings-picker-dropdown :deep(.composer-dropdown-value) {
   @apply max-w-36;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 .settings-panel-enter-active,
 .settings-panel-leave-active {

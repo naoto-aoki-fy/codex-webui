@@ -27,3 +27,25 @@ Rollback/cleanup:
 - Remove the created project folder from the filesystem if it was only used for testing.
 - Remove the cloned repository folder from the filesystem if it was only used for testing.
 - Remove the test projects from the app project list if they are no longer needed.
+
+### Phase 9-A: ProjectSetupModal presentation extraction
+
+Prerequisites/setup:
+- Start the app and open the new chat screen. Use a disposable destination for actual creation/cloning.
+- Check desktop (1440x900), phone (375x812), and tablet (768x1024), in light and dark themes.
+
+Actions:
+1. Click `Create Project`; confirm the project name input receives focus and the suggested name is present.
+2. Edit destination and project name, switch to clone mode, enter a repository URL, and switch back. Confirm drafts survive mode changes.
+3. Press Enter in the primary input; confirm the existing validation/submission runs once. While submitting, confirm inputs, tabs and buttons are disabled and Escape/backdrop clicks do not dismiss the modal.
+4. After submission finishes, reopen and check Cancel, Escape, and clicking the backdrop each close the modal.
+5. Check inline errors, tab selection, scrollability, and button/input contrast at each viewport/theme. Open `Select folder` as well to check the shared dialog styles.
+
+Expected results:
+- The extracted component emits field updates and close/submit requests; App.vue retains all drafts, validation, filesystem/API operations, and submission guards.
+- Opening still focuses the primary input after the parent nextTick. Text input retains Vue v-model composition handling.
+- The modal retains its existing layout, keyboard interactions, translations, and light/dark styling. Shared styles occur once in src/style.css.
+- No new watcher, subscription, network call, or routing behavior is introduced.
+
+Rollback/cleanup:
+- Close the modal. Remove only disposable projects created for this check and their project-list entries.
