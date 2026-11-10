@@ -168,3 +168,48 @@ fetch/environment overrides, and dispose clients; no real auth files are modifie
   not proof of live authentication or reconnect against a real Codex installation.
 - Cleanup: fixtures stop their child processes and remove temporary Unix sockets;
   no persistent app configuration should be changed.
+
+## SSE notification extraction (9-C-12)
+
+Prerequisites: dependencies installed; no credentials or live Codex server needed.
+Run `pnpm exec vitest run src/server/bridgeSse.test.ts src/server/threadLiveStateRetirement.test.ts src/server/browserNotificationTransport.test.ts`.
+Expect exact headers, ready frame, ordered notification envelopes, no historical
+replay, and one 15-second `: ping\n\n` timer per SSE request. Request close and
+abort clear that timer, release the subscription, and end an unfinished response.
+Repeated events still call unsubscribe again; the two request listeners remain
+attached. Bridge response instrumentation also retains its finish/close listeners.
+Ended/destroyed responses skip notifications; heartbeat writes remain unguarded.
+Subscription setup failures still reach the bridge's existing JSON 502 handler.
+A ready-write failure still leaves its subscription without a cleanup callback.
+
+Open two mocked SSE connections across two middleware instances plus a browser
+WebSocket subscription (covered by the focused suite). Expect one shared runtime,
+independent subscriptions, and closure of one connection to leave the others live.
+Dispose middleware while SSE is active: expect the bridge to stop Telegram,
+dispose the app-server, and delete the shared global runtime, while the SSE timer
+and response remain active until request close/abort. These are characterization
+checks, not improved disposal semantics. Follow-up work could remove request
+listeners, make cleanup idempotent, protect setup failures, and explicitly close
+active SSE during disposal; none of those changes belong to this extraction.
+
+Ownership: `bridgeSse.ts` holds only request-local response writes, subscription
+release closure, interval, and close callback. The bridge retains shared runtime
+reuse, notification timestamp construction, exception mapping, route dispatch,
+and middleware disposal. Browser WebSocket transport remains a separate module.
+The subscription is created before ready is written, exactly as before; synchronous
+subscription delivery can therefore precede ready. No buffering is introduced.
+
+Code-path performance audit: the handler body is moved unchanged behind one
+synchronous function call. Each request retains one subscription, one interval,
+and two request listeners; notification serialization and fanout are unchanged.
+There are no added RPC/network calls, blocking operations, payload expansion,
+caches/invalidation, or replay buffers. Fanout remains proportional to live
+subscriptions. The new module imports only Node HTTP types, so it cannot create
+a runtime import cycle. Live latency and memory profiles were not measured.
+
+Run typecheck, build, full units, then WebSocket and Unix fixtures sequentially as
+above. The public CLI is ESM with no CJS exports; verify from CommonJS with
+`node -e "const {execFileSync}=require('node:child_process'); const h=execFileSync(process.execPath,['dist-cli/index.js','--help'],{encoding:'utf8'}); if(!h.includes('--port')) throw Error('Missing --port'); console.log('CLI smoke passed')"`.
+Cleanup: focused tests restore the shared runtime and fake clock; fixtures stop
+only their child processes and remove their temporary sockets. No persistent
+configuration or rollback is needed.
