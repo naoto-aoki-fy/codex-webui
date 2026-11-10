@@ -1,0 +1,164 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import ts from 'typescript'
+import * as vue from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// Execute the real setup script with reactive props and controlled async/DOM boundaries.
+const source = readFileSync(resolve('src/components/content/ThreadConversation.vue'), 'utf8').split('<script setup lang="ts">')[1]!.split('</script>')[0]!
+const parsed = ts.createSourceFile('conversation.ts', source, ts.ScriptTarget.Latest, true)
+const imports: Record<string, unknown> = {}
+for (const node of parsed.statements) {
+  if (!ts.isImportDeclaration(node) || node.importClause?.isTypeOnly) continue
+  const path = (node.moduleSpecifier as ts.StringLiteral).text
+  imports[path] = path.endsWith('.vue') ? {} : path === 'vue' ? vue : await import(/* @vite-ignore */ resolve('src/components/content', path))
+}
+const update = vi.fn()
+const cleanups: Array<() => void> = []
+function setup() {
+  const props = vue.reactive({ activeThreadId: 'A', cwd: '/tmp', messages: [], pendingRequests: [], liveOverlay: null, isLoading: false })
+  const emit = vi.fn()
+  const scope = vue.effectScope()
+  const unmount: Array<() => void> = []
+  const frames = new Map<number, FrameRequestCallback>()
+  let frameId = 0
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++frameId, callback); return frameId })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+  vi.stubGlobal('window', { removeEventListener() {} })
+  const code = ts.transpileModule(source + `\nreturn { activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, runFileChangeAction, fileChangeActionState, fileChangeActionError, fileChangeRedoPatchIds, loadMoreAbove, conversationListRef, renderWindowStart, isLoadingMore, scheduleConversationScroll, editMessage, bindPendingImageHandlers };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+  const state = scope.run(() => new Function('exports', 'require', 'defineProps', 'defineEmits', 'defineExpose', code)({}, (path: string) => {
+    if (path === 'vue') return { ...vue, onMounted() {}, onBeforeUnmount: (fn: () => void) => unmount.push(fn) }
+    if (path.includes('codexGateway')) return { updateThreadFileChanges: update }
+    if (path.includes('useMobile')) return { useMobile: () => ({ isMobile: vue.ref(false) }) }
+    return imports[path]
+  }, () => props, () => emit, () => {}))!
+  cleanups.push(() => { unmount.forEach(fn => fn()); scope.stop() })
+  return { props, state, frames, emit }
+}
+afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.unstubAllGlobals(); update.mockReset() })
+const deferred = () => { let resolve!: (value: any) => void; let reject!: (error: Error) => void; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
+
+describe('conversation thread state isolation', () => {
+  it('dismisses diff/context state and expansions only on identity changes', async () => {
+    const { props, state: s } = setup()
+    s.activeDiffViewerSummary.value = { turnId: 'turn', changes: [] }
+    s.activeDiffViewerChangeKey.value = 'file'
+    s.isDiffViewerFileListOpen.value = true
+    s.isFileLinkContextMenuVisible.value = true
+    s.fileLinkContextBrowseUrl.value = '/old'
+    s.expandedWorkedIds.value.add('shared')
+    await vue.nextTick()
+    expect(s.activeDiffViewerSummary.value).not.toBeNull()
+    props.activeThreadId = 'B'
+    await vue.nextTick()
+    expect(s.activeDiffViewerSummary.value).toBeNull()
+    expect(s.activeDiffViewerChangeKey.value).toBe('')
+    expect(s.isDiffViewerFileListOpen.value).toBe(false)
+    expect(s.isFileLinkContextMenuVisible.value).toBe(false)
+    expect(s.fileLinkContextBrowseUrl.value).toBe('')
+    expect(s.expandedWorkedIds.value.size).toBe(0)
+  })
+  it('scopes failed images to URL and thread while preserving same-thread failures', async () => {
+    const { props, state: s } = setup()
+    s.onMarkdownImageError('message', 0, 'old.png')
+    expect(s.isMarkdownImageFailed('message', 0, 'old.png')).toBe(true)
+    expect(s.isMarkdownImageFailed('message', 0, 'new.png')).toBe(false)
+    props.activeThreadId = 'B'
+    await vue.nextTick()
+    expect(s.isMarkdownImageFailed('message', 0, 'old.png')).toBe(false)
+  })
+  it.each(['success', 'error'])('ignores stale file-action %s after A → B → A', async outcome => {
+    const { props, state: s } = setup()
+    const pending = deferred()
+    update.mockReturnValueOnce(pending.promise)
+    const action = s.runFileChangeAction({ turnId: 'turn', changes: [] }, 'undo')
+    props.activeThreadId = 'B'
+    props.activeThreadId = 'A'
+    await vue.nextTick()
+    if (outcome === 'success') pending.resolve({ errors: [], revertedPatchIds: ['old'] })
+    else pending.reject(new Error('old failure'))
+    await action
+    expect(s.fileChangeActionState.value).toEqual({})
+    expect(s.fileChangeActionError.value).toEqual({})
+    expect(s.fileChangeRedoPatchIds.value).toEqual({})
+  })
+  it('settles canceled scroll work and ignores queued nextTick work after unmount', async () => {
+    const { props, state: s, frames } = setup()
+    const old = s.scheduleConversationScroll()
+    await vue.nextTick()
+    props.activeThreadId = 'B'
+    await old
+    await vue.nextTick()
+    expect(frames.size).toBeLessThanOrEqual(1)
+    cleanups.splice(0).forEach(fn => fn())
+    await vue.nextTick()
+    expect(frames.size).toBe(0)
+  })
+  it('does not restore old history scroll or clear a new loading operation after A → B → A', async () => {
+    const { props, state: s } = setup()
+    const first = deferred()
+    const second = deferred()
+    Object.assign(props, { hasMorePersistedAbove: true, loadEarlierMessages: vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise) })
+    const container = { scrollHeight: 100, scrollTop: 10 }
+    s.conversationListRef.value = container
+    const old = s.loadMoreAbove()
+    props.activeThreadId = 'B'
+    await vue.nextTick()
+    props.activeThreadId = 'A'
+    await vue.nextTick()
+    const current = s.loadMoreAbove()
+    container.scrollHeight = 200
+    first.resolve(undefined)
+    await old
+    expect(container.scrollTop).toBe(10)
+    expect(s.isLoadingMore.value).toBe(true)
+    second.resolve(undefined)
+    await current
+    expect(container.scrollTop).toBe(110)
+    expect(s.isLoadingMore.value).toBe(false)
+  })
+  it('ignores old image-settled callbacks and rebinds reused DOM images for the new visit', async () => {
+    const { props, state: s, frames } = setup()
+    const listeners: Array<() => void> = []
+    const image = { complete: false, addEventListener: (_: string, fn: () => void) => listeners.push(fn) }
+    s.conversationListRef.value = { querySelectorAll: () => [image] }
+    s.bindPendingImageHandlers()
+    const oldLoad = listeners[0]!
+    props.activeThreadId = 'B'
+    await vue.nextTick()
+    s.bindPendingImageHandlers()
+    const before = frames.size
+    oldLoad()
+    expect(frames.size).toBe(before)
+    expect(listeners).toHaveLength(4)
+  })
+  it('preserves same-thread streaming UI choices and parent-owned rollback', async () => {
+    const { props, state: s, emit } = setup()
+    const user = { id: 'user', role: 'user', text: 'question', turnId: 'turn', turnIndex: 0 }
+    const command = { id: 'cmd', role: 'assistant', text: '', messageType: 'commandExecution', commandExecution: { status: 'completed', command: 'pwd', output: '' } }
+    Object.assign(props, { messages: [user, command] })
+    await vue.nextTick()
+    s.expandedCommandIds.value.add('cmd')
+    s.expandedWorkedIds.value.add('worked')
+    s.activeDiffViewerSummary.value = { turnId: 'turn', changes: [] }
+    s.isFileLinkContextMenuVisible.value = true
+    Object.assign(props, { messages: [user, command, { id: 'live', role: 'assistant', text: 'streaming' }] })
+    await vue.nextTick()
+    expect(s.expandedCommandIds.value.has('cmd')).toBe(true)
+    expect(s.expandedWorkedIds.value.has('worked')).toBe(true)
+    expect(s.activeDiffViewerSummary.value).not.toBeNull()
+    expect(s.isFileLinkContextMenuVisible.value).toBe(true)
+    s.editMessage('user')
+    expect(emit).toHaveBeenCalledWith('rollback', { turnId: 'turn' })
+  })
+  it('preserves normal Undo/Redo and its patch IDs within a thread', async () => {
+    const { state: s } = setup()
+    update.mockResolvedValueOnce({ errors: [], revertedPatchIds: ['patch'] }).mockResolvedValueOnce({ errors: [], appliedPatchIds: ['patch'] })
+    const summary = { turnId: 'turn', changes: [] }
+    await s.runFileChangeAction(summary, 'undo')
+    expect(s.fileChangeActionState.value['thread:A:turn:turn']).toBe('undone')
+    await s.runFileChangeAction(summary, 'redo')
+    expect(update.mock.calls[1]?.[4]).toEqual(['patch'])
+    expect(s.fileChangeActionState.value['thread:A:turn:turn']).toBe('redone')
+  })
+})
