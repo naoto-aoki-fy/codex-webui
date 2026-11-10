@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import ts from 'typescript'
 import * as vue from 'vue'
+import hljs from 'highlight.js/lib/common'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // Execute the real setup script with reactive props and controlled async/DOM boundaries.
@@ -15,8 +16,8 @@ for (const node of parsed.statements) {
 }
 const update = vi.fn()
 const cleanups: Array<() => void> = []
-function setup() {
-  const props = vue.reactive({ activeThreadId: 'A', cwd: '/tmp', messages: [], pendingRequests: [], liveOverlay: null, isLoading: false })
+function setup(initial: Record<string, unknown> = {}) {
+  const props = vue.reactive({ activeThreadId: 'A', cwd: '/tmp', messages: [], pendingRequests: [], liveOverlay: null, isLoading: false, ...initial })
   const emit = vi.fn()
   const scope = vue.effectScope()
   const unmount: Array<() => void> = []
@@ -25,15 +26,18 @@ function setup() {
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++frameId, callback); return frameId })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
   vi.stubGlobal('window', { removeEventListener() {} })
-  const code = ts.transpileModule(source + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, runFileChangeAction, fileChangeActionState, fileChangeActionError, fileChangeRedoPatchIds, loadMoreAbove, conversationListRef, renderWindowStart, isLoadingMore, scheduleConversationScroll, editMessage, bindPendingImageHandlers };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
-  const state = scope.run(() => new Function('exports', 'require', 'defineProps', 'defineEmits', 'defineExpose', code)({}, (path: string) => {
+  const parseCalls = vi.fn()
+  const instrumentedSource = source.replace('function parseMessageBlocks(text: string): MessageBlock[] {', 'function parseMessageBlocks(text: string): MessageBlock[] { recordParse();')
+  const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, runFileChangeAction, fileChangeActionState, fileChangeActionError, fileChangeRedoPatchIds, loadMoreAbove, conversationListRef, renderWindowStart, isLoadingMore, scheduleConversationScroll, editMessage, bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput, messageBlockCache, inlineSegmentCache, markdownHtmlCache, highlightHtmlCache };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+  const state = scope.run(() => new Function('exports', 'require', 'defineProps', 'defineEmits', 'defineExpose', 'recordParse', code)({}, (path: string) => {
+    if (path === 'highlight.js/lib/common') return { default: hljs }
     if (path === 'vue') return { ...vue, onMounted() {}, onBeforeUnmount: (fn: () => void) => unmount.push(fn) }
     if (path.includes('codexGateway')) return { updateThreadFileChanges: update }
     if (path.includes('useMobile')) return { useMobile: () => ({ isMobile: vue.ref(false) }) }
     return imports[path]
-  }, () => props, () => emit, () => {}))!
+  }, () => props, () => emit, () => {}, parseCalls))!
   cleanups.push(() => { unmount.forEach(fn => fn()); scope.stop() })
-  return { props, state, frames, emit }
+  return { props, state, frames, emit, parseCalls }
 }
 afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.unstubAllGlobals(); update.mockReset() })
 const deferred = () => { let resolve!: (value: any) => void; let reject!: (error: Error) => void; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
@@ -176,5 +180,91 @@ describe('conversation thread state isolation', () => {
     await s.runFileChangeAction(summary, 'redo')
     expect(update.mock.calls[1]?.[4]).toEqual(['patch'])
     expect(s.fileChangeActionState.value['thread:A:turn:turn']).toBe('redone')
+  })
+})
+
+
+describe('conversation Markdown characterization', () => {
+  const message = (text: string, id = 'markdown') => ({ id, role: 'assistant', text })
+
+  it('renders ordinary Markdown and inline code with escaped HTML', () => {
+    const { state: s } = setup()
+    const html = s.renderMarkdownBlocksAsHtml('# Title\n\n**bold** and `a < b`')
+    expect(html).toContain('<h1')
+    expect(html).toMatch(/<strong[^>]*>bold<\/strong>/u)
+    expect(html).toContain('a &lt; b')
+    expect(html).not.toContain('a < b')
+  })
+
+  it.each(['```', '~~~'])('loads highlighting for %s, including incomplete streaming fences', async fence => {
+    const { props, state: s } = setup()
+    const partial = `${fence}js\nconst n = 1`
+    expect(s.renderMarkdownBlocksAsHtml(partial)).not.toContain('hljs-keyword')
+    Object.assign(props, { messages: [message(`${fence}js\nconst n = 1`)] })
+    for (let i = 0; i < 8; i++) await vue.nextTick()
+    expect(s.highlightCacheVersion.value).toBe(1)
+    expect(s.renderMarkdownBlocksAsHtml(`${fence}js\nconst n = 1`)).toContain('hljs-keyword')
+    Object.assign(props, { messages: [message(`${fence}python\nreturn True\n${fence}`)] })
+    await vue.nextTick()
+    expect(s.getMessageBlocks(props.messages[0])).toEqual([{ kind: 'codeBlock', language: 'python', value: 'return True' }])
+    expect(s.renderMarkdownBlocksAsHtml(`${fence}python\nreturn True\n${fence}`)).toContain('hljs-keyword')
+    expect(s.highlightCacheVersion.value).toBe(1)
+  })
+
+  it('reuses unchanged blocks and reparses same-ID text or cwd changes', () => {
+    const { props, state: s, parseCalls } = setup()
+    const first = s.getMessageBlocks(message('first'))
+    for (let i = 0; i < 100; i++) expect(s.getMessageBlocks(message('first'))).toBe(first)
+    expect(parseCalls).toHaveBeenCalledTimes(1)
+    expect(s.getMessageBlocks(message('second'))).toEqual([{ kind: 'paragraph', value: 'second' }])
+    props.cwd = '/other'
+    s.getMessageBlocks(message('second'))
+    expect(parseCalls).toHaveBeenCalledTimes(3)
+    expect(s.messageBlockCache.size).toBe(1)
+  })
+
+  it('parses each changed streaming snapshot once and bounds retained message entries', () => {
+    const { state: s, parseCalls } = setup()
+    for (let i = 1; i <= 20; i++) {
+      const snapshot = message('x'.repeat(i))
+      s.getMessageBlocks(snapshot)
+      s.getMessageBlocks(snapshot)
+    }
+    expect(parseCalls).toHaveBeenCalledTimes(20)
+    expect(s.messageBlockCache.size).toBe(1)
+    for (let i = 0; i < 400; i++) s.getMessageBlocks(message('text', String(i)))
+    expect(s.messageBlockCache.size).toBe(300)
+  })
+
+  it('characterizes retained cache entries across deletion and thread changes', async () => {
+    const { props, state: s } = setup()
+    s.getMessageBlocks(message('old text'))
+    Object.assign(props, { messages: [] })
+    await vue.nextTick()
+    props.activeThreadId = 'B'
+    await vue.nextTick()
+    expect(s.messageBlockCache.size).toBe(1)
+    expect(s.getMessageBlocks(message('new text'))).toEqual([{ kind: 'paragraph', value: 'new text' }])
+    cleanups.splice(0).forEach(fn => fn())
+    expect(s.messageBlockCache.size).toBe(0)
+  })
+
+  it('characterizes initial cached history, subsequent windowing and scroll-preserving pagination', async () => {
+    const messages = Array.from({ length: 120 }, (_, i) => message(String(i), String(i)))
+    const { props, state: s } = setup({ messages })
+    // Known follow-up: initial setup does not apply the 50-message window.
+    expect(s.visibleMessages.value).toHaveLength(120)
+    Object.assign(props, { messages: [...messages] })
+    await vue.nextTick()
+    expect(s.visibleMessages.value).toHaveLength(50)
+    s.autoFollowOutput.value = false
+    const container = { scrollHeight: 1000, scrollTop: 10 }
+    s.conversationListRef.value = container
+    const loading = s.loadMoreAbove()
+    container.scrollHeight = 1600
+    await loading
+    expect(s.visibleMessages.value).toHaveLength(80)
+    expect(container.scrollTop).toBe(610)
+    expect(s.visibleMessages.value.map((m: { id: string }) => m.id)).toEqual(messages.slice(40).map(m => m.id))
   })
 })
