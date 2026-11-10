@@ -51,3 +51,28 @@ Copy the contents of an individual completed plan card as Markdown.
 - Restore any overridden clipboard functions and permissions, clear pasted test content, and archive or delete test threads if needed.
 
 ---
+
+### Shared Plan interpretation during streaming
+
+#### Feature/Change Name
+Plan cards reuse normalized interpretation for explanation, steps, and copy content.
+
+#### Prerequisites/Setup
+- Use a test thread with a streaming Plan, a completed structured Plan, and a text-only checkbox Plan. Include pending, active, and completed steps.
+
+#### Steps
+1. Observe updates to the same streaming Plan card as its explanation and steps change.
+2. Complete the turn, then copy the Plan and compare the pasted explanation and ordered steps with the card.
+3. Repeat for a structured Plan whose raw text differs, and a plain Markdown Plan without checkbox steps.
+4. Check an empty Plan and a completed Plan without a turn ID. Repeat in light and dark themes.
+5. Click Implement on a completed assistant Plan with a turn ID.
+
+#### Expected Results
+- Streaming edits appear immediately without stale explanation or statuses; updating cards hide Copy and Implement.
+- Nonempty structured steps take precedence over text parsing. Empty structured steps permit text fallback.
+- Copy retains explanation and step order, with pending `[ ]`, active `[~]`, and completed `[x]` markers. Plain Markdown falls back to trimmed raw text.
+- Empty cards hide Copy. Implement remains available for completed assistant Plans with a turn ID regardless of body content; clicking starts the existing implementation flow.
+- Theme appearance is unchanged.
+
+#### Rollback/Cleanup
+- Remove test threads and clear copied test content.
