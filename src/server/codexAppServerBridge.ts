@@ -1,3 +1,4 @@
+import { listFilesWithRipgrep, runCommand, runCommandCapture } from './bridgeCommands.js'
 import { normalizeStringArray, canonicalizeThreadListResponseForRead, readWorkspaceRootsState, applyWorkspaceRootsOperation, persistWorkspaceRoot } from './workspaceRootsStore.js'
 export { canonicalizeWorkspaceRootsState, canonicalizeWorkspaceRootsStateForRead, canonicalizeThreadListResponseForRead, writeWorkspaceRootsState } from './workspaceRootsStore.js'
 export type { WorkspaceRootsState } from './workspaceRootsStore.js'
@@ -11,7 +12,7 @@ import appServerMethods from './appServerMethods.json'
 import { AppServerWebSocketClient } from './appServerWebSocketClient.js'
 import { PersistentThreadIndex } from './persistentThreadIndex.js'
 import { sessionMessageTimes, mergeMessageTimes } from './messageTimestamps.js'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rename, rm, mkdir, stat, lstat } from 'node:fs/promises'
 import { createReadStream, existsSync, readFileSync } from 'node:fs'
@@ -29,9 +30,6 @@ import { TelegramNotificationService } from './telegramNotificationService.js'
 import { normalizeTelegramCompletionConfig, type TelegramCompletionConfig } from '../telegramCompletionConfig.js'
 import { inheritForkTurnMetadata, SessionGenerationMetadataCache, TurnGenerationMetadataStore } from './turnGenerationMetadata.js'
 import { submittedGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata.js'
-import {
-  resolveRipgrepCommand,
-} from '../commandResolution.js'
 import type { WorkspaceRootsOperation } from '../types/workspaceRoots.js'
 import { isAbsoluteLikePath } from '../pathUtils.js'
 
@@ -1502,88 +1500,9 @@ function scoreFileCandidate(path: string, query: string): number {
   return 10
 }
 
-async function listFilesWithRipgrep(cwd: string): Promise<string[]> {
-  return await new Promise<string[]>((resolve, reject) => {
-    const ripgrepCommand = resolveRipgrepCommand()
-    if (!ripgrepCommand) {
-      reject(new Error('ripgrep (rg) is not available'))
-      return
-    }
-
-    const proc = spawn(ripgrepCommand, ['--files', '--hidden', '-g', '!.git', '-g', '!node_modules'], {
-      cwd,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
-    let stderr = ''
-    proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
-    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
-    proc.on('error', reject)
-    proc.on('close', (code) => {
-      if (code === 0) {
-        const rows = stdout
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter(Boolean)
-        resolve(rows)
-        return
-      }
-      const details = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n')
-      reject(new Error(details || 'rg --files failed'))
-    })
-  })
-}
-
 function getCodexHomeDir(): string {
   const codexHome = process.env.CODEX_HOME?.trim()
   return codexHome && codexHome.length > 0 ? codexHome : join(homedir(), '.codex')
-}
-
-async function runCommand(command: string, args: string[], options: { cwd?: string; timeoutMs?: number } = {}): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const proc = spawn(command, args, {
-      cwd: options.cwd,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
-    let stderr = ''
-    let timedOut = false
-    let closed = false
-    const timeout =
-      typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
-        ? setTimeout(() => {
-          timedOut = true
-          proc.kill('SIGTERM')
-          setTimeout(() => {
-            if (!closed) proc.kill('SIGKILL')
-          }, 5_000).unref()
-        }, options.timeoutMs)
-        : null
-    timeout?.unref()
-    proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
-    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
-    proc.on('error', (error) => {
-      if (timeout) clearTimeout(timeout)
-      reject(error)
-    })
-    proc.on('close', (code) => {
-      closed = true
-      if (timeout) clearTimeout(timeout)
-      if (timedOut) {
-        reject(new Error(`Command timed out after ${options.timeoutMs}ms (${command} ${args.join(' ')})`))
-        return
-      }
-      if (code === 0) {
-        resolve()
-        return
-      }
-      const details = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n')
-      const suffix = details.length > 0 ? `: ${details}` : ''
-      reject(new Error(`Command failed (${command} ${args.join(' ')})${suffix}`))
-    })
-  })
 }
 
 function isMissingHeadError(error: unknown): boolean {
@@ -1614,34 +1533,6 @@ async function ensureRepoHasInitialCommit(repoRoot: string): Promise<void> {
     ['-c', 'user.name=Codex', '-c', 'user.email=codex@local', 'commit', '-m', 'Initialize repository for worktree support'],
     { cwd: repoRoot },
   )
-}
-
-async function runCommandCapture(command: string, args: string[], options: { cwd?: string } = {}): Promise<string> {
-  return (await runCommandCaptureRaw(command, args, options)).trim()
-}
-
-async function runCommandCaptureRaw(command: string, args: string[], options: { cwd?: string } = {}): Promise<string> {
-  return await new Promise<string>((resolve, reject) => {
-    const proc = spawn(command, args, {
-      cwd: options.cwd,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
-    let stderr = ''
-    proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
-    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
-    proc.on('error', reject)
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout)
-        return
-      }
-      const details = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n')
-      const suffix = details.length > 0 ? `: ${details}` : ''
-      reject(new Error(`Command failed (${command} ${args.join(' ')})${suffix}`))
-    })
-  })
 }
 
 function normalizeBranchRefName(value: string): string {
