@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { refreshChatgptAuthTokensForExternalAuth } from './codexAppServerBridge'
+import { AppServerClient, refreshChatgptAuthTokensForExternalAuth } from './codexAppServerBridge'
 
 const originalCodexHome = process.env.CODEX_HOME
 const originalRefreshUrlOverride = process.env.CODEX_REFRESH_TOKEN_URL_OVERRIDE
@@ -148,5 +148,101 @@ describe('ChatGPT auth token refresh', () => {
     }))
     await expect(refreshChatgptAuthTokensForExternalAuth({}, async () => 'file')).rejects.toThrow('credentials changed during refresh')
     expect(await readFile(join(codexHome, 'auth.json'), 'utf8')).toBe(replacement)
+  })
+})
+
+
+describe('external auth refresh failure and concurrency characterization', () => {
+  it.each(['missing', 'malformed', 'null'])('rejects %s credentials before HTTP', async (kind) => {
+    const home = await createCodexHome(null)
+    const path = join(home, 'auth.json')
+    if (kind === 'missing') await rm(path)
+    if (kind === 'malformed') await writeFile(path, '{broken')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(refreshChatgptAuthTokensForExternalAuth({}, async () => 'file')).rejects.toThrow(
+      'Unable to read file-backed ChatGPT credentials. Reconnect through Codex and try again.',
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each([400, 401, 429, 500])('preserves credentials and does not retry HTTP %s', async (status) => {
+    const home = await createCodexHome({ tokens: { refresh_token: 'old', account_id: 'acct' } })
+    const before = await readFile(join(home, 'auth.json'), 'utf8')
+    const fetchMock = vi.fn(async () => new Response('invalid_grant', { status }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(refreshChatgptAuthTokensForExternalAuth({}, async () => 'file')).rejects.toThrow(
+      `ChatGPT token refresh failed with HTTP ${status}. Retry through Codex.`,
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(before)
+  })
+
+  it.each(['not-json', 'null', '{}', '{"access_token":" "}', '{"access_token":"new"}'])('rejects invalid response %s without writing', async (body) => {
+    const home = await createCodexHome({ tokens: { refresh_token: 'old' } })
+    const before = await readFile(join(home, 'auth.json'), 'utf8')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body)))
+    await expect(refreshChatgptAuthTokensForExternalAuth({}, async () => 'file')).rejects.toThrow(
+      body === '{"access_token":"new"}' ? 'did not include account metadata' : 'did not include an access token',
+    )
+    expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(before)
+  })
+
+  it('propagates network errors without retry and permits a later retry', async () => {
+    const home = await createCodexHome({ tokens: { refresh_token: 'old', id_token: 'id', account_id: 'stored' }, extra: true })
+    const before = await readFile(join(home, 'auth.json'), 'utf8')
+    const error = new Error('network unavailable')
+    const fetchMock = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce(new Response(JSON.stringify({ accessToken: 'opaque' })))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(refreshChatgptAuthTokensForExternalAuth({}, async () => 'file')).rejects.toBe(error)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(before)
+    expect(await refreshChatgptAuthTokensForExternalAuth({ previousAccountId: 'previous' }, async () => 'file')).toEqual({ accessToken: 'opaque', chatgptAccountId: 'previous', chatgptPlanType: null })
+    expect(JSON.parse(await readFile(join(home, 'auth.json'), 'utf8'))).toMatchObject({ extra: true, tokens: { refresh_token: 'old', id_token: 'id', account_id: 'previous' } })
+  })
+
+  it.each([false, true])('shares concurrent client refreshes and suppresses stale replies (failure=%s)', async (failure) => {
+    await createCodexHome({ tokens: { refresh_token: 'old', account_id: 'acct' } })
+    let finish!: (response: Response) => void
+    const fetchMock = vi.fn(() => new Promise<Response>(resolve => { finish = resolve }))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new AppServerClient()
+    // Exercise client-owned routing/coordination without opening a real connection.
+    const internal = client as unknown as {
+      call: ReturnType<typeof vi.fn>
+      sendServerRequestReply: ReturnType<typeof vi.fn>
+      connectionGeneration: number
+      chatgptAuthRefreshPromise: Promise<unknown> | null
+      handleChatgptAuthTokensRefreshRequest(id: string, params: unknown, generation: number): Promise<void>
+    }
+    internal.call = vi.fn(async () => ({ config: { cli_auth_credentials_store: 'file' } }))
+    internal.sendServerRequestReply = vi.fn()
+    const notifications: unknown[] = []
+    const unsubscribe = client.onNotification(value => notifications.push(value))
+    try {
+      const first = internal.handleChatgptAuthTokensRefreshRequest('old', {}, 0)
+      const second = internal.handleChatgptAuthTokensRefreshRequest('current', {}, 1)
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      internal.connectionGeneration = 1
+      finish(new Response(JSON.stringify({ access_token: 'new' }), { status: failure ? 401 : 200 }))
+      await Promise.all([first, second])
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(internal.chatgptAuthRefreshPromise).toBeNull()
+      expect(internal.sendServerRequestReply).toHaveBeenCalledTimes(1)
+      expect(internal.sendServerRequestReply).toHaveBeenCalledWith('current', failure
+        ? { error: { code: -32001, message: 'ChatGPT token refresh failed with HTTP 401. Retry through Codex.' } }
+        : { result: { accessToken: 'new', chatgptAccountId: 'acct', chatgptPlanType: null } })
+      expect(notifications).toHaveLength(failure ? 0 : 1)
+      expect(internal.call).toHaveBeenCalledTimes(failure ? 1 : 2)
+      expect(internal.call).toHaveBeenCalledWith('config/read', { includeLayers: false })
+      const retry = internal.handleChatgptAuthTokensRefreshRequest('retry', {}, 1)
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+      finish(new Response(JSON.stringify({ access_token: 'retry-token' })))
+      await retry
+      expect(internal.sendServerRequestReply).toHaveBeenCalledTimes(2)
+    } finally {
+      unsubscribe()
+      client.dispose()
+    }
   })
 })
