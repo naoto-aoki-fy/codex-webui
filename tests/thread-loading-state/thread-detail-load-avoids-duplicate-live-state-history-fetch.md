@@ -21,3 +21,14 @@ Normal thread detail loading calls `thread/read` directly instead of first calli
 - None
 
 ---
+
+### Retired file-change fallback API
+
+Prerequisites: run the current app in development or from a built package; use a disposable Git project and thread containing add, modify, delete, and move patches.
+
+1. Request `/codex-api/thread-file-change-fallback` with and without `?threadId=<id>`, including GET, HEAD, and POST.
+2. Expect HTTP 404 and JSON content type (HEAD has no body); GET/POST return `{"error":"Not found"}`, never application HTML or a successful empty data response.
+3. Open a thread with more than 10 turns and load earlier messages. Expect bounded initial history, ordered earlier pages, and no requests to the retired path.
+4. Exercise file Undo/Redo and conversation rollback. Expect added files removed/restored, modified content reversed/reapplied, deleted tracked files restored, and moves reversed/reapplied. Follow the existing rollback procedure under `tests/git-worktrees-rollback/`.
+
+Cleanup: discard only the disposable fixture project and close diagnostics. Leave real sessions intact. The retirement is an intentional compatibility break with no replacement endpoint.

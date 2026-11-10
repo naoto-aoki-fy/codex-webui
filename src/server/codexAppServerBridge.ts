@@ -131,12 +131,6 @@ type SessionRecoveredFileChange = {
   removedLineCount: number
 }
 
-type SessionRecoveredTurnFileChanges = {
-  turnId: string
-  turnIndex: number
-  fileChanges: SessionRecoveredFileChange[]
-}
-
 type SessionRecoveredSkillInput = {
   name: string
   path: string
@@ -1305,29 +1299,6 @@ function countRecoveredPatchLines(value: string): { addedLineCount: number; remo
   return { addedLineCount, removedLineCount }
 }
 
-function mergeRecoveredDiff(first: string, second: string): string {
-  if (!first) return second
-  if (!second || first === second) return first
-  return `${first}\n${second}`.trim()
-}
-
-function mergeRecoveredFileChange(first: SessionRecoveredFileChange, second: SessionRecoveredFileChange): SessionRecoveredFileChange {
-  const operation = first.operation === 'add' || second.operation === 'add'
-    ? 'add'
-    : first.operation === 'delete' || second.operation === 'delete'
-      ? 'delete'
-      : 'update'
-
-  return {
-    path: second.path || first.path,
-    operation,
-    movedToPath: second.movedToPath ?? first.movedToPath ?? null,
-    diff: mergeRecoveredDiff(first.diff, second.diff),
-    addedLineCount: first.addedLineCount + second.addedLineCount,
-    removedLineCount: first.removedLineCount + second.removedLineCount,
-  }
-}
-
 function isApplyPatchSectionBoundary(value: string): boolean {
   return value.startsWith('*** Update File: ')
     || value.startsWith('*** Add File: ')
@@ -1417,84 +1388,6 @@ function parseApplyPatchInput(input: string): SessionRecoveredFileChange[] {
   }
 
   return changes
-}
-
-function buildSessionFileChangeFallback(threadReadPayload: unknown, sessionLogRaw: string): SessionRecoveredTurnFileChanges[] {
-  const payload = asRecord(threadReadPayload)
-  const thread = asRecord(payload?.thread)
-  const turns = Array.isArray(thread?.turns) ? thread.turns : []
-  const turnIndexById = new Map<string, number>()
-
-  for (let turnIndex = 0; turnIndex < turns.length; turnIndex += 1) {
-    const turnRecord = asRecord(turns[turnIndex])
-    const turnId = readNonEmptyString(turnRecord?.id)
-    if (turnId) {
-      turnIndexById.set(turnId, turnIndex)
-    }
-  }
-
-  const collectedByTurnId = new Map<string, SessionRecoveredFileChange[]>()
-  let currentTurnId = ''
-
-  for (const line of sessionLogRaw.split('\n')) {
-    if (!line.trim()) continue
-    let row: Record<string, unknown> | null = null
-    try {
-      row = JSON.parse(line) as Record<string, unknown>
-    } catch {
-      continue
-    }
-
-    if (row.type === 'turn_context') {
-      const payloadRecord = asRecord(row.payload)
-      currentTurnId = readNonEmptyString(payloadRecord?.turn_id) || currentTurnId
-      continue
-    }
-
-    if (row.type !== 'response_item' || !currentTurnId || !turnIndexById.has(currentTurnId)) {
-      continue
-    }
-
-    const payloadRecord = asRecord(row.payload)
-    if (
-      payloadRecord?.type !== 'custom_tool_call'
-      || payloadRecord.name !== 'apply_patch'
-      || payloadRecord.status !== 'completed'
-    ) {
-      continue
-    }
-
-    const input = readNonEmptyString(payloadRecord.input)
-    if (!input) continue
-
-    const parsedChanges = parseApplyPatchInput(input)
-    if (parsedChanges.length === 0) continue
-
-    const previous = collectedByTurnId.get(currentTurnId) ?? []
-    previous.push(...parsedChanges)
-    collectedByTurnId.set(currentTurnId, previous)
-  }
-
-  const recovered: SessionRecoveredTurnFileChanges[] = []
-  for (const [turnId, fileChanges] of collectedByTurnId.entries()) {
-    const turnIndex = turnIndexById.get(turnId)
-    if (typeof turnIndex !== 'number' || fileChanges.length === 0) continue
-
-    const mergedByPath = new Map<string, SessionRecoveredFileChange>()
-    for (const fileChange of fileChanges) {
-      const key = `${fileChange.path}\u0000${fileChange.movedToPath ?? ''}`
-      const previous = mergedByPath.get(key)
-      mergedByPath.set(key, previous ? mergeRecoveredFileChange(previous, fileChange) : { ...fileChange })
-    }
-
-    recovered.push({
-      turnId,
-      turnIndex,
-      fileChanges: Array.from(mergedByPath.values()),
-    })
-  }
-
-  return recovered.sort((first, second) => first.turnIndex - second.turnIndex)
 }
 
 type SessionRecoveredCommand = {
@@ -4086,31 +3979,9 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
-      if (req.method === 'GET' && url.pathname === '/codex-api/thread-file-change-fallback') {
-        const threadId = url.searchParams.get('threadId')?.trim() ?? ''
-        if (!threadId) {
-          setJson(res, 400, { error: 'Missing threadId' })
-          return
-        }
-
-        const threadReadResult = await appServer.rpc('thread/read', {
-          threadId,
-          includeTurns: true,
-        })
-        const threadReadRecord = asRecord(threadReadResult)
-        const threadRecord = asRecord(threadReadRecord?.thread)
-        const sessionPath = readNonEmptyString(threadRecord?.path)
-        if (!sessionPath || !isAbsolute(sessionPath)) {
-          setJson(res, 200, { data: [] })
-          return
-        }
-
-        try {
-          const sessionLogRaw = await readFile(sessionPath, 'utf8')
-          setJson(res, 200, { data: buildSessionFileChangeFallback(threadReadResult, sessionLogRaw) })
-        } catch {
-          setJson(res, 200, { data: [] })
-        }
+      // Retired API: terminate here so SPA middleware cannot serve HTML.
+      if (url.pathname === '/codex-api/thread-file-change-fallback') {
+        setJson(res, 404, { error: 'Not found' })
         return
       }
 
