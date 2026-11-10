@@ -134,3 +134,19 @@ with JSON 404 without invoking RPC or SPA fallback (real HTTP HEAD omits the bod
 Then run the WebSocket and Unix fixtures above sequentially to check both public
 CLI and dev entry points. Cleanup: tests restore temporary state and stop their
 own processes; no persistent configuration changes or rollback are needed.
+
+## External authentication refresh extraction (9-C-10)
+
+Prerequisites: install dependencies; no live Codex credentials are needed.
+Run `pnpm exec vitest run src/server/codexAppServerBridge.authRefresh.test.ts src/server/appServerClient.test.ts`.
+Expect unchanged URL/form/header construction, token metadata and fallback rules,
+credential storage rejection, missing/malformed file errors, HTTP/network errors,
+and invalid response rejection. A changed login or credential-store type during
+refresh must prevent persistence. Overlapping client refresh requests must issue
+one HTTP request; replaced connection generations must receive neither stale
+success/error replies nor stale resolution notifications. A later request may retry
+after settlement. The lifecycle test checks reconnect and subscription restoration.
+Run `pnpm run typecheck`, `pnpm run build`, `pnpm run test:unit`, and both transport
+fixtures above sequentially. Expect all checks to pass with unchanged public bridge
+exports and CLI behavior. Cleanup: tests remove temporary credentials, restore
+fetch/environment overrides, and dispose clients; no real auth files are modified.
