@@ -4,7 +4,7 @@
 
 1. Run the app with a writable `CODEX_HOME` and a disposable thread.
 2. Have two usable models and at least two reasoning effort values available.
-3. Enable access to light and dark themes. For fallback coverage, use an account/model combination that triggers the existing unsupported-model retry.
+3. Enable access to light and dark themes. For unsupported-model coverage, use an account/model combination that rejects the selected model.
 4. Use a disposable copy of an older session with known `turn_context` records for history coverage. Never modify the original session logs.
 
 #### Actions and Expected Results
@@ -12,7 +12,7 @@
 1. Select model A and effort `high`, then send a request long enough to stream. The activity area and assistant response show the submitted settings, marked `(sent setting)` until execution evidence is available.
 2. While A is running, select model B and another effort. A's footer retains its original values. Send the next request and check that its response shows B and its finalized effort.
 3. Submit a message during generation. Confirm immediate submission and that response metadata reflects the settings sent with the request.
-4. Trigger the existing unsupported-model fallback. Check that the failed attempt and retry retain separate turn metadata and that the successful response shows the fallback model.
+4. Trigger the unsupported-model error. Confirm the selected model stays unchanged, the failed user message remains visible, the error tells you to choose a supported model and retry, and no second turn starts automatically. Select another model and manually submit the retained message once; confirm it appears exactly once as a new attempt with the selected model metadata.
 5. Reload during a response, reload after completion, and restart the app server. Metadata remains associated with the same response. Settings are stored under `CODEX_HOME/codexapp-turn-metadata/`; session logs remain unchanged.
 6. Open a historical thread and use **Load earlier messages**. Each assistant response uses its own turn context. Recorded model/effort values take priority over submitted values independently; missing recorded fields can retain known submitted values.
 7. Open history without usable turn metadata. It shows `Model unknown` and `reasoning: unknown`, never the current composer settings. A known omitted/null effort shows `unspecified`; an explicit `none` remains `none`.

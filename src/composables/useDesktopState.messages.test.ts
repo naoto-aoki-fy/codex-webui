@@ -489,13 +489,37 @@ describe('optimistic attachment reconciliation', () => {
 
   it('retains a failed attachment submission and its error without automatically retrying', async () => {
     const state = await loadState()
-    gateway.startThreadTurn.mockRejectedValue(new Error('connection interrupted'))
+    gateway.startThreadTurn.mockRejectedValue(new Error('Model is not supported for this account'))
     await expect(state.sendMessageToSelectedThread('', [], [], [pastedFile]))
-      .rejects.toThrow('connection interrupted')
+      .rejects.toThrow('Model is not supported for this account')
     expect(state.messages.value.filter((message) => message.messageType === 'userMessage.optimistic'))
       .toMatchObject([{ text: '', fileAttachments: [pastedFile] }])
-    expect(state.selectedLiveOverlay.value?.errorText).toBe('connection interrupted')
+    expect(state.selectedLiveOverlay.value?.errorText).toBe('Model is not supported for this account')
     expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+    expect(state.readModelIdForThread(thread.id)).toBe('gpt-5.5')
+  })
+
+  it('shows terminal unsupported-model turn errors without resubmitting', async () => {
+    const state = await loadState()
+    gateway.startThreadTurn.mockImplementation(async () => { turnStarted(); return 'turn-2' })
+    gateway.getThreadDetail.mockResolvedValue({ ...activeDetail, messages: [oldUser, nextUser] })
+    await state.sendMessageToSelectedThread('keep this prompt', [], [], [pastedFile])
+    expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+    notify({
+      method: 'turn/completed',
+      params: {
+        threadId: thread.id,
+        turn: {
+          id: 'turn-2',
+          status: 'failed',
+          error: { message: 'Model is not supported for this account' },
+        },
+      },
+    })
+    await vi.advanceTimersByTimeAsync(220)
+    expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+    expect(state.readModelIdForThread(thread.id)).toBe('gpt-5.5')
+    expect(state.selectedLiveOverlay.value?.errorText).toBe('Model is not supported for this account')
   })
 
   it('restores exactly the same persisted attachments in a fresh state after successful submission', async () => {
