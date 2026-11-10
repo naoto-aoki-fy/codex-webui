@@ -32,3 +32,30 @@ Newly created temporary and permanent worktrees are persisted in workspace roots
 - Remove permanent test worktrees with `git worktree remove --force <worktree-path>` and delete their test branch if needed.
 
 ---
+
+## Git workspace route extraction regression
+
+Prerequisites: use a disposable directory and an HTTP server running the current
+build. No authenticated Codex connection is needed for these local Git routes.
+
+1. POST `/codex-api/worktree/create` with
+   `{"sourceCwd":"<absolute disposable directory>"}`.
+   Expect HTTP 200 with `data.cwd`, `data.branch: null`, and `data.gitRoot`.
+   An initially empty directory gains Git initialization and an AGENTS.md commit.
+2. GET `/codex-api/git/repository-status?cwd=<source directory>` and
+   `/codex-api/worktree/branches?sourceCwd=<source directory>`.
+   Expect the existing repository status envelope and branch option array.
+3. POST `/codex-api/worktree/create-permanent` with the same source and
+   `worktreeName: "route-check"`. Expect a sibling worktree and named branch.
+   An existing branch uses a numeric suffix; an existing folder returns HTTP 409.
+4. Refresh the project list. Both successful worktrees remain persisted.
+5. Repeat creation with a nonexistent source. Expect HTTP 404 and no persisted root.
+   Wrong HTTP methods and trailing-slash paths must fall through as before.
+
+Cleanup: remove test project roots through the existing project UI, remove created
+worktrees with `git worktree remove --force <path>`, then remove their branches
+and disposable source directory. Do not run cleanup against a working repository.
+
+Automated failure injection and exact command/response checks:
+`pnpm exec vitest run src/server/gitWorkspaceRoutes.test.ts`.
+These include persistence compensation and existing partial-operation behavior.
