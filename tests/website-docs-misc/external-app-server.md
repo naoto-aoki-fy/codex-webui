@@ -150,3 +150,21 @@ Run `pnpm run typecheck`, `pnpm run build`, `pnpm run test:unit`, and both trans
 fixtures above sequentially. Expect all checks to pass with unchanged public bridge
 exports and CLI behavior. Cleanup: tests remove temporary credentials, restore
 fetch/environment overrides, and dispose clients; no real auth files are modified.
+
+## AppServerClient module extraction
+
+- Prerequisites: install dependencies; no credentials or live Codex server required.
+- Run `pnpm exec vitest run src/server/appServerClient.test.ts src/server/codexAppServerBridge.authRefresh.test.ts src/server/threadLiveStateRetirement.test.ts`.
+- Expected: concurrent RPC correlation, pending-call rejection, approval cleanup,
+  reconnect/restoration, auth single-flight/stale-generation suppression, event
+  limits, snapshot fallback, cache deduplication/invalidation/expiry, injected
+  metadata persistence, shared middleware disposal and legacy runtime retirement
+  pass without changed response expectations.
+- Run `pnpm run typecheck`, `pnpm run build`, and `pnpm run test:unit`.
+  Then run `pnpm run test:integration:fixture` followed by
+  `CODEXAPP_FIXTURE_TRANSPORT=unix pnpm run test:integration:fixture` sequentially.
+- Expected: packaged CLI and dev entry points work with both fixture transports;
+  no extra client handshakes or application RPC replay. These are protocol fixtures,
+  not proof of live authentication or reconnect against a real Codex installation.
+- Cleanup: fixtures stop their child processes and remove temporary Unix sockets;
+  no persistent app configuration should be changed.
