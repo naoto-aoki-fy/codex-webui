@@ -547,7 +547,7 @@ describe('async request and lifecycle characterization (current behavior)', () =
   const refreshOptions = { includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true }
   const catalog = [{ id: 'gpt-5.5', supportedReasoningEfforts: ['low'], defaultReasoningEffort: 'low' }]
 
-  it('clears shared history loading when A finishes while selected B is still pending', async () => {
+  it('keeps selected B loading when A finishes first', async () => {
     const a = deferred<ResumedThread>()
     const b = deferred<ResumedThread>()
     gateway.resumeThread.mockImplementation((id) => id === thread.id ? a.promise : b.promise)
@@ -559,12 +559,105 @@ describe('async request and lifecycle characterization (current behavior)', () =
     expect(gateway.resumeThread.mock.calls).toEqual([[thread.id], ['B']])
     a.resolve(oldDetail)
     await loadA
-    // Desired: remain true until B settles. Current shared boolean is cleared by A.
-    expect(state.isLoadingMessages.value).toBe(false)
+    expect(state.isLoadingMessages.value).toBe(true)
     expect(state.messages.value).toEqual([])
     b.resolve(completedDetail)
     await loadB
     expect(state.messages.value).toEqual(completedDetail.messages)
+    expect(state.isLoadingMessages.value).toBe(false)
+  })
+
+  it.each(['failure', 'B-first'] as const)('preserves selected ownership when A overlaps B: %s', async (outcome) => {
+    const a = deferred<ResumedThread>()
+    const b = deferred<ResumedThread>()
+    gateway.resumeThread.mockImplementation((id) => id === thread.id ? a.promise : b.promise)
+    const state = createState()
+    const loadA = state.loadMessages(thread.id).catch((error: Error) => error.message)
+    state.primeSelectedThread('B')
+    expect(state.isLoadingMessages.value).toBe(false)
+    const loadB = state.loadMessages('B')
+    expect(state.isLoadingMessages.value).toBe(true)
+    if (outcome === 'failure') {
+      a.reject(new Error('A failed'))
+      expect(await loadA).toBe('A failed')
+      expect(state.isLoadingMessages.value).toBe(true)
+      b.resolve(completedDetail)
+      await loadB
+    } else {
+      b.resolve(completedDetail)
+      await loadB
+      expect(state.isLoadingMessages.value).toBe(false)
+      state.primeSelectedThread(thread.id)
+      expect(state.isLoadingMessages.value).toBe(true)
+      state.primeSelectedThread('B')
+      expect(state.isLoadingMessages.value).toBe(false)
+      a.resolve(oldDetail)
+      await loadA
+    }
+    expect(state.isLoadingMessages.value).toBe(false)
+  })
+
+  it.each([true, false])('keeps background initial reads scoped to their thread (silent=%s)', async (silent) => {
+    const background = deferred<ResumedThread>()
+    gateway.resumeThread.mockReturnValueOnce(background.promise)
+    const state = createState()
+    const loadingRef = state.isLoadingMessages
+    const loading = state.loadMessages('B', { silent })
+    expect(loadingRef.value).toBe(false)
+    state.primeSelectedThread('B')
+    expect(loadingRef.value).toBe(!silent)
+    const coalesced = state.ensureThreadMessagesLoaded('B')
+    expect(loadingRef.value).toBe(!silent)
+    expect(gateway.resumeThread).toHaveBeenCalledTimes(1)
+    background.resolve(oldDetail)
+    await Promise.all([loading, coalesced])
+    expect(state.isLoadingMessages).toBe(loadingRef)
+    expect(loadingRef.value).toBe(false)
+  })
+
+  it('does not let a forced background refresh clear the selected initial load', async () => {
+    const state = createState()
+    await state.loadMessages(thread.id)
+    const refresh = deferred<ResumedThread>()
+    const selected = deferred<ResumedThread>()
+    gateway.getThreadDetail.mockReturnValueOnce(refresh.promise)
+    gateway.resumeThread.mockReturnValueOnce(selected.promise)
+    state.primeSelectedThread('B')
+    const refreshing = state.loadMessages(thread.id, { force: true })
+    expect(state.isLoadingMessages.value).toBe(false)
+    const loading = state.loadMessages('B')
+    expect(state.isLoadingMessages.value).toBe(true)
+    refresh.resolve(completedDetail)
+    await refreshing
+    expect(state.isLoadingMessages.value).toBe(true)
+    selected.resolve(oldDetail)
+    await loading
+    expect(state.isLoadingMessages.value).toBe(false)
+    expect(gateway.getThreadDetail.mock.calls).toEqual([[thread.id]])
+    expect(gateway.resumeThread.mock.calls).toEqual([[thread.id], ['B']])
+  })
+
+  it('queues forced history after a coalesced initial load without showing cached-refresh loading', async () => {
+    const initial = deferred<ResumedThread>()
+    const fresh = deferred<ResumedThread>()
+    gateway.resumeThread.mockReturnValueOnce(initial.promise)
+    gateway.getThreadDetail.mockReturnValueOnce(fresh.promise)
+    const state = createState()
+    const loading = state.loadMessages(thread.id)
+    const forced = state.loadMessages(thread.id, { force: true })
+    expect(state.isLoadingMessages.value).toBe(true)
+    expect(gateway.resumeThread).toHaveBeenCalledTimes(1)
+    expect(gateway.getThreadDetail).not.toHaveBeenCalled()
+    initial.resolve(oldDetail)
+    await loading
+    expect(state.isLoadingMessages.value).toBe(false)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gateway.getThreadDetail.mock.calls).toEqual([[thread.id]])
+    expect(state.isLoadingMessages.value).toBe(false)
+    fresh.resolve(completedDetail)
+    await forced
+    expect(state.messages.value).toEqual(completedDetail.messages)
+    expect(state.isLoadingMessages.value).toBe(false)
   })
 
   it('coalesces rapid A→B→A history selection by thread key', async () => {
@@ -574,14 +667,18 @@ describe('async request and lifecycle characterization (current behavior)', () =
     const state = createState()
     const first = state.selectThread(thread.id)
     const second = state.selectThread('B')
+    expect(state.isLoadingMessages.value).toBe(true)
     const third = state.selectThread(thread.id)
+    expect(state.isLoadingMessages.value).toBe(true)
     expect(gateway.resumeThread.mock.calls).toEqual([[thread.id], ['B']])
     b.resolve(completedDetail)
     await second
+    expect(state.isLoadingMessages.value).toBe(true)
     expect(state.selectedThreadId.value).toBe(thread.id)
     expect(state.messages.value).toEqual([])
     a.resolve(oldDetail)
     expect(await Promise.all([first, third])).toEqual(['ok', 'ok'])
+    expect(state.isLoadingMessages.value).toBe(false)
     expect(state.messages.value).toEqual(oldDetail.messages)
     expect(gateway.resumeThread).toHaveBeenCalledTimes(2)
   })
@@ -1173,10 +1270,12 @@ describe('lifecycle generation ownership across restart', () => {
     await state.ensureThreadMessagesLoaded(thread.id)
     const fresh = state.loadOlderMessages()
     expect(state.isLoadingOlderMessages.value).toBe(true)
+    expect(state.isLoadingMessages.value).toBe(false)
     if (outcome === 'success') oldPage.resolve({ messages: [oldUser], hasMoreOlder: false, turnIndexByTurnId: {} })
     else oldPage.reject(new Error('old pagination failure'))
     await old
     expect(state.isLoadingOlderMessages.value).toBe(true)
+    expect(state.isLoadingMessages.value).toBe(false)
     expect(state.hasMoreOlderMessages.value).toBe(true)
     expect(state.error.value).toBe('')
     freshPage.resolve({ messages: [], hasMoreOlder: false, turnIndexByTurnId: {} })
