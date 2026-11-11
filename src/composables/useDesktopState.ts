@@ -3191,12 +3191,12 @@ export function useDesktopState() {
     fileAttachments: FileAttachment[] = [],
   ): Promise<string> {
     const generation = lifecycleGeneration
-    const reasoningEffort = selectedReasoningEffort.value
     if (isUpdatingSpeedMode.value) return ''
 
     const nextText = text.trim()
     const targetCwd = cwd.trim()
     const selectedModel = readModelIdForThread(NEW_THREAD_COLLABORATION_MODE_CONTEXT).trim()
+    const reasoningEffort = readReasoningEffortForThread(NEW_THREAD_COLLABORATION_MODE_CONTEXT)
     const selectedMode = selectedCollaborationMode.value
     if (!nextText && imageUrls.length === 0 && fileAttachments.length === 0) return ''
 
@@ -3207,7 +3207,8 @@ export function useDesktopState() {
     try {
       const startedThread = await startThread(targetCwd || undefined, selectedModel || undefined)
       threadId = startedThread.threadId
-      const submissionContext = { generation, modelId: startedThread.model || selectedModel, reasoningEffort, resumed: true }
+      const submissionModel = startedThread.model?.trim() || selectedModel
+      const submissionContext = { generation, modelId: submissionModel, reasoningEffort, resumed: true }
       if (generation !== lifecycleGeneration) {
         if (threadId) {
           void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode, undefined, submissionContext).catch(() => {
@@ -3216,7 +3217,7 @@ export function useDesktopState() {
         }
         return threadId
       }
-      setThreadModelId(threadId, startedThread.model)
+      setThreadModelId(threadId, submissionModel)
       setSelectedCollaborationModeForThread(threadId, selectedMode)
       if (!threadId) return ''
 
