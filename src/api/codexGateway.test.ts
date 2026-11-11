@@ -80,6 +80,56 @@ describe('startThreadTurn attachment-only payloads', () => {
       text: `# Files mentioned by the user:\n\n## ${name}: /uploads/${name}\n\n## My request for Codex:\n\n\n`,
     }])
     expect(requests[0].params.attachments).toEqual([file])
+    expect(requests[0]).toEqual({
+      method: 'turn/start',
+      params: {
+        threadId: 'new-thread',
+        input: [{
+          type: 'text',
+          text: `# Files mentioned by the user:\n\n## ${name}: /uploads/${name}\n\n## My request for Codex:\n\n\n`,
+        }],
+        attachments: [file],
+        model: 'gpt-5.4',
+        effort: 'medium',
+      },
+    })
+  })
+})
+
+describe('startThreadTurn exact input payloads', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    reasoningCatalog.value = []
+  })
+
+  it.each([undefined, 'plan', 'default'] as const)('preserves mixed payload with mode %s', async (mode) => {
+    reasoningCatalog.value = [{ id: 'gpt-5.4', supportedReasoningEfforts: ['medium'], defaultReasoningEffort: 'medium' }]
+    const { requests } = mockRpcFetch()
+    const file = { label: 'notes', path: '/notes', fsPath: '/notes' }
+    await startThreadTurn('thread', 'read', ['https://example.com/a', '/codex-local-image?path=/a.png'], ' gpt-5.4 ', 'medium', [{ name: 'review', path: '/skill' }], [file], mode)
+    expect(requests).toEqual([{
+      method: 'turn/start',
+      params: {
+        threadId: 'thread',
+        input: [
+          { type: 'text', text: '# Files mentioned by the user:\n\n## notes: /notes\n\n## a.png: /a.png\n\n## My request for Codex:\n\nread\n' },
+          { type: 'image', url: 'https://example.com/a', image_url: 'https://example.com/a' },
+          { type: 'localImage', path: '/a.png' },
+          { type: 'skill', name: 'review', path: '/skill' },
+        ],
+        attachments: [file, { label: 'a.png', path: '/a.png', fsPath: '/a.png' }],
+        model: 'gpt-5.4',
+        effort: 'medium',
+        ...(mode ? { collaborationMode: { mode, settings: { model: 'gpt-5.4', reasoning_effort: 'medium', developer_instructions: null } } } : {}),
+      },
+    }])
+  })
+
+  it('omits optional fields for text-only input', async () => {
+    reasoningCatalog.value = []
+    const { requests } = mockRpcFetch()
+    await startThreadTurn('thread', 'hello')
+    expect(requests).toEqual([{ method: 'turn/start', params: { threadId: 'thread', input: [{ type: 'text', text: 'hello' }] } }])
   })
 })
 
