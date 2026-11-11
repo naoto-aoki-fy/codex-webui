@@ -14,6 +14,23 @@ const { sqlite } = vi.hoisted(() => ({
 vi.mock('node:child_process', async importOriginal => ({
   ...await importOriginal<typeof import('node:child_process')>(), spawnSync: sqlite,
 }))
+// Inject an external editor write after Undo reads its source, before it writes.
+const externalEdit = vi.hoisted(() => ({ path: '', content: '' }))
+vi.mock('node:fs/promises', async importOriginal => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...fs,
+    readFile: async (...args: Parameters<typeof fs.readFile>) => {
+      const result = await fs.readFile(...args)
+      if (externalEdit.path && String(args[0]) === externalEdit.path) {
+        const path = externalEdit.path
+        externalEdit.path = ''
+        await fs.writeFile(path, externalEdit.content)
+      }
+      return result
+    },
+  }
+})
 const scope = globalThis as typeof globalThis & { __codexRemoteSharedBridge__?: unknown }
 const rpc = vi.fn<(method: string, params: unknown) => Promise<unknown>>()
 const storeSnapshot = vi.fn<(threadId: string, result: unknown) => void>()
@@ -25,6 +42,8 @@ let sessionRaw: string
 const archiveBytes = Buffer.from('PK\x05\x06' + '\0'.repeat(18), 'binary')
 
 beforeEach(async () => {
+  externalEdit.path = ''
+  externalEdit.content = ''
   home = await mkdtemp(join(tmpdir(), 'project-history-'))
   project = join(home, 'existing-project')
   sessionPath = join(home, 'sessions', 'rollout-existing.jsonl')
@@ -203,3 +222,25 @@ it.each(['unstaged', 'staged', 'mixed', 'untracked'] as const)(
     }
   },
 )
+
+
+it('characterizes loss of an external edit between the Undo read and write', async () => {
+  const target = join(project, 'race.txt')
+  await writeFile(target, 'after\n')
+  await writeFile(sessionPath, [
+    { type: 'turn_context', payload: { turn_id: 't1' } },
+    { type: 'response_item', payload: { type: 'custom_tool_call', name: 'apply_patch', status: 'completed', call_id: 'race',
+      input: '*** Begin Patch\n*** Update File: race.txt\n@@ -1 +1 @@\n-before\n+after\n*** End Patch' } },
+  ].map(row => JSON.stringify(row)).join('\n'))
+  rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
+  externalEdit.path = target
+  externalEdit.content = 'external editor content\n'
+  const undo = await request('/codex-api/thread/rollback-files', 'POST', {
+    threadId: 'historical-thread', turnId: 't1', cwd: project, scope: 'single_turn', action: 'undo', patchIds: ['race'],
+  })
+  expect(externalEdit.path).toBe('')
+  // Characterization only: the successful diff path also destroys concurrent edits.
+  expect(await readFile(target, 'utf8')).toBe('before\n')
+  expect(undo.json.errors).toEqual([])
+  expect(undo.json.revertedPatchIds).toEqual(['race'])
+})
