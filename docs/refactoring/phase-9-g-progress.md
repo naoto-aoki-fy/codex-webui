@@ -1,5 +1,46 @@
 # Phase 9-G progress
 
+## Current resumption status
+
+The user authorized Option A: optimistic content validation with the residual
+external-writer race explicitly accepted. The historical blocker below is lifted.
+No locking, ownership or recovery infrastructure is authorized or introduced.
+
+G-1 completed in `d4df8ca` — `fix: preserve user edits during unsafe Undo reversals`.
+Removed all Undo HEAD restoration and Git index mutation; failed updates,
+ambiguous postimages, edited additions, rename destination collisions and absent
+per-turn deletion/command preimages are refused. Errors retain path and reason;
+partial operation counts remain truthful and incomplete patches are excluded
+from successful IDs. Explicit patch selection excludes command-only paths.
+Redo production behavior and public response shapes are unchanged.
+
+Regression checks cover staged/unstaged/mixed/untracked edits, edited additions,
+clean updates/additions/moves, filtered patches, partial failures, missing
+preimages, repeated Undo, command-only scope and rename conflicts. The concurrent
+editor reproduction is retained at the final validation read: edits before that
+read are detected; edits after it still lose updates under the accepted race.
+No complete data-loss prevention, crash safety or atomic transactions are claimed.
+In-place writes preserve inode/permission/hardlink semantics; replacing them with
+temporary files would change those semantics and is deferred. Move destinations
+use exclusive creation, but later write/remove failures can leave partial work.
+
+G-1 verification (sequential): typecheck, build, all 1,208 unit tests in 77 files,
+WebSocket fixture and then Unix fixture passed. Focused tests: 39 passed in 1.25 s.
+Logs: `/tmp/9g1-{focused,typecheck,build,unit,ws,unix}.log`. Diff review and
+`git diff --check` passed. No browser or authenticated server tested.
+
+Performance audit: Undo removes two Git discovery/listing subprocesses and all
+fallback checkouts; adds a final full content read per update and a content read
+per addition. Operations remain sequential and request-scoped with no new
+requests, global caches, invalidation or fanout. Memory is proportional to source
+bytes plus reverse-diff arrays. Refusing ambiguous matches scans the whole source
+rather than stopping at the last match. Large-file latency and heap unmeasured.
+
+Next: G-2 coordinated obsolete completion ownership, then G-3 through G-5 and
+final integration audit. No pushes or excluded functionality changes.
+
+## Historical investigation before Option A authorization
+
 ## Status and prioritized plan
 
 Incomplete; stopped at a confirmed critical Undo safety blocker. Baseline is
