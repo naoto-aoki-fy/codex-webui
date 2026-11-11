@@ -7,6 +7,7 @@ import type { UiMessage, UiThread } from '../types/codex'
 const gateway = vi.hoisted(() => ({
   getThreadGroupsPage: vi.fn(),
   getThreadDetail: vi.fn(),
+  archiveThread: vi.fn(),
   getOlderThreadMessages: vi.fn(),
   resumeThread: vi.fn(),
   startThreadTurn: vi.fn(),
@@ -1717,4 +1718,54 @@ it.each(['selected', 'navigated', 'disposed'] as const)('coordinates obsolete co
   expect(state.selectedThread.value?.inProgress).toBe(true)
   complete('turn-B')
   expect(state.selectedThread.value?.inProgress).toBe(false)
+})
+
+
+describe('history refresh and pruning interleavings', () => {
+  const recent = { ...oldUser, turnId: 'recent', turnIndex: 10 }
+  const earlier = { ...oldUser, id: 'earlier-user', turnId: 'earlier', turnIndex: 9 }
+  const recentDetail = { ...oldDetail, messages: [recent], hasMoreOlder: true, turnIndexByTurnId: { recent: 10 } }
+
+  for (const order of ['page-first', 'detail-first'] as const) {
+    const test = order === 'page-first' ? it.fails : it
+    test(`retains older history and pagination metadata when ${order}`, async () => {
+      gateway.resumeThread.mockResolvedValueOnce(recentDetail)
+      const state = await loadState()
+      const page = deferred<any>()
+      const detail = deferred<ResumedThread>()
+      gateway.getOlderThreadMessages.mockReturnValueOnce(page.promise)
+      gateway.getThreadDetail.mockReturnValueOnce(detail.promise)
+      const paging = state.loadOlderMessages()
+      const refreshing = state.loadMessages(thread.id, { force: true })
+      const resolvePage = async () => {
+        page.resolve({ messages: [earlier], hasMoreOlder: false, turnIndexByTurnId: { earlier: 9 } })
+        await paging
+      }
+      const resolveDetail = async () => { detail.resolve(recentDetail); await refreshing }
+      if (order === 'page-first') { await resolvePage(); await resolveDetail() }
+      else { await resolveDetail(); await resolvePage() }
+      expect(state.messages.value.map(message => message.id)).toEqual([earlier.id, recent.id])
+      expect(state.messages.value.map(message => message.turnIndex)).toEqual([9, 10])
+      expect(state.hasMoreOlderMessages.value).toBe(false)
+      expect(state.isLoadingOlderMessages.value).toBe(false)
+    })
+  }
+
+  it.fails.each(['detail', 'page'] as const)('does not resurrect archived history after a pending %s response', async kind => {
+    gateway.resumeThread.mockResolvedValueOnce(recentDetail)
+    const state = await loadState()
+    const pending = deferred<any>()
+    if (kind === 'detail') gateway.getThreadDetail.mockReturnValueOnce(pending.promise)
+    else gateway.getOlderThreadMessages.mockReturnValueOnce(pending.promise)
+    const loading = kind === 'detail' ? state.loadMessages(thread.id, { force: true }) : state.loadOlderMessages()
+    state.primeSelectedThread('another-thread')
+    gateway.getThreadGroupsPage.mockResolvedValue({ groups: [], nextCursor: null })
+    await state.archiveThreadById(thread.id)
+    pending.resolve(kind === 'detail' ? recentDetail : { messages: [earlier], hasMoreOlder: false, turnIndexByTurnId: { earlier: 9 } })
+    await loading
+    state.primeSelectedThread(thread.id)
+    expect(state.messages.value).toEqual([])
+    expect(state.hasMoreOlderMessages.value).toBe(false)
+    expect(state.isLoadingOlderMessages.value).toBe(false)
+  })
 })
