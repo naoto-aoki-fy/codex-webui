@@ -1570,3 +1570,101 @@ describe('shared catalog ownership and deferred submission characterization', ()
     },
   )
 })
+
+// Characterization only: these expectations describe current submission semantics,
+// including the selected-thread effort leak and active empty-model fallback reread.
+describe('new-thread preference context across deferred creation', () => {
+  const cases = ['', 'B', 'C'].flatMap((creationModel) =>
+    [false, true].flatMap((changeDefault) =>
+      [false, true].flatMap((changeSelection) =>
+        [false, true].map((dispose) => ({ creationModel, changeDefault, changeSelection, dispose })),
+      ),
+    ),
+  )
+
+  it.each(cases)('serializes once for %j', async ({ creationModel, changeDefault, changeSelection, dispose }) => {
+    const actual = await vi.importActual<typeof import('../api/codexGateway')>('../api/codexGateway')
+    gateway.startThreadTurn.mockImplementation(actual.startThreadTurn)
+    // Another live desktop keeps capabilities available when this desktop disposes.
+    const owner = actual.acquireReasoningCatalog()
+    const catalog = ['A', 'B', 'C'].map((id) => ({
+      id, supportedReasoningEfforts: ['medium', 'high'], defaultReasoningEffort: 'medium',
+    }))
+    owner.publish(catalog)
+    try {
+      const created = deferred<{ threadId: string; model: string; modelProvider: string }>()
+      const submitted = deferred<Response>()
+      gateway.startThread.mockReturnValueOnce(created.promise)
+      const requests: Array<{ method: string; params: Record<string, unknown> }> = []
+      vi.stubGlobal('fetch', vi.fn((_url: unknown, init: RequestInit) => {
+        const request = JSON.parse(init.body as string)
+        requests.push(request)
+        if (request.method === 'config/read') return Promise.resolve(new Response(JSON.stringify({ result: { config: { model: 'A' } } })))
+        return submitted.promise
+      }))
+      const state = createState()
+      state.setSelectedModelIdForThread(thread.id, 'A')
+      state.setSelectedReasoningEffort('high', thread.id)
+      state.setSelectedModelIdForThread('__new-thread__', 'B')
+      state.setSelectedReasoningEffort('medium', '__new-thread__')
+      const effortKey = 'codex-web-local.reasoning-by-provider-model.v1'
+      const savedEfforts = window.localStorage.getItem(effortKey)
+      expect(state.readModelIdForThread('__new-thread__')).toBe('B')
+      expect(state.readReasoningEffortForThread('__new-thread__')).toBe('medium')
+      expect(state.selectedReasoningEffort.value).toBe('high')
+      const sending = state.sendMessageToNewThread('new context marker', '/tmp/project')
+      expect(gateway.startThread.mock.calls).toEqual([['/tmp/project', 'B']])
+      expect(gateway.startThreadTurn).not.toHaveBeenCalled()
+      expect(requests).toEqual([])
+      expect(state.isSendingMessage.value).toBe(true)
+      if (changeDefault) state.setSelectedModelIdForThread('__new-thread__', 'C')
+      if (changeSelection) state.primeSelectedThread('other-thread')
+      if (dispose) state.stopPolling()
+      const beforeCompletionSelection = state.selectedThreadId.value
+      const savedModels = JSON.parse(window.localStorage.getItem('codex-web-local.selected-model-by-context.v1')!)
+      // Empty creation responses retain B in submissionContext, but the active
+      // startTurnForThread path rereads an empty thread preference instead.
+      const gatewayModel = creationModel || (dispose ? 'B' : undefined)
+      const model = gatewayModel || 'A'
+      const result = { threadId: 'new-context-thread', model: creationModel, modelProvider: 'openai' }
+      created.resolve(result)
+      expect(await sending).toBe(result.threadId)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(gateway.startThreadTurn.mock.calls).toEqual([
+        [result.threadId, 'new context marker', [], gatewayModel, 'high', undefined, [], 'default'],
+      ])
+      expect(requests).toEqual([
+        ...(!creationModel && !dispose ? [{ method: 'config/read', params: {} }] : []),
+        {
+          method: 'turn/start', params: {
+            threadId: result.threadId, input: [{ type: 'text', text: 'new context marker' }], model, effort: 'high',
+            collaborationMode: { mode: 'default', settings: { model, reasoning_effort: 'high', developer_instructions: null } },
+          },
+        },
+      ])
+      expect(gateway.resumeThread).not.toHaveBeenCalled()
+      expect(window.localStorage.getItem(effortKey)).toBe(savedEfforts)
+      expect(state.readReasoningEffortForThread(thread.id)).toBe('high')
+      expect(state.readReasoningEffortForThread('__new-thread__')).toBe('medium')
+      const finalModels = JSON.parse(window.localStorage.getItem('codex-web-local.selected-model-by-context.v1')!)
+      for (const [key, value] of Object.entries(savedModels)) expect(finalModels[key]).toBe(value)
+      if (dispose) {
+        expect(finalModels).toEqual(savedModels)
+        expect(state.selectedThreadId.value).toBe(beforeCompletionSelection)
+        expect(state.messages.value).toEqual([])
+      } else expect(state.selectedThreadId.value).toBe(result.threadId)
+      submitted.resolve(new Response(JSON.stringify({ result: { turn: { id: 'new-context-turn' } } })))
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+      expect(requests.filter((request) => request.method === 'turn/start')).toHaveLength(1)
+      if (dispose) {
+        expect(state.messages.value).toEqual([])
+        expect(state.selectedThreadId.value).toBe(beforeCompletionSelection)
+        expect(state.error.value).toBe('')
+        expect(gateway.getThreadDetail).not.toHaveBeenCalled()
+      }
+    } finally {
+      owner.release()
+    }
+  })
+})
