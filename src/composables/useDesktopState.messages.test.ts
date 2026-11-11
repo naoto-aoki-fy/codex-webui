@@ -625,10 +625,14 @@ describe('async request and lifecycle characterization (current behavior)', () =
     expect(state.installedSkills.value).toEqual([])
   })
 
-  it.each(['ordinary failure', 'Codex CLI is not available'])('allows stale model failure %s to clear a newer catalog', async (message) => {
+  it.each([
+    ['config', 'ordinary failure'], ['config', 'Codex CLI is not available'],
+    ['catalog', 'ordinary failure'], ['catalog', 'Codex CLI is not available'],
+  ])('ignores stale %s failure %s after a newer catalog succeeds', async (stage, message) => {
     const stale = deferred<unknown>()
-    gateway.getCurrentModelConfig.mockReturnValueOnce(stale.promise)
     gateway.getAvailableModelIds.mockResolvedValue({ ids: ['gpt-5.5'], models: catalog })
+    if (stage === 'config') gateway.getCurrentModelConfig.mockReturnValueOnce(stale.promise)
+    else gateway.getAvailableModelIds.mockReturnValueOnce(stale.promise)
     const state = createState()
     const older = state.refreshAll(refreshOptions)
     await vi.advanceTimersByTimeAsync(0)
@@ -638,10 +642,72 @@ describe('async request and lifecycle characterization (current behavior)', () =
     expect(state.codexCliMissingError.value).toBe('')
     stale.reject(new Error(message))
     await older
-    // Desired: version guard applies to failures as well as successes.
+    expect(reasoningCatalog.value).toEqual(catalog)
+    expect(state.availableModelIds.value).toEqual(['gpt-5.5'])
+    expect(state.readModelIdForThread(thread.id)).toBe('gpt-5.5')
+    expect(state.readReasoningEffortForThread(thread.id)).toBe('low')
+    expect(state.codexCliMissingError.value).toBe('')
+    expect(state.error.value).toBe('')
+  })
+
+  it.each(['config', 'catalog'] as const)('preserves current %s failure behavior and saved preferences', async (stage) => {
+    const state = createState()
+    gateway.getAvailableModelIds.mockResolvedValue({ ids: ['gpt-5.5'], models: catalog })
+    await state.refreshAll(refreshOptions)
+    state.setSelectedReasoningEffort('low', thread.id)
+    const failure = deferred<unknown>()
+    if (stage === 'config') gateway.getCurrentModelConfig.mockReturnValueOnce(failure.promise)
+    else gateway.getAvailableModelIds.mockReturnValueOnce(failure.promise)
+    const refreshing = state.refreshAll(refreshOptions)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reasoningCatalog.value).toEqual(catalog)
+    failure.reject(new Error(stage === 'config' ? 'Codex CLI is not available' : 'catalog failed'))
+    await refreshing
     expect(reasoningCatalog.value).toEqual([])
     expect(state.availableModelIds.value).toEqual(['gpt-5.5'])
-    expect(Boolean(state.codexCliMissingError.value)).toBe(message.includes('Codex CLI'))
+    expect(state.readModelIdForThread(thread.id)).toBe('gpt-5.5')
+    expect(Boolean(state.codexCliMissingError.value)).toBe(stage === 'config')
+    expect(state.error.value).toBe('')
+    await state.refreshAll(refreshOptions)
+    expect(reasoningCatalog.value).toEqual(catalog)
+    expect(state.readReasoningEffortForThread(thread.id)).toBe('low')
+    expect(state.codexCliMissingError.value).toBe('')
+  })
+
+  it('ignores a catalog failure after selection changes without a newer refresh', async () => {
+    const state = createState()
+    gateway.getAvailableModelIds.mockResolvedValue({ ids: ['gpt-5.5'], models: catalog })
+    await state.refreshAll(refreshOptions)
+    const failure = deferred<unknown>()
+    gateway.getAvailableModelIds.mockReturnValueOnce(failure.promise)
+    const refreshing = state.refreshAll(refreshOptions)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gateway.getAvailableModelIds).toHaveBeenCalledTimes(2)
+    state.primeSelectedThread('B')
+    expect(reasoningCatalog.value).toEqual(catalog)
+    failure.reject(new Error('Codex CLI is not available'))
+    await refreshing
+    expect(state.selectedThreadId.value).toBe('B')
+    expect(reasoningCatalog.value).toEqual(catalog)
+    expect(state.codexCliMissingError.value).toBe('')
+    expect(state.error.value).toBe('')
+  })
+
+  it('keeps a current CLI banner when an older catalog failure arrives', async () => {
+    const failure = deferred<unknown>()
+    gateway.getAvailableModelIds.mockReturnValueOnce(failure.promise)
+    const state = createState()
+    const older = state.refreshAll(refreshOptions)
+    await vi.advanceTimersByTimeAsync(0)
+    gateway.getCurrentModelConfig.mockRejectedValueOnce(new Error('Codex CLI is not available'))
+    await state.refreshAll(refreshOptions)
+    const banner = state.codexCliMissingError.value
+    expect(banner).not.toBe('')
+    failure.reject(new Error('older catalog failed'))
+    await older
+    expect(state.codexCliMissingError.value).toBe(banner)
+    expect(reasoningCatalog.value).toEqual([])
+    expect(state.error.value).toBe('')
   })
 
   it('ignores history when an in-flight read completes after stopPolling', async () => {

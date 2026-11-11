@@ -1812,6 +1812,7 @@ export function useDesktopState() {
       selectedSpeedMode.value = config.speedMode
     } catch (error) {
       if (generation !== lifecycleGeneration) return
+      if (version !== modelRefreshVersion || threadId !== selectedThreadId.value) return
       reasoningCatalog.value = []
       if (isCodexCliMissingError(error)) codexCliMissingError.value = CODEX_CLI_MISSING_MESSAGE
     }
