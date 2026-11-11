@@ -20,11 +20,11 @@ function setup() {
   scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-v1', appServer: client, telegramBridge: { stop() {} }, methodCatalog: {} }
   middleware = createCodexBridgeMiddleware()
   const emit = (method: string) => (client as any).emitNotification({ method, params: { threadId: 'a' } })
-  async function request(path: string, payload: unknown) {
+  async function request(path: string, payload: unknown, owner = middleware) {
     const req = Object.assign(Readable.from([JSON.stringify(payload)]), { method: 'POST', url: '/codex-api/' + path, headers: {} })
     const end = vi.fn()
     const res = Object.assign(new EventEmitter(), { setHeader: vi.fn(), write: vi.fn(), end })
-    await middleware(req as unknown as IncomingMessage, res as unknown as ServerResponse, vi.fn())
+    await owner(req as unknown as IncomingMessage, res as unknown as ServerResponse, vi.fn())
     return JSON.parse(end.mock.calls[0]![0])
   }
   return { rpc, emit, request, search: (query: string) => request('thread-search', { query }), rows: (value: typeof rows) => { rows = value }, text: (value: string) => { text = value } }
@@ -125,4 +125,93 @@ it('refreshes message-only changes and leaves the cache intact after a failed mu
   expect(await s.request('rpc', { method: 'thread/name/set', params: { threadId: 'a', name: 'failed' } })).toEqual({ error: 'rename failed' })
   await s.search('original')
   expect(s.rpc.mock.calls.filter(call => call[0] === 'thread/list')).toHaveLength(2)
+})
+
+function deferred<T = unknown>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
+}
+
+for (const stage of ['initial list', 'between pages', 'history batch', 'between batches', 'final history batch']) {
+  it(`stops disposed search work during ${stage} without affecting another owner`, async () => {
+    const s = setup()
+    const owner = middleware
+    const other = createCodexBridgeMiddleware()
+    const pending = deferred()
+    const started = deferred<void>()
+    let lists = 0, reads = 0
+    s.rpc.mockImplementation((method) => {
+      if (method === 'thread/list') {
+        lists++
+        if (lists > 1) return Promise.resolve({ data: [] })
+        if (stage.includes('list') || stage === 'between pages') {
+          started.resolve(); return pending.promise
+        }
+        return Promise.resolve({ data: Array.from({ length: stage === 'final history batch' ? 4 : 8 }, (_, i) => ({ id: String(i), name: 'original' })) })
+      }
+      reads++
+      if (reads === 4) started.resolve()
+      return pending.promise
+    })
+    try {
+      const old = s.search('original')
+      await started.promise
+      const listStage = stage === 'initial list' || stage === 'between pages'
+      // Resolve before disposal to exercise the boundary before the next continuation.
+      const result = listStage
+        ? { data: [{ id: 'a', name: 'original' }], nextCursor: 'next' }
+        : { thread: { turns: [] } }
+      if (stage.startsWith('between')) pending.resolve(result)
+      owner.dispose(); owner.dispose()
+      if (!stage.startsWith('between')) pending.resolve(result)
+      expect(await old).toEqual({ error: 'Search middleware disposed' })
+      expect(lists).toBe(1)
+      expect(reads).toBe(listStage ? 0 : 4)
+      const count = s.rpc.mock.calls.length
+      expect(await s.search('original')).toEqual({ error: 'Search middleware disposed' })
+      expect(s.rpc).toHaveBeenCalledTimes(count)
+      expect((scope.__codexRemoteSharedBridge__ as any).retired).not.toBe(true)
+      s.rpc.mockImplementation(async method => method === 'thread/list'
+        ? { data: [{ id: 'b', name: 'fresh' }] } : {})
+      expect(await s.request('thread-search', { query: 'fresh' }, other)).toEqual({ data: { threadIds: ['b'], indexedThreadCount: 1 } })
+      s.emit('thread/started')
+      expect((await s.request('thread-search', { query: 'fresh' }, other)).data.threadIds).toEqual(['b'])
+    } finally { other.dispose() }
+  })
+}
+
+it('unsubscribes search notifications and cannot resubscribe after disposal', async () => {
+  const s = setup()
+  const client = scope.__codexRemoteSharedBridge__.appServer as AppServerClient
+  const off = vi.fn()
+  const subscribe = vi.spyOn(client, 'onNotification').mockReturnValue(off)
+  await s.search('original')
+  middleware.dispose(); middleware.dispose()
+  expect(off).toHaveBeenCalledOnce()
+  expect(await s.search('original')).toEqual({ error: 'Search middleware disposed' })
+  expect(subscribe).toHaveBeenCalledOnce()
+})
+
+it('prevents a retired runtime build from continuing or changing replacement registration', async () => {
+  const s = setup()
+  const stale = middleware
+  const oldState = scope.__codexRemoteSharedBridge__
+  const pending = deferred()
+  const started = deferred<void>()
+  s.rpc.mockImplementation(() => { started.resolve(); return s.rpc.mock.calls.length === 1 ? pending.promise : Promise.resolve({ data: [] }) })
+  const old = s.search('original')
+  await started.promise
+  oldState.version = 'incompatible'
+  const replacement = createCodexBridgeMiddleware()
+  const replacementState = scope.__codexRemoteSharedBridge__
+  vi.spyOn(replacementState.appServer as AppServerClient, 'rpc').mockImplementation(async (method) => method === 'thread/list' ? { data: [{ id: 'new', name: 'fresh' }] } : {})
+  try {
+    pending.resolve({ data: [{ id: 'a', name: 'original' }], nextCursor: 'next' })
+    expect(await old).toEqual({ error: 'Search middleware disposed' })
+    expect(s.rpc).toHaveBeenCalledOnce()
+    stale.dispose()
+    expect(scope.__codexRemoteSharedBridge__).toBe(replacementState)
+    expect(await s.request('thread-search', { query: 'fresh' }, replacement)).toEqual({ data: { threadIds: ['new'], indexedThreadCount: 1 } })
+  } finally { replacement.dispose() }
 })

@@ -1076,11 +1076,12 @@ function getSharedBridgeState(): SharedBridgeState {
   return created
 }
 
-async function loadAllThreadsForSearch(appServer: AppServerClient): Promise<ThreadSearchDocument[]> {
+async function loadAllThreadsForSearch(appServer: AppServerClient, assertActive: () => void): Promise<ThreadSearchDocument[]> {
   const threads: Array<{ id: string; title: string; preview: string }> = []
   let cursor: string | null = null
 
   do {
+    assertActive()
     const response = asRecord(await appServer.rpc('thread/list', {
       archived: false,
       limit: 100,
@@ -1088,6 +1089,7 @@ async function loadAllThreadsForSearch(appServer: AppServerClient): Promise<Thre
       modelProviders: [],
       cursor,
     }))
+    assertActive()
     const data = Array.isArray(response?.data) ? response.data : []
     for (const row of data) {
       const record = asRecord(row)
@@ -1117,6 +1119,7 @@ async function loadAllThreadsForSearch(appServer: AppServerClient): Promise<Thre
   const fullTextThreads = threads.slice(0, THREAD_SEARCH_FULL_TEXT_THREAD_LIMIT)
   const concurrency = 4
   for (let offset = 0; offset < fullTextThreads.length; offset += concurrency) {
+    assertActive()
     const batch = fullTextThreads.slice(offset, offset + concurrency)
     const loaded = await Promise.all(batch.map(async (thread) => {
       try {
@@ -1137,6 +1140,7 @@ async function loadAllThreadsForSearch(appServer: AppServerClient): Promise<Thre
         return null
       }
     }))
+    assertActive()
     for (const row of loaded) {
       if (!row) continue
       docsById.set(row[0], row[1])
@@ -1146,8 +1150,8 @@ async function loadAllThreadsForSearch(appServer: AppServerClient): Promise<Thre
   return Array.from(docsById.values())
 }
 
-async function buildThreadSearchIndex(appServer: AppServerClient): Promise<ThreadSearchIndex> {
-  const docs = await loadAllThreadsForSearch(appServer)
+async function buildThreadSearchIndex(appServer: AppServerClient, assertActive: () => void): Promise<ThreadSearchIndex> {
+  const docs = await loadAllThreadsForSearch(appServer, assertActive)
   const docsById = new Map<string, ThreadSearchDocument>(docs.map((doc) => [doc.id, doc]))
   return { docsById }
 }
@@ -1185,19 +1189,26 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   let unsubscribeSearchNotifications: (() => void) | null = null
   function subscribeSearchNotifications(): void {
     unsubscribeSearchNotifications ??= appServer.onNotification(({ method }) => {
-      if (searchChangeNotifications.has(method)) {
+      if (!released && !sharedState.retired && searchChangeNotifications.has(method)) {
         invalidateThreadSearchIndex()
       }
     })
   }
 
+  // Let issued RPCs settle; stop at async boundaries without cancelling shared-client work.
+  function assertSearchActive(): void {
+    if (released || sharedState.retired) throw new Error('Search middleware disposed')
+  }
+
   async function getThreadSearchIndex(): Promise<ThreadSearchIndex> {
+    assertSearchActive()
     subscribeSearchNotifications()
     if (threadSearchIndex && Date.now() - searchIndexBuiltAt < searchIndexTtlMs) return threadSearchIndex
     if (!threadSearchIndexPromise) {
       const generation = searchIndexGeneration
-      const build = buildThreadSearchIndex(appServer)
+      const build = buildThreadSearchIndex(appServer, assertSearchActive)
         .then((index) => {
+          assertSearchActive()
           if (generation === searchIndexGeneration) {
             threadSearchIndex = index
             searchIndexBuiltAt = Date.now()
@@ -1918,8 +1929,9 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       try { dispose() } catch { /* Request cleanup is best effort during owner disposal. */ }
     }
     activeSse.clear()
+    invalidateThreadSearchIndex()
     unsubscribeSearchNotifications?.()
-    threadSearchIndex = null
+    unsubscribeSearchNotifications = null
     sharedState.owners = (sharedState.owners ?? 1) - 1
     if (sharedState.owners > 0) return
     const globalScope = globalThis as Record<string, unknown>
