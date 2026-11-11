@@ -53,8 +53,8 @@ it('preserves insertion/deletion asymmetry and literal EOF markers', () => {
   expect(applyV4aDiff('x', '@@ -1 +1 @@\n-x\n+y\n\\ No newline at end of file')).toBeNull()
 })
 
-it('uses preferred forward positions and last reverse matches for repeated text', () => {
+it('uses preferred forward positions and refuses ambiguous reverse matches', () => {
   const diff = '@@ -1 +1 @@\n-a\n+b'
   expect(applyV4aDiff('a\na', diff)).toBe('b\na')
-  expect(reverseV4aDiff('b\nb', diff)).toBe('b\na')
+  expect(reverseV4aDiff('b\nb', diff)).toBeNull()
 })

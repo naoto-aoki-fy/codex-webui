@@ -15,14 +15,14 @@ vi.mock('node:child_process', async importOriginal => ({
   ...await importOriginal<typeof import('node:child_process')>(), spawnSync: sqlite,
 }))
 // Inject an external editor write after Undo reads its source, before it writes.
-const externalEdit = vi.hoisted(() => ({ path: '', content: '' }))
+const externalEdit = vi.hoisted(() => ({ path: '', content: '', skipReads: 0 }))
 vi.mock('node:fs/promises', async importOriginal => {
   const fs = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...fs,
     readFile: async (...args: Parameters<typeof fs.readFile>) => {
       const result = await fs.readFile(...args)
-      if (externalEdit.path && String(args[0]) === externalEdit.path) {
+      if (externalEdit.path && String(args[0]) === externalEdit.path && externalEdit.skipReads-- <= 0) {
         const path = externalEdit.path
         externalEdit.path = ''
         await fs.writeFile(path, externalEdit.content)
@@ -44,6 +44,7 @@ const archiveBytes = Buffer.from('PK\x05\x06' + '\0'.repeat(18), 'binary')
 beforeEach(async () => {
   externalEdit.path = ''
   externalEdit.content = ''
+  externalEdit.skipReads = 0
   home = await mkdtemp(join(tmpdir(), 'project-history-'))
   project = join(home, 'existing-project')
   sessionPath = join(home, 'sessions', 'rollout-existing.jsonl')
@@ -124,8 +125,10 @@ it.each(['single_turn', 'turn_and_later'])('preserves patch redo/undo for %s sco
   await expect(readFile(join(project, 'deleted.txt'))).rejects.toThrow()
   await expect(readFile(join(project, 'source.txt'))).rejects.toThrow()
   const undo = await request('/codex-api/thread/rollback-files', 'POST', { ...payload, action: 'undo' })
-  expect(undo.json.errors).toEqual([])
-  for (const name of ['modified.txt', 'deleted.txt', 'source.txt']) expect(await readFile(join(project, name), 'utf8')).toBe('before\n')
+  expect(undo.json.errors).toHaveLength(1)
+  expect(undo.json.errors[0]).toContain('per-turn preimage')
+  for (const name of ['modified.txt', 'source.txt']) expect(await readFile(join(project, name), 'utf8')).toBe('before\n')
+  await expect(readFile(join(project, 'deleted.txt'))).rejects.toThrow()
   await expect(readFile(join(project, 'added.txt'))).rejects.toThrow()
   await expect(readFile(join(project, 'moved.txt'))).rejects.toThrow()
   if (scope === 'turn_and_later') {
@@ -137,7 +140,7 @@ it.each(['single_turn', 'turn_and_later'])('preserves patch redo/undo for %s sco
   }
 })
 
-it('preserves filtered patch order, partial failures and tracked Git fallback', async () => {
+it('preserves filtered patch order and reports partial Undo failures', async () => {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: project })
   git('init'); git('config', 'user.email', 'test@example.invalid'); git('config', 'user.name', 'Test')
   await writeFile(join(project, 'tracked.txt'), 'HEAD\n')
@@ -165,18 +168,18 @@ it('preserves filtered patch order, partial failures and tracked Git fallback', 
   await expect(readFile(join(project, 'skipped.txt'))).rejects.toThrow()
   await writeFile(join(project, 'tracked.txt'), 'unmatched\n')
   const undo = await request('/codex-api/thread/rollback-files', 'POST', { ...payload, action: 'undo' })
-  expect(undo.json.errors).toEqual([])
-  expect(undo.json.reverted).toBe(4)
-  expect(undo.json.revertedPatchIds).toEqual(['partial', 'second', 'first'])
-  expect(await readFile(join(project, 'tracked.txt'), 'utf8')).toBe('HEAD\n')
+  expect(undo.json.errors).toHaveLength(1)
+  expect(undo.json.reverted).toBe(3)
+  expect(undo.json.revertedPatchIds).toEqual(['second', 'first'])
+  expect(await readFile(join(project, 'tracked.txt'), 'utf8')).toBe('unmatched\n')
   await expect(readFile(join(project, 'ordered.txt'))).rejects.toThrow()
   await expect(readFile(join(project, 'partial.txt'))).rejects.toThrow()
 })
 
-// Characterization of unsafe current behavior, not the preservation contract.
+// Regression coverage for the preservation contract.
 // Every Git command below runs only inside the disposable fixture repository.
 it.each(['unstaged', 'staged', 'mixed', 'untracked'] as const)(
-  'characterizes Undo fallback preservation for %s edits', async state => {
+  'preserves %s edits when Undo cannot match the patch', async state => {
     const git = (...args: string[]) => execFileSync('git', args, { cwd: project, encoding: 'utf8' })
     git('init'); git('config', 'user.email', 'test@example.invalid'); git('config', 'user.name', 'Test')
     await writeFile(join(project, 'outside.txt'), 'outside HEAD\n')
@@ -206,25 +209,19 @@ it.each(['unstaged', 'staged', 'mixed', 'untracked'] as const)(
     expect(await readFile(join(project, 'outside.txt'), 'utf8')).toBe('outside unstaged\n')
     expect(git('show', ':outside.txt')).toBe('outside staged\n')
     expect(await readFile(join(project, 'unrelated.txt'), 'utf8')).toBe('untracked survivor\n')
-    // The add reversal deletes even a user-edited untracked file.
-    await expect(readFile(join(project, 'generated.txt'))).rejects.toThrow()
-    // Partial failure still publishes this patch ID as reverted; there is no rollback.
-    expect(undo.json.revertedPatchIds).toEqual(['unsafe'])
-    if (state === 'untracked') {
-      expect(await readFile(join(project, 'target.txt'), 'utf8')).toBe('user unstaged\n')
-      expect(undo.json.errors).toEqual(['Could not reverse patch for untracked file: ' + join(project, 'target.txt')])
-      expect(undo.json.reverted).toBe(1)
-    } else {
-      expect(await readFile(join(project, 'target.txt'), 'utf8')).toBe('HEAD\n')
-      expect(git('show', ':target.txt')).toBe('HEAD\n')
-      expect(undo.json.errors).toEqual([])
-      expect(undo.json.reverted).toBe(2)
+    expect(await readFile(join(project, 'generated.txt'), 'utf8')).toBe('user edited generated content\n')
+    expect(undo.json.revertedPatchIds).toEqual([])
+    expect(undo.json.reverted).toBe(0)
+    expect(undo.json.errors).toHaveLength(2)
+    expect(await readFile(join(project, 'target.txt'), 'utf8')).toBe(state === 'staged' ? 'user staged\n' : 'user unstaged\n')
+    if (state !== 'untracked') {
+      expect(git('show', ':target.txt')).toBe(state === 'staged' || state === 'mixed' ? 'user staged\n' : 'HEAD\n')
     }
   },
 )
 
 
-it('characterizes loss of an external edit between the Undo read and write', async () => {
+it.each([0, 1])('detects edits before validation but retains the accepted post-validation race (skip %s)', async skipReads => {
   const target = join(project, 'race.txt')
   await writeFile(target, 'after\n')
   await writeFile(sessionPath, [
@@ -234,13 +231,63 @@ it('characterizes loss of an external edit between the Undo read and write', asy
   ].map(row => JSON.stringify(row)).join('\n'))
   rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
   externalEdit.path = target
+  externalEdit.skipReads = skipReads
   externalEdit.content = 'external editor content\n'
   const undo = await request('/codex-api/thread/rollback-files', 'POST', {
     threadId: 'historical-thread', turnId: 't1', cwd: project, scope: 'single_turn', action: 'undo', patchIds: ['race'],
   })
   expect(externalEdit.path).toBe('')
-  // Characterization only: the successful diff path also destroys concurrent edits.
-  expect(await readFile(target, 'utf8')).toBe('before\n')
-  expect(undo.json.errors).toEqual([])
-  expect(undo.json.revertedPatchIds).toEqual(['race'])
+  // Keep the deterministic loss characterization at the final validation boundary.
+  expect(await readFile(target, 'utf8')).toBe(skipReads ? 'before\n' : 'external editor content\n')
+  expect(undo.json.errors).toHaveLength(skipReads ? 0 : 1)
+  expect(undo.json.revertedPatchIds).toEqual(skipReads ? ['race'] : [])
+})
+
+
+it.each(['rename', 'missing', 'repeat'])('refuses unsafe Undo: %s', async scenario => {
+  const input = scenario === 'rename'
+    ? '*** Update File: original.txt\n*** Move to: moved.txt\n@@ -1 +1 @@\n-before\n+after'
+    : scenario === 'missing' ? '*** Delete File: original.txt' : '*** Add File: original.txt\n+generated'
+  await writeFile(sessionPath, [
+    { type: 'turn_context', payload: { turn_id: 't1' } },
+    { type: 'response_item', payload: { type: 'custom_tool_call', name: 'apply_patch', status: 'completed', call_id: 'p',
+      input: '*** Begin Patch\n' + input + '\n*** End Patch' } },
+  ].map(row => JSON.stringify(row)).join('\n'))
+  rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
+  await writeFile(join(project, 'original.txt'), scenario === 'repeat' ? 'generated\n' : 'user content\n')
+  if (scenario === 'rename') await writeFile(join(project, 'moved.txt'), 'after\n')
+  const payload = { threadId: 'historical-thread', turnId: 't1', cwd: project, action: 'undo', patchIds: ['p'] }
+  const first = await request('/codex-api/thread/rollback-files', 'POST', payload)
+  if (scenario === 'repeat') {
+    expect(first.json.reverted).toBe(1)
+    const second = await request('/codex-api/thread/rollback-files', 'POST', payload)
+    expect(second.json.reverted).toBe(0)
+    expect(second.json.revertedPatchIds).toEqual([])
+  } else {
+    expect(first.json.errors).toHaveLength(1)
+    expect(first.json.revertedPatchIds).toEqual([])
+    expect(await readFile(join(project, 'original.txt'), 'utf8')).toBe('user content\n')
+    if (scenario === 'rename') expect(await readFile(join(project, 'moved.txt'), 'utf8')).toBe('after\n')
+  }
+})
+
+
+it.each([true, false])('preserves command-only paths (patch selection %s)', async selected => {
+  const target = join(project, 'command.txt')
+  await writeFile(target, 'user content\n')
+  await writeFile(sessionPath, [
+    { type: 'turn_context', payload: { turn_id: 't1' } },
+    { type: 'response_item', payload: { type: 'function_call', name: 'exec_command',
+      arguments: JSON.stringify({ cmd: 'echo changed >command.txt' }) } },
+    { type: 'response_item', payload: { type: 'custom_tool_call', name: 'apply_patch', status: 'completed', call_id: 'p',
+      input: '*** Begin Patch\n*** Add File: independent.txt\n+generated\n*** End Patch' } },
+  ].map(row => JSON.stringify(row)).join('\n'))
+  await writeFile(join(project, 'independent.txt'), 'generated\n')
+  rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
+  const undo = await request('/codex-api/thread/rollback-files', 'POST', {
+    threadId: 'historical-thread', turnId: 't1', cwd: project, action: 'undo', ...(selected ? { patchIds: ['p'] } : {}),
+  })
+  expect(await readFile(target, 'utf8')).toBe('user content\n')
+  expect(undo.json.revertedPatchIds).toEqual(['p'])
+  expect(undo.json.errors).toHaveLength(selected ? 0 : 1)
 })

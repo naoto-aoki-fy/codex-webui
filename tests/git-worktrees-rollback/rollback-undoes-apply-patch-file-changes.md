@@ -12,13 +12,13 @@
 4. After rollback completes, check the file on disk — it should be restored to the state before the agent modified it.
 5. Verify the thread conversation no longer shows the rolled-back turns.
 6. For turns that added new files: verify the added files are deleted from disk.
-7. For turns that deleted files: verify the deleted files are restored (if they were tracked in git).
+7. For turns that deleted files: verify Undo reports a missing per-turn preimage and leaves current files intact.
 
 #### Expected Results
 - Clicking rollback on a turn reverts both the thread history AND the file system changes from that turn and all subsequent turns.
-- Files modified by `apply_patch` in rolled-back turns are restored via `git checkout HEAD -- <path>`.
-- Files created by `apply_patch` in rolled-back turns are removed from disk.
-- Files deleted by `apply_patch` in rolled-back turns are restored from git HEAD.
+- Files modified by `apply_patch` are reversed only when their patch postimage matches current content.
+- Files created by `apply_patch` are removed only when current bytes match the expected addition.
+- Deleted files without a per-turn preimage are refused; HEAD is never used as a restoration fallback.
 - File moves in rolled-back turns are reversed (moved file is renamed back to original path).
 - If file revert fails (e.g., not a git repo), the thread rollback still proceeds — file revert is best-effort.
 - The rollback-files endpoint (`POST /codex-api/thread/rollback-files`) can be called independently for testing.
@@ -75,8 +75,36 @@
 
 #### Expected Results
 - Characterization tests preserve ordered additions, deletions, updates, moves, malformed headers, missing context, whitespace, EOF handling, and forward/reverse asymmetry.
-- Public rollback-files requests preserve patch filtering, operation counts, partial failure errors, patch IDs, and tracked-file Git fallback.
+- Public rollback-files requests preserve patch filtering, operation counts, partial failure errors and patch IDs; unsafe Undo refuses restoration rather than using Git fallback.
 - Both transport fixtures pass for the built CLI and dev entry point.
 
 #### Rollback/Cleanup
 - Automated file-operation tests use temporary repositories and remove them after each case. No user worktree files need restoration.
+
+### Verification: Preservation-first Undo
+
+Prerequisites: use only a disposable worktree and a completed patch turn; retain
+copies of expected before/after content. Never exercise these cases on user data.
+
+1. Undo a clean update, addition and move; verify exact before content and paths.
+2. Repeat after staging unrelated edits and making additional unstaged edits;
+   verify index bytes remain identical and unrelated working content survives.
+3. Edit the patch's added file or conflicting update content, or recreate a move's
+   original path. Undo must report an error without replacing that content.
+4. Undo a deletion or command-only change without a per-turn preimage. Expect a
+   refusal. Selecting an independent patch must not affect command-only paths.
+5. Select multiple patches with one conflict. Successful independent operations
+   may complete; errors identify failed paths and incomplete patch IDs are absent
+   from `revertedPatchIds`. Repeat Undo and verify no fallback restoration occurs.
+6. Run the focused helper/bridge tests, including the deterministic pre-validation
+   editor conflict and accepted post-validation race, then the full checks above.
+
+Expected: Redo behavior and response shapes remain unchanged. No Git index writes
+or HEAD restoration occur during Undo. An external writer can still race final
+validation and mutation; this accepted limitation is not complete loss prevention.
+In-place updates retain existing inode permissions/hardlink behavior; they are not
+transactional or crash-safe. Temporary replacement is deferred because it changes
+those semantics. Rename destinations use exclusive creation to reject collisions.
+
+Cleanup: remove the disposable fixture/worktree after retaining test evidence;
+do not use Redo as a backup or conflict recovery mechanism.

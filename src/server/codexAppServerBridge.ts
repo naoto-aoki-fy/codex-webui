@@ -710,23 +710,6 @@ async function revertTurnFileChanges(
     .reverse()
   const allCommandPaths = new Set(allEntries.flatMap((info) => info.commandFilePaths))
 
-  let isGitRepo = false
-  let gitRoot = ''
-  try {
-    gitRoot = await runCommandCapture('git', ['rev-parse', '--show-toplevel'], { cwd })
-    isGitRepo = !!gitRoot
-  } catch { /* not a git repo */ }
-
-  const trackedFiles = new Set<string>()
-  if (isGitRepo) {
-    try {
-      const tracked = await runCommandCapture('git', ['ls-files', '--full-name'], { cwd: gitRoot })
-      for (const f of tracked.split('\n')) {
-        if (f.trim()) trackedFiles.add(join(gitRoot, f.trim()))
-      }
-    } catch { /* empty */ }
-  }
-
   const patchRevertedPaths = new Set<string>()
 
   for (const patch of allPatchInputs) {
@@ -742,100 +725,68 @@ async function revertTurnFileChanges(
 
       try {
         if (change.operation === 'add') {
-          const fileStat = await stat(filePath).catch(() => null)
+          const fileStat = await lstat(filePath).catch((error: NodeJS.ErrnoException) => {
+            if (error.code === 'ENOENT') return null
+            throw error
+          })
           if (fileStat) {
-            await rm(filePath, { force: true })
+            if (!fileStat.isFile()) throw new Error('Expected a regular added file')
+            const expected = change.diff ? `${change.diff}\n` : ''
+            if (!(await readFile(filePath)).equals(Buffer.from(expected))) {
+              throw new Error('Added file no longer matches the patch')
+            }
+            await rm(filePath)
             reverted++
             patchRevertedPaths.add(filePath)
             patchReverted = true
           }
         } else if (change.operation === 'update' && (change.diff || movedToPath)) {
-          let reversed = false
-          try {
-            const sourcePath = movedToPath ?? filePath
-            const currentContent = await readFile(sourcePath, 'utf8')
-            const newContent = reverseV4aDiff(currentContent, change.diff)
-            if (newContent !== null && newContent !== currentContent) {
-              const { writeFile } = await import('node:fs/promises')
-              if (movedToPath) {
-                await mkdir(dirname(filePath), { recursive: true })
-                await writeFile(filePath, newContent)
-                await rm(movedToPath, { force: true })
-              } else {
-                await writeFile(filePath, newContent)
-              }
-              reverted++
-              patchRevertedPaths.add(filePath)
-              if (movedToPath) patchRevertedPaths.add(movedToPath)
-              patchReverted = true
-              reversed = true
-            } else if (newContent !== null && movedToPath) {
-              await mkdir(dirname(filePath), { recursive: true })
-              await rename(movedToPath, filePath)
-              reverted++
-              patchRevertedPaths.add(filePath)
-              patchRevertedPaths.add(movedToPath)
-              patchReverted = true
-              reversed = true
-            }
-          } catch { /* file read/write failed */ }
-
-          if (!reversed) {
-            const isTracked = trackedFiles.has(filePath)
-            if (isTracked && isGitRepo) {
-              const relativePath = filePath.startsWith(gitRoot + '/') ? filePath.slice(gitRoot.length + 1) : filePath
-              try {
-                await runCommand('git', ['checkout', 'HEAD', '--', relativePath], { cwd: gitRoot })
-                if (movedToPath) {
-                  await rm(movedToPath, { force: true })
-                }
-                reverted++
-                patchRevertedPaths.add(filePath)
-                if (movedToPath) patchRevertedPaths.add(movedToPath)
-                patchReverted = true
-              } catch {
-                patchHadError = true
-                errors.push(`Could not revert: ${filePath}`)
-              }
-            } else {
-              patchHadError = true
-              errors.push(`Could not reverse patch for untracked file: ${filePath}`)
-            }
+          const sourcePath = movedToPath ?? filePath
+          if (!(await lstat(sourcePath)).isFile()) throw new Error('Expected a regular source file')
+          const currentBytes = await readFile(sourcePath)
+          const currentContent = currentBytes.toString('utf8')
+          if (!Buffer.from(currentContent).equals(currentBytes)) throw new Error('Cannot reverse non-UTF-8 content')
+          const newContent = reverseV4aDiff(currentContent, change.diff)
+          if (newContent === null || (newContent === currentContent && !movedToPath)) {
+            throw new Error('Current content does not match the reverse patch')
           }
+          if (movedToPath) {
+            await mkdir(dirname(filePath), { recursive: true })
+            const destination = await lstat(filePath).catch((error: NodeJS.ErrnoException) => {
+              if (error.code === 'ENOENT') return null
+              throw error
+            })
+            if (destination) throw new Error('Rename destination already exists')
+          }
+          const { writeFile } = await import('node:fs/promises')
+          // Optimistic validation only: an external writer can still race the mutation.
+          if (!(await readFile(sourcePath)).equals(currentBytes)) throw new Error('File changed during Undo')
+          if (movedToPath) {
+            // Exclusive creation also protects a destination appearing after validation.
+            await writeFile(filePath, newContent, { flag: 'wx' })
+            await rm(movedToPath)
+          } else {
+            await writeFile(filePath, newContent)
+          }
+          reverted++
+          patchRevertedPaths.add(filePath)
+          if (movedToPath) patchRevertedPaths.add(movedToPath)
+          patchReverted = true
         } else if (change.operation === 'delete') {
-          const isTracked = trackedFiles.has(filePath)
-          if (isTracked && isGitRepo) {
-            const relativePath = filePath.startsWith(gitRoot + '/') ? filePath.slice(gitRoot.length + 1) : filePath
-            try {
-              await runCommand('git', ['checkout', 'HEAD', '--', relativePath], { cwd: gitRoot })
-              reverted++
-              patchRevertedPaths.add(filePath)
-              patchReverted = true
-            } catch {
-              patchHadError = true
-              errors.push(`Could not restore deleted file: ${filePath}`)
-            }
-          }
+          throw new Error('Cannot restore deleted file without a per-turn preimage')
         }
       } catch (err) {
         patchHadError = true
         errors.push(`Failed to revert patch for ${filePath}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
-    if (patchReverted) revertedPatchIds.push(patch.callId)
+    if (patchReverted && !patchHadError) revertedPatchIds.push(patch.callId)
   }
 
-  for (const filePath of allCommandPaths) {
-    if (patchRevertedPaths.has(filePath)) continue
-    const isTracked = trackedFiles.has(filePath)
-    if (isTracked && isGitRepo) {
-      const relativePath = filePath.startsWith(gitRoot + '/') ? filePath.slice(gitRoot.length + 1) : filePath
-      try {
-        await runCommand('git', ['checkout', 'HEAD', '--', relativePath], { cwd: gitRoot })
-        reverted++
-      } catch {
-        errors.push(`Could not restore command-modified file: ${filePath}`)
-      }
+  if (!allowedPatchIds) {
+    for (const filePath of allCommandPaths) {
+      if (patchRevertedPaths.has(filePath)) continue
+      errors.push(`Cannot restore command-modified file without a per-turn preimage: ${filePath}`)
     }
   }
 
