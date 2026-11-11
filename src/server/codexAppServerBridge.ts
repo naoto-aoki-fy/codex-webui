@@ -1156,6 +1156,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   const sharedState = getSharedBridgeState()
   sharedState.owners = (sharedState.owners ?? 0) + 1
   let released = false
+  const activeSse = new Set<() => void>()
   const { appServer, methodCatalog, telegramBridge } = sharedState
   const gitWorkspaceRoutes = createGitWorkspaceRoutes({ readJsonBody, getCodexHomeDir, persistWorkspaceRoot, ensureRealDirectory })
   let threadSearchIndex: ThreadSearchIndex | null = null
@@ -1847,7 +1848,15 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       if (req.method === 'GET' && url.pathname === '/codex-api/events') {
-        handleSseRequest(req, res, middleware.subscribeNotifications)
+        if (released) {
+          res.end()
+          return
+        }
+        handleSseRequest(req, res, middleware.subscribeNotifications, dispose => {
+          // Setup can reenter middleware disposal through stream/subscription callbacks.
+          if (released) dispose()
+          else activeSse.add(dispose)
+        }, dispose => activeSse.delete(dispose))
         return
       }
 
@@ -1865,6 +1874,11 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   middleware.dispose = () => {
     if (released) return
     released = true
+    // A failing stream must not prevent other streams or the runtime from releasing.
+    for (const dispose of activeSse) {
+      try { dispose() } catch { /* Request cleanup is best effort during owner disposal. */ }
+    }
+    activeSse.clear()
     threadSearchIndex = null
     sharedState.owners = (sharedState.owners ?? 1) - 1
     if (sharedState.owners > 0) return
