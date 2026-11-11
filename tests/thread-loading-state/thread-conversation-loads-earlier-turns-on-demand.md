@@ -51,3 +51,7 @@ pending detail/page responses. Keep absolute turn indices in each response.
 
 Automated: `pnpm exec vitest run src/composables/useDesktopState.messages.test.ts`.
 Cleanup: dispose fixture states; archive only disposable fixture threads.
+
+Empty-page edge: return an empty older page with `hasMoreOlder: false` before a
+pending detail refresh completes. If the detail still contains the page boundary,
+the refresh must keep pagination exhausted rather than re-enable the older button.
