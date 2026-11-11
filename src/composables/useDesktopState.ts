@@ -1413,6 +1413,8 @@ export function useDesktopState() {
     }
     return ''
   }
+  // Work may begin before polling starts; only stop invalidates its ownership.
+  let lifecycleGeneration = 0
   let stopNotificationStream: (() => void) | null = null
   let eventSyncTimer: number | null = null
   let rateLimitRefreshTimer: number | null = null
@@ -1756,8 +1758,10 @@ export function useDesktopState() {
   }
 
   async function refreshCollaborationModes(): Promise<void> {
+    const generation = lifecycleGeneration
     try {
       const modes = await getAvailableCollaborationModes()
+      if (generation !== lifecycleGeneration) return
       availableCollaborationModes.value = modes
       if (!modes.some((mode) => mode.value === selectedCollaborationMode.value)) {
         setSelectedCollaborationMode('default')
@@ -1781,12 +1785,15 @@ export function useDesktopState() {
 
   let modelRefreshVersion = 0
   async function refreshModelPreferences(): Promise<void> {
+    const generation = lifecycleGeneration
     const version = ++modelRefreshVersion
     const threadId = selectedThreadId.value
     codexCliMissingError.value = ''
     try {
       const config = await getCurrentModelConfig()
+      if (generation !== lifecycleGeneration) return
       const catalog = await getAvailableModelIds()
+      if (generation !== lifecycleGeneration) return
       if (version !== modelRefreshVersion || threadId !== selectedThreadId.value) return
       const context = isNewThreadContextId(toThreadContextId(threadId)) ? NEW_THREAD_MODEL_CONTEXT : toThreadContextId(threadId)
       automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, context)
@@ -1804,12 +1811,14 @@ export function useDesktopState() {
       reasoningCatalog.value = catalog.models
       selectedSpeedMode.value = config.speedMode
     } catch (error) {
+      if (generation !== lifecycleGeneration) return
       reasoningCatalog.value = []
       if (isCodexCliMissingError(error)) codexCliMissingError.value = CODEX_CLI_MISSING_MESSAGE
     }
   }
 
   async function refreshRateLimits(): Promise<void> {
+    const generation = lifecycleGeneration
     if (rateLimitRefreshPromise) {
       await rateLimitRefreshPromise
       return
@@ -1818,12 +1827,13 @@ export function useDesktopState() {
     rateLimitRefreshPromise = (async () => {
       try {
         const snapshot = await getAccountRateLimits()
+        if (generation !== lifecycleGeneration) return
         setCodexRateLimit(snapshot)
         accountRateLimitSnapshots.value = snapshot ? [snapshot] : []
       } catch {
         // Keep the last known rate-limit state if the endpoint is temporarily unavailable.
       } finally {
-        rateLimitRefreshPromise = null
+        if (generation === lifecycleGeneration) rateLimitRefreshPromise = null
       }
     })()
 
@@ -1831,6 +1841,7 @@ export function useDesktopState() {
   }
 
   function scheduleRateLimitRefresh(): void {
+    const generation = lifecycleGeneration
     if (typeof window === 'undefined') {
       void refreshRateLimits()
       return
@@ -1841,6 +1852,7 @@ export function useDesktopState() {
     }
 
     rateLimitRefreshTimer = window.setTimeout(() => {
+      if (generation !== lifecycleGeneration) return
       rateLimitRefreshTimer = null
       void refreshRateLimits()
     }, RATE_LIMIT_REFRESH_DEBOUNCE_MS)
@@ -1855,9 +1867,11 @@ export function useDesktopState() {
   }
 
   function scheduleDelayedTurnSync(threadId: string): void {
+    const generation = lifecycleGeneration
     if (!threadId || typeof window === 'undefined') return
     clearDelayedTurnSync(threadId)
     const timerId = window.setTimeout(() => {
+      if (generation !== lifecycleGeneration) return
       delayedTurnSyncTimerByThreadId.delete(threadId)
       pendingThreadMessageRefresh.add(threadId)
       void syncFromNotifications()
@@ -3695,6 +3709,7 @@ export function useDesktopState() {
   }
 
   function queueEventDrivenSync(notification: RpcNotification): void {
+    const generation = lifecycleGeneration
     if (notification.method === 'thread/tokenUsage/updated') return
 
     const method = notification.method
@@ -3720,6 +3735,7 @@ export function useDesktopState() {
 
     if (eventSyncTimer !== null || typeof window === 'undefined') return
     eventSyncTimer = window.setTimeout(() => {
+      if (generation !== lifecycleGeneration) return
       eventSyncTimer = null
       void syncFromNotifications()
     }, EVENT_SYNC_DEBOUNCE_MS)
@@ -3777,9 +3793,11 @@ export function useDesktopState() {
   }
 
   async function loadThreadTitleCacheIfNeeded(options: { force?: boolean } = {}): Promise<void> {
+    const generation = lifecycleGeneration
     if (options.force !== true && Object.keys(threadTitleById.value).length > 0) return
     try {
       const cache = await getThreadTitleCache()
+      if (generation !== lifecycleGeneration) return
       if (Object.keys(cache.titles).length > 0) {
         threadTitleById.value = cache.titles
       }
@@ -3789,10 +3807,11 @@ export function useDesktopState() {
   }
 
   async function loadWorkspaceRootsStateForThreadList(): Promise<WorkspaceRootsState | null> {
+    const generation = lifecycleGeneration
     try {
       return await getWorkspaceRootsState()
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : 'Failed to load projects'
+      if (generation === lifecycleGeneration) error.value = cause instanceof Error ? cause.message : 'Failed to load projects'
       return loadedThreadListRootsState
     }
   }
@@ -3854,6 +3873,7 @@ export function useDesktopState() {
   }
 
   function scheduleLocalThreadReconciliation(): void {
+    const generation = lifecycleGeneration
     if (typeof window === 'undefined') return
     const now = Date.now()
     const needsReconciliation = Array.from(localThreadConfirmationDeadlineById).some(
@@ -3867,11 +3887,12 @@ export function useDesktopState() {
     if (localThreadReconciliationTimer !== null) return
     // One shared timer and the existing coalesced loader, regardless of chat count.
     localThreadReconciliationTimer = window.setTimeout(() => {
+      if (generation !== lifecycleGeneration) return
       localThreadReconciliationTimer = null
       void loadThreads().catch(() => {
         // Even if the bridge stays unavailable, the local retention lease is bounded.
       }).finally(() => {
-        applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
+        if (generation === lifecycleGeneration) applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
       })
     }, LOCAL_THREAD_RECONCILIATION_INTERVAL_MS)
   }
@@ -3966,6 +3987,7 @@ export function useDesktopState() {
   }
 
   async function loadThreads(options: { force?: boolean } = {}): Promise<void> {
+    const lifecycle = lifecycleGeneration
     if (loadThreadsPromise) {
       if (options.force === true && !pendingForcedThreadLoad) {
         pendingForcedThreadLoad = true
@@ -4021,6 +4043,7 @@ export function useDesktopState() {
         } catch (cause) {
           if (generation === threadListGeneration) failure = cause
         }
+        if (lifecycle !== lifecycleGeneration) return
         force = pendingForcedThreadLoad
       } while (pendingForcedThreadLoad)
       if (failure) throw failure
@@ -4035,6 +4058,7 @@ export function useDesktopState() {
   }
 
   async function loadMessages(threadId: string, options: { silent?: boolean; force?: boolean } = {}) {
+    const generation = lifecycleGeneration
     if (!threadId) {
       return
     }
@@ -4048,7 +4072,7 @@ export function useDesktopState() {
     if (existingLoad) {
       await existingLoad
       // A send/completion that arrived during this read still needs a fresh snapshot.
-      if (options.force === true) await loadMessages(threadId, options)
+      if (generation === lifecycleGeneration && options.force === true) await loadMessages(threadId, options)
       return
     }
 
@@ -4081,7 +4105,9 @@ export function useDesktopState() {
       const needsResume = resumedThreadById.value[threadId] !== true
       const realtimeRevision = realtimeRevisionByThreadId.get(threadId) ?? 0
       const resumedThread = needsResume ? await resumeThread(threadId) : null
+      if (generation !== lifecycleGeneration) return
       const detail = resumedThread ?? await getThreadDetail(threadId)
+      if (generation !== lifecycleGeneration) return
       const currentActiveTurnId = activeTurnIdByThreadId.value[threadId]
       const hasNewerTurnState = realtimeRevision !== (realtimeRevisionByThreadId.get(threadId) ?? 0)
         || (inProgressById.value[threadId] === true && !detail.inProgress
@@ -4149,6 +4175,7 @@ export function useDesktopState() {
       }
       markThreadAsRead(threadId)
       } catch (unknownError) {
+        if (generation !== lifecycleGeneration) throw unknownError
         const message = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
         if (selectedThreadId.value === threadId) {
           setTurnErrorForThread(threadId, message, { transient: true })
@@ -4156,12 +4183,12 @@ export function useDesktopState() {
         lastMessageLoadFailureAtByThreadId.set(threadId, Date.now())
         throw unknownError
       } finally {
-      if (shouldShowLoading) {
+      if (generation === lifecycleGeneration && shouldShowLoading) {
         isLoadingMessages.value = false
       }
       }
     })().finally(() => {
-      loadMessagePromiseByThreadId.delete(threadId)
+      if (generation === lifecycleGeneration) loadMessagePromiseByThreadId.delete(threadId)
     })
 
     loadMessagePromiseByThreadId.set(threadId, loadPromise)
@@ -4169,6 +4196,7 @@ export function useDesktopState() {
   }
 
   async function loadOlderMessages(threadId: string = selectedThreadId.value): Promise<void> {
+    const generation = lifecycleGeneration
     if (!threadId) return
     if (loadingOlderMessagesByThreadId.value[threadId] === true) return
     if (hasMoreOlderMessagesByThreadId.value[threadId] !== true) return
@@ -4189,6 +4217,7 @@ export function useDesktopState() {
 
     try {
       const page = await getOlderThreadMessages(threadId, beforeTurnId)
+      if (generation !== lifecycleGeneration) return
       const previousPersisted = persistedMessagesByThreadId.value[threadId] ?? []
       const mergedMessages = mergeMessages(page.messages, previousPersisted, { preserveMissing: true })
       setPersistedMessagesForThread(threadId, mergedMessages)
@@ -4202,10 +4231,11 @@ export function useDesktopState() {
         [threadId]: page.hasMoreOlder,
       }
     } catch (loadError) {
+      if (generation !== lifecycleGeneration) throw loadError
       error.value = loadError instanceof Error ? loadError.message : 'Failed to load earlier messages'
       throw loadError
     } finally {
-      loadingOlderMessagesByThreadId.value = {
+      if (generation === lifecycleGeneration) loadingOlderMessagesByThreadId.value = {
         ...loadingOlderMessagesByThreadId.value,
         [threadId]: false,
       }
@@ -4220,6 +4250,7 @@ export function useDesktopState() {
   }
 
   async function refreshSkills(options: { force?: boolean } = {}): Promise<void> {
+    const generation = lifecycleGeneration
     const selectedCwd = selectedThread.value?.cwd?.trim() ?? ''
     const skillsLoadKey = selectedCwd || '__global__'
     if (refreshSkillsPromise) {
@@ -4237,14 +4268,16 @@ export function useDesktopState() {
 
     refreshSkillsPromise = (async () => {
       try {
-        installedSkills.value = await getSkillsList(selectedCwd ? [selectedCwd] : undefined)
+        const skills = await getSkillsList(selectedCwd ? [selectedCwd] : undefined)
+        if (generation !== lifecycleGeneration) return
+        installedSkills.value = skills
         hasLoadedSkills = true
         lastSkillsLoadAt = Date.now()
         lastSkillsLoadKey = skillsLoadKey
       } catch {
         // keep previous skills on failure
       } finally {
-        refreshSkillsPromise = null
+        if (generation === lifecycleGeneration) refreshSkillsPromise = null
       }
     })()
 
@@ -4261,8 +4294,9 @@ export function useDesktopState() {
   }
 
   function scheduleAncillaryStateRefresh(): void {
+    const generation = lifecycleGeneration
     const run = () => {
-      void refreshAncillaryState()
+      if (generation === lifecycleGeneration) void refreshAncillaryState()
     }
 
     if (typeof window === 'undefined') {
@@ -4276,6 +4310,7 @@ export function useDesktopState() {
   async function refreshAll(
     options: { includeSelectedThreadMessages?: boolean; awaitAncillaryRefreshes?: boolean; forceThreadRefresh?: boolean } = {},
   ) {
+    const generation = lifecycleGeneration
     error.value = ''
     codexCliMissingError.value = ''
     const includeSelectedThreadMessages = options.includeSelectedThreadMessages !== false
@@ -4283,19 +4318,23 @@ export function useDesktopState() {
 
     try {
       await loadThreads({ force: options.forceThreadRefresh === true })
+      if (generation !== lifecycleGeneration) return
       if (includeSelectedThreadMessages) {
         try {
           await loadMessages(selectedThreadId.value)
         } catch (unknownError) {
+          if (generation !== lifecycleGeneration) return
           error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
         }
       }
+      if (generation !== lifecycleGeneration) return
       if (awaitAncillaryRefreshes) {
         await refreshAncillaryState()
       } else {
         scheduleAncillaryStateRefresh()
       }
     } catch (unknownError) {
+      if (generation !== lifecycleGeneration) return
       error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
       if (isCodexCliMissingError(unknownError)) {
         codexCliMissingError.value = CODEX_CLI_MISSING_MESSAGE
@@ -4306,15 +4345,18 @@ export function useDesktopState() {
   }
 
   async function selectThread(threadId: string): Promise<SelectThreadResult> {
+    const generation = lifecycleGeneration
     setSelectedThreadId(threadId)
 
     try {
       await loadMessages(threadId)
+      if (generation !== lifecycleGeneration) return 'ok'
       await refreshModelPreferences()
-      void refreshSkills()
+      if (generation === lifecycleGeneration) void refreshSkills()
       return 'ok'
     } catch (unknownError) {
       const message = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
+      if (generation !== lifecycleGeneration) return isThreadNotFoundError(unknownError) ? 'not-found' : 'error'
       error.value = message
       const result = isThreadNotFoundError(unknownError) ? 'not-found' : 'error'
       if (threadId.trim()) {
@@ -4498,6 +4540,8 @@ export function useDesktopState() {
     fileAttachments: FileAttachment[] = [],
     collaborationModeOverride?: CollaborationModeKind,
   ): Promise<void> {
+    const generation = lifecycleGeneration
+    const submissionContext = { generation, modelId: readModelIdForThread(selectedThreadId.value), reasoningEffort: selectedReasoningEffort.value }
     if (isUpdatingSpeedMode.value) return
 
     const threadId = selectedThreadId.value
@@ -4509,6 +4553,10 @@ export function useDesktopState() {
       return
     }
 
+    if (generation !== lifecycleGeneration) {
+      await startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, submittedMode, undefined, submissionContext)
+      return
+    }
     const isInProgress = inProgressById.value[threadId] === true
 
     const optimisticMessageId = appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments)
@@ -4522,7 +4570,9 @@ export function useDesktopState() {
         fileAttachments,
         submittedMode,
         optimisticMessageId,
+        submissionContext,
       ).catch((unknownError) => {
+        if (generation !== lifecycleGeneration) return
         const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
         setTurnErrorForThread(threadId, errorMessage)
         error.value = errorMessage
@@ -4559,8 +4609,10 @@ export function useDesktopState() {
         fileAttachments,
         submittedMode,
         optimisticMessageId,
+        submissionContext,
       )
     } catch (unknownError) {
+      if (generation !== lifecycleGeneration) throw unknownError
       setThreadInProgress(threadId, false)
       setTurnActivityForThread(threadId, null)
       clearPendingTurnRequest(threadId)
@@ -4581,6 +4633,8 @@ export function useDesktopState() {
     skills: Array<{ name: string; path: string }> = [],
     fileAttachments: FileAttachment[] = [],
   ): Promise<string> {
+    const generation = lifecycleGeneration
+    const reasoningEffort = selectedReasoningEffort.value
     if (isUpdatingSpeedMode.value) return ''
 
     const nextText = text.trim()
@@ -4596,6 +4650,15 @@ export function useDesktopState() {
     try {
       const startedThread = await startThread(targetCwd || undefined, selectedModel || undefined)
       threadId = startedThread.threadId
+      const submissionContext = { generation, modelId: startedThread.model || selectedModel, reasoningEffort, resumed: true }
+      if (generation !== lifecycleGeneration) {
+        if (threadId) {
+          void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode, undefined, submissionContext).catch(() => {
+            // The server submission continues, but this lifecycle no longer owns UI errors.
+          })
+        }
+        return threadId
+      }
       setThreadModelId(threadId, startedThread.model)
       setSelectedCollaborationModeForThread(threadId, selectedMode)
       if (!threadId) return ''
@@ -4622,8 +4685,9 @@ export function useDesktopState() {
       )
       setTurnErrorForThread(threadId, null)
       setThreadInProgress(threadId, true)
-      void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode, optimisticMessageId)
+      void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode, optimisticMessageId, submissionContext)
         .catch((unknownError) => {
+          if (generation !== lifecycleGeneration) return
           setThreadInProgress(threadId, false)
           setTurnActivityForThread(threadId, null)
           clearPendingTurnRequest(threadId)
@@ -4635,10 +4699,11 @@ export function useDesktopState() {
           error.value = errorMessage
         })
         .finally(() => {
-          isSendingMessage.value = false
+          if (generation === lifecycleGeneration) isSendingMessage.value = false
         })
       return threadId
     } catch (unknownError) {
+      if (generation !== lifecycleGeneration) throw unknownError
       if (threadId) {
         setThreadInProgress(threadId, false)
         setTurnActivityForThread(threadId, null)
@@ -4661,9 +4726,15 @@ export function useDesktopState() {
     fileAttachments: FileAttachment[] = [],
     collaborationModeOverride?: CollaborationModeKind,
     optimisticMessageId?: string,
+    context: { generation: number; modelId: string; reasoningEffort: ReasoningEffort | ''; resumed?: boolean } = {
+      generation: lifecycleGeneration,
+      modelId: readModelIdForThread(threadId),
+      reasoningEffort: selectedReasoningEffort.value,
+    },
   ): Promise<void> {
-    realtimeRevisionByThreadId.set(threadId, (realtimeRevisionByThreadId.get(threadId) ?? 0) + 1)
-    const reasoningEffort = selectedReasoningEffort.value
+    const generation = context.generation
+    if (generation === lifecycleGeneration) realtimeRevisionByThreadId.set(threadId, (realtimeRevisionByThreadId.get(threadId) ?? 0) + 1)
+    const reasoningEffort = context.reasoningEffort
     const collaborationMode = collaborationModeOverride === 'plan' ? 'plan' : collaborationModeOverride === 'default'
       ? 'default'
       : selectedCollaborationMode.value
@@ -4681,7 +4752,7 @@ export function useDesktopState() {
     const normalizedSkills = skills.map((skill) => ({ name: skill.name, path: skill.path }))
     const normalizedFileAttachments = fileAttachments.map((file) => ({ ...file }))
 
-    setPendingTurnRequest(threadId, {
+    if (generation === lifecycleGeneration) setPendingTurnRequest(threadId, {
       text: normalizedText,
       imageUrls: [...normalizedImageUrls],
       skills: normalizedSkills,
@@ -4691,19 +4762,24 @@ export function useDesktopState() {
     })
 
     try {
-      if (resumedThreadById.value[threadId] !== true) {
+      let modelId = context.modelId
+      if (!context.resumed && resumedThreadById.value[threadId] !== true) {
         const resumedThread = await resumeThread(threadId)
-        if (resumedThread.model) {
-          setThreadModelId(threadId, resumedThread.model)
-        }
-        resumedThreadById.value = {
-          ...resumedThreadById.value,
-          [threadId]: true,
+        if (resumedThread.model) modelId = resumedThread.model
+        if (generation === lifecycleGeneration) {
+          if (resumedThread.model) {
+            setThreadModelId(threadId, resumedThread.model)
+          }
+          resumedThreadById.value = {
+            ...resumedThreadById.value,
+            [threadId]: true,
+          }
         }
       }
-      const modelId = readModelIdForThread(threadId)
+      if (generation === lifecycleGeneration) modelId = readModelIdForThread(threadId)
 
-      recordModelUsage(modelId)
+      // Submit exactly once even if disposal occurred while resuming the server thread.
+      if (generation === lifecycleGeneration) recordModelUsage(modelId)
       const startedTurnId = await startThreadTurn(
         threadId,
         nextText,
@@ -4715,6 +4791,7 @@ export function useDesktopState() {
         collaborationMode,
       )
 
+      if (generation !== lifecycleGeneration) return
       if (startedTurnId) {
         if (optimisticMessageId) {
           const messages = persistedMessagesByThreadId.value[threadId] ?? []
@@ -4731,7 +4808,7 @@ export function useDesktopState() {
 
       pendingThreadMessageRefresh.add(threadId)
       await syncFromNotifications()
-      scheduleDelayedTurnSync(threadId)
+      if (generation === lifecycleGeneration) scheduleDelayedTurnSync(threadId)
     } catch (unknownError) {
       throw unknownError
     }
@@ -4907,6 +4984,7 @@ export function useDesktopState() {
   }
 
   async function syncFromNotifications(): Promise<void> {
+    const generation = lifecycleGeneration
     if (isPolling.value) {
       if (typeof window !== 'undefined' && eventSyncTimer === null) {
         eventSyncTimer = window.setTimeout(() => {
@@ -4931,6 +5009,7 @@ export function useDesktopState() {
         await loadThreads({ force: shouldForceThreadRefresh })
       }
 
+      if (generation !== lifecycleGeneration) return
       const activeThreadId = selectedThreadId.value
       if (!activeThreadId) return
 
@@ -4952,23 +5031,27 @@ export function useDesktopState() {
     } catch {
       // Keep UI stable on transient event sync failures.
     } finally {
-      isPolling.value = false
+      if (generation === lifecycleGeneration) {
+        isPolling.value = false
 
-      if (
-        (pendingThreadsRefresh || pendingThreadMessageRefresh.size > 0) &&
-        typeof window !== 'undefined' &&
-        eventSyncTimer === null
-      ) {
-        eventSyncTimer = window.setTimeout(() => {
-          eventSyncTimer = null
-          void syncFromNotifications()
-        }, EVENT_SYNC_DEBOUNCE_MS)
+        if (
+          (pendingThreadsRefresh || pendingThreadMessageRefresh.size > 0) &&
+          typeof window !== 'undefined' &&
+          eventSyncTimer === null
+        ) {
+          eventSyncTimer = window.setTimeout(() => {
+            eventSyncTimer = null
+            void syncFromNotifications()
+          }, EVENT_SYNC_DEBOUNCE_MS)
+        }
       }
     }
   }
 
   async function recoverBridgeState(): Promise<void> {
+    const generation = lifecycleGeneration
     await loadPendingServerRequestsFromBridge()
+    if (generation !== lifecycleGeneration) return
     pendingThreadsRefresh = !hasLoadedThreads.value
     if (
       selectedThreadId.value &&
@@ -4980,11 +5063,13 @@ export function useDesktopState() {
   }
 
   function startPolling(): void {
+    const generation = lifecycleGeneration
     if (typeof window === 'undefined') return
 
     if (stopNotificationStream) return
     void loadPendingServerRequestsFromBridge()
     stopNotificationStream = subscribeCodexNotifications((notification) => {
+      if (generation !== lifecycleGeneration) return
       if (notification.method === 'ready') {
         clearAllTransientTurnErrors()
         void recoverBridgeState()
@@ -4996,8 +5081,10 @@ export function useDesktopState() {
   }
 
   async function loadPendingServerRequestsFromBridge(): Promise<void> {
+    const generation = lifecycleGeneration
     try {
       const rows = await getPendingServerRequests()
+      if (generation !== lifecycleGeneration) return
       const normalizedRequests = rows
         .map((row) => normalizeServerRequest(row))
         .filter((request): request is UiServerRequest => request !== null)
@@ -5008,20 +5095,32 @@ export function useDesktopState() {
   }
 
   async function respondToPendingServerRequest(reply: UiServerRequestReply): Promise<boolean> {
+    const generation = lifecycleGeneration
     try {
       await replyToServerRequest(reply.id, {
         result: reply.result,
         error: reply.error,
       })
-      removePendingServerRequestById(reply.id)
+      if (generation === lifecycleGeneration) removePendingServerRequestById(reply.id)
       return true
     } catch (unknownError) {
+      if (generation !== lifecycleGeneration) return false
       error.value = unknownError instanceof Error ? unknownError.message : 'Failed to reply to server request'
       return false
     }
   }
 
   function stopPolling(): void {
+    ++lifecycleGeneration
+    loadThreadsPromise = null
+    isLoadingThreads.value = false
+    loadMessagePromiseByThreadId.clear()
+    refreshSkillsPromise = null
+    rateLimitRefreshPromise = null
+    isLoadingMessages.value = false
+    loadingOlderMessagesByThreadId.value = {}
+    isSendingMessage.value = false
+    isPolling.value = false
     localThreadConfirmationDeadlineById.clear()
     scheduleLocalThreadReconciliation()
     invalidateThreadListGeneration()
@@ -5058,7 +5157,7 @@ export function useDesktopState() {
     delayedTurnSyncTimerByThreadId.clear()
     activeReasoningItemId = ''
     // Invalidate history cache metadata together with the cleared message payload.
-    // Keep resume state and in-flight reads: they track server sessions and coalescing.
+    // Keep resume state, which tracks server sessions rather than cached payloads.
     loadedMessagesByThreadId.value = {}
     loadedVersionByThreadId.value = {}
     hasMoreOlderMessagesByThreadId.value = {}
