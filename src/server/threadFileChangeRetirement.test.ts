@@ -153,3 +153,53 @@ it('preserves filtered patch order, partial failures and tracked Git fallback', 
   await expect(readFile(join(project, 'ordered.txt'))).rejects.toThrow()
   await expect(readFile(join(project, 'partial.txt'))).rejects.toThrow()
 })
+
+// Characterization of unsafe current behavior, not the preservation contract.
+// Every Git command below runs only inside the disposable fixture repository.
+it.each(['unstaged', 'staged', 'mixed', 'untracked'] as const)(
+  'characterizes Undo fallback preservation for %s edits', async state => {
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: project, encoding: 'utf8' })
+    git('init'); git('config', 'user.email', 'test@example.invalid'); git('config', 'user.name', 'Test')
+    await writeFile(join(project, 'outside.txt'), 'outside HEAD\n')
+    if (state !== 'untracked') await writeFile(join(project, 'target.txt'), 'HEAD\n')
+    git('add', '.'); git('commit', '-m', 'fixture')
+    const head = git('rev-parse', 'HEAD')
+    await writeFile(join(project, 'outside.txt'), 'outside staged\n')
+    git('add', 'outside.txt')
+    await writeFile(join(project, 'outside.txt'), 'outside unstaged\n')
+    await writeFile(join(project, 'unrelated.txt'), 'untracked survivor\n')
+    if (state === 'staged' || state === 'mixed') {
+      await writeFile(join(project, 'target.txt'), 'user staged\n')
+      git('add', 'target.txt')
+    }
+    if (state !== 'staged') await writeFile(join(project, 'target.txt'), 'user unstaged\n')
+    await writeFile(sessionPath, [
+      { type: 'turn_context', payload: { turn_id: 't1' } },
+      { type: 'response_item', payload: { type: 'custom_tool_call', name: 'apply_patch', status: 'completed', call_id: 'unsafe',
+        input: '*** Begin Patch\n*** Update File: target.txt\n@@ -1 +1 @@\n-before\n+after\n*** Add File: generated.txt\n+generated\n*** End Patch' } },
+    ].map(row => JSON.stringify(row)).join('\n'))
+    await writeFile(join(project, 'generated.txt'), 'user edited generated content\n')
+    rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
+    const undo = await request('/codex-api/thread/rollback-files', 'POST', {
+      threadId: 'historical-thread', turnId: 't1', cwd: project, scope: 'single_turn', action: 'undo', patchIds: ['unsafe'],
+    })
+    expect(git('rev-parse', 'HEAD')).toBe(head)
+    expect(await readFile(join(project, 'outside.txt'), 'utf8')).toBe('outside unstaged\n')
+    expect(git('show', ':outside.txt')).toBe('outside staged\n')
+    expect(await readFile(join(project, 'unrelated.txt'), 'utf8')).toBe('untracked survivor\n')
+    // The add reversal deletes even a user-edited untracked file.
+    await expect(readFile(join(project, 'generated.txt'))).rejects.toThrow()
+    // Partial failure still publishes this patch ID as reverted; there is no rollback.
+    expect(undo.json.revertedPatchIds).toEqual(['unsafe'])
+    if (state === 'untracked') {
+      expect(await readFile(join(project, 'target.txt'), 'utf8')).toBe('user unstaged\n')
+      expect(undo.json.errors).toEqual(['Could not reverse patch for untracked file: ' + join(project, 'target.txt')])
+      expect(undo.json.reverted).toBe(1)
+    } else {
+      expect(await readFile(join(project, 'target.txt'), 'utf8')).toBe('HEAD\n')
+      expect(git('show', ':target.txt')).toBe('HEAD\n')
+      expect(undo.json.errors).toEqual([])
+      expect(undo.json.reverted).toBe(2)
+    }
+  },
+)
