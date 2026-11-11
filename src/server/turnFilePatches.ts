@@ -168,8 +168,8 @@ export function reverseV4aDiff(fileContent: string, diffText: string): string | 
       for (let si = 0; si < expectedSequence.length; si++) {
         if (result[ri + si] !== expectedSequence[si]) continue outer
       }
+      if (seqStart >= 0) return null // Multiple postimages cannot identify a safe reversal.
       seqStart = ri
-      break
     }
 
     if (seqStart < 0) return null
