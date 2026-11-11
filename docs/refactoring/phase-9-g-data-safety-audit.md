@@ -105,3 +105,12 @@ Focused check: `pnpm exec vitest run src/server/threadFileChangeRetirement.test.
 No intermittent failure was observed. Fixtures do not verify live authenticated
 turns or real editor concurrency. Production changes remain explicitly blocked;
 passing characterization tests do not resolve the defects they demonstrate.
+
+## Follow-up: deterministic concurrent editor reproduction
+
+The subsequent G-1 investigation injects an editor write between the successful
+reverse-diff source read and destination write. It confirms loss of that edit
+without involving HEAD fallback. The earlier concurrency statements above are
+historical; this interleaving is now reproduced. See
+[Phase 9-G progress](phase-9-g-progress.md) for the safety blocker, remaining
+contract decision and verification. No production correction has been made.
