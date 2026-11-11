@@ -1162,17 +1162,54 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   let threadSearchIndex: ThreadSearchIndex | null = null
   let threadSearchIndexPromise: Promise<ThreadSearchIndex> | null = null
 
+  // Access-checked fallback for changes made by other clients without notifications.
+  const searchIndexTtlMs = 5 * 60 * 1000
+  let searchIndexBuiltAt = 0
+  let searchIndexGeneration = 0
+  function invalidateThreadSearchIndex(): void {
+    searchIndexGeneration += 1
+    threadSearchIndex = null
+    threadSearchIndexPromise = null
+  }
+  const searchMutationMethods = new Set([
+    'thread/start', 'thread/fork', 'thread/name/set', 'thread/archive',
+    'thread/unarchive', 'thread/rollback', 'thread/compact/start', 'turn/start', 'turn/steer',
+  ])
+  const searchChangeNotifications = new Set([
+    'thread/started', 'thread/name/updated', 'thread/archived', 'thread/unarchived',
+    'thread/updated', 'thread/compacted', 'turn/started', 'turn/completed',
+    'item/started', 'item/completed', 'item/agentMessage/delta',
+    'item/commandExecution/outputDelta', 'app-server/disconnected',
+  ])
+  // Independent of browser subscriptions; this listener opens no connection.
+  let unsubscribeSearchNotifications: (() => void) | null = null
+  function subscribeSearchNotifications(): void {
+    unsubscribeSearchNotifications ??= appServer.onNotification(({ method }) => {
+      if (searchChangeNotifications.has(method)) {
+        invalidateThreadSearchIndex()
+      }
+    })
+  }
+
   async function getThreadSearchIndex(): Promise<ThreadSearchIndex> {
-    if (threadSearchIndex) return threadSearchIndex
+    subscribeSearchNotifications()
+    if (threadSearchIndex && Date.now() - searchIndexBuiltAt < searchIndexTtlMs) return threadSearchIndex
     if (!threadSearchIndexPromise) {
-      threadSearchIndexPromise = buildThreadSearchIndex(appServer)
+      const generation = searchIndexGeneration
+      const build = buildThreadSearchIndex(appServer)
         .then((index) => {
-          threadSearchIndex = index
+          if (generation === searchIndexGeneration) {
+            threadSearchIndex = index
+            searchIndexBuiltAt = Date.now()
+          }
+          // Requests already awaiting this build retain their snapshot. Only future
+          // searches rebuild; streaming notifications cannot cause a retry loop.
           return index
         })
         .finally(() => {
-          threadSearchIndexPromise = null
+          if (threadSearchIndexPromise === build) threadSearchIndexPromise = null
         })
+      threadSearchIndexPromise = build
     }
     return threadSearchIndexPromise
   }
@@ -1351,6 +1388,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           }
 		          throw error
 		        }
+        if (searchMutationMethods.has(body.method)) invalidateThreadSearchIndex()
         if (THREAD_METHODS_WITH_TURNS.has(body.method)) {
           const params = asRecord(body.params)
           const explicitParent = body.method === 'thread/fork' && !readNonEmptyString(params?.path)
@@ -1843,6 +1881,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
       if (req.method === 'POST' && url.pathname === '/codex-api/reconnect') {
         await appServer.reconnect()
+        invalidateThreadSearchIndex()
         setJson(res, 200, { ok: true })
         return
       }
@@ -1879,6 +1918,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       try { dispose() } catch { /* Request cleanup is best effort during owner disposal. */ }
     }
     activeSse.clear()
+    unsubscribeSearchNotifications?.()
     threadSearchIndex = null
     sharedState.owners = (sharedState.owners ?? 1) - 1
     if (sharedState.owners > 0) return

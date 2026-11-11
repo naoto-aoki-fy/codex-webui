@@ -37,3 +37,5 @@ Return to the [manual test index](../../tests.md).
 | [Non-thread startup selection priming](non-thread-startup-selection-priming.md) |
 | [Chat workflows after automation management removal](chat-without-automation-management.md) |
 | [Response fork cutoff](response-fork-cutoff.md) |
+
+- [Thread search freshness](thread-search-freshness.md)
