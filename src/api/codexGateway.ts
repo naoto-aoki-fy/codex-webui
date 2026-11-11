@@ -399,6 +399,16 @@ export async function resumeThread(threadId: string): Promise<ResumedThread> {
   return promise
 }
 
+// A successful mutation discards even a Resume started while the mutation was
+// pending. Detached requests still settle for their callers; their identity-guarded
+// timers cannot delete a replacement, and completion never reinserts an entry.
+// Failed mutations leave the current generation (including rejection retention) intact.
+function invalidateResumeThread(threadId: string): void {
+  recentResumeThreadById.delete(threadId)
+}
+
+// Archive/name are not represented in ResumedThread. Start/fork create independent
+// threads and do not mutate the source history, so none invalidate the source.
 export async function archiveThread(threadId: string): Promise<void> {
   await callRpc('thread/archive', { threadId })
 }
@@ -409,6 +419,7 @@ export async function renameThread(threadId: string, threadName: string): Promis
 
 export async function rollbackThread(threadId: string, numTurns: number): Promise<UiMessage[]> {
   const payload = await callRpc<ThreadReadResponse>('thread/rollback', { threadId, numTurns })
+  invalidateResumeThread(threadId)
   return normalizeThreadMessagesV2(payload, readThreadTurnStartIndex(payload))
 }
 
@@ -632,6 +643,7 @@ export async function startThreadTurn(
       }
     }
     const payload = await callRpc<{ turn?: Turn }>('turn/start', params)
+    invalidateResumeThread(threadId)
     return typeof payload?.turn?.id === 'string' ? payload.turn.id.trim() : ''
   } catch (error) {
     throw normalizeCodexApiError(error, `Failed to start turn for thread ${threadId}`, 'turn/start')
