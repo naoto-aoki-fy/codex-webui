@@ -192,6 +192,34 @@ describe('official Codex model catalog', () => {
 describe('MCP directory transport', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  it('preserves pagination aliases, ordering, duplicates and complete return shapes', async () => {
+    const { listDirectoryMcpServers } = await import('./codexGateway')
+    const requests: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: unknown, init: RequestInit) => {
+      const body = JSON.parse(init.body as string)
+      requests.push(body)
+      return new Response(JSON.stringify({ result: body.params.cursor
+        ? { data: [{ name: 'same', auth_status: 'loggedIn', resource_templates: [{ uri_template: 'test://{id}' }] }], nextCursor: null }
+        : { data: [null, { name: '' }, { name: 'same' }], next_cursor: ' page2 ' } }))
+    }))
+    expect(await listDirectoryMcpServers()).toEqual([
+      { name: 'same', authStatus: 'unsupported', tools: [], resources: [], resourceTemplates: [] },
+      { name: 'same', authStatus: 'loggedIn', tools: [], resources: [], resourceTemplates: [{ name: '', title: '', uriTemplate: 'test://{id}', description: '' }] },
+    ])
+    expect(requests).toEqual([
+      { method: 'mcpServerStatus/list', params: {} },
+      { method: 'mcpServerStatus/list', params: { cursor: ' page2 ' } },
+    ])
+  })
+
+  it('propagates list, reload and login RPC failures', async () => {
+    const { listDirectoryMcpServers, reloadDirectoryMcpServers, startDirectoryMcpLogin } = await import('./codexGateway')
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('MCP unavailable') }))
+    await expect(listDirectoryMcpServers()).rejects.toThrow('MCP unavailable')
+    await expect(reloadDirectoryMcpServers()).rejects.toThrow('MCP unavailable')
+    await expect(startDirectoryMcpLogin('server')).rejects.toThrow('MCP unavailable')
+  })
+
   it('preserves status, inspection, reload and OAuth through generic RPC', async () => {
     const { listDirectoryMcpServers, reloadDirectoryMcpServers, startDirectoryMcpLogin } = await import('./codexGateway')
     const requests: Array<{ method: string; params: unknown }> = []

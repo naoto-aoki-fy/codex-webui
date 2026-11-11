@@ -1,3 +1,5 @@
+import { normalizeDirectoryMcpServer, type DirectoryMcpServerStatus } from './normalizers/directoryMcp'
+export type { DirectoryMcpServerStatus } from './normalizers/directoryMcp'
 import {
   buildTurnIndexByTurnId,
   readThreadTurnStartIndex,
@@ -64,14 +66,6 @@ type CurrentModelConfig = {
   model: string
   reasoningEffort: ReasoningEffort | ''
   speedMode: SpeedMode
-}
-
-export type DirectoryMcpServerStatus = {
-  name: string
-  authStatus: string
-  tools: Array<{ name: string; title: string; description: string }>
-  resources: Array<{ name: string; title: string; uri: string; description: string }>
-  resourceTemplates: Array<{ name: string; title: string; uriTemplate: string; description: string }>
 }
 
 export type DirectoryMcpLoginResult = {
@@ -783,53 +777,6 @@ export async function getCurrentModelConfig(): Promise<CurrentModelConfig> {
   const reasoningEffort = normalizeReasoningEffort(payload.config.model_reasoning_effort)
   const speedMode = normalizeSpeedMode(payload.config.service_tier)
   return { model, reasoningEffort, speedMode }
-}
-
-function normalizeDirectoryMcpServer(value: unknown): DirectoryMcpServerStatus | null {
-  const record = asRecord(value)
-  if (!record) return null
-  const name = readString(record.name)
-  if (!name) return null
-  const toolsRecord = asRecord(record.tools) ?? {}
-  const tools = Object.entries(toolsRecord).map(([fallbackName, raw]) => {
-    const tool = asRecord(raw)
-    return {
-      name: readString(tool?.name) ?? fallbackName,
-      title: readString(tool?.title) ?? '',
-      description: readString(tool?.description) ?? '',
-    }
-  })
-  const resources = Array.isArray(record.resources)
-    ? record.resources.map((raw) => {
-      const resource = asRecord(raw)
-      return {
-        name: readString(resource?.name) ?? '',
-        title: readString(resource?.title) ?? '',
-        uri: readString(resource?.uri) ?? '',
-        description: readString(resource?.description) ?? '',
-      }
-    }).filter((resource) => resource.name || resource.uri)
-    : []
-  const rawResourceTemplates = record.resourceTemplates ?? record.resource_templates
-  const resourceTemplates = Array.isArray(rawResourceTemplates)
-    ? rawResourceTemplates.map((raw: unknown) => {
-      const template = asRecord(raw)
-      return {
-        name: readString(template?.name) ?? '',
-        title: readString(template?.title) ?? '',
-        uriTemplate: readString(template?.uriTemplate ?? template?.uri_template) ?? '',
-        description: readString(template?.description) ?? '',
-      }
-    }).filter((template) => template.name || template.uriTemplate)
-    : []
-
-  return {
-    name,
-    authStatus: readString(record.authStatus ?? record.auth_status) ?? 'unsupported',
-    tools,
-    resources,
-    resourceTemplates,
-  }
 }
 
 export async function listDirectoryMcpServers(): Promise<DirectoryMcpServerStatus[]> {
