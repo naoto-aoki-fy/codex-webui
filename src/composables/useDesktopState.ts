@@ -1423,7 +1423,7 @@ export function useDesktopState() {
   const loadMessagePromiseByThreadId = new Map<string, Promise<void>>()
   const realtimeRevisionByThreadId = new Map<string, number>()
   let optimisticMessageSequence = 0
-  let refreshSkillsPromise: Promise<void> | null = null
+  const refreshSkillsPromiseByDirectory = new Map<string, Promise<void>>()
   let lastThreadListLoadAt = 0
   let hasLoadedSkills = false
   let lastSkillsLoadAt = 0
@@ -4254,8 +4254,9 @@ export function useDesktopState() {
     const generation = lifecycleGeneration
     const selectedCwd = selectedThread.value?.cwd?.trim() ?? ''
     const skillsLoadKey = selectedCwd || '__global__'
-    if (refreshSkillsPromise) {
-      await refreshSkillsPromise
+    const pending = refreshSkillsPromiseByDirectory.get(skillsLoadKey)
+    if (pending) {
+      await pending
       return
     }
     if (
@@ -4267,22 +4268,28 @@ export function useDesktopState() {
       return
     }
 
-    refreshSkillsPromise = (async () => {
+    const request = (async () => {
       try {
         const skills = await getSkillsList(selectedCwd ? [selectedCwd] : undefined)
-        if (generation !== lifecycleGeneration) return
+        if (generation !== lifecycleGeneration ||
+          (selectedThread.value?.cwd?.trim() || '__global__') !== skillsLoadKey) return
         installedSkills.value = skills
         hasLoadedSkills = true
         lastSkillsLoadAt = Date.now()
         lastSkillsLoadKey = skillsLoadKey
       } catch {
         // keep previous skills on failure
-      } finally {
-        if (generation === lifecycleGeneration) refreshSkillsPromise = null
       }
     })()
 
-    await refreshSkillsPromise
+    refreshSkillsPromiseByDirectory.set(skillsLoadKey, request)
+    try {
+      await request
+    } finally {
+      if (refreshSkillsPromiseByDirectory.get(skillsLoadKey) === request) {
+        refreshSkillsPromiseByDirectory.delete(skillsLoadKey)
+      }
+    }
   }
 
   async function refreshAncillaryState(): Promise<void> {
@@ -5116,7 +5123,7 @@ export function useDesktopState() {
     loadThreadsPromise = null
     isLoadingThreads.value = false
     loadMessagePromiseByThreadId.clear()
-    refreshSkillsPromise = null
+    refreshSkillsPromiseByDirectory.clear()
     rateLimitRefreshPromise = null
     isLoadingMessages.value = false
     loadingOlderMessagesByThreadId.value = {}

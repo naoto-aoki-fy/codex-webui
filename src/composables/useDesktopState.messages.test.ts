@@ -601,28 +601,62 @@ describe('async request and lifecycle characterization (current behavior)', () =
     expect(state.error.value).toBe('late A history failure')
   })
 
-  it('coalesces directory B skills with pending directory A and requires another refresh for B', async () => {
+  it.each(['success', 'failure'] as const)('fetches B independently and ignores late A %s', async (outcome) => {
     gateway.getThreadGroupsPage.mockResolvedValue({ groups: [{ projectName: 'project', threads: [thread, { ...thread, id: 'B', cwd: '/tmp/B' }] }], nextCursor: null })
-    const skillsA = deferred<Array<{ name: string; description: string; path: string; scope: string; enabled: boolean }>>()
-    gateway.getSkillsList.mockReturnValueOnce(skillsA.promise)
+    const skillsA = deferred<unknown[]>()
+    const skillsB = deferred<unknown[]>()
+    gateway.getSkillsList.mockReturnValueOnce(skillsA.promise).mockReturnValueOnce(skillsB.promise)
     const state = createState()
     const a = state.refreshAll(refreshOptions)
     await vi.advanceTimersByTimeAsync(0)
     expect(gateway.getSkillsList.mock.calls).toEqual([[['/tmp/project']]])
+    const sameA = state.refreshSkills({ force: true })
+    expect(gateway.getSkillsList).toHaveBeenCalledTimes(1)
     state.primeSelectedThread('B')
     const b = state.refreshAll(refreshOptions)
     await vi.advanceTimersByTimeAsync(0)
-    expect(gateway.getSkillsList).toHaveBeenCalledTimes(1)
-    expect(state.installedSkills.value).toEqual([])
-    const rows = [{ name: 'A-only', description: '', path: '/tmp/project/SKILL.md', scope: 'project', enabled: true }]
-    skillsA.resolve(rows)
-    await Promise.all([a, b])
-    // Desired: B gets its own request and never displays A-only skills.
-    expect(state.selectedThreadId.value).toBe('B')
-    expect(state.installedSkills.value).toEqual(rows)
-    await state.refreshAll(refreshOptions)
     expect(gateway.getSkillsList.mock.calls).toEqual([[['/tmp/project']], [['/tmp/B']]])
     expect(state.installedSkills.value).toEqual([])
+    const rowsB = [{ name: 'B-only', path: '/tmp/B/SKILL.md' }]
+    skillsB.resolve(rowsB)
+    await b
+    expect(state.installedSkills.value).toEqual(rowsB)
+    if (outcome === 'success') skillsA.resolve([{ name: 'A-only', path: '/tmp/project/SKILL.md' }])
+    else skillsA.reject(new Error('obsolete A failure'))
+    await Promise.all([a, sameA])
+    expect(state.selectedThreadId.value).toBe('B')
+    expect(state.installedSkills.value).toEqual(rowsB)
+    expect(state.error.value).toBe('')
+    await state.refreshSkills()
+    expect(gateway.getSkillsList).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps B coalescing after A cleanup and preserves cache reuse, expiry, and forced refresh', async () => {
+    gateway.getThreadGroupsPage.mockResolvedValue({ groups: [{ projectName: 'project', threads: [thread, { ...thread, id: 'B', cwd: '  /tmp/B  ' }] }], nextCursor: null })
+    const skillsA = deferred<unknown[]>()
+    const skillsB = deferred<unknown[]>()
+    gateway.getSkillsList.mockReturnValueOnce(skillsA.promise).mockReturnValueOnce(skillsB.promise)
+    const state = createState()
+    const a = state.refreshAll(refreshOptions)
+    await vi.advanceTimersByTimeAsync(0)
+    state.primeSelectedThread('B')
+    const b = state.refreshSkills()
+    expect(gateway.getSkillsList.mock.calls).toEqual([[['/tmp/project']], [['/tmp/B']]])
+    skillsA.resolve([{ name: 'A-only' }])
+    await a
+    expect(state.installedSkills.value).toEqual([])
+    const sameB = state.refreshSkills({ force: true })
+    expect(gateway.getSkillsList).toHaveBeenCalledTimes(2)
+    skillsB.resolve([{ name: 'B-only' }])
+    await Promise.all([b, sameB])
+    expect(state.installedSkills.value).toEqual([{ name: 'B-only' }])
+    await state.refreshSkills()
+    expect(gateway.getSkillsList).toHaveBeenCalledTimes(2)
+    await state.refreshSkills({ force: true })
+    expect(gateway.getSkillsList).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(60_000)
+    await state.refreshSkills()
+    expect(gateway.getSkillsList).toHaveBeenCalledTimes(4)
   })
 
   it.each([
@@ -921,7 +955,7 @@ describe('lifecycle generation ownership across restart', () => {
     expect(gateway.resumeThread).toHaveBeenCalledTimes(2)
   })
 
-  it('detaches old skills and quota promises without letting their cleanup break new coalescing', async () => {
+  it.each(['success', 'failure'] as const)('detaches old skills %s and quota promises without breaking new coalescing', async (outcome) => {
     const oldSkills = deferred<unknown[]>()
     const newSkills = deferred<unknown[]>()
     const oldQuota = deferred<unknown>()
@@ -937,7 +971,8 @@ describe('lifecycle generation ownership across restart', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(gateway.getSkillsList).toHaveBeenCalledTimes(2)
     expect(gateway.getAccountRateLimits).toHaveBeenCalledTimes(2)
-    oldSkills.resolve([{ name: 'obsolete' }])
+    if (outcome === 'success') oldSkills.resolve([{ name: 'obsolete' }])
+    else oldSkills.reject(new Error('obsolete skills failure'))
     oldQuota.resolve({ primary: { usedPercent: 99 } })
     await old
     expect(state.installedSkills.value).toEqual([])
