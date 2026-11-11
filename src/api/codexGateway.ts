@@ -1,3 +1,10 @@
+import {
+  findReasoningModel as findReasoningModelInCatalog,
+  normalizeReasoningEffort,
+  resolveReasoningEffort,
+  type ReasoningModel,
+} from './modelCapabilities'
+export { reasoningOptions, resolveReasoningEffort, type ReasoningModel } from './modelCapabilities'
 import { pickCodexRateLimitSnapshot } from './normalizers/rateLimits'
 export { pickCodexRateLimitSnapshot } from './normalizers/rateLimits'
 import { normalizeTelegramCompletionConfig, type TelegramCompletionConfig } from '../telegramCompletionConfig'
@@ -185,10 +192,6 @@ function readThreadTurnStartIndex(payload: ThreadReadResponse): number {
   const record = asRecord(payload)
   const raw = record?.threadTurnStartIndex
   return Math.max(0, Math.floor(typeof raw === 'number' ? raw : 0))
-}
-
-function normalizeReasoningEffort(value: unknown): ReasoningEffort | '' {
-  return typeof value === 'string' ? value.trim() as ReasoningEffort | '' : ''
 }
 
 function normalizeSpeedMode(value: unknown): SpeedMode {
@@ -797,37 +800,11 @@ export async function setCodexSpeedMode(mode: SpeedMode): Promise<void> {
   })
 }
 
-export type ReasoningModel = {
-  id?: string
-  model?: string
-  supportedReasoningEfforts?: Array<string | { reasoningEffort: string; description?: string }>
-  defaultReasoningEffort?: string
-}
-
 // Model capabilities come exclusively from the running Codex app-server.
 export const reasoningCatalog = ref<ReasoningModel[]>([])
 
-export function reasoningOptions(model: ReasoningModel | null): Array<{ value: ReasoningEffort; label: string; description: string }> {
-  const options: Array<{ value: ReasoningEffort; label: string; description: string }> = []
-  if (!Array.isArray(model?.supportedReasoningEfforts)) return options
-  for (const entry of model.supportedReasoningEfforts) {
-    const value = normalizeReasoningEffort(typeof entry === 'string' ? entry : entry?.reasoningEffort)
-    if (!value || options.some((option) => option.value === value)) continue
-    options.push({ value, label: value === 'xhigh' ? 'Extra high' : value.charAt(0).toUpperCase() + value.slice(1),
-      description: typeof entry === 'object' && typeof entry?.description === 'string' ? entry.description : '' })
-  }
-  return options
-}
-
-export function resolveReasoningEffort(model: ReasoningModel | null, requested?: string): ReasoningEffort | '' {
-  const options = reasoningOptions(model)
-  const selected = options.find((option) => option.value === requested)
-  if (selected) return selected.value
-  return options.find((option) => option.value === model?.defaultReasoningEffort)?.value ?? options[0]?.value ?? ''
-}
-
 export function findReasoningModel(model: string): ReasoningModel | null {
-  return reasoningCatalog.value.find((entry) => entry.id === model || entry.model === model) ?? null
+  return findReasoningModelInCatalog(reasoningCatalog.value, model)
 }
 
 export async function getAvailableModelIds(): Promise<{ ids: string[]; models: ReasoningModel[] }> {
