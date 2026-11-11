@@ -1971,6 +1971,16 @@ export function useDesktopState() {
   }
 
   function applyRealtimeUpdates(notification: RpcNotification): void {
+    const completion = readTurnCompletedInfo(notification)
+    if (completion) {
+      const activeTurnId = activeTurnIdByThreadId.value[completion.threadId]
+      if (activeTurnId && activeTurnId !== completion.turnId) {
+        // Retire only this old turn's timing entry. All thread-scoped state belongs
+        // to the newer turn; notification-driven history synchronization still runs.
+        pendingTurnStartsById.delete(completion.turnId)
+        return
+      }
+    }
     if (notification.method === 'app-server/disconnected') {
       const message = 'App-server disconnected. Reconnect and inspect the thread before resending a turn.'
       pendingServerRequestsByThreadId.value = {}

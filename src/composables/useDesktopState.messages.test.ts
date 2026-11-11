@@ -1669,14 +1669,52 @@ describe('new-thread preference context across deferred creation', () => {
   })
 })
 
-// Characterization only: an obsolete completion currently retires newer activity.
-// Preserve this evidence until completion ordering/ownership is fixed as a whole.
-it('characterizes late turn-A completion clearing active turn-B state', async () => {
+it('preserves active turn-B state on late turn-A completion', async () => {
   const state = await loadState()
   notify({ method: 'turn/started', params: { threadId: thread.id, turn: { id: 'turn-A', status: 'inProgress' } } })
   notify({ method: 'turn/started', params: { threadId: thread.id, turn: { id: 'turn-B', status: 'inProgress' } } })
   expect(state.selectedThread.value?.inProgress).toBe(true)
   notify({ method: 'turn/completed', params: { threadId: thread.id, turn: { id: 'turn-A', status: 'completed' } } })
   // Assert before scheduled history synchronization can mask the transition.
+  expect(state.selectedThread.value?.inProgress).toBe(true)
+})
+
+
+it.each(['selected', 'navigated', 'disposed'] as const)('coordinates obsolete completion cleanup while %s', async location => {
+  const state = await loadState()
+  const complete = (id: string) => notify({ method: 'turn/completed', params: {
+    threadId: thread.id, turn: { id, status: 'failed', error: { message: 'old failure' } },
+  } })
+  notify({ method: 'turn/started', params: { threadId: thread.id, turn: { id: 'turn-A' } } })
+  complete('turn-A')
+  expect(state.selectedThread.value?.inProgress).toBe(false)
+  notify({ method: 'turn/started', params: { threadId: thread.id, turn: { id: 'turn-B' } } })
+  notify({ method: 'item/started', params: { threadId: thread.id, turnId: 'turn-B', item: {
+    id: 'command-B', type: 'commandExecution', command: 'pwd', status: 'inProgress',
+  } } })
+  notify({ method: 'item/agentMessage/delta', params: { threadId: thread.id, turnId: 'turn-B', itemId: 'agent-B', delta: 'B live' } })
+  notify({ method: 'server/request', params: { id: 99, method: 'item/commandExecution/requestApproval', params: { threadId: thread.id, turnId: 'turn-B' } } })
+  expect(state.selectedThreadServerRequests.value).toMatchObject([{ id: 99 }])
+  expect(state.messages.value.some(message => message.text === 'B live')).toBe(true)
+  const before = { messages: state.messages.value, overlay: state.selectedLiveOverlay.value, requests: state.selectedThreadServerRequests.value }
+  if (location === 'navigated') state.primeSelectedThread('elsewhere')
+  if (location === 'disposed') state.stopPolling()
+  const errorBefore = state.error.value
+  complete('turn-A')
+  complete('turn-A')
+  expect(state.error.value).toBe(errorBefore)
+  if (location === 'disposed') {
+    expect(state.messages.value).toEqual([])
+    return
+  }
+  if (location === 'navigated') state.primeSelectedThread(thread.id)
+  expect(state.selectedThread.value?.inProgress).toBe(true)
+  expect(state.messages.value).toEqual(before.messages)
+  expect(state.selectedLiveOverlay.value).toEqual(before.overlay)
+  expect(state.selectedThreadServerRequests.value).toEqual(before.requests)
+  gateway.getThreadDetail.mockResolvedValue({ ...activeDetail, activeTurnId: 'turn-B' })
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(state.selectedThread.value?.inProgress).toBe(true)
+  complete('turn-B')
   expect(state.selectedThread.value?.inProgress).toBe(false)
 })
