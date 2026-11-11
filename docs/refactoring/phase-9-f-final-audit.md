@@ -17,7 +17,7 @@ Errors differ by contract: model catalog failures return empty results, config r
 | Priority | Finding and evidence | Task / disposition |
 |---|---|---|
 | P0 data preservation | `threadFileChangeRetirement.test.ts` writes unrelated tracked content, triggers Undo fallback and observes HEAD content instead; bridge uses `git checkout HEAD -- path`. Partial redo reports errors but Undo may count fallback as success. | Confirmed existing defect; production explicitly excluded. Requires preservation/partial-success design before release closure. Never reproduce on real user files. |
-| P1 completion | Desktop completion clears active ID, in-progress, activity and pending request without matching completed ID against active ID. | Add deterministic old-A/new-B characterization; do not make a partial fix across all completion handlers. Real upstream ordering frequency unknown. |
+| P1 completion | Desktop completion clears active ID, in-progress, activity and pending request without matching completed ID against active ID. | Characterization now confirms old-A completion immediately clears new-B in-progress state before scheduled recovery. Existing defect remains open; a coordinated completion/cleanup fix is needed. Real upstream ordering frequency unknown. |
 | P1 history | `loadMessages` replaces persisted rows on nonsilent forced refresh; older-page reads independently merge rows and replace hasMore/index metadata. Both only check lifecycle generation. | Suspected detail/page ordering defect; characterize both orders and intended replacement policy before fixing. |
 | P1 retention | Pruning removes thread records but same-lifecycle in-flight history can still publish; metadata and loading maps have different pruning coverage. | Suspected stale resurrection; deferred archive/remove fixtures needed. |
 | P1 submission | Existing deferred-resume tests demonstrate captured effort combined with later/resumed model; gateway resolves effort against catalog at submission time. | Confirmed behavior, policy-dependent correctness; decide click-time snapshot versus resume-time preferences. No change. |
@@ -51,4 +51,42 @@ Close structural extraction work; do not start a broad rewrite. Do not declare t
 
 ## Execution and verification
 
-Pending final verification and follow-up results.
+Completed logical units:
+
+- `eb603f5` — `docs: record phase 9-f integration audit and prioritized follow-ups`.
+- `fa28da3` — `test: characterize MCP cursor cycles and obsolete turn completion`. Two bounded wire cases proved the repeated MCP request; a notification-order test proved obsolete completion clearing newer activity. Characterization assertions deliberately record the remaining completion defect and must change with its eventual fix.
+- `49c1120` — `fix(gateway): terminate cyclic MCP status pagination`. A per-invocation cursor set terminates repeated/cyclic cursors. Regression tests preserve server page order, snake-case cursor aliases, terminal pages and transport rejection. Added the relevant manual test procedure and domain-index link.
+- Final audit documentation records verification, limitations and remaining decisions.
+
+Only production diff: three lines in `listDirectoryMcpServers`. No signatures, exports, request methods, DTOs, storage formats, valid pagination behavior, catalog error policy or lifecycle policy changed. There are no added dependencies. Excluded production paths are untouched. The terminal page already fetched is retained; no additional request is made for an already seen continuation. This follows the existing model-pagination termination convention.
+
+Performance audit of the fix: a self-repeat terminates after two RPCs and a three-page cycle after three RPCs, rather than repeating until failure. The set costs O(P) memory and expected O(P) total lookup work for P distinct cursor pages; it is released with each invocation, adds no requests, blocking I/O, cache/invalidation state or concurrent fanout. Unique-cursor streams and large payloads remain unbounded. These are deterministic fake-wire request measurements and static complexity analysis, not a live latency result.
+
+Final verification ran in the requested order, after the production change, with no concurrent integration transports:
+
+| Command | Result |
+|---|---|
+| `pnpm run typecheck` | Passed frontend and server TypeScript checks |
+| `pnpm run build` | Passed; frontend 4.22 s; main JS 411.46 kB / 131.49 kB gzip; CLI 271.89 KB |
+| `pnpm run test:unit` | 77 files, 1,197 tests passed; 10.91 s |
+| `pnpm run test:integration:fixture` | Passed built CLI and dev HTTP RPC, metadata, retired JSON 404s, browser WS readiness, one upstream connection per host, initialization count 2 and independent fixture survival |
+| `CODEXAPP_FIXTURE_TRANSPORT=unix pnpm run test:integration:fixture` | Passed the same fixture checks sequentially over Unix transport |
+
+Additional focused checks: pre-fix characterization passed (148 tests across the MCP/desktop files); post-fix MCP regression suite passed (3 tests). An early `pnpm run test:unit -- <file>` invocation actually ran the full suite (1,195 tests); focused checks subsequently used `pnpm exec vitest run <files>`. Additional public CLI CJS entry smoke command passed (exit 0, help output):
+
+```sh
+node --input-type=commonjs -e "process.argv=['node','dist-cli/index.js','--help']; require('./dist-cli/index.js')"
+```
+
+The CLI is an executable entry, not a library export surface. Logs are `/tmp/9f-typecheck.log`, `/tmp/9f-build.log`, `/tmp/9f-unit.log`, `/tmp/9f-fixture-ws.log`, `/tmp/9f-fixture-unix.log`, `/tmp/9f-characterization.log`, `/tmp/9f-mcp-regression.log`, and `/tmp/9f-cjs-smoke.log` (local transient evidence). No UI production changes or browser automation were performed. Light/dark rendering was not revalidated. No independently managed authenticated Codex server was tested.
+
+## Remaining decisions and future work
+
+1. Prioritize preservation-first Undo/Redo semantics: fail safely versus back up/restore, concurrent edit detection, exact patch success accounting and command-path scope. Confirmed fixture overwrite remains a data-loss risk and blocks unconditional cleanup acceptance; fixing this area was explicitly excluded.
+2. Fix reproduced obsolete-turn completion with coordinated ID ownership across summary/error/pending-request/live-state cleanup and delayed synchronization. The new test proves the local sequence; it does not establish how often the upstream emits it. Inspect upstream ordering guarantees before deciding whether to ignore or reconcile old events.
+3. Reproduce older-page/detail overlap in both completion orders, then pruning during deferred responses and concurrent selection/error publication. Define whether refresh replaces the entire loaded history or retains older pages.
+4. Decide model/effort snapshot semantics, unanswered-RPC deadlines/cancellation and resume rejection reuse before changing their characterized behavior. Do not retry a potentially accepted turn automatically.
+5. Measure catalog duplication, streaming/projection cost and aggregate cache bytes on representative workloads before coalescing or introducing eviction. Characterize queued notification delivery and open WS shutdown/backpressure. `updateSelectedSpeedMode` also lacks a lifecycle guard on rollback/finally; stop/restart reproduction remains needed.
+6. Search's upstream thread-list traversal has no repeated-cursor or overall page budget; add a bounded malformed-server fixture before fixing. Session signature collisions and temporary/media retention need explicit freshness/disk budgets.
+
+The public interface is compatible by focused production diff and full regression checks, not a claim of exhaustive protocol equivalence. Final commits stay on `main`; nothing was pushed. The working tree is checked after the final documentation commit. Safe follow-up is complete; full acceptance remains conditional on the confirmed data-preservation and completion risks above.
