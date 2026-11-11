@@ -1,3 +1,4 @@
+import { getWorkspaceRootsState, getWorkspaceRootsStateGeneration, invalidateWorkspaceRootsStateCache, updateWorkspaceRootsState, type WorkspaceRootsState, type WorkspaceRootsOperation } from './codexGateway'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { forkThreadFromResponse, reasoningCatalog, getAvailableModelIds, getThreadDetail, resumeThread, startThreadTurn } from './codexGateway'
 
@@ -270,5 +271,92 @@ describe('response fork operation support', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(forkThreadFromResponse('source', 1)).rejects.toThrow('Backend did not verify')
     expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string).method).toBe('thread/fork-at-response')
+  })
+})
+
+// Keep workspace coordination coverage at the public gateway boundary.
+
+describe('workspace roots cache coordination', () => {
+  const state: WorkspaceRootsState = { order: ['/a'], active: ['/a'], projectOrder: ['remote'], labels: { '/a': 'A' }, remoteProjects: [{ id: 'remote', hostId: 'host', remotePath: '/remote', label: 'R' }] }
+  const response = () => new Response(JSON.stringify({ data: state }))
+  function deferred() {
+    let resolve!: (response: Response) => void
+    let reject!: (error: Error) => void
+    const promise = new Promise<Response>((yes, no) => { resolve = yes; reject = no })
+    return { promise, resolve, reject }
+  }
+  afterEach(() => {
+    invalidateWorkspaceRootsStateCache()
+    vi.unstubAllGlobals()
+  })
+
+  it('coalesces concurrent reads, reuses cache, and isolates returned nested values', async () => {
+    invalidateWorkspaceRootsStateCache()
+    const pending = deferred()
+    const fetch = vi.fn(() => pending.promise)
+    vi.stubGlobal('fetch', fetch)
+    const first = getWorkspaceRootsState()
+    const second = getWorkspaceRootsState()
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    pending.resolve(response())
+    const [a, b] = await Promise.all([first, second])
+    expect(a).toEqual(state)
+    a.order.push('/changed')
+    a.active.length = 0
+    a.projectOrder.push('changed')
+    a.labels['/a'] = 'changed'
+    a.remoteProjects![0]!.label = 'changed'
+    expect(b).toEqual(state)
+    expect(await getWorkspaceRootsState()).toEqual(state)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['success', 'failure'])('discards stale read %s after generation invalidation', async (outcome) => {
+    invalidateWorkspaceRootsStateCache()
+    const stale = deferred()
+    const fetch = vi.fn().mockReturnValueOnce(stale.promise).mockResolvedValueOnce(response())
+    vi.stubGlobal('fetch', fetch)
+    const read = getWorkspaceRootsState()
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    const generation = getWorkspaceRootsStateGeneration()
+    invalidateWorkspaceRootsStateCache()
+    expect(getWorkspaceRootsStateGeneration()).toBe(generation + 1)
+    if (outcome === 'success') stale.resolve(new Response(JSON.stringify({ data: { order: ['/stale'] } })))
+    else stale.reject(new Error('stale'))
+    expect(await read).toEqual(state)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('serializes mutations, recovers from failure, and publishes an isolated cache before reads', async () => {
+    invalidateWorkspaceRootsStateCache()
+    const first = deferred()
+    const second = deferred()
+    const fetch = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    vi.stubGlobal('fetch', fetch)
+    const operation: WorkspaceRootsOperation = { type: 'rename', path: '/a', label: 'A' }
+    const failed = updateWorkspaceRootsState(operation)
+    const failure = expect(failed).rejects.toThrow('failed')
+    const updated = updateWorkspaceRootsState(operation)
+    const read = getWorkspaceRootsState()
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    first.reject(new Error('failed'))
+    await failure
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    second.resolve(response())
+    const result = await updated
+    result.labels['/a'] = 'changed'
+    result.remoteProjects![0]!.label = 'changed'
+    expect(await read).toEqual(state)
+    expect(await getWorkspaceRootsState()).toEqual(state)
+    expect(fetch.mock.calls.map((call) => call[1].method)).toEqual(['PATCH', 'PATCH'])
+  })
+
+  it('does not cache failed reads and retries on the next read', async () => {
+    invalidateWorkspaceRootsStateCache()
+    const fetch = vi.fn().mockResolvedValueOnce(new Response('{}', { status: 500 })).mockResolvedValueOnce(response())
+    vi.stubGlobal('fetch', fetch)
+    await expect(getWorkspaceRootsState()).rejects.toThrow('Failed to load workspace roots state')
+    expect(await getWorkspaceRootsState()).toEqual(state)
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 })
