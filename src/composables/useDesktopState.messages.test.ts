@@ -54,8 +54,9 @@ const activeDetail: ResumedThread = {
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
 }
 
 let notificationHandler: (notification: RpcNotification) => void
@@ -534,5 +535,232 @@ describe('optimistic attachment reconciliation', () => {
     await reloaded.loadMessages(thread.id)
     expectConfirmedAttachment(reloaded, [oldUser, persisted])
     expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+  })
+})
+
+// These tests intentionally assert observed behavior, including defects. A future
+// fix should update the affected assertion rather than preserve the defect.
+// Disposal should invalidate continuations; restarting should reload cleared history.
+describe('async request and lifecycle characterization (current behavior)', () => {
+  const refreshOptions = { includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true }
+  const catalog = [{ id: 'gpt-5.5', supportedReasoningEfforts: ['low'], defaultReasoningEffort: 'low' }]
+
+  it('clears shared history loading when A finishes while selected B is still pending', async () => {
+    const a = deferred<ResumedThread>()
+    const b = deferred<ResumedThread>()
+    gateway.resumeThread.mockImplementation((id) => id === thread.id ? a.promise : b.promise)
+    const state = createState()
+    const loadA = state.ensureThreadMessagesLoaded(thread.id)
+    state.primeSelectedThread('B')
+    const loadB = state.ensureThreadMessagesLoaded('B')
+    expect(state.isLoadingMessages.value).toBe(true)
+    expect(gateway.resumeThread.mock.calls).toEqual([[thread.id], ['B']])
+    a.resolve(oldDetail)
+    await loadA
+    // Desired: remain true until B settles. Current shared boolean is cleared by A.
+    expect(state.isLoadingMessages.value).toBe(false)
+    expect(state.messages.value).toEqual([])
+    b.resolve(completedDetail)
+    await loadB
+    expect(state.messages.value).toEqual(completedDetail.messages)
+  })
+
+  it('coalesces rapid A→B→A history selection by thread key', async () => {
+    const a = deferred<ResumedThread>()
+    const b = deferred<ResumedThread>()
+    gateway.resumeThread.mockImplementation((id) => id === thread.id ? a.promise : b.promise)
+    const state = createState()
+    const first = state.selectThread(thread.id)
+    const second = state.selectThread('B')
+    const third = state.selectThread(thread.id)
+    expect(gateway.resumeThread.mock.calls).toEqual([[thread.id], ['B']])
+    b.resolve(completedDetail)
+    await second
+    expect(state.selectedThreadId.value).toBe(thread.id)
+    expect(state.messages.value).toEqual([])
+    a.resolve(oldDetail)
+    expect(await Promise.all([first, third])).toEqual(['ok', 'ok'])
+    expect(state.messages.value).toEqual(oldDetail.messages)
+    expect(gateway.resumeThread).toHaveBeenCalledTimes(2)
+  })
+
+  it('publishes a late history selection failure into global error after navigation', async () => {
+    const a = deferred<ResumedThread>()
+    gateway.resumeThread.mockReturnValueOnce(a.promise)
+    const state = createState()
+    const first = state.selectThread(thread.id)
+    expect(await state.selectThread('B')).toBe('ok')
+    expect(state.error.value).toBe('')
+    a.reject(new Error('late A history failure'))
+    expect(await first).toBe('error')
+    expect(state.selectedThreadId.value).toBe('B')
+    expect(state.messages.value).toEqual(oldDetail.messages)
+    // Desired: the inactive selection failure should not replace the active global error.
+    expect(state.error.value).toBe('late A history failure')
+  })
+
+  it('coalesces directory B skills with pending directory A and requires another refresh for B', async () => {
+    gateway.getThreadGroupsPage.mockResolvedValue({ groups: [{ projectName: 'project', threads: [thread, { ...thread, id: 'B', cwd: '/tmp/B' }] }], nextCursor: null })
+    const skillsA = deferred<Array<{ name: string; description: string; path: string; scope: string; enabled: boolean }>>()
+    gateway.getSkillsList.mockReturnValueOnce(skillsA.promise)
+    const state = createState()
+    const a = state.refreshAll(refreshOptions)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gateway.getSkillsList.mock.calls).toEqual([[['/tmp/project']]])
+    state.primeSelectedThread('B')
+    const b = state.refreshAll(refreshOptions)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gateway.getSkillsList).toHaveBeenCalledTimes(1)
+    expect(state.installedSkills.value).toEqual([])
+    const rows = [{ name: 'A-only', description: '', path: '/tmp/project/SKILL.md', scope: 'project', enabled: true }]
+    skillsA.resolve(rows)
+    await Promise.all([a, b])
+    // Desired: B gets its own request and never displays A-only skills.
+    expect(state.selectedThreadId.value).toBe('B')
+    expect(state.installedSkills.value).toEqual(rows)
+    await state.refreshAll(refreshOptions)
+    expect(gateway.getSkillsList.mock.calls).toEqual([[['/tmp/project']], [['/tmp/B']]])
+    expect(state.installedSkills.value).toEqual([])
+  })
+
+  it.each(['ordinary failure', 'Codex CLI is not available'])('allows stale model failure %s to clear a newer catalog', async (message) => {
+    const stale = deferred<unknown>()
+    gateway.getCurrentModelConfig.mockReturnValueOnce(stale.promise)
+    gateway.getAvailableModelIds.mockResolvedValue({ ids: ['gpt-5.5'], models: catalog })
+    const state = createState()
+    const older = state.refreshAll(refreshOptions)
+    await vi.advanceTimersByTimeAsync(0)
+    const newer = state.refreshAll(refreshOptions)
+    await newer
+    expect(reasoningCatalog.value).toEqual(catalog)
+    expect(state.codexCliMissingError.value).toBe('')
+    stale.reject(new Error(message))
+    await older
+    // Desired: version guard applies to failures as well as successes.
+    expect(reasoningCatalog.value).toEqual([])
+    expect(state.availableModelIds.value).toEqual(['gpt-5.5'])
+    expect(Boolean(state.codexCliMissingError.value)).toBe(message.includes('Codex CLI'))
+  })
+
+  it('repopulates history when an in-flight read completes after stopPolling', async () => {
+    const detail = deferred<ResumedThread>()
+    gateway.resumeThread.mockReturnValueOnce(detail.promise)
+    const state = createState()
+    const loading = state.ensureThreadMessagesLoaded(thread.id)
+    state.stopPolling()
+    expect(state.messages.value).toEqual([])
+    detail.resolve(oldDetail)
+    await loading
+    expect(state.messages.value).toEqual(oldDetail.messages)
+    expect(state.isLoadingMessages.value).toBe(false)
+  })
+
+  it('applies in-flight skills and quota snapshots after stopPolling', async () => {
+    const skills = deferred<unknown[]>()
+    const quota = deferred<unknown>()
+    gateway.getSkillsList.mockReturnValueOnce(skills.promise)
+    gateway.getAccountRateLimits.mockReturnValueOnce(quota.promise)
+    const state = createState()
+    const refreshing = state.refreshAll(refreshOptions)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gateway.getSkillsList).toHaveBeenCalledTimes(1)
+    expect(gateway.getAccountRateLimits).toHaveBeenCalledTimes(1)
+    state.stopPolling()
+    expect(state.installedSkills.value).toEqual([])
+    expect(state.accountRateLimitSnapshots.value).toEqual([])
+    const rows = [{ name: 'late', path: '/tmp/SKILL.md' }]
+    const snapshot = { primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 123 } }
+    skills.resolve(rows)
+    quota.resolve(snapshot)
+    await refreshing
+    expect(state.installedSkills.value).toEqual(rows)
+    expect(state.accountRateLimitSnapshots.value).toEqual([snapshot])
+  })
+
+  it('applies a pending-request response after unsubscribing', async () => {
+    const requests = deferred<unknown[]>()
+    gateway.getPendingServerRequests.mockReturnValueOnce(requests.promise)
+    const unsubscribe = vi.fn()
+    gateway.subscribeCodexNotifications.mockReturnValueOnce(unsubscribe)
+    const state = createState()
+    state.startPolling()
+    state.stopPolling()
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+    expect(state.selectedThreadServerRequests.value).toEqual([])
+    requests.resolve([{ id: 7, method: 'item/commandExecution/requestApproval', params: { threadId: thread.id } }])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.selectedThreadServerRequests.value).toMatchObject([{ id: 7, threadId: thread.id }])
+    expect(gateway.getPendingServerRequests).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores model success after stopPolling but still applies a model failure banner', async () => {
+    const success = deferred<unknown>()
+    const failure = deferred<unknown>()
+    gateway.getCurrentModelConfig.mockReturnValueOnce(success.promise).mockReturnValueOnce(failure.promise)
+    gateway.getAvailableModelIds.mockResolvedValue({ ids: ['late-model'], models: catalog })
+    const state = createState()
+    const first = state.refreshAll(refreshOptions)
+    await vi.advanceTimersByTimeAsync(0)
+    const second = state.refreshAll(refreshOptions)
+    await vi.advanceTimersByTimeAsync(0)
+    state.stopPolling()
+    success.resolve({ model: 'late-model', speedMode: 'standard' })
+    await first
+    expect(state.availableModelIds.value).toEqual([])
+    expect(reasoningCatalog.value).toEqual([])
+    expect(state.codexCliMissingError.value).toBe('')
+    failure.reject(new Error('Codex CLI is not available'))
+    await second
+    expect(state.codexCliMissingError.value).toContain('Codex CLI not found')
+  })
+
+  it('continues submission synchronization and repopulates history after stopPolling', async () => {
+    const state = await loadState()
+    const turn = deferred<string>()
+    gateway.startThreadTurn.mockReturnValueOnce(turn.promise)
+    gateway.getThreadDetail.mockResolvedValueOnce(completedDetail)
+    const sending = state.sendMessageToSelectedThread('late successful send')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+    state.stopPolling()
+    expect(state.messages.value).toEqual([])
+    expect(gateway.getThreadDetail).not.toHaveBeenCalled()
+    turn.resolve('turn-2')
+    await sending
+    expect(gateway.getThreadDetail.mock.calls).toEqual([[thread.id]])
+    expect(state.messages.value).toEqual(completedDetail.messages)
+  })
+
+  it('publishes a submission failure after stopPolling', async () => {
+    const state = await loadState()
+    const turn = deferred<string>()
+    gateway.startThreadTurn.mockReturnValueOnce(turn.promise)
+    const sending = state.sendMessageToSelectedThread('late send')
+    const rejected = expect(sending).rejects.toThrow('late submission failure')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+    state.stopPolling()
+    expect(state.error.value).toBe('')
+    turn.reject(new Error('late submission failure'))
+    await rejected
+    expect(state.error.value).toBe('late submission failure')
+  })
+
+  it('retains the loaded marker across stop/restart while history stays cleared', async () => {
+    const state = await loadState()
+    expect(state.messages.value).toEqual(oldDetail.messages)
+    state.stopPolling()
+    expect(state.messages.value).toEqual([])
+    state.startPolling()
+    await state.ensureThreadMessagesLoaded(thread.id)
+    expect(state.messages.value).toEqual([])
+    expect(gateway.resumeThread.mock.calls).toEqual([[thread.id]])
+    expect(gateway.getThreadDetail).not.toHaveBeenCalled()
+    // Even explicit selection reuses the loaded marker and the cleared message store.
+    expect(await state.selectThread(thread.id)).toBe('ok')
+    expect(state.messages.value).toEqual([])
+    expect(gateway.resumeThread).toHaveBeenCalledTimes(1)
+    expect(gateway.getThreadDetail).not.toHaveBeenCalled()
+    expect(gateway.subscribeCodexNotifications).toHaveBeenCalledTimes(2)
   })
 })
