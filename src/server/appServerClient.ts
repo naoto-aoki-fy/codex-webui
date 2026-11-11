@@ -142,7 +142,7 @@ export class AppServerClient {
     this.recordStreamEvent(notification)
     const nThreadId = this.extractThreadIdFromParams(notification.params)
     if (nThreadId) {
-      this.threadTurnPageReadCacheByThreadId.delete(nThreadId)
+      this.invalidateThreadTurnPageRead(nThreadId)
     }
     for (const listener of this.notificationListeners) {
       listener(notification)
@@ -197,7 +197,13 @@ export class AppServerClient {
 
   storeThreadReadSnapshot(threadId: string, snapshot: unknown): void {
     this.lastThreadReadSnapshotByThreadId.set(threadId, snapshot)
+    this.invalidateThreadTurnPageRead(threadId)
+  }
+
+  private invalidateThreadTurnPageRead(threadId: string): void {
     this.threadTurnPageReadCacheByThreadId.delete(threadId)
+    // Detach the old read: its identity is the epoch token, without retained counters.
+    this.threadTurnPageReadPromiseByThreadId.delete(threadId)
   }
 
   getLastThreadReadSnapshot(threadId: string): unknown | null {
@@ -213,17 +219,22 @@ export class AppServerClient {
     const pending = this.threadTurnPageReadPromiseByThreadId.get(threadId)
     if (pending) return pending
 
+    const generation = this.connectionGeneration
     const promise = this.rpc('thread/read', {
       threadId,
       includeTurns: true,
     }).then((result) => {
-      this.threadTurnPageReadCacheByThreadId.set(threadId, {
-        result,
-        expiresAt: Date.now() + THREAD_TURN_PAGE_READ_CACHE_TTL_MS,
-      })
+      if (generation === this.connectionGeneration && this.threadTurnPageReadPromiseByThreadId.get(threadId) === promise) {
+        this.threadTurnPageReadCacheByThreadId.set(threadId, {
+          result,
+          expiresAt: Date.now() + THREAD_TURN_PAGE_READ_CACHE_TTL_MS,
+        })
+      }
       return result
     }).finally(() => {
-      this.threadTurnPageReadPromiseByThreadId.delete(threadId)
+      if (this.threadTurnPageReadPromiseByThreadId.get(threadId) === promise) {
+        this.threadTurnPageReadPromiseByThreadId.delete(threadId)
+      }
     })
 
     this.threadTurnPageReadPromiseByThreadId.set(threadId, promise)
