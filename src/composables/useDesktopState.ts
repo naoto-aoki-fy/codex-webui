@@ -1421,6 +1421,8 @@ export function useDesktopState() {
   }
   // Work may begin before polling starts; only stop invalidates its ownership.
   let lifecycleGeneration = 0
+  // Error ownership is per selection, independent of coalesced per-thread history reads.
+  let selectionGeneration = 0
   let stopNotificationStream: (() => void) | null = null
   let eventSyncTimer: number | null = null
   let rateLimitRefreshTimer: number | null = null
@@ -1588,6 +1590,7 @@ export function useDesktopState() {
 
   function setSelectedThreadId(nextThreadId: string, options: { persist?: boolean } = {}): void {
     if (selectedThreadId.value === nextThreadId) return
+    selectionGeneration += 1
     selectedThreadId.value = nextThreadId
     if (options.persist !== false) {
       saveSelectedThreadId(nextThreadId)
@@ -4362,6 +4365,7 @@ export function useDesktopState() {
   async function selectThread(threadId: string): Promise<SelectThreadResult> {
     const generation = lifecycleGeneration
     setSelectedThreadId(threadId)
+    const selection = ++selectionGeneration
 
     try {
       await loadMessages(threadId)
@@ -4371,7 +4375,9 @@ export function useDesktopState() {
       return 'ok'
     } catch (unknownError) {
       const message = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-      if (generation !== lifecycleGeneration) return isThreadNotFoundError(unknownError) ? 'not-found' : 'error'
+      if (generation !== lifecycleGeneration || selection !== selectionGeneration) {
+        return isThreadNotFoundError(unknownError) ? 'not-found' : 'error'
+      }
       error.value = message
       const result = isThreadNotFoundError(unknownError) ? 'not-found' : 'error'
       if (threadId.trim()) {
