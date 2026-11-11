@@ -196,9 +196,21 @@ WebSocket subscription (covered by the focused suite). Expect one shared runtime
 independent subscriptions, and closure of one connection to leave the others live.
 Dispose the final middleware owner while SSE is active: expect the bridge to
 stop Telegram, dispose the app-server, and delete its own shared registration.
-Disposing an earlier owner leaves the shared runtime active. The SSE timer and
-response remain active until request close/abort. Middleware-wide SSE disposal
-is deferred; this task introduces no active-connection registry.
+Disposing either owner ends all of its SSE responses, removes request listeners,
+clears heartbeats, and unsubscribes exactly once. Repeat disposal and emit late
+close/abort events: expect no further cleanup. Close or abort one stream normally
+before disposing its owner: expect only remaining streams to be disposed.
+An earlier owner's disposal must leave the other owner's SSE and browser WebSocket
+notifications functional and the upstream client alive. Final-owner disposal
+releases the runtime once. Replace the global runtime registration, open a new
+owner's stream, then dispose the stale owner: only its old stream/runtime may close.
+
+Run `pnpm exec vitest run src/server/bridgeSse.test.ts src/server/sharedBridgeOwnership.test.ts`.
+The fake-timer suite also injects disposal during subscription/ready setup, failed
+ready writes, throwing unsubscribe and throwing response end. Expect zero retained
+SSE timers/listeners after disposal, exactly one release attempt per subscription,
+and cleanup of other streams/runtime despite a throwing stream. Requests arriving
+after middleware disposal must end without acquiring a subscription or timer.
 
 Ownership: `bridgeSse.ts` holds only request-local response writes, subscription
 release closure, interval, and close callback. The bridge retains shared runtime
@@ -213,8 +225,12 @@ registration can then throw with a subscription already acquired. Listener setup
 can also fail with a live timer and the first listener attached. One cleanup path
 handles these partial states before rethrowing the original error to the bridge.
 Cleanup sets its guard before releasing resources, so repeated events and a
-throwing unsubscribe cannot repeat cleanup. Only request close/abort ends the
-response; failed setup leaves error response ownership with the bridge.
+throwing unsubscribe cannot repeat cleanup. Request close/abort and owner disposal
+end the response; failed setup leaves
+error response ownership with the bridge. A middleware-local Set registers each
+successfully set-up stream's idempotent close callback. Cleanup removes that entry
+before unsubscribe. Registration checks the released flag after synchronous setup,
+so reentrant disposal during setup immediately closes the newly acquired stream.
 
 Code-path performance audit: each live request retains one subscription, one
 interval, two request listeners, and constant-size cleanup state. Cleanup removes
@@ -233,6 +249,21 @@ Cleanup: focused tests restore the shared runtime and fake clock; fixtures stop
 only their child processes and remove their temporary sockets. No persistent
 configuration or rollback is needed.
 
+### SSE owner-disposal audit and cleanup
+
+The owner registry adds one Set entry per active SSE stream and removes it on
+normal close/abort or disposal, including throwing unsubscribe. Disposal does
+O(active owner streams) synchronous cleanup before releasing its runtime reference;
+it adds no RPCs, network requests, timers, subscriptions, payload copies, replay,
+or cache invalidations. The existing notification path and 15-second cadence are
+unchanged. No latency/heap benchmark was run; no performance improvement is claimed.
+There is no new import edge or dependency. Browser WebSocket implementation is
+unchanged and its independent subscription is covered by the focused suite.
+
+Cleanup: mocks and fake timers restore automatically; no files or configuration
+need rollback. For live checks, disconnect test SSE clients and release every
+middleware owner. Providers remain responsible for internal unsubscribe failures;
+the bridge guarantees one attempt and continues releasing its other resources.
 
 ## Shared runtime ownership and disposal safety
 

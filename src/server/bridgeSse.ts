@@ -4,11 +4,13 @@ type SubscribeNotifications = (
   listener: (value: { method: string; params: unknown; atIso: string }) => void,
 ) => () => void
 
-// Request-local lifecycle only; the caller retains runtime and error handling ownership.
+// The caller owns registration and runtime release; each request owns its resources.
 export function handleSseRequest(
   req: IncomingMessage,
   res: ServerResponse,
   subscribeNotifications: SubscribeNotifications,
+  register: (dispose: () => void) => void,
+  unregister: (dispose: () => void) => void,
 ): void {
   res.statusCode = 200
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
@@ -26,6 +28,7 @@ export function handleSseRequest(
     req.removeListener('close', close)
     req.removeListener('aborted', close)
     if (keepAlive !== undefined) clearInterval(keepAlive)
+    unregister(close)
     unsubscribe?.()
   }
   const close = () => {
@@ -50,6 +53,7 @@ export function handleSseRequest(
 
     req.on('close', close)
     req.on('aborted', close)
+    if (!cleaned) register(close)
   } catch (error) {
     // Release partial setup without ending the response: the caller handles errors.
     try {
