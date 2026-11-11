@@ -1727,7 +1727,7 @@ describe('history refresh and pruning interleavings', () => {
   const recentDetail = { ...oldDetail, messages: [recent], hasMoreOlder: true, turnIndexByTurnId: { recent: 10 } }
 
   for (const order of ['page-first', 'detail-first'] as const) {
-    const test = order === 'page-first' ? it.fails : it
+    const test = it
     test(`retains older history and pagination metadata when ${order}`, async () => {
       gateway.resumeThread.mockResolvedValueOnce(recentDetail)
       const state = await loadState()
@@ -1751,7 +1751,7 @@ describe('history refresh and pruning interleavings', () => {
     })
   }
 
-  it.fails.each(['detail', 'page'] as const)('does not resurrect archived history after a pending %s response', async kind => {
+  it.each(['detail', 'page'] as const)('does not resurrect archived history after a pending %s response', async kind => {
     gateway.resumeThread.mockResolvedValueOnce(recentDetail)
     const state = await loadState()
     const pending = deferred<any>()
@@ -1768,4 +1768,41 @@ describe('history refresh and pruning interleavings', () => {
     expect(state.hasMoreOlderMessages.value).toBe(false)
     expect(state.isLoadingOlderMessages.value).toBe(false)
   })
+})
+
+
+it.each(['success', 'failure'] as const)('does not let a pruned history %s retire a replacement read', async outcome => {
+  gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], labels: {}, active: [], projectOrder: [] })
+  const state = await loadState()
+  const obsolete = deferred<ResumedThread>()
+  const fresh = deferred<ResumedThread>()
+  gateway.resumeThread.mockReturnValueOnce(obsolete.promise).mockReturnValueOnce(fresh.promise)
+  const oldRead = state.loadMessages('orphan').catch(() => undefined)
+  await state.refreshAll({ includeSelectedThreadMessages: false, forceThreadRefresh: true })
+  state.primeSelectedThread('orphan')
+  const freshRead = state.loadMessages('orphan')
+  expect(state.isLoadingMessages.value).toBe(true)
+  if (outcome === 'success') obsolete.resolve(oldDetail)
+  else obsolete.reject(new Error('pruned history error'))
+  await oldRead
+  expect(state.messages.value).toEqual([])
+  expect(state.error.value).toBe('')
+  expect(state.isLoadingMessages.value).toBe(true)
+  fresh.resolve(completedDetail)
+  await freshRead
+  expect(state.messages.value).toEqual(completedDetail.messages)
+  expect(state.isLoadingMessages.value).toBe(false)
+})
+
+it('keeps a pending history read scoped to its thread across navigation', async () => {
+  const state = await loadState()
+  const read = deferred<ResumedThread>()
+  gateway.getThreadDetail.mockReturnValueOnce(read.promise)
+  const pending = state.loadMessages(thread.id, { force: true })
+  state.primeSelectedThread('another-thread')
+  read.resolve(completedDetail)
+  await pending
+  expect(state.messages.value).toEqual([])
+  state.primeSelectedThread(thread.id)
+  expect(state.messages.value).toEqual(completedDetail.messages)
 })

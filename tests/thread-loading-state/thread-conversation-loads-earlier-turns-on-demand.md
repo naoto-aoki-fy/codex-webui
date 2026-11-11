@@ -30,3 +30,24 @@ Thread conversation incremental older-turn loading.
 - None.
 
 ---
+
+### Concurrent detail refresh and history retirement
+
+Setup: a disposable fixture thread with more than ten turns, plus controllable
+pending detail/page responses. Keep absolute turn indices in each response.
+
+1. Load recent turns and request an older page. Force a detail refresh while it
+   is pending. Complete page then detail, and repeat with detail then page.
+2. Expect both ranges to survive in order, stable absolute indices, and the
+   oldest loaded page's pagination flag. Neither loading flag remains stuck.
+3. Switch threads during each pending read; no content or error may leak into
+   the selected thread. Returning to the original thread retains its history.
+4. Archive the source thread while a detail/page read is pending, then settle it.
+   Expect no cache resurrection or stale loading/pagination flags.
+5. Prune a pending background thread read and start a replacement read for the
+   same ID. Settle the old success/failure first; the new read keeps ownership.
+6. Stream a live reply during refresh and verify existing reconciliation tests
+   still retain it until a matching persisted row arrives.
+
+Automated: `pnpm exec vitest run src/composables/useDesktopState.messages.test.ts`.
+Cleanup: dispose fixture states; archive only disposable fixture threads.

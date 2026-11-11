@@ -562,6 +562,34 @@ export function useDesktopState() {
   const delayedTurnSyncTimerByThreadId = new Map<string, number>()
   let loadThreadsPromise: Promise<void> | null = null
   const loadMessagePromiseByThreadId = new Map<string, Promise<void>>()
+  const historyReadOwnerByThreadId = new Map<string, object>()
+
+  function historyReadOwner(threadId: string): object {
+    let owner = historyReadOwnerByThreadId.get(threadId)
+    if (!owner) {
+      owner = {}
+      historyReadOwnerByThreadId.set(threadId, owner)
+    }
+    return owner
+  }
+
+  function invalidateThreadHistory(threadId: string, dropPayload = true): void {
+    historyReadOwnerByThreadId.delete(threadId)
+    loadMessagePromiseByThreadId.delete(threadId)
+    visibleMessageLoads.delete(threadId)
+    lastMessageLoadAtByThreadId.delete(threadId)
+    lastMessageLoadFailureAtByThreadId.delete(threadId)
+    if (dropPayload) {
+      loadedMessagesByThreadId.value = omitKey(loadedMessagesByThreadId.value, threadId)
+      loadedVersionByThreadId.value = omitKey(loadedVersionByThreadId.value, threadId)
+      persistedMessagesByThreadId.value = omitKey(persistedMessagesByThreadId.value, threadId)
+      turnIndexByTurnIdByThreadId.value = omitKey(turnIndexByTurnIdByThreadId.value, threadId)
+      hasMoreOlderMessagesByThreadId.value = omitKey(hasMoreOlderMessagesByThreadId.value, threadId)
+      loadingOlderMessagesByThreadId.value = omitKey(loadingOlderMessagesByThreadId.value, threadId)
+    }
+    syncMessageLoading()
+  }
+
   const realtimeRevisionByThreadId = new Map<string, number>()
   let optimisticMessageSequence = 0
   const refreshSkillsPromiseByDirectory = new Map<string, Promise<void>>()
@@ -1137,6 +1165,9 @@ export function useDesktopState() {
     if (currentThreadId) {
       activeThreadIds.add(currentThreadId)
     }
+    for (const threadId of historyReadOwnerByThreadId.keys()) {
+      if (!activeThreadIds.has(threadId)) invalidateThreadHistory(threadId, false)
+    }
     automaticModelByContext.value = pruneThreadContextStateMap(automaticModelByContext.value, activeThreadIds)
     const nextSelectedModelMap = pruneThreadContextStateMap(selectedModelIdByContext.value, activeThreadIds)
     if (nextSelectedModelMap !== selectedModelIdByContext.value) {
@@ -1161,6 +1192,8 @@ export function useDesktopState() {
       readStateByThreadId.value = nextReadState
       saveReadStateMap(nextReadState)
     }
+    hasMoreOlderMessagesByThreadId.value = pruneThreadStateMap(hasMoreOlderMessagesByThreadId.value, activeThreadIds)
+    loadingOlderMessagesByThreadId.value = pruneThreadStateMap(loadingOlderMessagesByThreadId.value, activeThreadIds)
     loadedMessagesByThreadId.value = pruneThreadStateMap(loadedMessagesByThreadId.value, activeThreadIds)
     loadedVersionByThreadId.value = pruneThreadStateMap(loadedVersionByThreadId.value, activeThreadIds)
     for (const threadId of realtimeRevisionByThreadId.keys()) {
@@ -2420,6 +2453,7 @@ export function useDesktopState() {
   }
 
   function removeArchivedThreadFromLoadedLists(threadId: string): void {
+    invalidateThreadHistory(threadId)
     localThreadConfirmationDeadlineById.delete(threadId)
     scheduleLocalThreadReconciliation()
     loadedThreadListGroups = removeThreadFromGroups(loadedThreadListGroups, threadId)
@@ -2618,6 +2652,8 @@ export function useDesktopState() {
     if (!threadId) {
       return
     }
+    const owner = historyReadOwner(threadId)
+    const isCurrent = () => generation === lifecycleGeneration && historyReadOwnerByThreadId.get(threadId) === owner
     const recentLoadFailure =
       Date.now() - (lastMessageLoadFailureAtByThreadId.get(threadId) ?? 0) < RECENT_THREAD_MESSAGE_LOAD_REUSE_MS
     if (options.force !== true && turnErrorByThreadId.value[threadId]?.transient && (options.silent === true || recentLoadFailure)) {
@@ -2628,7 +2664,7 @@ export function useDesktopState() {
     if (existingLoad) {
       await existingLoad
       // A send/completion that arrived during this read still needs a fresh snapshot.
-      if (generation === lifecycleGeneration && options.force === true) await loadMessages(threadId, options)
+      if (isCurrent() && options.force === true) await loadMessages(threadId, options)
       return
     }
 
@@ -2662,9 +2698,9 @@ export function useDesktopState() {
       const needsResume = resumedThreadById.value[threadId] !== true
       const realtimeRevision = realtimeRevisionByThreadId.get(threadId) ?? 0
       const resumedThread = needsResume ? await resumeThread(threadId) : null
-      if (generation !== lifecycleGeneration) return
+      if (!isCurrent()) return
       const detail = resumedThread ?? await getThreadDetail(threadId)
-      if (generation !== lifecycleGeneration) return
+      if (!isCurrent()) return
       const currentActiveTurnId = activeTurnIdByThreadId.value[threadId]
       const hasNewerTurnState = realtimeRevision !== (realtimeRevisionByThreadId.get(threadId) ?? 0)
         || (inProgressById.value[threadId] === true && !detail.inProgress
@@ -2683,18 +2719,27 @@ export function useDesktopState() {
       }
 
       const { messages: nextMessages, inProgress, activeTurnId, turnIndexByTurnId } = detail
+      const previousPersisted = persistedMessagesByThreadId.value[threadId] ?? []
+      const firstFreshIndex = nextMessages.reduce((first, message) => Math.min(first, message.turnIndex ?? Infinity), Infinity)
+      // A capped detail snapshot cannot invalidate history preceding its range.
+      // Empty snapshots still retain their existing replacement semantics.
+      const earlierMessages = Number.isFinite(firstFreshIndex)
+        ? previousPersisted.filter(message => typeof message.turnIndex === 'number' && message.turnIndex < firstFreshIndex)
+        : []
+      const earlierIndices = earlierMessages.length ? Object.fromEntries(
+        Object.entries(turnIndexByTurnIdByThreadId.value[threadId] ?? {}).filter(([, index]) => index < firstFreshIndex),
+      ) : {}
       hasMoreOlderMessagesByThreadId.value = {
         ...hasMoreOlderMessagesByThreadId.value,
-        [threadId]: detail.hasMoreOlder === true,
+        [threadId]: earlierMessages.length ? hasMoreOlderMessagesByThreadId.value[threadId] === true : detail.hasMoreOlder === true,
       }
       markThreadMessagesPersisted(threadId, nextMessages)
-      replaceTurnIndexLookupForThread(threadId, turnIndexByTurnId)
+      replaceTurnIndexLookupForThread(threadId, { ...earlierIndices, ...turnIndexByTurnId })
       rebindLiveFileChangeTurnIndices(threadId)
-      const previousPersisted = persistedMessagesByThreadId.value[threadId] ?? []
       const mergedMessages = mergeMessages(previousPersisted, nextMessages, {
         preserveMissing: options.silent === true || hasOptimisticUserMessages(previousPersisted),
       })
-      setPersistedMessagesForThread(threadId, mergedMessages)
+      setPersistedMessagesForThread(threadId, mergeMessages(earlierMessages, mergedMessages, { preserveMissing: true }))
 
       const previousLiveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
       const nextLiveAgent = removeRedundantLiveAgentMessages(previousLiveAgent, nextMessages)
@@ -2732,7 +2777,7 @@ export function useDesktopState() {
       }
       markThreadAsRead(threadId)
       } catch (unknownError) {
-        if (generation !== lifecycleGeneration) throw unknownError
+        if (!isCurrent()) throw unknownError
         const message = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
         if (selectedThreadId.value === threadId) {
           setTurnErrorForThread(threadId, message, { transient: true })
@@ -2741,7 +2786,7 @@ export function useDesktopState() {
         throw unknownError
       }
     })().finally(() => {
-      if (generation === lifecycleGeneration) {
+      if (isCurrent() && loadMessagePromiseByThreadId.get(threadId) === loadPromise) {
         loadMessagePromiseByThreadId.delete(threadId)
         visibleMessageLoads.delete(threadId)
         syncMessageLoading()
@@ -2755,6 +2800,8 @@ export function useDesktopState() {
   async function loadOlderMessages(threadId: string = selectedThreadId.value): Promise<void> {
     const generation = lifecycleGeneration
     if (!threadId) return
+    const owner = historyReadOwner(threadId)
+    const isCurrent = () => generation === lifecycleGeneration && historyReadOwnerByThreadId.get(threadId) === owner
     if (loadingOlderMessagesByThreadId.value[threadId] === true) return
     if (hasMoreOlderMessagesByThreadId.value[threadId] !== true) return
 
@@ -2774,8 +2821,9 @@ export function useDesktopState() {
 
     try {
       const page = await getOlderThreadMessages(threadId, beforeTurnId)
-      if (generation !== lifecycleGeneration) return
+      if (!isCurrent()) return
       const previousPersisted = persistedMessagesByThreadId.value[threadId] ?? []
+      if (!previousPersisted.some(message => message.turnId === beforeTurnId)) return
       const mergedMessages = mergeMessages(page.messages, previousPersisted, { preserveMissing: true })
       setPersistedMessagesForThread(threadId, mergedMessages)
       replaceTurnIndexLookupForThread(threadId, {
@@ -2788,11 +2836,11 @@ export function useDesktopState() {
         [threadId]: page.hasMoreOlder,
       }
     } catch (loadError) {
-      if (generation !== lifecycleGeneration) throw loadError
+      if (!isCurrent()) throw loadError
       error.value = loadError instanceof Error ? loadError.message : 'Failed to load earlier messages'
       throw loadError
     } finally {
-      if (generation === lifecycleGeneration) loadingOlderMessagesByThreadId.value = {
+      if (isCurrent()) loadingOlderMessagesByThreadId.value = {
         ...loadingOlderMessagesByThreadId.value,
         [threadId]: false,
       }
@@ -3684,6 +3732,7 @@ export function useDesktopState() {
     loadThreadsPromise = null
     isLoadingThreads.value = false
     loadMessagePromiseByThreadId.clear()
+    historyReadOwnerByThreadId.clear()
     visibleMessageLoads.clear()
     refreshSkillsPromiseByDirectory.clear()
     rateLimitRefreshPromise = null
