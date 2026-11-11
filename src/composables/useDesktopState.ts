@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { formatTurnDuration, parseIsoTimestamp } from '../utils/turnTiming'
 import {
 
@@ -1374,6 +1374,12 @@ export function useDesktopState() {
 
   const isLoadingThreads = ref(false)
   const isLoadingMessages = ref(false)
+  // Only non-silent initial reads own the selected conversation's indicator.
+  const visibleMessageLoads = new Set<string>()
+  function syncMessageLoading(): void {
+    isLoadingMessages.value = visibleMessageLoads.has(selectedThreadId.value)
+  }
+  watch(selectedThreadId, syncMessageLoading, { flush: 'sync' })
   const isThreadListFullyLoaded = ref(false)
   const isSendingMessage = ref(false)
   const isInterruptingTurn = ref(false)
@@ -4080,7 +4086,8 @@ export function useDesktopState() {
     const alreadyLoaded = loadedMessagesByThreadId.value[threadId] === true
     const shouldShowLoading = options.silent !== true && !alreadyLoaded
     if (shouldShowLoading) {
-      isLoadingMessages.value = true
+      visibleMessageLoads.add(threadId)
+      syncMessageLoading()
     }
 
     const loadPromise = (async () => {
@@ -4183,13 +4190,13 @@ export function useDesktopState() {
         }
         lastMessageLoadFailureAtByThreadId.set(threadId, Date.now())
         throw unknownError
-      } finally {
-      if (generation === lifecycleGeneration && shouldShowLoading) {
-        isLoadingMessages.value = false
-      }
       }
     })().finally(() => {
-      if (generation === lifecycleGeneration) loadMessagePromiseByThreadId.delete(threadId)
+      if (generation === lifecycleGeneration) {
+        loadMessagePromiseByThreadId.delete(threadId)
+        visibleMessageLoads.delete(threadId)
+        syncMessageLoading()
+      }
     })
 
     loadMessagePromiseByThreadId.set(threadId, loadPromise)
@@ -5123,6 +5130,7 @@ export function useDesktopState() {
     loadThreadsPromise = null
     isLoadingThreads.value = false
     loadMessagePromiseByThreadId.clear()
+    visibleMessageLoads.clear()
     refreshSkillsPromiseByDirectory.clear()
     rateLimitRefreshPromise = null
     isLoadingMessages.value = false
