@@ -1,6 +1,6 @@
 import { getWorkspaceRootsState, getWorkspaceRootsStateGeneration, invalidateWorkspaceRootsStateCache, updateWorkspaceRootsState, type WorkspaceRootsState, type WorkspaceRootsOperation } from './codexGateway'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { forkThreadFromResponse, reasoningCatalog, getAvailableModelIds, getThreadDetail, resumeThread, startThreadTurn } from './codexGateway'
+import { acquireReasoningCatalog, forkThreadFromResponse, reasoningCatalog, getAvailableModelIds, getThreadDetail, resumeThread, startThreadTurn } from './codexGateway'
 
 function mockRpcFetch(): { requests: Array<{ method: string, params: Record<string, unknown> }> } {
   const requests: Array<{ method: string, params: Record<string, unknown> }> = []
@@ -446,6 +446,30 @@ describe('shared reasoning catalog during gateway resolution', () => {
   afterEach(() => {
     reasoningCatalog.value = []
     vi.unstubAllGlobals()
+  })
+
+  it('makes released leases inert across reacquisition and clears after all successful owners fail', () => {
+    const originalRef = reasoningCatalog
+    const first = acquireReasoningCatalog()
+    const second = acquireReasoningCatalog()
+    const models = [{ id: 'A', supportedReasoningEfforts: ['high'] }]
+    first.publish(models)
+    second.publish(models)
+    first.fail()
+    expect(reasoningCatalog.value).toEqual(models)
+    second.fail()
+    expect(reasoningCatalog.value).toEqual([])
+    first.release()
+    const restarted = acquireReasoningCatalog()
+    restarted.publish(models)
+    first.release()
+    first.fail()
+    first.publish([])
+    second.release()
+    expect(reasoningCatalog).toBe(originalRef)
+    expect(reasoningCatalog.value).toEqual(models)
+    restarted.release()
+    expect(reasoningCatalog.value).toEqual([])
   })
 
   it.each(['replace', 'clear', 'catalog-fallback'] as const)('reads shared capabilities after deferred %s resolution', async (change) => {

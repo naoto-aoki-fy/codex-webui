@@ -676,6 +676,31 @@ export async function setCodexSpeedMode(mode: SpeedMode): Promise<void> {
 // Model capabilities come exclusively from the running Codex app-server.
 export const reasoningCatalog = ref<ReasoningModel[]>([])
 
+// Tokens retain no composable/component objects and never duplicate catalog data.
+// The boolean records whether this lifecycle has a successful refresh since its last failure.
+const reasoningCatalogOwners = new Map<symbol, boolean>()
+
+export function acquireReasoningCatalog() {
+  const token = Symbol('reasoning catalog lifecycle')
+  reasoningCatalogOwners.set(token, false)
+  return {
+    publish(models: ReasoningModel[]): void {
+      if (!reasoningCatalogOwners.has(token)) return
+      reasoningCatalogOwners.set(token, true)
+      reasoningCatalog.value = models
+    },
+    fail(): void {
+      if (!reasoningCatalogOwners.has(token)) return
+      reasoningCatalogOwners.set(token, false)
+      if (![...reasoningCatalogOwners.values()].some(Boolean)) reasoningCatalog.value = []
+    },
+    release(): void {
+      if (!reasoningCatalogOwners.delete(token)) return
+      if (reasoningCatalogOwners.size === 0) reasoningCatalog.value = []
+    },
+  }
+}
+
 export function findReasoningModel(model: string): ReasoningModel | null {
   return findReasoningModelInCatalog(reasoningCatalog.value, model)
 }
