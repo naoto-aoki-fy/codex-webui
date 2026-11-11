@@ -1335,3 +1335,162 @@ describe('lifecycle generation ownership across restart', () => {
     expect(gateway.getOlderThreadMessages).toHaveBeenCalledTimes(2)
   })
 })
+
+// These tests intentionally preserve current ownership and snapshot behavior.
+describe('shared catalog ownership and deferred submission characterization', () => {
+  const options = { includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true }
+  const a = [{ id: 'A', supportedReasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' }]
+  const b = [{ id: 'B', supportedReasoningEfforts: ['medium'], defaultReasoningEffort: 'medium' }]
+  const result = (models: typeof a) => ({ ids: models.map((model) => model.id), models })
+
+  it('clears another active consumer capabilities on stop and restores them on refresh', async () => {
+    gateway.getAvailableModelIds.mockResolvedValue(result(a))
+    const first = createState()
+    const second = createState()
+    await first.refreshAll(options)
+    await second.refreshAll(options)
+    second.setSelectedModelIdForThread(thread.id, 'A')
+    expect(second.readReasoningEffortForThread(thread.id)).toBe('low')
+    expect(gateway.getCurrentModelConfig).toHaveBeenCalledTimes(2)
+    expect(gateway.getAvailableModelIds).toHaveBeenCalledTimes(2)
+    first.stopPolling()
+    expect(reasoningCatalog.value).toEqual([])
+    expect(second.readModelIdForThread(thread.id)).toBe('A')
+    expect(second.readReasoningOptionsForThread(thread.id)).toEqual([])
+    await second.refreshAll(options)
+    expect(second.readReasoningEffortForThread(thread.id)).toBe('low')
+    expect(gateway.getAvailableModelIds).toHaveBeenCalledTimes(3)
+  })
+
+  it.each([false, true])('reverse catalog success order across independent instances=%s', async (independent) => {
+    const old = deferred<ReturnType<typeof result>>()
+    const fresh = deferred<ReturnType<typeof result>>()
+    gateway.getAvailableModelIds.mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise)
+    const first = createState()
+    const second = independent ? createState() : first
+    const older = first.refreshAll(options)
+    await vi.advanceTimersByTimeAsync(0)
+    const newer = second.refreshAll(options)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gateway.getCurrentModelConfig).toHaveBeenCalledTimes(2)
+    expect(gateway.getAvailableModelIds).toHaveBeenCalledTimes(2)
+    fresh.resolve(result(b))
+    await newer
+    expect(reasoningCatalog.value).toEqual(b)
+    old.resolve(result(a))
+    await older
+    // Version guards apply only within one instance; cross-instance publication is last completion wins.
+    expect(reasoningCatalog.value).toEqual(independent ? a : b)
+    expect(second.availableModelIds.value).toContain('B')
+    second.setSelectedModelIdForThread(thread.id, 'B')
+    expect(second.readReasoningEffortForThread(thread.id)).toBe(independent ? '' : 'medium')
+  })
+
+  it.each(['config', 'catalog'] as const)('another instance %s failure clears a valid shared catalog and can recover', async (stage) => {
+    gateway.getAvailableModelIds.mockResolvedValue(result(a))
+    const first = createState()
+    const second = createState()
+    await second.refreshAll(options)
+    second.setSelectedModelIdForThread(thread.id, 'A')
+    const failure = deferred<unknown>()
+    if (stage === 'config') gateway.getCurrentModelConfig.mockReturnValueOnce(failure.promise)
+    else gateway.getAvailableModelIds.mockReturnValueOnce(failure.promise)
+    const refreshing = first.refreshAll(options)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reasoningCatalog.value).toEqual(a)
+    failure.reject(new Error('temporary failure'))
+    await refreshing
+    expect(reasoningCatalog.value).toEqual([])
+    expect(second.readReasoningEffortForThread(thread.id)).toBe('')
+    await first.refreshAll(options)
+    expect(second.readReasoningEffortForThread(thread.id)).toBe('low')
+    expect(gateway.getCurrentModelConfig).toHaveBeenCalledTimes(3)
+    expect(gateway.getAvailableModelIds).toHaveBeenCalledTimes(stage === 'config' ? 2 : 3)
+  })
+
+  it('does duplicate catalog work for a superseded config read but suppresses its publication', async () => {
+    const config = deferred<unknown>()
+    gateway.getCurrentModelConfig.mockReturnValueOnce(config.promise)
+    gateway.getAvailableModelIds.mockResolvedValueOnce(result(b)).mockResolvedValueOnce(result(a))
+    const state = createState()
+    const older = state.refreshAll(options)
+    await vi.advanceTimersByTimeAsync(0)
+    await state.refreshAll(options)
+    expect(reasoningCatalog.value).toEqual(b)
+    config.resolve({ model: 'A', speedMode: 'standard' })
+    await older
+    expect(gateway.getCurrentModelConfig).toHaveBeenCalledTimes(2)
+    expect(gateway.getAvailableModelIds).toHaveBeenCalledTimes(2)
+    expect(reasoningCatalog.value).toEqual(b)
+  })
+
+  it('invalidates an old catalog success across stop/restart without suppressing fresh refresh work', async () => {
+    const old = deferred<ReturnType<typeof result>>()
+    gateway.getAvailableModelIds.mockReturnValueOnce(old.promise).mockResolvedValue(result(b))
+    const state = createState()
+    const older = state.refreshAll(options)
+    await vi.advanceTimersByTimeAsync(0)
+    state.stopPolling()
+    state.startPolling()
+    await state.refreshAll(options)
+    expect(reasoningCatalog.value).toEqual(b)
+    old.resolve(result(a))
+    await older
+    expect(reasoningCatalog.value).toEqual(b)
+    expect(gateway.getCurrentModelConfig).toHaveBeenCalledTimes(2)
+    expect(gateway.getAvailableModelIds).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['unchanged', 'selection', 'selection-no-resume-model', 'resume-B', 'replace', 'clear', 'unknown', 'dispose'] as const)(
+    'submits exact RPC model/effort once after deferred resume: %s', async (change) => {
+      const actual = await vi.importActual<typeof import('../api/codexGateway')>('../api/codexGateway')
+      gateway.startThreadTurn.mockImplementation(actual.startThreadTurn)
+      const resumed = deferred<ResumedThread>()
+      const submitted = deferred<Response>()
+      const requests: Array<{ method: string; params: Record<string, unknown> }> = []
+      vi.stubGlobal('fetch', vi.fn((_url: unknown, init: RequestInit) => {
+        requests.push(JSON.parse(init.body as string))
+        return submitted.promise
+      }))
+      gateway.resumeThread.mockReturnValueOnce(resumed.promise)
+      reasoningCatalog.value = [...a, ...b]
+      const state = createState()
+      state.setSelectedModelIdForThread(thread.id, 'A')
+      state.setSelectedReasoningEffort('high', thread.id)
+      expect(state.readReasoningEffortForThread(thread.id)).toBe('high')
+      const sending = state.sendMessageToSelectedThread('race marker')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(requests).toEqual([])
+      expect(gateway.resumeThread).toHaveBeenCalledTimes(1)
+      if (change === 'selection' || change === 'selection-no-resume-model') {
+        state.setSelectedModelIdForThread(thread.id, 'B')
+        state.setSelectedReasoningEffort('medium', thread.id)
+      }
+      if (change === 'replace') reasoningCatalog.value = [{ ...a[0]!, supportedReasoningEfforts: ['low'] }]
+      if (change === 'clear') reasoningCatalog.value = []
+      if (change === 'unknown') state.setSelectedModelIdForThread(thread.id, 'unknown')
+      if (change === 'dispose') state.stopPolling()
+      resumed.resolve({ ...oldDetail, model: change === 'selection-no-resume-model' || change === 'unknown' ? '' : change === 'resume-B' ? 'B' : 'A' })
+      await vi.advanceTimersByTimeAsync(0)
+      const model = change === 'selection-no-resume-model' || change === 'resume-B' ? 'B' : change === 'unknown' ? 'unknown' : 'A'
+      const effort = change === 'selection-no-resume-model' || change === 'resume-B' ? 'medium' : change === 'replace' ? 'low'
+        : ['clear', 'unknown', 'dispose'].includes(change) ? undefined : 'high'
+      // Effort is captured before resume. A nonempty resume model overwrites a pending selection change.
+      expect(gateway.startThreadTurn.mock.calls[0]?.slice(3, 5)).toEqual([model, 'high'])
+      expect(requests).toEqual([{
+        method: 'turn/start', params: {
+          threadId: thread.id, input: [{ type: 'text', text: 'race marker' }], model,
+          ...(effort ? { effort } : {}),
+          collaborationMode: { mode: 'default', settings: { model, reasoning_effort: effort ?? null, developer_instructions: null } },
+        },
+      }])
+      // Once serialized, even clearing the catalog cannot mutate the in-flight payload.
+      reasoningCatalog.value = []
+      submitted.resolve(new Response(JSON.stringify({ result: { turn: { id: 'race-turn' } } })))
+      await sending
+      expect(requests).toHaveLength(1)
+      expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+      if (change === 'dispose') expect(state.messages.value).toEqual([])
+    },
+  )
+})
