@@ -679,20 +679,41 @@ export const reasoningCatalog = ref<ReasoningModel[]>([])
 // Tokens retain no composable/component objects and never duplicate catalog data.
 // The boolean records whether this lifecycle has a successful refresh since its last failure.
 const reasoningCatalogOwners = new Map<symbol, boolean>()
+let reasoningCatalogRefreshSequence = 0
+let reasoningCatalogPublishedSequence = 0
 
 export function acquireReasoningCatalog() {
   const token = Symbol('reasoning catalog lifecycle')
   reasoningCatalogOwners.set(token, false)
+  function refresh(sequence: number) {
+    return {
+      publish(models: ReasoningModel[]): void {
+        if (!reasoningCatalogOwners.has(token)) return
+        // Retain lifecycle success ownership even when a newer catalog already won.
+        reasoningCatalogOwners.set(token, true)
+        if (sequence < reasoningCatalogPublishedSequence) return
+        reasoningCatalogPublishedSequence = sequence
+        reasoningCatalog.value = models
+      },
+      fail(): void {
+        if (!reasoningCatalogOwners.has(token)) return
+        reasoningCatalogOwners.set(token, false)
+        if (sequence < reasoningCatalogPublishedSequence) return
+        if (![...reasoningCatalogOwners.values()].some(Boolean)) reasoningCatalog.value = []
+      },
+    }
+  }
   return {
+    // Order refresh initiation across instances, without changing request scheduling.
+    // Only successful publication advances authority; pending/failed work does not.
+    beginRefresh() {
+      return refresh(++reasoningCatalogRefreshSequence)
+    },
     publish(models: ReasoningModel[]): void {
-      if (!reasoningCatalogOwners.has(token)) return
-      reasoningCatalogOwners.set(token, true)
-      reasoningCatalog.value = models
+      refresh(++reasoningCatalogRefreshSequence).publish(models)
     },
     fail(): void {
-      if (!reasoningCatalogOwners.has(token)) return
-      reasoningCatalogOwners.set(token, false)
-      if (![...reasoningCatalogOwners.values()].some(Boolean)) reasoningCatalog.value = []
+      refresh(++reasoningCatalogRefreshSequence).fail()
     },
     release(): void {
       if (!reasoningCatalogOwners.delete(token)) return
