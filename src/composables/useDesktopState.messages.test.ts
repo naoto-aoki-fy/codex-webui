@@ -683,7 +683,7 @@ describe('async request and lifecycle characterization (current behavior)', () =
     expect(gateway.resumeThread).toHaveBeenCalledTimes(2)
   })
 
-  it('publishes a late history selection failure into global error after navigation', async () => {
+  it('ignores a late history selection failure after successful navigation', async () => {
     const a = deferred<ResumedThread>()
     gateway.resumeThread.mockReturnValueOnce(a.promise)
     const state = createState()
@@ -694,8 +694,57 @@ describe('async request and lifecycle characterization (current behavior)', () =
     expect(await first).toBe('error')
     expect(state.selectedThreadId.value).toBe('B')
     expect(state.messages.value).toEqual(oldDetail.messages)
-    // Desired: the inactive selection failure should not replace the active global error.
-    expect(state.error.value).toBe('late A history failure')
+    expect(state.error.value).toBe('')
+  })
+
+  it.each(['ordinary failure', 'Thread not found'])('preserves current selection failure results: %s', async (message) => {
+    const pending = deferred<ResumedThread>()
+    gateway.resumeThread.mockReturnValueOnce(pending.promise)
+    const state = createState()
+    const selecting = state.selectThread('B')
+    expect(state.isLoadingMessages.value).toBe(true)
+    expect(state.error.value).toBe('')
+    state.primeSelectedThread('B')
+    expect(state.selectedThreadId.value).toBe('B')
+    pending.reject(new Error(message))
+    expect(await selecting).toBe(message === 'Thread not found' ? 'not-found' : 'error')
+    expect(state.error.value).toBe(message)
+    expect(state.isLoadingMessages.value).toBe(false)
+  })
+
+  it.each(['B', '', 'return-to-A', 'dispose'])('invalidates pending selection errors on %s navigation', async (navigation) => {
+    const pending = deferred<ResumedThread>()
+    gateway.resumeThread.mockReturnValueOnce(pending.promise)
+    const state = createState()
+    const selecting = state.selectThread(thread.id)
+    expect(state.isLoadingMessages.value).toBe(true)
+    if (navigation === 'dispose') state.stopPolling()
+    else {
+      // Route/workspace navigation primes the next selection before loading it.
+      state.primeSelectedThread(navigation === 'B' ? 'B' : '', { persist: false })
+      if (navigation === 'return-to-A') state.primeSelectedThread(thread.id)
+    }
+    state.error.value = 'independent action failure'
+    pending.reject(new Error('obsolete selection failure'))
+    expect(await selecting).toBe('error')
+    expect(state.error.value).toBe('independent action failure')
+  })
+
+  it('retains failure ownership for the latest A selection sharing the first A history request', async () => {
+    const pending = deferred<ResumedThread>()
+    gateway.resumeThread.mockReturnValueOnce(pending.promise)
+    const state = createState()
+    const first = state.selectThread(thread.id)
+    expect(await state.selectThread('B')).toBe('ok')
+    const latest = state.selectThread(thread.id)
+    expect(state.selectedThreadId.value).toBe(thread.id)
+    expect(state.isLoadingMessages.value).toBe(true)
+    expect(state.error.value).toBe('')
+    expect(gateway.resumeThread.mock.calls).toEqual([[thread.id], ['B']])
+    pending.reject(new Error('current shared history failure'))
+    expect(await Promise.all([first, latest])).toEqual(['error', 'error'])
+    expect(state.error.value).toBe('current shared history failure')
+    expect(state.isLoadingMessages.value).toBe(false)
   })
 
   it.each(['success', 'failure'] as const)('fetches B independently and ignores late A %s', async (outcome) => {
