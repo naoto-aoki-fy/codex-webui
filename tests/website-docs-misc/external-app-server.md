@@ -315,3 +315,14 @@ was not performed; no performance improvement is claimed.
 
 Cleanup: tests unsubscribe listeners, dispose middleware, restore global registration
 and environment, and close fixture sockets/listeners. No persistent data changes.
+
+### Earlier-history cache invalidation during reads
+
+- Setup: connect to an external app-server and open a thread with enough turns for multiple earlier-history pages. For deterministic races, run `pnpm exec vitest run src/server/appServerClient.test.ts src/server/threadLiveStateRetirement.test.ts` (deferred RPC responses; no credentials required).
+- Actions: request earlier history; deliver a thread notification or store a fresh thread snapshot before the read completes; request earlier history again. Repeat with different page cursors, a second thread, repeated invalidations, and a disconnect/reconnect while a read is pending.
+- Expected: the original caller receives its response (or the existing disconnect error); stale completion never repopulates the cache or removes a replacement promise. Reads after invalidation issue a fresh RPC, concurrent valid reads share one RPC, and other threads remain independent. Different page cursors share the full per-thread read; ordering and envelopes remain unchanged. Cached results expire exactly 30 seconds after completion. Settled promises leave no pagination epoch records.
+- Cleanup: close the test thread; restore normal app-server connectivity. Unit tests restore their mocks and dispose clients.
+
+The pagination cache and in-flight map are keyed only by thread ID. Notifications carrying a thread ID and `storeThreadReadSnapshot` invalidate that thread; TTL expiry removes only a completed cache entry. Transport disconnect clears both maps and increments the connection generation. An in-flight promise's identity serves as its invalidation epoch: removing it detaches the old read without cancelling the original caller. Completion may cache only while that identity and connection generation remain current; cleanup may remove only its own registration. No counter map, timer, retry, or subscription is added.
+
+Performance audit: deferred tests confirm one RPC for concurrent valid reads and exactly one fresh RPC after invalidation, including different cursors/limits. The changed path adds constant-time map operations and a connection-generation comparison; it adds no blocking work, payload copies, network fanout, timers, or subscriptions. Removed promises remain only with their existing awaiting callers until settlement; no per-thread epoch map is retained. Existing cache TTL eviction remains lazy. Browser latency and heap profiling were not measured; no performance improvement is claimed.

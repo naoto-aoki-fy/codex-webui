@@ -234,3 +234,25 @@ it('preserves RPC body validation, malformed JSON mapping, and success envelopes
   expect(valid.res.statusCode).toBe(200)
   expect(valid.json).toEqual({ result: { data: ['fixture'] } })
 })
+
+it('shares one cached thread read across pagination cursors and limits until invalidated', async () => {
+  const client = new AppServerClient()
+  const read = vi.spyOn(client, 'rpc').mockResolvedValue({ thread: {
+    id: 'cursor-cache', turns: Array.from({ length: 8 }, (_, i) => ({ id: `t${i}`, items: [] })),
+  } })
+  ;(scope.__codexRemoteSharedBridge__ as any).appServer.readThreadForTurnPage = client.readThreadForTurnPage.bind(client)
+  try {
+    const [first, second] = await Promise.all([
+      request('/codex-api/thread-turn-page?threadId=cursor-cache&beforeTurnId=t6&limit=2'),
+      request('/codex-api/thread-turn-page?threadId=cursor-cache&beforeTurnId=t4&limit=3'),
+    ])
+    expect(first.json.result.thread.turns.map((t: any) => t.id)).toEqual(['t4', 't5'])
+    expect(second.json.result.thread.turns.map((t: any) => t.id)).toEqual(['t1', 't2', 't3'])
+    expect(first.json).toMatchObject({ startTurnIndex: 4, hasMoreOlder: true })
+    expect(second.json).toMatchObject({ startTurnIndex: 1, hasMoreOlder: true })
+    expect(read).toHaveBeenCalledExactlyOnceWith('thread/read', { threadId: 'cursor-cache', includeTurns: true })
+    client.storeThreadReadSnapshot('cursor-cache', {})
+    await request('/codex-api/thread-turn-page?threadId=cursor-cache&beforeTurnId=t2&limit=2')
+    expect(read).toHaveBeenCalledTimes(2)
+  } finally { client.dispose() }
+})
