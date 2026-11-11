@@ -774,6 +774,7 @@ export async function getCurrentModelConfig(): Promise<CurrentModelConfig> {
 
 export async function listDirectoryMcpServers(): Promise<DirectoryMcpServerStatus[]> {
   const servers: DirectoryMcpServerStatus[] = []
+  const seenCursors = new Set<string>()
   let cursor: string | null = null
   do {
     const params: Record<string, unknown> = {}
@@ -784,6 +785,8 @@ export async function listDirectoryMcpServers(): Promise<DirectoryMcpServerStatu
       if (server) servers.push(server)
     }
     cursor = readString(payload.nextCursor ?? payload.next_cursor)
+    if (!cursor || seenCursors.has(cursor)) break
+    seenCursors.add(cursor)
   } while (cursor)
   return servers
 }
