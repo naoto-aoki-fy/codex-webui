@@ -1,139 +1,97 @@
 # Phase 9-G progress
 
-## Current resumption status
+## Status and accepted policy
 
-The user authorized Option A: optimistic content validation with the residual
-external-writer race explicitly accepted. The historical blocker below is lifted.
-No locking, ownership or recovery infrastructure is authorized or introduced.
+Authorized Phase 9-G focused work and final integration audit are complete.
+Resumed clean `main` at `a9cf361`; all work stayed on `main`, with no pushes.
+The user authorized optimistic Undo conflict detection and explicitly accepted
+the external-writer race between final validation and mutation. The prior
+concurrency blocker is lifted; it is not fully resolved or hidden.
 
-G-1 completed in `d4df8ca` — `fix: preserve user edits during unsafe Undo reversals`.
-Removed all Undo HEAD restoration and Git index mutation; failed updates,
-ambiguous postimages, edited additions, rename destination collisions and absent
-per-turn deletion/command preimages are refused. Errors retain path and reason;
-partial operation counts remain truthful and incomplete patches are excluded
-from successful IDs. Explicit patch selection excludes command-only paths.
-Redo production behavior and public response shapes are unchanged.
+See [final audit](phase-9-g-final-audit.md) for invariants, scope, performance,
+remaining risks and policy-dependent decisions. Earlier findings and the initial
+blocked investigation remain in Git history and the
+[data-safety audit](phase-9-g-data-safety-audit.md).
 
-Regression checks cover staged/unstaged/mixed/untracked edits, edited additions,
-clean updates/additions/moves, filtered patches, partial failures, missing
-preimages, repeated Undo, command-only scope and rename conflicts. The concurrent
-editor reproduction is retained at the final validation read: edits before that
-read are detected; edits after it still lose updates under the accepted race.
-No complete data-loss prevention, crash safety or atomic transactions are claimed.
-In-place writes preserve inode/permission/hardlink semantics; replacing them with
-temporary files would change those semantics and is deferred. Move destinations
-use exclusive creation, but later write/remove failures can leave partial work.
+## Completed task inventory
 
-G-1 verification (sequential): typecheck, build, all 1,208 unit tests in 77 files,
-WebSocket fixture and then Unix fixture passed. Focused tests: 39 passed in 1.25 s.
-Logs: `/tmp/9g1-{focused,typecheck,build,unit,ws,unix}.log`. Diff review and
-`git diff --check` passed. No browser or authenticated server tested.
+| Task | Result | Commit |
+|---|---|---|
+| G-1 | Remove destructive Undo HEAD/index restoration; validate additions/updates; protect rename targets; refuse absent preimages; truthful partial results and patch scope | `d4df8ca` — `fix: preserve user edits during unsafe Undo reversals` |
+| G-1 report | Record accepted policy and verified milestone | `05a6b19` — `docs: record verified preservation-first Undo milestone` |
+| G-2 | Guard all realtime completion cleanup before it can retire a newer active turn; keep historical sync | `b331362` — `fix: guard all completion cleanup by active turn ownership` |
+| G-3 characterization | Reproduce page-first detail loss and post-archive response resurrection using deterministic deferred promises | `35f2727` — `test: characterize history refresh and archive response races` |
+| G-3 fix | Preserve earlier history/absolute indices; invalidate pruned/archived read owners, metadata and flags; protect replacement reads | `3d8757f` — `fix: retain paginated history and invalidate retired thread reads` |
+| G-3 edge | Preserve exhaustion from an empty older page during overlapping refresh | `a602aef` — `fix: preserve empty-page pagination exhaustion during refresh` |
+| G-4 | Audit connection deadlines, settlement, disconnect/replacement, correlation, Resume eviction, HTTP lifetime and no replay; 53 focused tests pass | Audit-only; no RPC policy changes |
+| G-5 | Audit retention, streaming, projections, catalogs, workspace cache, subscriptions, timers, normalization and synchronous persistence | Audit-only beyond G-3 cache retirement; no speculative optimizations |
+| Final | Review production diff and integration boundaries; run complete required verification and CJS smoke | Final documentation commit in Git history |
 
-Performance audit: Undo removes two Git discovery/listing subprocesses and all
-fallback checkouts; adds a final full content read per update and a content read
-per addition. Operations remain sequential and request-scoped with no new
-requests, global caches, invalidation or fanout. Memory is proportional to source
-bytes plus reverse-diff arrays. Refusing ambiguous matches scans the whole source
-rather than stopping at the last match. Large-file latency and heap unmeasured.
+The G-3 characterization commit used three expected-failure assertions to record
+reproduced violations. The subsequent fix converts them to ordinary passing
+regression tests. No expected-failure test remains in those cases.
+The original concurrent-editor characterization from `d6d215e` is retained as
+paired tests: pre-final-validation edits are detected, post-validation writes
+still reproduce the accepted race. No production excluded functionality changed.
 
-Next: G-2 coordinated obsolete completion ownership, then G-3 through G-5 and
-final integration audit. No pushes or excluded functionality changes.
+## Verification
 
-## Historical investigation before Option A authorization
+Each production commit passed the requested sequential checks:
 
-## Status and prioritized plan
+| Milestone | Typecheck/build | Unit tests | WebSocket then Unix fixtures |
+|---|---|---|---|
+| G-1 | Passed | 77 files / 1,208 tests | Both passed |
+| G-2 | Passed | 77 files / 1,211 tests | Both passed |
+| G-3 | Passed | 77 files / 1,218 tests | Both passed |
+| Empty-page correction / final integration | Passed | 77 files / 1,219 tests, 10.96 s | Both passed |
 
-Incomplete; stopped at a confirmed critical Undo safety blocker. Baseline is
-clean `main` at `51e05a2`, origin `vast-cow/friuns2-codexapp`. Read repository
-`AGENTS.md`, the Phase 9-F audit, Phase 9-G data-safety audit and existing Undo
-characterizations. No branch changes, pushes, dependencies or production edits.
+Focused checks:
 
-Priorities remain:
+- G-1 helper/bridge: 39 tests, 1.25 s.
+- G-2 desktop messages: 149 tests, 1.43 s.
+- G-3 desktop messages: 156 tests, 1.46 s.
+- Final desktop messages including empty page: 157 tests, 1.47 s.
+- G-4 transport/RPC/Resume/notification lifecycle: 53 tests, 0.83 s.
+- `git diff --check` passed; final diffs reviewed before staging.
 
-1. G-1: preservation-first Undo, including concurrency and truthful partial results.
-2. G-2: obsolete completion ownership across active turn, approvals and live state.
-3. G-3: history refresh/pagination ordering and pruning with deferred reads.
-4. G-4: RPC ownership, settlement and retention; leave policy-dependent deadlines open.
-5. G-5: measured retention/performance issues, then final integration verification.
+Post-build CJS public executable smoke passed, exit 0, CLI help output:
 
-## Completed characterization: G-1 concurrent external edits
+```sh
+node --input-type=commonjs -e "process.argv=['node','dist-cli/index.js','--help']; require('./dist-cli/index.js')"
+```
 
-Added a deterministic bridge-level test in
-`src/server/threadFileChangeRetirement.test.ts`. The fixture contains a valid
-`before` to `after` patch. A mocked filesystem read first obtains `after`, then
-writes `external editor content` to the disposable source file before returning
-the read result to Undo. Undo successfully reverses its stale read, writes
-`before`, reports no errors and publishes the patch ID as reverted. The editor's
-bytes are lost. No sleeps, real-editor timing or destructive development-repo
-Git operations are used. The injection is reset before each test and consumed
-once; all other filesystem operations use their original implementations.
+This is an executable CLI entry, not a library export assertion. No production
+module dependency edges were added; import signatures and persistence/wire DTOs
+were unchanged by diff inspection.
 
-This is a characterization of an unresolved defect, not a preservation test or
-a production fix. It confirms that removing HEAD fallback alone is insufficient:
-the ordinary successful reverse-diff path also loses data under concurrency.
+Logs (transient local evidence): `/tmp/9g1-{focused,typecheck,build,unit,ws,unix}.log`,
+`/tmp/9g2-{focused,typecheck,build,unit,ws,unix}.log`,
+`/tmp/9g3-{characterization,focused,typecheck,build,unit,ws,unix}.log`,
+`/tmp/9g3-empty-{before,focused}.log`, `/tmp/9g4-focused.log`,
+`/tmp/9g-final-{typecheck,build,unit,ws,unix,cjs}.log`.
 
-## Safety blocker and required decision
+## Remaining risks and future decisions
 
-The mission requires both successful independent reversals and preservation of
-concurrent external edits. Existing asynchronous read/write/remove/rename paths
-provide no atomic conditional mutation against external writers. Re-reading
-before mutation only narrows the race; a bridge mutex excludes other bridge
-operations but does not exclude editors. Atomic rename publishes a whole file
-but still replaces edits made after its expected-content check. Backups can aid
-recovery but do not by themselves prevent overwrite or establish transactional
-ownership. No exact preimage exists for deleted or command-modified paths.
+- Accepted: external writers can still race Undo's final validation and mutation.
+  No complete data-loss prevention, transaction, I/O compensation or crash safety.
+- Missing per-turn deletion/command preimages are explicitly refused. Parser
+  whitespace normalization can conservatively reject otherwise valid additions.
+- Established unanswered RPCs retain promises/maps until response or disconnect;
+  Resume eviction does not cancel them. Deadlines/cancellation and unknown turn
+  outcomes need a product contract; no arbitrary timeout or replay was introduced.
+- Aggregate retained history/stream bytes and connected pending requests have no
+  global budget. No measured latency/heap bottleneck justified further changes.
+- Untested: live authenticated Codex turns, real approvals/reconnect/process
+  survival, actual editor timing, disk failures/crashes, browser light/dark UI and
+  representative large-workload profiling. Fixtures are not a real Codex server.
 
-Per the mission instruction, “If behavior cannot be made safe without a
-significant policy decision, document the exact limitation and stop that
-implementation rather than risking data loss.” No partial production fix is
-presented as satisfying the preservation guarantee. The final stop rule for a
-critical defect applies; G-2 through G-5 remain pending rather than verified.
+No remaining confirmed critical fallback data-loss defect or reproduced newer
+active-turn/history-response corruption remains in the exercised scenarios;
+this does not establish absence of other defects. APIs, Redo behavior, persistence,
+Telegram and authentication remain unchanged.
 
-Required decision: either explicitly accept optimistic conflict detection with
-a documented concurrent-writer race, or authorize a separate file-ownership /
-transactional recovery design and its operational constraints. Refusing every
-mutation would avoid this write race but violate the required successful Undo
-behavior. Advisory locking alone cannot guarantee cooperation by editors.
-
-## Remaining findings and compatibility
-
-All previously confirmed Undo defects remain: tracked HEAD fallback overwrites
-index/worktree edits, edited additions are removed, partial failure IDs are
-misreported. Successful reversal now also has a deterministic concurrent-write
-loss reproduction. Obsolete-turn completion is still confirmed and unfixed;
-history ordering/pruning and resource-retention concerns remain unaudited here.
-No claim of full codebase correctness or data-safety guarantees is made.
-
-Public APIs, wire contracts, Redo, persistence formats, Telegram and
-authentication are untouched. No live authenticated server or browser was tested.
-Performance: focused fixture run was 1.30 s for 18 tests. No production behavior
-changed, so no performance improvement is claimed; no heap/latency measurements.
-
-## Verification and commits
-
-- `d6d215e` — `test: reproduce concurrent editor data loss during Undo`.
-- This progress report and the historical audit follow-up are a separate
-  documentation commit; use Git history for its hash.
-
-Ran in sequence, all passed:
-
-1. `pnpm run typecheck`.
-2. `pnpm run build`.
-3. `pnpm run test:unit` — 77 files, 1,202 tests, 10.85 s.
-4. `pnpm run test:integration:fixture` — built CLI and dev HTTP/WS fixture checks.
-5. `CODEXAPP_FIXTURE_TRANSPORT=unix pnpm run test:integration:fixture` — built
-   CLI and dev checks, after WebSocket completion.
-
-Focused check: `pnpm exec vitest run src/server/threadFileChangeRetirement.test.ts`
-— 18 tests passed. `git diff --check` passed. Logs are
-`/tmp/9g-concurrent.log`, `/tmp/9g-concurrent-typecheck.log`,
-`/tmp/9g-concurrent-build.log`, `/tmp/9g-concurrent-unit.log`,
-`/tmp/9g-concurrent-fixture-ws.log`, and
-`/tmp/9g-concurrent-fixture-unix.log` (transient local evidence).
-These passing characterization tests assert defective current behavior;
-they do not establish preservation or real-server correctness.
-
-Next recommended task: resolve the concurrent-writer contract, then implement
-G-1 with desired-behavior regression assertions, removal of HEAD restoration,
-postimage validation, rename collision protection, scoped command handling and
-truthful partial result accounting. Continue G-2 through G-5 after that gate.
+Next recommended work: define RPC and aggregate resource budgets, measure real
+workloads, and verify live-server behavior under the existing external-server
+manual procedure. No additional major refactoring phase is started or required
+for the completed scoped fixes. Final Git status is checked after documentation
+commit; all changes are committed, with no pushes.

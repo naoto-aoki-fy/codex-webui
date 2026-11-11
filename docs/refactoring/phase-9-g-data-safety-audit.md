@@ -114,3 +114,12 @@ without involving HEAD fallback. The earlier concurrency statements above are
 historical; this interleaving is now reproduced. See
 [Phase 9-G progress](phase-9-g-progress.md) for the safety blocker, remaining
 contract decision and verification. No production correction has been made.
+
+## Current disposition after explicit authorization
+
+The user subsequently accepted optimistic validation with the residual external
+writer race. Preservation-first Undo, turn completion and history fixes are now
+implemented and verified. The earlier gate statements describe the historical
+investigation, not the current authorization. See [progress](phase-9-g-progress.md)
+and the [final integration audit](phase-9-g-final-audit.md) for commits, checks,
+remaining limitations and RPC/resource policy decisions.
