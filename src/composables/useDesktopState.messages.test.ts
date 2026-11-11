@@ -1668,3 +1668,15 @@ describe('new-thread preference context across deferred creation', () => {
     }
   })
 })
+
+// Characterization only: an obsolete completion currently retires newer activity.
+// Preserve this evidence until completion ordering/ownership is fixed as a whole.
+it('characterizes late turn-A completion clearing active turn-B state', async () => {
+  const state = await loadState()
+  notify({ method: 'turn/started', params: { threadId: thread.id, turn: { id: 'turn-A', status: 'inProgress' } } })
+  notify({ method: 'turn/started', params: { threadId: thread.id, turn: { id: 'turn-B', status: 'inProgress' } } })
+  expect(state.selectedThread.value?.inProgress).toBe(true)
+  notify({ method: 'turn/completed', params: { threadId: thread.id, turn: { id: 'turn-A', status: 'completed' } } })
+  // Assert before scheduled history synchronization can mask the transition.
+  expect(state.selectedThread.value?.inProgress).toBe(false)
+})
