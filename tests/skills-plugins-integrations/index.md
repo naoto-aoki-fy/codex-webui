@@ -16,6 +16,7 @@ Return to the [manual test index](../../tests.md).
 | [Session skill recovery cache and multi-message placement](session-skill-recovery-cache-and-multi-message-placement.md) |
 | [Feature: Skills list request scoped to active thread cwd](skills-list-request-scoped-to-active-thread-cwd.md) |
 | [Feature: SkillHub shows detailed skill load errors](skillhub-shows-detailed-skill-load-errors.md) |
+| [MCP status pagination and cursor cycles](mcp-pagination.md) |
 | [Skills and MCP directory](codex-app-style-plugins-directory.md) |
 | [Feature: Nested skill bundles are grouped in discovery](nested-skill-bundles-are-grouped-in-discovery.md) |
 | [Removal of first-launch Plugins and Apps card](first-launch-home-card-for-plugins-and-apps.md) |
