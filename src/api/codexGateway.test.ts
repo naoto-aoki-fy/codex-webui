@@ -360,3 +360,34 @@ describe('workspace roots cache coordination', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('getSkillsList normalization boundary', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('preserves directory request arguments and public return shape', async () => {
+    const { getSkillsList } = await import('./codexGateway')
+    const requests: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: unknown, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)))
+      return new Response(JSON.stringify({ result: { data: [{ cwd: '/A', skills: [{ name: 'one', path: '/skills/one', description: 'long', shortDescription: 'short', scope: 'user', enabled: false }], errors: [] }] } }))
+    }))
+    for (const cwds of [undefined, [], ['/A'], ['/B', '/C']]) {
+      const result: import('./codexGateway').SkillInfo[] = await getSkillsList(cwds)
+      expect(result).toEqual([{ name: 'one', displayName: 'one', path: '/skills/one/SKILL.md', description: 'short', scope: 'user', enabled: false }])
+    }
+    expect(requests).toEqual([
+      { method: 'skills/list', params: {} }, { method: 'skills/list', params: {} },
+      { method: 'skills/list', params: { cwds: ['/A'] } }, { method: 'skills/list', params: { cwds: ['/B', '/C'] } },
+    ])
+  })
+
+  it('continues returning empty lists for RPC and normalization errors', async () => {
+    const { getSkillsList } = await import('./codexGateway')
+    for (const result of [{ data: [] }, { data: null }, { data: [{ skills: [{ name: 'bad', path: 42 }] }] }]) {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ result }))))
+      expect(await getSkillsList(['/A'])).toEqual([])
+    }
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
+    expect(await getSkillsList(['/B'])).toEqual([])
+  })
+})
