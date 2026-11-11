@@ -1751,6 +1751,21 @@ describe('history refresh and pruning interleavings', () => {
     })
   }
 
+  it('retains exhausted pagination when an empty older page precedes detail refresh', async () => {
+    gateway.resumeThread.mockResolvedValueOnce(recentDetail)
+    const state = await loadState()
+    const detail = deferred<ResumedThread>()
+    gateway.getOlderThreadMessages.mockResolvedValueOnce({ messages: [], hasMoreOlder: false, turnIndexByTurnId: {} })
+    gateway.getThreadDetail.mockReturnValueOnce(detail.promise)
+    const refreshing = state.loadMessages(thread.id, { force: true })
+    await state.loadOlderMessages()
+    expect(state.hasMoreOlderMessages.value).toBe(false)
+    detail.resolve(recentDetail)
+    await refreshing
+    expect(state.hasMoreOlderMessages.value).toBe(false)
+    expect(state.messages.value).toEqual([recent])
+  })
+
   it.each(['detail', 'page'] as const)('does not resurrect archived history after a pending %s response', async kind => {
     gateway.resumeThread.mockResolvedValueOnce(recentDetail)
     const state = await loadState()

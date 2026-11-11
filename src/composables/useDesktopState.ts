@@ -562,9 +562,10 @@ export function useDesktopState() {
   const delayedTurnSyncTimerByThreadId = new Map<string, number>()
   let loadThreadsPromise: Promise<void> | null = null
   const loadMessagePromiseByThreadId = new Map<string, Promise<void>>()
-  const historyReadOwnerByThreadId = new Map<string, object>()
+  type HistoryReadOwner = { olderPageBoundary?: string }
+  const historyReadOwnerByThreadId = new Map<string, HistoryReadOwner>()
 
-  function historyReadOwner(threadId: string): object {
+  function historyReadOwner(threadId: string): HistoryReadOwner {
     let owner = historyReadOwnerByThreadId.get(threadId)
     if (!owner) {
       owner = {}
@@ -2726,12 +2727,14 @@ export function useDesktopState() {
       const earlierMessages = Number.isFinite(firstFreshIndex)
         ? previousPersisted.filter(message => typeof message.turnIndex === 'number' && message.turnIndex < firstFreshIndex)
         : []
-      const earlierIndices = earlierMessages.length ? Object.fromEntries(
+      const retainsOlderPage = earlierMessages.length > 0 || Boolean(owner.olderPageBoundary && nextMessages.some(message => message.turnId === owner.olderPageBoundary))
+      if (!retainsOlderPage) delete owner.olderPageBoundary
+      const earlierIndices = retainsOlderPage ? Object.fromEntries(
         Object.entries(turnIndexByTurnIdByThreadId.value[threadId] ?? {}).filter(([, index]) => index < firstFreshIndex),
       ) : {}
       hasMoreOlderMessagesByThreadId.value = {
         ...hasMoreOlderMessagesByThreadId.value,
-        [threadId]: earlierMessages.length ? hasMoreOlderMessagesByThreadId.value[threadId] === true : detail.hasMoreOlder === true,
+        [threadId]: retainsOlderPage ? hasMoreOlderMessagesByThreadId.value[threadId] === true : detail.hasMoreOlder === true,
       }
       markThreadMessagesPersisted(threadId, nextMessages)
       replaceTurnIndexLookupForThread(threadId, { ...earlierIndices, ...turnIndexByTurnId })
@@ -2826,6 +2829,7 @@ export function useDesktopState() {
       if (!previousPersisted.some(message => message.turnId === beforeTurnId)) return
       const mergedMessages = mergeMessages(page.messages, previousPersisted, { preserveMissing: true })
       setPersistedMessagesForThread(threadId, mergedMessages)
+      owner.olderPageBoundary = getFirstPersistedTurnId(threadId) || beforeTurnId
       replaceTurnIndexLookupForThread(threadId, {
         ...(turnIndexByTurnIdByThreadId.value[threadId] ?? {}),
         ...page.turnIndexByTurnId,
