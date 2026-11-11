@@ -441,3 +441,53 @@ describe('getSkillsList normalization boundary', () => {
     expect(await getSkillsList(['/B'])).toEqual([])
   })
 })
+
+describe('shared reasoning catalog during gateway resolution', () => {
+  afterEach(() => {
+    reasoningCatalog.value = []
+    vi.unstubAllGlobals()
+  })
+
+  it.each(['replace', 'clear', 'catalog-fallback'] as const)('reads shared capabilities after deferred %s resolution', async (change) => {
+    let resolve!: (response: Response) => void
+    const pending = new Promise<Response>((done) => { resolve = done })
+    const requests: Array<{ method: string; params: Record<string, unknown> }> = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
+      const body = JSON.parse(init.body as string)
+      requests.push(body)
+      if (body.method === (change === 'catalog-fallback' ? 'model/list' : 'config/read')) return pending
+      return new Response(JSON.stringify({ result: body.method === 'config/read' ? { config: { model: '' } } : { turn: { id: 'resolved' } } }))
+    }))
+    const original = [{ id: 'A', supportedReasoningEfforts: ['high'], defaultReasoningEffort: 'high' }]
+    reasoningCatalog.value = original
+    const sending = startThreadTurn('thread', 'hello', [], undefined, 'high', undefined, [], 'default')
+    await vi.waitFor(() => expect(requests.at(-1)?.method).toBe(change === 'catalog-fallback' ? 'model/list' : 'config/read'))
+    expect(requests.some((request) => request.method === 'turn/start')).toBe(false)
+    reasoningCatalog.value = change === 'clear' ? [] : [{ id: 'A', supportedReasoningEfforts: ['low'], defaultReasoningEffort: 'low' }]
+    resolve(new Response(JSON.stringify({ result: change === 'catalog-fallback' ? { data: original } : { config: { model: 'A' } } })))
+    await expect(sending).resolves.toBe('resolved')
+    const effort = change === 'clear' ? undefined : 'low'
+    expect(requests.at(-1)).toEqual({ method: 'turn/start', params: {
+      threadId: 'thread', input: [{ type: 'text', text: 'hello' }], model: 'A',
+      ...(effort ? { effort } : {}),
+      collaborationMode: { mode: 'default', settings: { model: 'A', reasoning_effort: effort ?? null, developer_instructions: null } },
+    } })
+    expect(requests.map((request) => request.method)).toEqual(change === 'catalog-fallback'
+      ? ['config/read', 'model/list', 'turn/start'] : ['config/read', 'turn/start'])
+    // Fetching a catalog returns data; it does not publish to the shared ref.
+    expect(reasoningCatalog.value).toEqual(change === 'clear' ? [] : [{ id: 'A', supportedReasoningEfforts: ['low'], defaultReasoningEffort: 'low' }])
+  })
+
+  it('swallows a real catalog fetch failure without clearing another published catalog', async () => {
+    const catalog = [{ id: 'A', supportedReasoningEfforts: ['high'] }]
+    reasoningCatalog.value = catalog
+    const fetchMock = vi.fn().mockRejectedValueOnce(new Error('catalog unavailable'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: { data: catalog } })))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(getAvailableModelIds()).resolves.toEqual({ ids: [], models: [] })
+    expect(reasoningCatalog.value).toEqual(catalog)
+    await expect(getAvailableModelIds()).resolves.toEqual({ ids: ['A'], models: catalog })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(reasoningCatalog.value).toEqual(catalog)
+  })
+})
