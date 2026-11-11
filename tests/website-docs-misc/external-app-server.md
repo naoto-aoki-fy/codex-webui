@@ -169,18 +169,27 @@ fetch/environment overrides, and dispose clients; no real auth files are modifie
 - Cleanup: fixtures stop their child processes and remove temporary Unix sockets;
   no persistent app configuration should be changed.
 
-## SSE notification extraction (9-C-12)
+## SSE notification request cleanup
 
 Prerequisites: dependencies installed; no credentials or live Codex server needed.
 Run `pnpm exec vitest run src/server/bridgeSse.test.ts src/server/threadLiveStateRetirement.test.ts src/server/browserNotificationTransport.test.ts`.
 Expect exact headers, ready frame, ordered notification envelopes, no historical
 replay, and one 15-second `: ping\n\n` timer per SSE request. Request close and
 abort clear that timer, release the subscription, and end an unfinished response.
-Repeated events still call unsubscribe again; the two request listeners remain
-attached. Bridge response instrumentation also retains its finish/close listeners.
-Ended/destroyed responses skip notifications; heartbeat writes remain unguarded.
-Subscription setup failures still reach the bridge's existing JSON 502 handler.
-A ready-write failure still leaves its subscription without a cleanup callback.
+Repeat close, abort, and close followed by abort. Expect unsubscribe, interval
+clearing, and response end exactly once, both request listeners detached, and no
+later notifications or heartbeats. Bridge response instrumentation retains its
+finish/close listeners. Ended/destroyed responses skip notifications; heartbeat
+writes remain unguarded until request cleanup.
+
+Inject failures in header setting, subscription acquisition, ready writing,
+interval creation, and registration of the second request listener. Expect the
+bridge's existing JSON 502 handler to receive the failure, no retained request
+listeners/timers, and each acquired subscription released exactly once. Header
+and subscription acquisition failures must not attempt unsubscribe. If unsubscribe
+throws, expect request listeners and timer already removed, no repeated release,
+and response termination still attempted. The subscription provider remains
+responsible for its own internal cleanup when acquisition or unsubscribe throws.
 
 Open two mocked SSE connections across two middleware instances plus a browser
 WebSocket subscription (covered by the focused suite). Expect one shared runtime,
@@ -188,10 +197,8 @@ independent subscriptions, and closure of one connection to leave the others liv
 Dispose the final middleware owner while SSE is active: expect the bridge to
 stop Telegram, dispose the app-server, and delete its own shared registration.
 Disposing an earlier owner leaves the shared runtime active. The SSE timer and
-response remain active until request close/abort. These SSE cleanup behaviors
-remain characterization checks. Follow-up work could remove request
-listeners, make cleanup idempotent, protect setup failures, and explicitly close
-active SSE during disposal; none of those changes belong to this extraction.
+response remain active until request close/abort. Middleware-wide SSE disposal
+is deferred; this task introduces no active-connection registry.
 
 Ownership: `bridgeSse.ts` holds only request-local response writes, subscription
 release closure, interval, and close callback. The bridge retains shared runtime
@@ -200,9 +207,20 @@ and middleware disposal. Browser WebSocket transport remains a separate module.
 The subscription is created before ready is written, exactly as before; synchronous
 subscription delivery can therefore precede ready. No buffering is introduced.
 
-Code-path performance audit: the handler body is moved unchanged behind one
-synchronous function call. Each request retains one subscription, one interval,
-and two request listeners; notification serialization and fanout are unchanged.
+Setup audit: headers acquire no request resources. Subscription acquisition
+returns the release closure; ready writing, interval creation, and either listener
+registration can then throw with a subscription already acquired. Listener setup
+can also fail with a live timer and the first listener attached. One cleanup path
+handles these partial states before rethrowing the original error to the bridge.
+Cleanup sets its guard before releasing resources, so repeated events and a
+throwing unsubscribe cannot repeat cleanup. Only request close/abort ends the
+response; failed setup leaves error response ownership with the bridge.
+
+Code-path performance audit: each live request retains one subscription, one
+interval, two request listeners, and constant-size cleanup state. Cleanup removes
+both listeners and the interval once. Fake-timer tests verify zero remaining
+timers after close/abort and setup failures, versus one during a live request.
+Notification serialization and fanout are unchanged.
 There are no added RPC/network calls, blocking operations, payload expansion,
 caches/invalidation, or replay buffers. Fanout remains proportional to live
 subscriptions. The new module imports only Node HTTP types, so it cannot create

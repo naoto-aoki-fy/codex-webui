@@ -16,24 +16,46 @@ export function handleSseRequest(
   res.setHeader('Connection', 'keep-alive')
   res.setHeader('X-Accel-Buffering', 'no')
 
-  const unsubscribe = subscribeNotifications((notification: { method: string; params: unknown; atIso: string }) => {
-    if (res.writableEnded || res.destroyed) return
-    res.write(`data: ${JSON.stringify(notification)}\n\n`)
-  })
+  let cleaned = false
+  let unsubscribe: (() => void) | undefined
+  let keepAlive: ReturnType<typeof setInterval> | undefined
 
-  res.write(`event: ready\ndata: ${JSON.stringify({ ok: true })}\n\n`)
-  const keepAlive = setInterval(() => {
-    res.write(': ping\n\n')
-  }, 15000)
-
+  const cleanup = () => {
+    if (cleaned) return
+    cleaned = true
+    req.removeListener('close', close)
+    req.removeListener('aborted', close)
+    if (keepAlive !== undefined) clearInterval(keepAlive)
+    unsubscribe?.()
+  }
   const close = () => {
-    clearInterval(keepAlive)
-    unsubscribe()
-    if (!res.writableEnded) {
-      res.end()
+    if (cleaned) return
+    try {
+      cleanup()
+    } finally {
+      if (!res.writableEnded) res.end()
     }
   }
 
-  req.on('close', close)
-  req.on('aborted', close)
+  try {
+    unsubscribe = subscribeNotifications((notification: { method: string; params: unknown; atIso: string }) => {
+      if (cleaned || res.writableEnded || res.destroyed) return
+      res.write(`data: ${JSON.stringify(notification)}\n\n`)
+    })
+
+    res.write(`event: ready\ndata: ${JSON.stringify({ ok: true })}\n\n`)
+    keepAlive = setInterval(() => {
+      res.write(': ping\n\n')
+    }, 15000)
+
+    req.on('close', close)
+    req.on('aborted', close)
+  } catch (error) {
+    // Release partial setup without ending the response: the caller handles errors.
+    try {
+      cleanup()
+    } finally {
+      throw error
+    }
+  }
 }
