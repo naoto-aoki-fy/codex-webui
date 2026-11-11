@@ -472,6 +472,36 @@ describe('shared reasoning catalog during gateway resolution', () => {
     expect(reasoningCatalog.value).toEqual([])
   })
 
+  it('resolves submission against ordered capabilities and ignores stale cleanup', async () => {
+    const first = acquireReasoningCatalog()
+    const second = acquireReasoningCatalog()
+    try {
+      const old = first.beginRefresh()
+      const fresh = second.beginRefresh()
+      const models = [{ id: 'A', supportedReasoningEfforts: ['low'], defaultReasoningEffort: 'low' }]
+      fresh.publish(models)
+      old.publish([{ id: 'A', supportedReasoningEfforts: ['high'] }])
+      old.fail()
+      expect(reasoningCatalog.value).toEqual(models)
+      const requests: Array<{ method: string; params: Record<string, unknown> }> = []
+      vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
+        requests.push(JSON.parse(init.body as string))
+        return new Response(JSON.stringify({ result: { turn: { id: 'ordered' } } }))
+      }))
+      await expect(startThreadTurn('thread', 'hello', [], 'A', 'high')).resolves.toBe('ordered')
+      expect(requests.map((request) => request.method)).toEqual(['turn/start'])
+      expect(requests[0]?.params.effort).toBe('low')
+      second.beginRefresh().fail()
+      expect(reasoningCatalog.value).toEqual([])
+      // Old failure/release never advances the successful publication watermark.
+      old.publish([])
+      expect(reasoningCatalog.value).toEqual([])
+    } finally {
+      first.release()
+      second.release()
+    }
+  })
+
   it.each(['replace', 'clear', 'catalog-fallback'] as const)('reads shared capabilities after deferred %s resolution', async (change) => {
     let resolve!: (response: Response) => void
     const pending = new Promise<Response>((done) => { resolve = done })

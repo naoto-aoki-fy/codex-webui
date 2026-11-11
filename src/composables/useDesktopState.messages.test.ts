@@ -1380,11 +1380,61 @@ describe('shared catalog ownership and deferred submission characterization', ()
     expect(reasoningCatalog.value).toEqual(b)
     old.resolve(result(a))
     await older
-    // Version guards apply only within one instance; cross-instance publication is last completion wins.
-    expect(reasoningCatalog.value).toEqual(independent ? a : b)
+    // Refresh initiation orders successful publication across instances as well.
+    expect(reasoningCatalog.value).toEqual(b)
     expect(second.availableModelIds.value).toContain('B')
     second.setSelectedModelIdForThread(thread.id, 'B')
-    expect(second.readReasoningEffortForThread(thread.id)).toBe(independent ? '' : 'medium')
+    expect(second.readReasoningEffortForThread(thread.id)).toBe('medium')
+  })
+
+  it.each(['success', 'failure'] as const)('keeps B authoritative across A stop/restart and late %s', async (outcome) => {
+    const originalRef = reasoningCatalog
+    const old = deferred<ReturnType<typeof result>>()
+    gateway.getAvailableModelIds.mockReturnValueOnce(old.promise).mockResolvedValue(result(b))
+    const first = createState()
+    const second = createState()
+    const older = first.refreshAll(options)
+    await vi.advanceTimersByTimeAsync(0)
+    await second.refreshAll(options)
+    if (outcome === 'failure') {
+      old.reject(new Error('obsolete failure'))
+      await older
+      expect(reasoningCatalog.value).toEqual(b)
+    }
+    first.stopPolling()
+    expect(reasoningCatalog.value).toEqual(b)
+    first.startPolling()
+    gateway.getAvailableModelIds.mockResolvedValue(result(a))
+    await first.refreshAll(options)
+    second.stopPolling()
+    if (outcome === 'success') {
+      old.resolve(result(b))
+      await older
+    }
+    expect(reasoningCatalog).toBe(originalRef)
+    expect(reasoningCatalog.value).toEqual(a)
+    expect(gateway.getCurrentModelConfig).toHaveBeenCalledTimes(3)
+    expect(gateway.getAvailableModelIds).toHaveBeenCalledTimes(3)
+  })
+
+  it('publishes earlier success while newer work is pending, then accepts newer success', async () => {
+    const old = deferred<ReturnType<typeof result>>()
+    const fresh = deferred<ReturnType<typeof result>>()
+    gateway.getAvailableModelIds.mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise)
+    const first = createState()
+    const second = createState()
+    const older = first.refreshAll(options)
+    await vi.advanceTimersByTimeAsync(0)
+    const newer = second.refreshAll(options)
+    await vi.advanceTimersByTimeAsync(0)
+    old.resolve(result(a))
+    await older
+    expect(reasoningCatalog.value).toEqual(a)
+    fresh.resolve(result(b))
+    await newer
+    expect(reasoningCatalog.value).toEqual(b)
+    expect(gateway.getCurrentModelConfig).toHaveBeenCalledTimes(2)
+    expect(gateway.getAvailableModelIds).toHaveBeenCalledTimes(2)
   })
 
   it.each(['config', 'catalog'] as const)('another instance %s failure preserves a valid shared catalog and can recover', async (stage) => {

@@ -927,7 +927,7 @@ export function useDesktopState() {
 
   let modelRefreshVersion = 0
   async function refreshModelPreferences(): Promise<void> {
-    const ownership = ensureCatalogOwnership()
+    const publication = ensureCatalogOwnership().beginRefresh()
     const generation = lifecycleGeneration
     const version = ++modelRefreshVersion
     const threadId = selectedThreadId.value
@@ -950,12 +950,12 @@ export function useDesktopState() {
         automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = resolveModelPreference(ids, savedDefault, config.model)
       }
       selectedModelId.value = model
-      ownership.publish(catalog.models)
+      publication.publish(catalog.models)
       selectedSpeedMode.value = config.speedMode
     } catch (error) {
       if (generation !== lifecycleGeneration) return
       if (version !== modelRefreshVersion || threadId !== selectedThreadId.value) return
-      ownership.fail()
+      publication.fail()
       if (isCodexCliMissingError(error)) codexCliMissingError.value = CODEX_CLI_MISSING_MESSAGE
     }
   }
