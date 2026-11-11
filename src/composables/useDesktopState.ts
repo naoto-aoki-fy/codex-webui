@@ -1,3 +1,4 @@
+import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
 import {
   mergeProjectOrder,
   orderGroupsByProjectOrder,
@@ -447,12 +448,7 @@ export function useDesktopState() {
   const eventUnreadByThreadId = ref<Record<string, boolean>>({})
   const availableModelIds = ref<string[]>([])
   const modelUsageOrder = ref(loadModelUsageOrder())
-  const orderedModelIds = computed(() => {
-    const available = new Set(availableModelIds.value)
-    const recent = modelUsageOrder.value.filter((id) => available.has(id))
-    const used = new Set(recent)
-    return [...recent, ...availableModelIds.value.filter((id) => !used.has(id))]
-  })
+  const orderedModelIds = computed(() => orderModelIdsByUsage(availableModelIds.value, modelUsageOrder.value))
 
   function recordModelUsage(modelId: string): void {
     const model = modelId.trim()
@@ -940,14 +936,13 @@ export function useDesktopState() {
       const context = isNewThreadContextId(toThreadContextId(threadId)) ? NEW_THREAD_MODEL_CONTEXT : toThreadContextId(threadId)
       automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, context)
       const saved = readModelIdForThread(threadId)
-      const ids = [...catalog.ids]
-      if (!ids.length) { const fallback = saved || config.model.trim(); if (fallback) ids.push(fallback) }
-      const model = ids.includes(saved) ? saved : ids.includes(config.model.trim()) ? config.model.trim() : ids[0] ?? ''
+      const ids = buildModelCatalogIds(catalog.ids, saved, config.model)
+      const model = resolveModelPreference(ids, saved, config.model)
       availableModelIds.value = ids
       automaticModelByContext.value[context] = model
       if (context !== NEW_THREAD_MODEL_CONTEXT) {
         const savedDefault = normalizeStoredModelId(selectedModelIdByContext.value[NEW_THREAD_MODEL_CONTEXT])
-        automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = ids.includes(savedDefault) ? savedDefault : ids.includes(config.model.trim()) ? config.model.trim() : ids[0] ?? ''
+        automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = resolveModelPreference(ids, savedDefault, config.model)
       }
       selectedModelId.value = model
       reasoningCatalog.value = catalog.models

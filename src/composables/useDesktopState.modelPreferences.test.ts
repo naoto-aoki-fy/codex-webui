@@ -148,3 +148,18 @@ it('records the model actually submitted in an existing thread', async () => {
   resume.mockRestore()
   start.mockRestore()
 })
+
+it('keeps selected-thread and home automatic fallbacks separate without rewriting explicit preferences', async () => {
+  const state = useDesktopState()
+  state.setSelectedModelIdForThread('existing', 'missing-thread-model')
+  state.setSelectedModelIdForThread('', 'B')
+  state.primeSelectedThread('existing')
+  const saved = store.get(modelKey)
+  const usage = store.get(usageKey)
+  await state.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
+  expect(state.readModelIdForThread('existing')).toBe('A')
+  expect(state.selectedModelId.value).toBe('A')
+  expect(state.readModelIdForThread('')).toBe('B')
+  expect(store.get(modelKey)).toBe(saved)
+  expect(store.get(usageKey)).toBe(usage)
+})
