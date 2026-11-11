@@ -95,7 +95,7 @@ import {
   getAccountRateLimits,
   renameThread,
   getAvailableModelIds,
-  reasoningCatalog,
+  acquireReasoningCatalog,
   reasoningOptions,
   resolveReasoningEffort,
   findReasoningModel,
@@ -550,6 +550,10 @@ export function useDesktopState() {
   }
   // Work may begin before polling starts; only stop invalidates its ownership.
   let lifecycleGeneration = 0
+  let catalogOwnership: ReturnType<typeof acquireReasoningCatalog> | null = null
+  function ensureCatalogOwnership() {
+    return catalogOwnership ??= acquireReasoningCatalog()
+  }
   // Error ownership is per selection, independent of coalesced per-thread history reads.
   let selectionGeneration = 0
   let stopNotificationStream: (() => void) | null = null
@@ -923,6 +927,7 @@ export function useDesktopState() {
 
   let modelRefreshVersion = 0
   async function refreshModelPreferences(): Promise<void> {
+    const ownership = ensureCatalogOwnership()
     const generation = lifecycleGeneration
     const version = ++modelRefreshVersion
     const threadId = selectedThreadId.value
@@ -945,12 +950,12 @@ export function useDesktopState() {
         automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = resolveModelPreference(ids, savedDefault, config.model)
       }
       selectedModelId.value = model
-      reasoningCatalog.value = catalog.models
+      ownership.publish(catalog.models)
       selectedSpeedMode.value = config.speedMode
     } catch (error) {
       if (generation !== lifecycleGeneration) return
       if (version !== modelRefreshVersion || threadId !== selectedThreadId.value) return
-      reasoningCatalog.value = []
+      ownership.fail()
       if (isCodexCliMissingError(error)) codexCliMissingError.value = CODEX_CLI_MISSING_MESSAGE
     }
   }
@@ -3615,6 +3620,7 @@ export function useDesktopState() {
   }
 
   function startPolling(): void {
+    ensureCatalogOwnership()
     const generation = lifecycleGeneration
     if (typeof window === 'undefined') return
 
@@ -3681,7 +3687,8 @@ export function useDesktopState() {
     for (const timer of projectRenameTimers.values()) clearTimeout(timer)
     projectRenameTimers.clear()
     ++modelRefreshVersion
-    reasoningCatalog.value = []
+    ensureCatalogOwnership().release()
+    catalogOwnership = null
     if (stopNotificationStream) {
       stopNotificationStream()
       stopNotificationStream = null
