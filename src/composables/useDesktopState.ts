@@ -5057,6 +5057,13 @@ export function useDesktopState() {
     }
     delayedTurnSyncTimerByThreadId.clear()
     activeReasoningItemId = ''
+    // Invalidate history cache metadata together with the cleared message payload.
+    // Keep resume state and in-flight reads: they track server sessions and coalescing.
+    loadedMessagesByThreadId.value = {}
+    loadedVersionByThreadId.value = {}
+    hasMoreOlderMessagesByThreadId.value = {}
+    lastMessageLoadAtByThreadId.clear()
+    lastMessageLoadFailureAtByThreadId.clear()
     persistedMessagesByThreadId.value = {}
     livePlanMessagesByThreadId.value = {}
     liveAgentMessagesByThreadId.value = {}
