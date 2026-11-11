@@ -30,6 +30,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   scope.__codexRemoteSharedBridge__ = previous
+  vi.restoreAllMocks()
   vi.clearAllTimers()
   vi.useRealTimers()
 })
@@ -61,9 +62,11 @@ it('preserves exact headers, ready, ordered envelopes and no replay without extr
   emit(values[0]!)
   expect(s.write).toHaveBeenCalledTimes(3)
 })
-it.each(['close', 'aborted'])('preserves heartbeat timing and repeated %s cleanup with retained listeners', async event => {
+it.each(['close', 'aborted'])('preserves heartbeat timing and repeated %s cleanup exactly once', async event => {
+  const clear = vi.spyOn(globalThis, 'clearInterval')
   const s = streams()
   await createCodexBridgeMiddleware()(...s.args)
+  const callback = appServer.onNotification.mock.calls[0]![0]
   expect(vi.getTimerCount()).toBe(1)
   vi.advanceTimersByTime(14999)
   expect(s.write).toHaveBeenCalledTimes(1)
@@ -76,13 +79,14 @@ it.each(['close', 'aborted'])('preserves heartbeat timing and repeated %s cleanu
   expect(vi.getTimerCount()).toBe(0)
   expect(listeners.size).toBe(0)
   expect(s.end).toHaveBeenCalledOnce()
-  s.res.writableEnded = true
   s.req.emit('close')
   s.req.emit('aborted')
-  expect(release).toHaveBeenCalledTimes(3)
+  expect(release).toHaveBeenCalledOnce()
   expect(s.end).toHaveBeenCalledOnce()
-  expect(s.req.listenerCount('close')).toBe(1)
-  expect(s.req.listenerCount('aborted')).toBe(1)
+  expect(s.req.listenerCount('close')).toBe(0)
+  expect(s.req.listenerCount('aborted')).toBe(0)
+  expect(clear).toHaveBeenCalledOnce()
+  callback({ method: 'late', params: {} })
   expect(s.res.eventNames()).toEqual(['finish', 'close']) // Bridge response instrumentation remains attached.
   vi.advanceTimersByTime(30000)
   expect(s.write).toHaveBeenCalledTimes(3)
@@ -111,14 +115,14 @@ it('maps subscription failure through the existing bridge error handler before r
   expect(vi.getTimerCount()).toBe(0)
   expect(s.req.eventNames()).toEqual([])
 })
-it('preserves the existing subscription leak if ready writing fails before cleanup registration', async () => {
+it('releases the subscription if ready writing fails', async () => {
   const s = streams()
   s.write.mockImplementation(() => { throw new Error('write failed') })
   await createCodexBridgeMiddleware()(...s.args)
   expect(s.res.statusCode).toBe(502)
   expect(s.end).toHaveBeenCalledWith(JSON.stringify({ error: 'write failed' }), undefined, undefined)
-  expect(listeners.size).toBe(1)
-  expect(release).not.toHaveBeenCalled()
+  expect(listeners.size).toBe(0)
+  expect(release).toHaveBeenCalledOnce()
   expect(vi.getTimerCount()).toBe(0)
   expect(s.req.eventNames()).toEqual([])
 })
@@ -172,4 +176,50 @@ it.each([['POST', '/codex-api/events'], ['GET', '/codex-api/events/']])('keeps r
   expect(s.next).toHaveBeenCalledOnce()
   expect(appServer.onNotification).not.toHaveBeenCalled()
   expect(vi.getTimerCount()).toBe(0)
+})
+
+it.each(['timer', 'listener'])('releases acquired resources after %s setup fails', async stage => {
+  const s = streams()
+  const failure = new Error('setup failed')
+  const spy = stage === 'timer'
+    ? vi.spyOn(globalThis, 'setInterval').mockImplementationOnce(() => { throw failure })
+    : vi.spyOn(s.req, 'on').mockImplementation((event, listener) => {
+      if (event === 'aborted') throw failure
+      EventEmitter.prototype.on.call(s.req, event, listener)
+      return s.req
+    })
+  try {
+    await createCodexBridgeMiddleware()(...s.args)
+    expect(s.res.statusCode).toBe(502)
+    expect(release).toHaveBeenCalledOnce()
+    expect(listeners.size).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(s.req.eventNames()).toEqual([])
+    const writes = s.write.mock.calls.length
+    emit({ method: 'after-failure', params: {} })
+    vi.advanceTimersByTime(30000)
+    expect(s.write).toHaveBeenCalledTimes(writes)
+  } finally { spy.mockRestore() }
+})
+
+it('acquires no resources if setting a response header fails', async () => {
+  const s = streams()
+  s.res.setHeader.mockImplementationOnce(() => { throw new Error('header failed') })
+  await createCodexBridgeMiddleware()(...s.args)
+  expect(s.res.statusCode).toBe(502)
+  expect(appServer.onNotification).not.toHaveBeenCalled()
+  expect(vi.getTimerCount()).toBe(0)
+  expect(s.req.eventNames()).toEqual([])
+})
+
+it('detaches listeners and clears the timer even if unsubscribe throws', async () => {
+  const s = streams()
+  await createCodexBridgeMiddleware()(...s.args)
+  release.mockImplementationOnce(() => { throw new Error('unsubscribe failed') })
+  expect(() => s.req.emit('close')).toThrow('unsubscribe failed')
+  expect(vi.getTimerCount()).toBe(0)
+  expect(s.req.eventNames()).toEqual([])
+  s.req.emit('close'); s.req.emit('aborted')
+  expect(release).toHaveBeenCalledOnce()
+  expect(s.end).toHaveBeenCalledOnce()
 })
