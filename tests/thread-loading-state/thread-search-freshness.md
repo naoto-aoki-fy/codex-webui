@@ -1,78 +1,40 @@
-# Thread search freshness
+# Native conversation search
 
-Setup: connect to an external app-server with several active threads, including
-one with a unique title and one with unique message text.
+Prerequisites: connect an independently managed Codex app-server supporting
+`thread/search` (verified: 0.167.2). Use the same account and CODEX_HOME as the app.
+Have several nonarchived interactive threads, including an older thread outside
+the newest 100, with known English/Japanese user and assistant text.
 
-1. Search for the unique title twice; expect the same IDs and index count.
-2. Create, rename, archive, then unarchive a thread, searching after each action.
-   Expect the new title/ID, removal while archived, and restoration when unarchived.
-3. Send a message containing a new unique phrase; search after completion.
-   Expect that thread to match the phrase.
-4. Repeat changes through another client. With notifications delivered to this
-   connection, expect the next search to rebuild. Without notifications, search
-   again after five minutes; expect fresh results.
-5. Clear the search, remove test threads, and restore any renamed titles.
+1. Open sidebar search. Enter a phrase unique to a user message, then one unique
+   to an assistant response, both absent from titles/previews. Expect the correct
+   conversations. Repeat with Japanese text and the older thread.
+2. Search a common term across multiple conversations. Inspect RPC traffic:
+   `thread/search` sends updated-at descending, page size 100, and each returned
+   cursor until null. Expect all returned threads, including previously unloaded
+   rows. No `thread/read` is issued solely to search.
+3. Click a result. Expect the matching `/thread/<id>` route and conversation;
+   normal navigation may now read that thread's history.
+4. Enter a unique absent term. Expect no matching rows. Clear search: expect the
+   normal sidebar. Enter a title-only substring: loaded title/preview matches
+   remain visible alongside native matches.
+5. Change the query rapidly or clear it while RPCs are pending. Expect obsolete
+   responses not to replace the current query. Add a persisted message externally,
+   change the query away and back: expect a fresh search without a cached index.
+6. Connect an older server without this method, or disable the capability in a
+   disposable client. Expect an explicit content-search error and loaded metadata
+   filtering, with no full-history fallback or false empty-success response.
+7. Repeat search/result selection in light and dark themes. Expect normal themed
+   sidebar surfaces and readable error text.
 
-Implementation and limits: each middleware owns its lazy index and build promise;
-shared runtime ownership and browser subscriptions are unchanged. Successful
-thread start/fork/name/archive/unarchive/rollback/compact and turn start/steer RPCs
-invalidate it, as do thread lifecycle/name/update, turn start/completion, item
-start/completion, searchable text/output deltas and disconnect notifications.
-Explicit reconnect also invalidates it. Local title-cache writes are not indexing
-inputs: search continues using upstream list names/previews and history text.
-Client subscriptions handle rename and completed-turn UI updates, but search
-invalidation has its own subscription and does not require a browser subscriber.
+Automated checks: `pnpm exec vitest run src/api/codexGateway.search.test.ts
+src/server/appServerWebSocketClient.test.ts`. Coverage includes >100 results,
+Japanese query forwarding, no history calls, hydration, empty results, errors,
+repeated cursors, and the experimental initialization capability.
 
-A five-minute TTL checked only on search bounds otherwise unobservable changes
-(other connections, unsubscribed threads, or disk edits). No timer or polling is
-added. This trades up to five minutes of staleness for avoiding frequent history
-scans. Read failures still fall back to title/preview until invalidation or expiry;
-list failures remain errors and are retryable. Existing awaiting requests may
-finish using their pre-invalidation snapshot, but that snapshot cannot replace
-or clear the newer cached/in-flight build. Disposal invalidates the owning
-middleware cache/build and unsubscribes its search listener. Pending searches return the usual JSON error envelope after
-already-issued RPCs settle; no subsequent list pages or history batches run.
-Retired runtimes also fail this liveness check. RPCs are not cancelled.
+Known differences: native message search excludes command-output-only discovery;
+title-only matches in unloaded metadata are not guaranteed. See
+[protocol review and live results](../../docs/thread-search-design-review.md).
 
-Performance audit: deterministic RPC assertions show two concurrent initial
-searches plus a repeated search use one list and one history read for one thread.
-Repeated invalidations before a search coalesce into one rebuild, adding one list
-and one history read for the one-thread fixture. A two-page/six-thread fixture
-uses two list and six history RPCs with a maximum of four simultaneous history
-reads. Pagination, ordering, payloads, the first-100 history cap, and phrase
-matching are unchanged. Invalidation itself performs no RPC; stale and newer
-builds may overlap, each retaining the four-read batch limit. Continuous changes
-can cause rebuilds on subsequent searches, but no automatic retry loop or
-background fanout exists. Live latency and browser profiling were not measured.
-
-## Search build disposal regression
-
-Setup: use deferred list/read RPC mocks in `threadSearchFreshness.test.ts`;
-no credentials or external server are needed.
-
-1. Run `pnpm exec vitest run src/server/threadSearchFreshness.test.ts`.
-2. The disposal cases start a search, pause its first list or four-read batch,
-   dispose twice, then resolve the RPCs. Boundary cases resolve immediately
-   before disposal, before the promise continuation executes.
-3. Expect one list and either zero or four reads, no later pages/batches, and
-   `{ error: 'Search middleware disposed' }` for pending and later searches.
-   Completing the final batch must also reject rather than publish an index.
-4. Expect a second owner to build/search and receive mutation invalidations
-   while the shared runtime stays alive. Expect an incompatible runtime
-   replacement to remain registered after the old build settles/disposes.
-5. Expect the search unsubscribe callback once and no resubscription on a
-   disposed owner. Existing freshness, TTL, ordering and concurrency cases pass.
-
-Cleanup: tests dispose owners and restore mocks/global registration automatically.
-No persistent data changes need rollback.
-
-Performance: deferred regression assertions measure one list and zero further
-reads after list-stage disposal, or four already-issued reads and no second
-batch after read-stage disposal (eight threads available). Active builds retain
-four-read concurrency and concurrent-search coalescing. Code-path review finds
-constant-time liveness checks, no additional requests, timers, connections or
-payload changes; no new blocking work or automatic retries. Disposal clears the
-cache/build reference and unsubscribe closure immediately. Awaiting callers and
-in-flight RPCs retain their existing closures until settlement; a never-settling
-RPC still retains its caller, since the client has no per-request cancellation
-handle. Live latency, heap collection and browser timing were not measured.
+Cleanup: clear search. Restore the original external server after compatibility
+tests. Read-only searches require no filesystem rollback; remove any manually
+created test conversations using normal archive controls.

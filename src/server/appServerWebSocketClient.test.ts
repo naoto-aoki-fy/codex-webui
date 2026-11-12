@@ -49,6 +49,7 @@ it.each(transports)('%s shares initialization, preserves frames, reconnects and 
   socket.send(JSON.stringify({ method: 'turn/started', params: {} }))
   socket.send(JSON.stringify({ id: 'approval', method: 'item/commandExecution/requestApproval' }))
   await new Promise(resolve => setTimeout(resolve, 20))
+  expect(f.frames[0].params.capabilities.experimentalApi).toBe(true)
   expect(f.count()).toBe(1)
   expect(f.frames.map(f => f.method)).toEqual(['initialize', 'initialized', 'thread/list'])
   expect(f.frames.every(f => !('jsonrpc' in f))).toBe(true)

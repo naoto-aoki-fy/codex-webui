@@ -59,7 +59,8 @@
             </button>
           </div>
 
-          <SidebarThreadTree :groups="projectGroups" :project-display-name-by-id="projectDisplayNameById"
+          <p v-if="threadSearchError" role="alert">{{ threadSearchError }}</p>
+          <SidebarThreadTree :groups="sidebarSearchGroups" :project-display-name-by-id="projectDisplayNameById"
             :active-project-name="activeProjectName"
             :project-git-repo-by-name="projectGitRepoByName"
             v-if="!isSidebarCollapsed"
@@ -529,6 +530,21 @@ const settingsAreaRef = ref<HTMLElement | null>(null)
 const settingsPanelRef = ref<HTMLElement | null>(null)
 const settingsButtonRef = ref<HTMLElement | null>(null)
 const serverMatchedThreadIds = ref<string[] | null>(null)
+const serverSearchGroups = ref<typeof projectGroups.value>([])
+const threadSearchError = ref('')
+const sidebarSearchGroups = computed(() => {
+  if (!sidebarSearchQuery.value.trim()) return projectGroups.value
+  const groups = projectGroups.value.map(group => ({ ...group, threads: [...group.threads] }))
+  const ids = new Set(groups.flatMap(group => group.threads.map(thread => thread.id)))
+  for (const group of serverSearchGroups.value) {
+    const missing = group.threads.filter(thread => !ids.has(thread.id))
+    missing.forEach(thread => ids.add(thread.id))
+    const existing = groups.find(row => row.projectName === group.projectName)
+    if (existing) existing.threads.push(...missing)
+    else groups.push({ ...group, threads: missing })
+  }
+  return groups
+})
 let threadSearchTimer: ReturnType<typeof setTimeout> | null = null
 let sidebarScrollTop = 0
 let sidebarScrollRestoreRequestId = 0
@@ -878,6 +894,9 @@ function updateVisualViewportState(): void {
 
 watch(sidebarSearchQuery, (value) => {
   const query = value.trim()
+  serverSearchGroups.value = []
+  threadSearchError.value = ''
+  serverMatchedThreadIds.value = null
   if (threadSearchTimer) {
     clearTimeout(threadSearchTimer)
     threadSearchTimer = null
@@ -888,13 +907,15 @@ watch(sidebarSearchQuery, (value) => {
   }
 
   threadSearchTimer = setTimeout(() => {
-    void searchThreads(query, 1000)
+    void searchThreads(query)
       .then((result) => {
         if (sidebarSearchQuery.value.trim() !== query) return
+        serverSearchGroups.value = result.groups
         serverMatchedThreadIds.value = result.threadIds
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (sidebarSearchQuery.value.trim() !== query) return
+        threadSearchError.value = `Conversation content search unavailable. Use a Codex server supporting thread/search with experimentalApi enabled. ${error instanceof Error ? error.message : String(error)}`
         serverMatchedThreadIds.value = null
       })
   }, 220)
