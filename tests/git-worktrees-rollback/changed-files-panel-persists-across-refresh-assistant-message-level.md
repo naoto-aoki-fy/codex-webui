@@ -27,6 +27,6 @@
 
 - Setup: Use an external app-server and a disposable Git workspace with a thread containing multiple completed file-change items in one turn and a final assistant response. Include a repeated path and a moved file if supported by the server.
 - Actions: Open the thread; expand its changed-files summary. Check file ordering and move destinations. Click Undo, then Redo, and refresh the thread. Also inspect a completed turn without a final assistant response.
-- Expected: Metadata takes precedence over assistant file-change data on the last assistant anchor; earlier metadata rows are hidden. Without an assistant anchor, only the last metadata row displays the grouped summary. Repeated path/destination pairs aggregate in encounter order, with added files before updated and deleted files. Undo/Redo affects only the selected turn and restores the same patches; refresh preserves the summary. Missing turn IDs must not enable actions without an effective turn ID.
+Conversation revert uses native Codex history operations and never restores local files. File diffs remain inspectable; file Undo/Redo has been removed.
 - Cleanup: Restore the disposable workspace with Redo when applicable, then remove the test workspace/thread.
-- Automated coverage: `src/utils/conversationFileChanges.test.ts` characterizes metadata precedence, incomplete identities, multiple summaries per turn, move grouping, ordering, hidden IDs, and frozen inputs. Live Undo/Redo remains a separate external-server check.
+Conversation revert uses native Codex history operations and never restores local files. File diffs remain inspectable; file Undo/Redo has been removed.

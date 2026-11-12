@@ -11,24 +11,24 @@
 ## Two tabs and two processes
 
 1. Leave tab A showing the original roots. In tab B, register `extra`.
-2. Without refreshing A, rename only `a/demo`, move it below `b/demo`, then remove `b/demo`. Also exercise each action with a deliberately delayed roots GET response.
+2. Without refreshing A, remove only `b/demo`. Confirm project rename and manual ordering controls are absent. Also exercise each action with a deliberately delayed roots GET response.
 3. Return to tab B, then reload both tabs.
 4. While repeating these actions, change a thread title and pin, send an immediate message, change a sidebar setting, and register another folder through the CLI using the same temporary `CODEX_HOME`.
 
-Expected: `extra` and the CLI registration survive every operation. Only the selected canonical path is renamed or removed. An omitted project retains its relative order after the requested reorder. Remote metadata, unrelated keys, and unrelated settings survive. Aliases do not create duplicate registrations. Project operations do not modify existing conversation files. History-derived project visibility retains its existing rules, including when no registered roots remain.
+Expected: `extra` and the CLI registration survive every operation. Only the selected canonical path is unregistered; files remain intact. Remote metadata, unrelated keys, and unrelated settings survive. Aliases do not create duplicate registrations. Project operations do not modify existing conversation files. History-derived project visibility retains its existing rules, including when no registered roots remain.
 
 ## Legacy requests and failed saves
 
 1. Send `PUT /codex-api/workspace-roots-state` with an older full snapshot using the authenticated tab's Network tools or console.
-2. Temporarily replace the isolated state file contents with invalid JSON, then attempt a rename and deletion. Repeat with a valid non-object JSON value such as `[]`.
+2. Temporarily replace the isolated state file contents with invalid JSON, then attempt a deletion. Repeat with a valid non-object JSON value such as `[]`.
 3. Restore the saved state. With the server running as an ordinary user, make the isolated destination directory unwritable and attempt another change; then restore its permissions.
 
-Expected: the old PUT returns `409` and asks for a reload without changing the file. Invalid JSON and write failures surface in the existing error display. The list and localStorage retain the last successfully saved state. No empty replacement configuration is written. A rename or reorder of a root removed by the other tab never registers it again.
+Expected: the old PUT returns `409` and asks for a reload without changing the file. Invalid JSON and write failures surface in the existing error display. The list and localStorage retain the last successfully saved state. No empty replacement configuration is written. Legacy rename/reorder PATCH requests return 400 without registering roots.
 
 ## Delayed reads, restoration, and themes
 
-1. In Network tools, delay a workspace-roots response, add or import a folder, and let the earlier response finish afterward.
-2. Delay a background thread-list page, rename/reorder/delete a project, and release that page. Repeat while requesting a forced refresh during an existing load; use folder import to trigger that flow.
+1. In Network tools, delay a workspace-roots response, register an existing folder, and let the earlier response finish afterward.
+2. Delay a background thread-list page, unregister a project, and release that page. Repeat while requesting a forced refresh during an existing load; use folder selection to trigger that flow.
 3. Switch away and back so both `focus` and `visibilitychange` fire. Also exercise browser back/forward restoration.
 4. Repeat in light and dark themes, then reload and inspect both the sidebar and folder picker.
 

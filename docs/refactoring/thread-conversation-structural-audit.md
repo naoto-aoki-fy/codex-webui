@@ -1,5 +1,7 @@
 # ThreadConversation Structural and Performance Audit
 
+> Historical audit: application-managed file Undo/Redo, filesystem restoration during conversation revert, project creation, GitHub cloning, automatic chat directories, camera/folder attachments, and project aliases/manual ordering have since been removed. Native thread operations, existing workspaces, file/image attachments, and diff inspection remain. Earlier implementation details below describe the pre-removal code. Current verification: [workspace workflows](../../tests/projects-sidebar-new-chat/native-workspace-workflows.md).
+
 Phase 9-B audit of `src/components/content/ThreadConversation.vue`, performed 2026-11-10. This is a static code-path review; no files were changed during the original audit and no runtime profiling was performed.
 
 ## Responsibilities and approximate size

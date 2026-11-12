@@ -20,10 +20,10 @@ Prerequisites: run the app with two fixture or live threads A/B, a completed fil
 6. Delay earlier-history loading; switch A → B → A and start a new load. Release the old load first. Expect no scroll restoration or loading-indicator changes from it. Release the current load; expect normal scroll anchoring.
 7. Scroll up, load earlier messages, stream output, and use Jump to latest. Expect normal bounded rendering, anchor preservation, and auto-follow. Edit a user message; expect the usual parent rollback flow.
 
-Cleanup: restore network interception and image URLs; redo any test file Undo operations, close previews, and remove disposable test threads if created.
+Verify file inspection remains available and local files remain unchanged by conversation revert.
 
 ## Automated coverage and performance audit
 
-`src/components/content/ThreadConversation.test.ts` executes the component's actual setup script with Vue reactivity and controlled async/frame boundaries. It covers state dismissal, URL failure identity, success/error invalidation across rapid switching, canceled scroll work, history loading overlap, streaming preservation, parent rollback emission, and normal Undo/Redo patch IDs. It does not mount the DOM or establish live Codex behavior.
+Conversation revert uses native Codex history operations and never restores local files. File diffs remain inspectable; file Undo/Redo has been removed.
 
 Code-path audit: one synchronous scalar identity watcher adds constant work per switch and replaces state containers without scanning messages. Generations are constant-time completion checks. Existing scroll scheduling remains coalesced; cancellation resolves waiting promises and prevents old finalizers from clearing a newer scheduled job. No requests, large payloads, blocking work, or unbounded fanout are added. Render cache bounds and memoization dependencies remain intact; failure version changes only on failure/reset. No runtime speed improvement is claimed; live browser timing and theme appearance were not measured.

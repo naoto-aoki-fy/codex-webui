@@ -1,5 +1,7 @@
 # API wrapper cleanup
 
+> Historical audit: application-managed file Undo/Redo, filesystem restoration during conversation revert, project creation, GitHub cloning, automatic chat directories, camera/folder attachments, and project aliases/manual ordering have since been removed. Native thread operations, existing workspaces, file/image attachments, and diff inspection remain. Earlier implementation details below describe the pre-removal code. Current verification: [workspace workflows](../tests/projects-sidebar-new-chat/native-workspace-workflows.md).
+
 The application loads thread lists through `getThreadGroupsPage` and conversation history through `getThreadDetail` and its windowed history helpers. The unused `getThreadGroups` and `getThreadMessages` frontend wrappers and their exclusive helpers have been removed.
 
 The unused `getThreadReviewResult` and `startThreadReview` wrappers, private review text parsers, and UI review result types have been removed. Generic RPC transport remains available for `review/start`; upstream protocol schemas and documentation remain unchanged.

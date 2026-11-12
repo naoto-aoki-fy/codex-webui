@@ -4,7 +4,7 @@
 Build the app. Use an isolated `CODEX_HOME` with a registered project, normal and previously imported conversations, and a copy of an old ZIP archive. Record project/session/archive contents before checking. Use a Codex-capable host for live message execution.
 
 #### Actions
-1. Open Home in light and dark themes. Confirm `Select folder` and `Create Project` remain while `Import Project` and the ZIP input are absent.
+1. Open Home in light and dark themes. Confirm `Select folder` remains while `Create Project` is absent while `Import Project` and the ZIP input are absent.
 2. Open an existing project using `Select folder`. Verify its name and historical conversations appear in the sidebar; switch between them and reload.
 3. Open thread and project menus in both themes. Confirm `Browse files` remains and `Export Project` is absent. Open the existing chat and check historical messages and file/image attachments.
 4. Resume the conversation, send a message, observe streaming, and immediately steer with a follow-up. Archive/unarchive a disposable conversation with the normal Codex flow and verify historical messages are available after resumption.

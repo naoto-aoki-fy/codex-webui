@@ -1,5 +1,7 @@
 > Status: `thread-live-state` retirement is implemented. Its candidate-removal and compatibility discussion below records the prior assessment; the route now returns JSON 404. `thread-stream-events` is now also retired with JSON 404; only its HTTP adapter was removed and all shared buffers/error recovery remain. The sections below retain the prior assessment.
 
+> Historical audit: application-managed file Undo/Redo, filesystem restoration during conversation revert, project creation, GitHub cloning, automatic chat directories, camera/folder attachments, and project aliases/manual ordering have since been removed. Native thread operations, existing workspaces, file/image attachments, and diff inspection remain. Earlier implementation details below describe the pre-removal code. Current verification: [workspace workflows](../tests/projects-sidebar-new-chat/native-workspace-workflows.md).
+
 # Legacy Thread Endpoint Retirement Plan
 
 This plan is based on a static repository review. No code was changed during the audit. Repository searches cannot establish whether independently maintained clients use these endpoints, and production traffic was not measured. The absence of repository callers is not evidence that external consumers do not exist.
