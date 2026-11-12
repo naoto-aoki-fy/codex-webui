@@ -1,7 +1,5 @@
 import type { CollaborationModeKind, UiThreadTokenUsage } from '../types/codex'
 
-export const READ_STATE_STORAGE_KEY = 'codex-web-local.thread-read-state.v1'
-export const UNREAD_CUTOFF_STORAGE_KEY = 'codex-web-local.thread-unread-cutoff.v1'
 export const THREAD_TOKEN_USAGE_STORAGE_KEY = 'codex-web-local.thread-token-usage.v1'
 export const SELECTED_THREAD_STORAGE_KEY = 'codex-web-local.selected-thread-id.v1'
 export const SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY = 'codex-web-local.selected-model-by-context.v1'
@@ -26,37 +24,6 @@ export const LEGACY_COLLABORATION_MODE_STORAGE_KEY = 'codex-web-local.collaborat
 export const NEW_THREAD_COLLABORATION_MODE_CONTEXT = '__new-thread__'
 // Retain the existing Codex preference key without a provider-selection layer.
 export const NEW_THREAD_MODEL_CONTEXT = '__new-thread-provider__::codex'
-
-export function loadReadStateMap(): Record<string, string> {
-  if (typeof window === 'undefined') return {}
-
-  try {
-    const raw = window.localStorage.getItem(READ_STATE_STORAGE_KEY)
-    if (!raw) return {}
-
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    return parsed as Record<string, string>
-  } catch {
-    return {}
-  }
-}
-
-export function saveReadStateMap(state: Record<string, string>): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(READ_STATE_STORAGE_KEY, JSON.stringify(state))
-}
-
-export function loadUnreadCutoffIso(): string {
-  if (typeof window === 'undefined') return ''
-
-  const existing = window.localStorage.getItem(UNREAD_CUTOFF_STORAGE_KEY)
-  if (existing) return existing
-
-  const initialCutoff = new Date().toISOString()
-  window.localStorage.setItem(UNREAD_CUTOFF_STORAGE_KEY, initialCutoff)
-  return initialCutoff
-}
 
 export function normalizeCollaborationMode(value: unknown): CollaborationModeKind {
   return value === 'plan' ? 'plan' : 'default'

@@ -202,6 +202,7 @@ async function getThreadSummaryV2(threadId: string): Promise<UiThread> {
 }
 
 async function getThreadDetailV2(threadId: string): Promise<{
+  nativeReadState?: import('../types/codex').NativeThreadReadState
   model: string
   modelProvider: string
   messages: UiMessage[]
@@ -219,6 +220,7 @@ async function getThreadDetailV2(threadId: string): Promise<{
   return {
     model: normalizeThreadModelFromPayload(payload),
     modelProvider: normalizeThreadModelProviderFromPayload(payload),
+    nativeReadState: (payload as ThreadReadResponse & { readState?: import('../types/codex').NativeThreadReadState | null }).readState ?? undefined,
     messages: normalized,
     inProgress: readThreadInProgressFromResponse(payload),
     activeTurnId: readActiveTurnIdFromResponse(payload),
@@ -281,6 +283,7 @@ export async function getThreadSummary(threadId: string): Promise<UiThread> {
 }
 
 export async function getThreadDetail(threadId: string): Promise<{
+  nativeReadState?: import('../types/codex').NativeThreadReadState
   model: string
   modelProvider: string
   messages: UiMessage[]
@@ -338,6 +341,7 @@ export async function getAccountRateLimits(): Promise<UiRateLimitSnapshot | null
 }
 
 export type ResumedThread = {
+  nativeReadState?: import('../types/codex').NativeThreadReadState
   model: string
   modelProvider: string
   messages: UiMessage[]

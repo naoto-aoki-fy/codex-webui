@@ -18,8 +18,6 @@ describe('desktop persistence compatibility', () => {
   it('keeps every storage key and context derivation', () => {
     const keys = Object.entries(persistence).filter(([name]) => name.endsWith('_STORAGE_KEY'))
     expect(Object.fromEntries(keys)).toEqual({
-      READ_STATE_STORAGE_KEY: 'codex-web-local.thread-read-state.v1',
-      UNREAD_CUTOFF_STORAGE_KEY: 'codex-web-local.thread-unread-cutoff.v1',
       THREAD_TOKEN_USAGE_STORAGE_KEY: 'codex-web-local.thread-token-usage.v1',
       SELECTED_THREAD_STORAGE_KEY: 'codex-web-local.selected-thread-id.v1',
       SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY: 'codex-web-local.selected-model-by-context.v1',
@@ -103,20 +101,16 @@ describe('desktop persistence compatibility', () => {
       ['codex-web-local.project-order.v1']: '[" /b ","/a","/b",4,""]',
       ['codex-web-local.project-display-name.v1']: '{" /a ":" Name ","x":4}',
       [persistence.SELECTED_THREAD_STORAGE_KEY]: ' t ',
-      [persistence.READ_STATE_STORAGE_KEY]: '{"t":4}',
     })
     expect(persistence.loadModelUsageOrder()).toEqual(['b', 'a'])
     expect(persistence.loadSelectedThreadId()).toBe(' t ')
-    expect(persistence.loadReadStateMap()).toEqual({ t: 4 })
     persistence.saveSelectedThreadId(' t ')
     expect(mock.setItem).toHaveBeenLastCalledWith(persistence.SELECTED_THREAD_STORAGE_KEY, ' t ')
     persistence.saveSelectedThreadId('')
     expect(mock.removeItem).toHaveBeenCalledWith(persistence.SELECTED_THREAD_STORAGE_KEY)
-    persistence.saveReadStateMap({ t: 'iso' })
-    expect(mock.setItem).toHaveBeenLastCalledWith(persistence.READ_STATE_STORAGE_KEY, '{"t":"iso"}')
   })
 
-  const forgivingLoaders = [persistence.loadModelUsageOrder, persistence.loadReadStateMap, persistence.loadReasoningPreferences, persistence.loadSelectedCollaborationModeMap, persistence.loadThreadTokenUsageMap]
+  const forgivingLoaders = [persistence.loadModelUsageOrder, persistence.loadReasoningPreferences, persistence.loadSelectedCollaborationModeMap, persistence.loadThreadTokenUsageMap]
   it('keeps malformed and unsupported values harmless for forgiving loaders', () => {
     for (const raw of ['{', 'null', '42', 'true', '"text"']) {
       const mock = storage()
@@ -129,27 +123,20 @@ describe('desktop persistence compatibility', () => {
     const mock = storage()
     mock.getItem.mockImplementation(() => { throw new Error('read') })
     for (const load of forgivingLoaders) expect(() => load()).not.toThrow()
-    for (const load of [persistence.loadSelectedModelMap, persistence.loadSelectedThreadId, persistence.loadUnreadCutoffIso]) expect(load).toThrow('read')
+    for (const load of [persistence.loadSelectedModelMap, persistence.loadSelectedThreadId]) expect(load).toThrow('read')
     mock.setItem.mockImplementation(() => { throw new Error('write') })
     expect(() => persistence.saveSelectedModelMap({ t: 'm' })).not.toThrow()
     expect(() => persistence.saveSelectedCollaborationModeMap({ t: 'plan' })).not.toThrow()
-    for (const save of [() => persistence.saveReadStateMap({}), () => persistence.saveThreadTokenUsageMap({}), () => persistence.saveSelectedThreadId('t')]) expect(save).toThrow('write')
+    for (const save of [() => persistence.saveThreadTokenUsageMap({}), () => persistence.saveSelectedThreadId('t')]) expect(save).toThrow('write')
     mock.getItem.mockReturnValue(null)
-    expect(persistence.loadUnreadCutoffIso).toThrow('write')
   })
 
-  it('accesses storage only on invocation and initializes cutoff once', async () => {
+  it('does not touch storage on module import', async () => {
     const mock = storage()
     vi.resetModules()
-    const module = await import('./desktopStatePersistence')
+    await import('./desktopStatePersistence')
     expect(mock.getItem).not.toHaveBeenCalled()
     expect(mock.setItem).not.toHaveBeenCalled()
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
-    expect(module.loadUnreadCutoffIso()).toBe('2026-01-01T00:00:00.000Z')
-    expect(module.loadUnreadCutoffIso()).toBe('2026-01-01T00:00:00.000Z')
-    expect(mock.getItem).toHaveBeenCalledTimes(2)
-    expect(mock.setItem).toHaveBeenCalledTimes(1)
   })
 
   it('preserves record identity and legacy contexts while pruning', () => {
@@ -169,7 +156,6 @@ describe('desktop persistence compatibility', () => {
     for (const load of forgivingLoaders) expect(() => load()).not.toThrow()
     expect(persistence.loadSelectedModelMap).toThrow('unavailable')
     expect(persistence.loadSelectedThreadId).toThrow('unavailable')
-    expect(persistence.loadUnreadCutoffIso).toThrow('unavailable')
     expect(() => persistence.saveSelectedModelMap({ t: 'm' })).not.toThrow()
     expect(() => persistence.saveSelectedCollaborationModeMap({ t: 'plan' })).not.toThrow()
   })
@@ -178,8 +164,6 @@ describe('desktop persistence compatibility', () => {
     vi.stubGlobal('window', undefined)
     for (const load of [...forgivingLoaders, persistence.loadSelectedModelMap]) expect(Object.keys(load())).toEqual([])
     expect(persistence.loadSelectedThreadId()).toBe('')
-    expect(persistence.loadUnreadCutoffIso()).toBe('')
-    persistence.saveReadStateMap({})
     persistence.saveThreadTokenUsageMap({})
     persistence.saveSelectedThreadId('t')
     persistence.saveSelectedModelMap({})

@@ -4,13 +4,13 @@ import {
   filterGroupsByWorkspaceRoots,
   findAdjacentThreadId,
   removeThreadFromGroups,
-  isThreadUnreadByLastRead,
   useDesktopState,
 } from './useDesktopState'
 import type { UiProjectGroup } from '../types/codex'
 import type { WorkspaceRootsState } from '../api/codexGateway'
 
 const gatewayMocks = vi.hoisted(() => ({
+  markNativeThreadRead: vi.fn(),
   archiveThread: vi.fn(),
   forkThread: vi.fn(),
   forkThreadFromResponse: vi.fn(),
@@ -339,28 +339,6 @@ describe('workspace roots project persistence helpers', () => {
     ])
   })
 
-})
-
-describe('thread unread state helpers', () => {
-  const cutoffIso = '2026-05-01T12:00:00.000Z'
-
-  it('uses the initialization cutoff when a thread has no read state', () => {
-    expect(isThreadUnreadByLastRead('2026-05-01T11:59:59.000Z', undefined, cutoffIso)).toBe(false)
-    expect(isThreadUnreadByLastRead('2026-05-01T12:00:01.000Z', undefined, cutoffIso)).toBe(true)
-  })
-
-  it('uses per-thread read state instead of the global cutoff after a thread is read', () => {
-    expect(isThreadUnreadByLastRead(
-      '2026-05-01T12:30:00.000Z',
-      '2026-05-01T12:45:00.000Z',
-      cutoffIso,
-    )).toBe(false)
-    expect(isThreadUnreadByLastRead(
-      '2026-05-01T12:50:00.000Z',
-      '2026-05-01T12:45:00.000Z',
-      cutoffIso,
-    )).toBe(true)
-  })
 })
 
 describe('collaboration mode selection', () => {
@@ -1241,5 +1219,71 @@ describe('fork revert stage boundaries', () => {
     }
     if (failure === 'refresh') expect(state.error.value).toContain('History reverted')
     expect(state.isRollingBack.value).toBe(false)
+  })
+})
+
+
+describe('native read receipts', () => {
+  async function setup(receipt?: { revision: string; firstUnread: { type: 'threadStart' } | null }) {
+    installTestWindow({
+      'codex-web-local.thread-read-state.v1': '{"thread-1":"2999-01-01"}',
+      'codex-web-local.thread-unread-cutoff.v1': '1900-01-01',
+    })
+    let notify!: (notification: { method: string; params?: unknown }) => void
+    gatewayMocks.subscribeCodexNotifications.mockImplementation(handler => { notify = handler; return vi.fn() })
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({
+      groups: [{ projectName: 'project', threads: [{ ...thread('thread-1', '/tmp/project'), nativeReadState: receipt }] }],
+      nextCursor: null,
+    })
+    gatewayMocks.resumeThread.mockResolvedValue({
+      model: '', messages: [], inProgress: false, activeTurnId: '', hasMoreOlder: false, turnIndexByTurnId: {},
+    })
+    const state = useDesktopState()
+    await state.refreshAll({ includeSelectedThreadMessages: false })
+    state.startPolling()
+    return { state, notify, row: () => state.projectGroups.value[0]!.threads[0]! }
+  }
+
+  it('ignores legacy timestamps and leaves unavailable receipts neutral', async () => {
+    const { state, row } = await setup()
+    expect(row().unread).toBe(false)
+    await state.selectThread('thread-1')
+    expect(gatewayMocks.markNativeThreadRead).not.toHaveBeenCalled()
+    expect(window.localStorage.setItem).not.toHaveBeenCalledWith('codex-web-local.thread-read-state.v1', expect.anything())
+    expect(window.localStorage.removeItem).not.toHaveBeenCalledWith('codex-web-local.thread-read-state.v1')
+    state.stopPolling()
+  })
+
+  it('synchronizes another client notification without a list request', async () => {
+    const { state, notify, row } = await setup({ revision: 'r1', firstUnread: { type: 'threadStart' } })
+    expect(row().unread).toBe(true)
+    const calls = gatewayMocks.getThreadGroupsPage.mock.calls.length
+    notify({ method: 'thread/readState/changed', params: { threadId: 'thread-1', readState: { revision: 'r2', firstUnread: null } } })
+    expect(row().unread).toBe(false)
+    expect(gatewayMocks.getThreadGroupsPage).toHaveBeenCalledTimes(calls)
+    state.stopPolling()
+  })
+
+  it('uses the observed revision and leaves conflicts unread without retry', async () => {
+    gatewayMocks.markNativeThreadRead.mockRejectedValue(new Error('revision conflict'))
+    const { state, row } = await setup({ revision: 'r1', firstUnread: { type: 'threadStart' } })
+    await state.selectThread('thread-1')
+    await Promise.resolve()
+    expect(gatewayMocks.markNativeThreadRead).toHaveBeenCalledExactlyOnceWith('thread-1', 'r1')
+    expect(row().unread).toBe(true)
+    expect(state.error.value).toContain('revision conflict')
+    state.stopPolling()
+  })
+
+  it('does not consume unread activity arriving during a history load', async () => {
+    const { state, notify, row } = await setup({ revision: 'r1', firstUnread: { type: 'threadStart' } })
+    gatewayMocks.resumeThread.mockImplementationOnce(async () => {
+      notify({ method: 'thread/readState/changed', params: { threadId: 'thread-1', readState: { revision: 'r2', firstUnread: { type: 'threadStart' } } } })
+      return { model: '', messages: [], inProgress: false, activeTurnId: '', hasMoreOlder: false, turnIndexByTurnId: {} }
+    })
+    await state.selectThread('thread-1')
+    expect(gatewayMocks.markNativeThreadRead).not.toHaveBeenCalled()
+    expect(row().unread).toBe(true)
+    state.stopPolling()
   })
 })

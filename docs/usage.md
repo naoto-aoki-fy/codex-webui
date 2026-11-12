@@ -64,3 +64,8 @@ Screenshots are illustrative snapshots; current source and tests define behavior
 ![Chat](screenshots/chat.png)
 ![Skills Hub Mobile](screenshots/skills-hub-mobile.png)
 ![Chat Mobile](screenshots/chat-mobile.png)
+
+## Read status
+
+Read status belongs to the connected Codex server. Missing native receipts are
+neutral; failed updates remain unread. See [native read receipts](native-codex-cleanup.md).
