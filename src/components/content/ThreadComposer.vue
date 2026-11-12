@@ -458,7 +458,6 @@ type AttachmentBatchStats = {
   failed: number
 }
 
-const PASTED_TEXT_FILE_THRESHOLD = 2000
 const PROMPT_OPTION_PREFIX = 'prompt:'
 
 const draft = ref('')
@@ -979,19 +978,6 @@ function createPastedImageName(file: File): string {
   return `pasted-image-${timestamp}.${ext}`
 }
 
-function createPastedTextFileName(): string {
-  const now = new Date()
-  const timestamp = [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, '0'),
-    String(now.getDate()).padStart(2, '0'),
-    String(now.getHours()).padStart(2, '0'),
-    String(now.getMinutes()).padStart(2, '0'),
-    String(now.getSeconds()).padStart(2, '0'),
-  ].join('-')
-  return `pasted-text-${timestamp}.txt`
-}
-
 function ensureFileName(file: File): File {
   if (file.name.trim()) return file
   return new File([file], createPastedImageName(file), {
@@ -1188,15 +1174,6 @@ function onWindowDragCleanup(): void {
 function onInputPaste(event: ClipboardEvent): void {
   if (isInteractionDisabled.value) return
   const plainText = event.clipboardData?.getData('text/plain') ?? ''
-  if (plainText.length >= PASTED_TEXT_FILE_THRESHOLD) {
-    event.preventDefault()
-    const textFile = new File([plainText], createPastedTextFileName(), {
-      type: 'text/plain',
-      lastModified: Date.now(),
-    })
-    attachIncomingFiles([textFile])
-    return
-  }
   const items = Array.from(event.clipboardData?.items ?? [])
   if (items.length === 0) return
   const hasPlainText = plainText.length > 0
