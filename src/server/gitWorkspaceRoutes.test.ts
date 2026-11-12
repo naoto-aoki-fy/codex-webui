@@ -20,6 +20,18 @@ beforeEach(async () => {
   payload = { sourceCwd: repo }
   persist.mockReset()
   routes = createGitWorkspaceRoutes({
+    // Same-host protocol fixture: these functions represent B, not a production fallback.
+    appServer: {
+      getInitializationMetadata: () => ({ codexHome: join(root, 'home') }) as any,
+      rpc: async (method, raw) => {
+        const p = raw as any
+        if (method === 'fs/getMetadata') { const info = await stat(p.path); return { isFile: info.isFile(), isDirectory: info.isDirectory() } }
+        if (method === 'fs/createDirectory') return mkdir(p.path, { recursive: true })
+        if (method === 'fs/remove') return rm(p.path, { recursive: true, force: true })
+        if (method === 'command/exec') return { exitCode: 0, stdout: await commands.runCommandCapture(p.command[0], p.command.slice(1), { cwd: p.cwd }), stderr: '' }
+        throw new Error('Unexpected RPC ' + method)
+      },
+    },
     readJsonBody: async () => payload,
     getCodexHomeDir: () => join(root, 'home'),
     persistWorkspaceRoot: persist,
@@ -87,7 +99,7 @@ it.each([
 })
 it('preserves missing and non-directory path responses', async () => {
   payload = { sourceCwd: join(root, 'missing') }
-  expect((await create()).status).toBe(404)
+  expect((await create()).status).toBe(502)
   await writeFile(join(root, 'file'), '')
   payload = { sourceCwd: join(root, 'file') }
   expect(await create()).toMatchObject({ status: 400, body: { error: 'sourceCwd is not a directory' } })

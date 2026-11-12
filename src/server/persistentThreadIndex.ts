@@ -193,9 +193,6 @@ export class PersistentThreadIndex {
     // Check only indexed rollout paths, sequentially: no session traversal or
     // history RPC fanout. A moved/deleted rollout must not become a ghost row.
     for (const entry of Object.values(entries).filter(matches)) {
-      if (entry.thread.path) {
-        try { await stat(entry.thread.path) } catch { continue }
-      }
       available.push(entry)
     }
     const indexed = available.map((entry) => entry.thread)

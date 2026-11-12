@@ -1,8 +1,8 @@
-import { ProjectFileService } from './appServerFileSystem.js'
+import { stageRemoteUpload } from './remoteUploads.js'
+import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
 export { refreshChatgptAuthTokensForExternalAuth } from './externalAuthRefresh.js'
 import { createGitWorkspaceRoutes } from './gitWorkspaceRoutes.js'
-import { listFilesWithRipgrep } from './bridgeCommands.js'
 import { normalizeStringArray, canonicalizeThreadListResponseForRead, readWorkspaceRootsState, applyWorkspaceRootsOperation, persistWorkspaceRoot } from './workspaceRootsStore.js'
 export { canonicalizeWorkspaceRootsState, canonicalizeWorkspaceRootsStateForRead, canonicalizeThreadListResponseForRead, writeWorkspaceRootsState } from './workspaceRootsStore.js'
 export type { WorkspaceRootsState } from './workspaceRootsStore.js'
@@ -15,17 +15,11 @@ import { handlePromptRoutes } from './promptRoutes.js'
 import appServerMethods from './appServerMethods.json'
 import { AppServerClient as AppServerClientCore, STREAM_EVENT_BUFFER_LIMIT, type StreamEventFrame } from './appServerClient.js'
 import { PersistentThreadIndex } from './persistentThreadIndex.js'
-import { createThreadSessionEnrichment } from './threadSessionEnrichment.js'
 export { mergeSessionSkillInputsIntoTurns } from './threadSessionEnrichment.js'
-import { spawnSync } from 'node:child_process'
-import { mkdtemp, readdir, mkdir, stat } from 'node:fs/promises'
-import { createReadStream, existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
-import { tmpdir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
-import { createInterface } from 'node:readline'
-import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { handleAccountRoutes } from './accountRoutes.js'
 import { CodexCredentialError, readCodexCredentialStore, readPublicAuthStatus } from './codexCredentials.js'
 import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
@@ -52,9 +46,8 @@ const DEFAULT_API_PERF_MS_THRESHOLD = 300
 const DEFAULT_API_PERF_BODY_MB_THRESHOLD = 1
 const MB_DIVISOR = 1024 * 1024
 
-const persistentThreadIndex = new PersistentThreadIndex(getCodexHomeDir, listImportedThreadsFromStateDb)
+const persistentThreadIndex = new PersistentThreadIndex(getCodexHomeDir, () => [])
 const turnGenerationMetadataStore = new TurnGenerationMetadataStore(getCodexHomeDir)
-const { mergeSessionSkillInputsIntoThreadResult, recoverForkMetadata } = createThreadSessionEnrichment(turnGenerationMetadataStore)
 
 function readEnvValueFromFile(filePath: string, key: string): string | null {
   try {
@@ -232,54 +225,6 @@ function mergeStreamTurnErrorsIntoThreadResult(appServer: AppServerClient, resul
   }
 }
 
-// Read-only compatibility for historical sessions, including previously imported chats.
-// This also supplements ordinary thread listing and must survive ZIP feature removal.
-function listImportedThreadsFromStateDb(): Array<Record<string, unknown>> {
-  const stateDbPath = join(getCodexHomeDir(), 'state_5.sqlite')
-  if (!existsSync(stateDbPath)) return []
-  const sql = `
-SELECT id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
-       cli_version, first_user_message, archived
-FROM threads
-WHERE archived = 0 AND replace(rollout_path, '\\', '/') LIKE '%/sessions/%' AND id IN (
-  SELECT id FROM threads WHERE first_user_message != '' OR title != ''
-)
-ORDER BY updated_at DESC
-LIMIT 200;
-`
-  const result = spawnSync('sqlite3', ['-json', stateDbPath, sql], { encoding: 'utf8' })
-  if (result.status !== 0 || !result.stdout.trim()) return []
-  try {
-    const rows = JSON.parse(result.stdout) as unknown
-    if (!Array.isArray(rows)) return []
-    return rows.flatMap((row) => {
-      const record = asRecord(row)
-      const id = readNonEmptyString(record?.id)
-      const path = readNonEmptyString(record?.rollout_path)
-      const cwd = readNonEmptyString(record?.cwd)
-      if (!id || !path || !cwd) return []
-      const title = readNonEmptyString(record?.title) || readNonEmptyString(record?.first_user_message) || 'Imported chat'
-      const createdAt = typeof record?.created_at === 'number' ? record.created_at : Math.floor(Date.now() / 1000)
-      const updatedAt = typeof record?.updated_at === 'number' ? record.updated_at : createdAt
-      return [{
-        id,
-        preview: title,
-        modelProvider: readNonEmptyString(record?.model_provider) || 'openai',
-        createdAt,
-        updatedAt,
-        path,
-        cwd,
-        cliVersion: readNonEmptyString(record?.cli_version),
-        source: 'cli',
-        gitInfo: null,
-        turns: [],
-      }]
-    })
-  } catch {
-    return []
-  }
-}
-
 function readNonEmptyString(value: unknown): string {
   return typeof value === 'string' && value.trim().length > 0 ? value : ''
 }
@@ -351,9 +296,7 @@ export async function callRpcWithArchiveRecovery(
   params: unknown,
 ): Promise<unknown> {
   try {
-    const result = method === 'thread/list'
-      ? await persistentThreadIndex.call(method, asRecord(params) ?? {}, (m, p) => callRpcWithRateLimitDecodeRecovery(appServer, m, p))
-      : await callRpcWithRateLimitDecodeRecovery(appServer, method, params)
+    const result = await callRpcWithRateLimitDecodeRecovery(appServer, method, params)
     if (method === 'thread/search') {
       const page = asRecord(result)
       if (Array.isArray(page?.data)) {
@@ -439,7 +382,7 @@ const {
   readPinnedThreadIds,
   writePinnedThreadIds,
   readMergedThreadTitleCache,
-} = createThreadPresentationStore(() => join(getCodexHomeDir(), 'session_index.jsonl'), normalizeStringArray)
+} = createThreadPresentationStore(() => null, normalizeStringArray)
 
 function bufferIndexOf(buf: Buffer, needle: Buffer, start = 0): number {
   for (let i = start; i <= buf.length - needle.length; i++) {
@@ -452,11 +395,18 @@ function bufferIndexOf(buf: Buffer, needle: Buffer, start = 0): number {
   return -1
 }
 
-function handleFileUpload(req: IncomingMessage, res: ServerResponse): void {
+function handleFileUpload(req: IncomingMessage, res: ServerResponse, appServer: AppServerClient): void {
   const chunks: Buffer[] = []
-  req.on('data', (chunk: Buffer) => chunks.push(chunk))
+  let size = 0
+  let oversized = false
+  req.on('data', (chunk: Buffer) => {
+    size += chunk.length
+    if (size > 21 * 1024 * 1024) { oversized = true; chunks.length = 0 }
+    else if (!oversized) chunks.push(chunk)
+  })
   req.on('end', async () => {
     try {
+      if (oversized) { setJson(res, 413, { error: 'Upload exceeds 20 MiB file limit' }); return }
       const body = Buffer.concat(chunks)
       const contentType = req.headers['content-type'] ?? ''
       const boundaryMatch = contentType.match(/boundary=(.+)/i)
@@ -488,11 +438,7 @@ function handleFileUpload(req: IncomingMessage, res: ServerResponse): void {
         break
       }
       if (!fileData) { setJson(res, 400, { error: 'No file in request' }); return }
-      const uploadDir = join(tmpdir(), 'codex-web-uploads')
-      await mkdir(uploadDir, { recursive: true })
-      const destDir = await mkdtemp(join(uploadDir, 'f-'))
-      const destPath = join(destDir, fileName)
-      await writeFile(destPath, fileData)
+      const destPath = await stageRemoteUpload(appServer, fileName, fileData, getCodexHomeDir())
       setJson(res, 200, { path: destPath })
     } catch (err) {
       setJson(res, 500, { error: getErrorMessage(err, 'Upload failed') })
@@ -582,7 +528,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   let released = false
   const activeSse = new Set<() => void>()
   const { appServer, methodCatalog } = sharedState
-  const gitWorkspaceRoutes = createGitWorkspaceRoutes({ readJsonBody, getCodexHomeDir, persistWorkspaceRoot })
+  const files = sharedState.files ?? new ProjectFileService(appServer)
+  const gitWorkspaceRoutes = createGitWorkspaceRoutes({ readJsonBody, getCodexHomeDir, persistWorkspaceRoot, appServer })
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const requestStartNs = process.hrtime.bigint()
     const rawUrl = req.url ?? ''
@@ -641,47 +588,14 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
-      // Explicit maintenance only: sequential traversal keeps ordinary sidebar
-      // refreshes free of session scans and unbounded thread/read fanout.
+      // Native history cannot be rebuilt by scanning this host.
       if (req.method === 'POST' && url.pathname === '/codex-api/thread-index/rebuild') {
-        let recovered = 0
-        let failed = 0
-        const scan = async (directory: string): Promise<void> => {
-          let children
-          try { children = await readdir(directory, { withFileTypes: true }) }
-          catch (error) { if (getErrorCode(error) === 'ENOENT') return; throw error }
-          for (const child of children) {
-            const path = join(directory, child.name)
-            if (child.isDirectory()) { await scan(path); continue }
-            if (!child.isFile() || !child.name.endsWith('.jsonl')) continue
-            const stream = createReadStream(path, { encoding: 'utf8' })
-            const lines = createInterface({ input: stream, crlfDelay: Infinity })
-            let threadId = ''
-            try {
-              for await (const line of lines) {
-                try {
-                  const row = JSON.parse(line)
-                  if (row.type === 'session_meta') { threadId = readNonEmptyString(row.payload?.id); break }
-                } catch { /* Ignore incomplete rows. */ }
-              }
-            } catch { failed += 1 }
-            finally { lines.close(); stream.destroy() }
-            if (!threadId) continue
-            try {
-              const result = asRecord(await appServer.rpc('thread/read', { threadId, includeTurns: true }))
-              const thread = asRecord(result?.thread)
-              if (thread && await persistentThreadIndex.recover(thread)) recovered += 1
-            } catch { failed += 1 }
-          }
-        }
-        await scan(join(getCodexHomeDir(), 'sessions'))
-        await scan(join(getCodexHomeDir(), 'archived_sessions'))
-        setJson(res, 200, { recovered, failed })
+        setJson(res, 501, { error: 'Local session scanning is unavailable. Use native App Server thread history.' })
         return
       }
 
       if (req.method === 'POST' && url.pathname === '/codex-api/upload-file') {
-        handleFileUpload(req, res)
+        handleFileUpload(req, res, appServer)
         return
       }
 
@@ -710,7 +624,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
         if (body.method === 'thread/start') {
           const cwd = readNonEmptyString(asRecord(body.params)?.cwd)
-          if (!cwd || !(await stat(cwd).catch(() => null))?.isDirectory()) {
+          if (!cwd || !(await files.getMetadata(cwd)).isDirectory) {
             setJson(res, 400, { error: 'Select an existing workspace before starting a conversation.' })
             return
           }
@@ -758,20 +672,12 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           }
 		          throw error
 		        }
-        if (THREAD_METHODS_WITH_TURNS.has(body.method)) {
-          const params = asRecord(body.params)
-          const explicitParent = body.method === 'thread/fork' && !readNonEmptyString(params?.path)
-            ? readNonEmptyString(params?.threadId) : ''
-          rpcResult = await recoverForkMetadata(appServer, rpcResult, explicitParent)
-        }
         const trimmedResult = trimThreadTurnsInRpcResult(body.method, rpcResult)
         const errorMergedResult = THREAD_METHODS_WITH_TURNS.has(body.method)
           ? mergeStreamTurnErrorsIntoThreadResult(appServer, trimmedResult)
           : trimmedResult
         const sanitizedResult = await sanitizeThreadTurnsInlinePayloads(body.method, errorMergedResult)
-        const result = THREAD_METHODS_WITH_TURNS.has(body.method)
-          ? await mergeSessionSkillInputsIntoThreadResult(sanitizedResult)
-          : sanitizedResult
+        const result = sanitizedResult
 
 	        if (THREAD_METHODS_WITH_THREAD_SNAPSHOT.has(body.method) && !asRecord(body.params)?.excludeTurns && snapshotEpoch === appServer.getSnapshotEpoch()) {
 	          const rpcRecord = asRecord(result)
@@ -797,8 +703,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
             return
           }
 
-          const threadReadResult = await recoverForkMetadata(appServer,
-            mergeStreamTurnErrorsIntoThreadResult(appServer, await appServer.readThreadForTurnPage(threadId)))
+          const threadReadResult = mergeStreamTurnErrorsIntoThreadResult(appServer, await appServer.readThreadForTurnPage(threadId))
           const record = asRecord(threadReadResult)
           const thread = asRecord(record?.thread)
           if (!record || !thread) {
@@ -836,7 +741,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
             },
           }
           const sanitized = await sanitizeThreadTurnsInlinePayloads('thread/read', pagedResult)
-          const result = await mergeSessionSkillInputsIntoThreadResult(sanitized)
+          const result = sanitized
 
           setJson(res, 200, {
             result,
@@ -886,7 +791,10 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       if (req.method === 'GET' && url.pathname === '/codex-api/home-directory') {
-        setJson(res, 200, { data: { path: homedir() } })
+        const state = await readWorkspaceRootsState()
+        const path = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state.active[0] || state.order[0]
+        if (!path) { setJson(res, 409, { error: 'Enter an absolute workspace path on the App Server host, or set CODEXUI_REMOTE_INITIAL_DIRECTORY.' }); return }
+        setJson(res, 200, { data: { path } })
         return
       }
 
@@ -918,20 +826,11 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           return
         }
 
-        const normalizedPath = isAbsolute(rawPath) ? rawPath : resolve(rawPath)
-        let pathExists = true
-        try {
-          const info = await stat(normalizedPath)
-          if (!info.isDirectory()) {
-            setJson(res, 400, { error: 'Path exists but is not a directory' })
-            return
-          }
-        } catch {
-          pathExists = false
-        }
-
-        if (!pathExists) {
-          setJson(res, 404, { error: 'Directory does not exist' })
+        const normalizedPath = rawPath
+        if (!projectPath(rawPath).isAbsolute(rawPath)) throw new Error('Expected absolute remote workspace path')
+        const info = await files.getMetadata(normalizedPath)
+        if (!info.isDirectory) {
+          setJson(res, 400, { error: 'Path exists but is not a directory' })
           return
         }
 
@@ -950,20 +849,17 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           setJson(res, 400, { error: 'Missing cwd' })
           return
         }
-        const cwd = isAbsolute(rawCwd) ? rawCwd : resolve(rawCwd)
-        try {
-          const info = await stat(cwd)
-          if (!info.isDirectory()) {
-            setJson(res, 400, { error: 'cwd is not a directory' })
-            return
-          }
-        } catch {
-          setJson(res, 404, { error: 'cwd does not exist' })
+        const cwd = rawCwd
+        if (!projectPath(cwd).isAbsolute(cwd)) throw new Error('Expected absolute remote workspace path')
+        const info = await files.getMetadata(cwd)
+        if (!info.isDirectory) {
+          setJson(res, 400, { error: 'cwd is not a directory' })
           return
         }
 
         try {
-          const files = await listFilesWithRipgrep(cwd)
+          const found = await appServer.rpc('fuzzyFileSearch', { query, roots: [cwd], cancellationToken: null }) as { files: Array<{ path: string }> }
+          const files = found.files.map(file => file.path)
           const scored = files
             .map((path) => ({ path, score: scoreFileCandidate(path, query) }))
             .filter((row) => query.length === 0 || row.score < 10)

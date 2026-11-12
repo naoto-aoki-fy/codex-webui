@@ -37,7 +37,7 @@ beforeEach(async () => {
   await writeFile(sessionPath, sessionRaw)
   vi.stubEnv('CODEX_HOME', home)
   previous = scope.__codexRemoteSharedBridge__
-  rpc.mockReset().mockResolvedValue({ data: [] })
+  rpc.mockReset().mockImplementation(async method => method === 'fs/getMetadata' ? { isDirectory: true, isFile: false } : { data: [] })
   storeSnapshot.mockReset()
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
   scope.__codexRemoteSharedBridge__ = {
@@ -91,7 +91,7 @@ it('opens and lists an existing project without importing or changing its files'
   await expectPreservedFiles()
 })
 
-it('retains historical SQLite sessions in ordinary thread listing with titles, order and deduplication', async () => {
+it('keeps native listing authoritative without reading local SQLite sessions', async () => {
   await writeFile(join(home, 'state_5.sqlite'), 'Existing database sentinel')
   sqlite.mockReturnValue({ status: 0, stderr: '', stdout: JSON.stringify([
     { id: 'historical-thread', rollout_path: sessionPath, cwd: project, title: 'Previously imported conversation', created_at: 100, updated_at: 300 },
@@ -102,13 +102,9 @@ it('retains historical SQLite sessions in ordinary thread listing with titles, o
     { id: 'normal-thread', preview: 'Normal Codex chat', cwd: project, updatedAt: 150 }], nextCursor: 'next-page' })
   const response = await request('/codex-api/rpc', 'POST', { method: 'thread/list', params: { sortKey: 'updated_at', limit: 3 } })
   expect(response.res.statusCode).toBe(200)
-  expect(response.json.result.data.map((row: { id: string }) => row.id)).toEqual(['historical-thread', 'already-listed', 'normal-thread'])
-  expect(response.json.result.data[0]).toMatchObject({ preview: 'Previously imported conversation', cwd: project, path: sessionPath })
-  expect(response.json.result.data[1].preview).toBe('Saved title')
-  expect(response.json.result.nextCursor).toMatch(/^app-index:/)
-  expect(sqlite).toHaveBeenCalledOnce()
-  expect(sqlite.mock.calls[0]?.[0]).toBe('sqlite3')
-  expect(sqlite.mock.calls[0]?.[1][2]).toMatch(/^\s*SELECT /)
+  expect(response.json.result.data.map((row: { id: string }) => row.id)).toEqual(['already-listed', 'normal-thread'])
+  expect(response.json.result.nextCursor).toBe('next-page')
+  expect(sqlite).not.toHaveBeenCalled()
   expect(await readFile(join(home, 'state_5.sqlite'), 'utf8')).toBe('Existing database sentinel')
   await expectPreservedFiles()
 })
@@ -150,11 +146,9 @@ it('explicitly rebuilds attachment-only history without sending or changing sess
     turns: [{ id: 'accepted-turn', items: [{ type: 'userMessage', content: [{ type: 'text', text }] }] }],
   } } : { data: [], nextCursor: null })
   const rebuilt = await request('/codex-api/thread-index/rebuild', 'POST', {})
-  expect(rebuilt.res.statusCode).toBe(200)
-  expect(rebuilt.json).toEqual({ recovered: 1, failed: 0 })
-  const listed = await request('/codex-api/rpc', 'POST', { method: 'thread/list', params: {} })
-  expect(listed.json.result.data).toHaveLength(1)
-  expect(listed.json.result.data[0]).toMatchObject({ id: 'historical-thread', preview: 'notes.txt' })
+  expect(rebuilt.res.statusCode).toBe(501)
+  expect(rebuilt.json.error).toContain('native App Server thread history')
+  expect(sqlite).not.toHaveBeenCalled()
   expect(rpc.mock.calls.some(([method]) => method === 'turn/start')).toBe(false)
   await expectPreservedFiles()
 })

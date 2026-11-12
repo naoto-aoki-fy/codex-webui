@@ -1,5 +1,6 @@
-import { realpath } from 'node:fs/promises'
-import { isAbsolute, resolve } from 'node:path'
+// Workspace paths belong to the App Server; persisted UI state is local.
+const preserveRemotePath = async (path: string) => path
+import { projectPath } from './appServerFileSystem.js'
 import { isDeepStrictEqual } from 'node:util'
 import { asRecord } from './bridgeHttpUtils.js'
 import { readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState.js'
@@ -66,17 +67,17 @@ async function canonicalizeWorkspaceRootPath(
   value: string,
   pathRealpath: PathRealpathResolver,
 ): Promise<string> {
-  if (!isAbsolute(value)) return value
+  if (!projectPath(value).isAbsolute(value)) return value
   try {
     return await pathRealpath(value)
   } catch {
-    return resolve(value)
+    return value
   }
 }
 
 export async function canonicalizeWorkspaceRootsState(
   state: WorkspaceRootsState,
-  pathRealpath: PathRealpathResolver = realpath,
+  pathRealpath: PathRealpathResolver = preserveRemotePath,
 ): Promise<WorkspaceRootsState> {
   const paths = [...new Set([...state.order, ...state.active, ...state.projectOrder, ...Object.keys(state.labels)])]
   const canonicalPaths = new Map<string, string>()
@@ -117,7 +118,7 @@ export async function canonicalizeWorkspaceRootsState(
 
 export async function canonicalizeWorkspaceRootsStateForRead(
   state: WorkspaceRootsState,
-  pathRealpath: PathRealpathResolver = realpath,
+  pathRealpath: PathRealpathResolver = preserveRemotePath,
 ): Promise<WorkspaceRootsState> {
   return await canonicalizeWorkspaceRootsState(state, pathRealpath)
 }
@@ -135,7 +136,7 @@ async function canonicalizeThreadCwdRecord(
 
 export async function canonicalizeThreadListResponseForRead(
   payload: unknown,
-  pathRealpath: PathRealpathResolver = realpath,
+  pathRealpath: PathRealpathResolver = preserveRemotePath,
 ): Promise<unknown> {
   const record = asRecord(payload)
   if (!record || !Array.isArray(record.data)) return payload
@@ -184,7 +185,7 @@ async function updateWorkspaceRootsState(
     const resolvePath = (path: string): Promise<string> => {
       let result = paths.get(path)
       if (!result) {
-        result = canonicalizeWorkspaceRootPath(path, realpath).then((canonical) => {
+        result = canonicalizeWorkspaceRootPath(path, preserveRemotePath).then((canonical) => {
           if (!paths.has(canonical)) paths.set(canonical, Promise.resolve(canonical))
           return canonical
         })
@@ -206,7 +207,7 @@ async function updateWorkspaceRootsState(
 
 export async function applyWorkspaceRootsOperation(operation: WorkspaceRootsOperation): Promise<WorkspaceRootsState> {
   // Resolve only the requested identifiers here; read all saved values under the lock.
-  const normalizedOperation = { ...operation, path: await canonicalizeWorkspaceRootPath(operation.path, realpath) }
+  const normalizedOperation = { ...operation, path: await canonicalizeWorkspaceRootPath(operation.path, preserveRemotePath) }
   return updateWorkspaceRootsState((state) => {
     const path = normalizedOperation.path
     const order = state.order.filter((item) => item !== path)
@@ -221,7 +222,7 @@ export async function applyWorkspaceRootsOperation(operation: WorkspaceRootsOper
 export async function persistWorkspaceRoot(workspaceRoot: string): Promise<void> {
   const trimmedRoot = workspaceRoot.trim()
   if (!trimmedRoot) return
-  const normalizedRoot = await canonicalizeWorkspaceRootPath(trimmedRoot, realpath)
+  const normalizedRoot = await canonicalizeWorkspaceRootPath(trimmedRoot, preserveRemotePath)
 
   await updateWorkspaceRootsState((existingState) => {
     return {

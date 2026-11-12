@@ -202,16 +202,19 @@ describe('writeWorkspaceRootsState', () => {
 
       const rawState = JSON.parse(await readFile(join(codexHome, '.codex-global-state.json'), 'utf8')) as Record<string, unknown>
       expect(rawState['electron-saved-workspace-roots']).toEqual([
-        canonicalRoot,
+        symlinkRoot,
         'remote-project-id',
+        canonicalRoot,
       ])
-      expect(rawState['active-workspace-roots']).toEqual([canonicalRoot])
+      expect(rawState['active-workspace-roots']).toEqual([symlinkRoot, canonicalRoot])
       expect(rawState['project-order']).toEqual([
         'remote-project-id',
+        symlinkRoot,
         canonicalRoot,
       ])
       expect(rawState['electron-workspace-root-labels']).toEqual({
         [canonicalRoot]: 'Canonical Demo',
+        [symlinkRoot]: 'Symlink Demo',
         'remote-project-id': 'Remote Demo',
       })
     } finally {

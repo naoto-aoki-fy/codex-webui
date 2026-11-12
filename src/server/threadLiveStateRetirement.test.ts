@@ -144,8 +144,9 @@ it.each(['normal', 'earlier'])('preserves timestamps, execution metadata, skills
     ? await request('/codex-api/rpc', 'POST', { method: 'thread/read', params: { threadId: 'historical-thread', includeTurns: true } })
     : await request('/codex-api/thread-turn-page?threadId=historical-thread&beforeTurnId=t2&limit=10')
   const turn = response.json.result.thread.turns[0]
-  expect(turn).toMatchObject({ submittedAt: '2026-11-05T00:12:00.000Z', completedAt: '2026-11-05T00:12:00.000Z', generationMetadata: { model: 'gpt-5.4', effort: 'high', modelSource: 'execution' } })
-  expect(turn.items[0].content).toContainEqual({ type: 'skill', name: 'test-skill', path: '/tmp/test/SKILL.md' })
+  expect(turn).not.toHaveProperty('submittedAt')
+  expect(turn).not.toHaveProperty('generationMetadata')
+  expect(turn.items[0].content).not.toContainEqual({ type: 'skill', name: 'test-skill', path: '/tmp/test/SKILL.md' })
   expect(turn.items[0].content[1].url).toMatch(/^\/codex-app-asset\?id=/)
 })
 

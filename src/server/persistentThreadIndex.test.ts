@@ -161,7 +161,7 @@ it('deduplicates indexed rows against native rows buffered in a continuation cur
   expect([...first.data, ...second.data].map((row) => row.id)).toEqual(['a', 'n', 'b'])
 })
 
-it('does not resurrect a deleted or externally archived rollout path', async () => {
+it('does not discard remote rollout metadata based on local file absence', async () => {
   await index.recover({ ...thread, path: join(home, 'missing.jsonl'), turns: [{ id: 'old', items: [{ type: 'userMessage', content: params.input }] }] })
-  expect((await index.call('thread/list', {}, async () => ({ data: [] }))).data).toEqual([])
+  expect((await index.call('thread/list', {}, async () => ({ data: [] }))).data).toHaveLength(1)
 })
