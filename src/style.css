@@ -203,6 +203,10 @@
   @apply hover:bg-zinc-800;
 }
 
+:root.dark .project-header-row[data-active='true'] {
+  @apply bg-zinc-800;
+}
+
 :root.dark .project-title {
   @apply text-zinc-300;
 }

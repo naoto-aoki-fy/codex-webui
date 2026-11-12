@@ -60,6 +60,7 @@
           </div>
 
           <SidebarThreadTree :groups="projectGroups" :project-display-name-by-id="projectDisplayNameById"
+            :active-project-name="activeProjectName"
             :project-git-repo-by-name="projectGitRepoByName"
             v-if="!isSidebarCollapsed"
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
@@ -479,7 +480,7 @@ import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply,
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import type { TelegramStatus } from './api/codexGateway'
 import { getCodexAuthenticationStatus } from './api/codexGateway'
-import { getPathLeafName, getPathParent, isProjectlessChatPath, normalizePathForUi } from './pathUtils.js'
+import { getPathLeafName, getPathParent, isProjectlessChatPath, normalizePathForComparison, normalizePathForUi } from './pathUtils.js'
 import { copyTextToClipboard } from './utils/clipboard'
 
 const ThreadConversation = defineAsyncComponent(() => import('./components/content/ThreadConversation.vue'))
@@ -725,6 +726,29 @@ const routeThreadId = computed(() => {
 
 const isHomeRoute = computed(() => route.name === 'home')
 const isSkillsRoute = computed(() => route.name === 'skills')
+const activeProjectName = computed<string | null>(() => {
+  if (isSkillsRoute.value) return null
+  if (!isHomeRoute.value) {
+    const thread = selectedThread.value
+    return thread && !isProjectlessChatPath(thread.cwd) ? thread.projectName : null
+  }
+
+  const cwd = normalizePathForComparison(newThreadCwd.value).replace(/\/+$/u, '')
+  if (!cwd || isProjectlessChatPath(cwd)) return null
+  const matchesCwd = (path: string) => normalizePathForComparison(path).replace(/\/+$/u, '') === cwd
+
+  // Full paths distinguish same-name folders and include worktree threads.
+  const group = projectGroups.value.find((group) =>
+    matchesCwd(group.projectName) || group.threads.some((thread) => matchesCwd(thread.cwd)),
+  )
+  if (group) return group.projectName
+
+  // Registered roots also cover empty projects and groups with only worktree threads.
+  const workspaceRoot = workspaceRootOptionsState.value.order.find(matchesCwd)
+  if (!workspaceRoot) return null
+  const projectName = getPathLeafName(workspaceRoot)
+  return projectGroups.value.some((group) => group.projectName === projectName) ? projectName : null
+})
 const contentTitle = computed(() => {
   if (isSkillsRoute.value) return t('Skills')
   if (isHomeRoute.value) return t('Start new thread')

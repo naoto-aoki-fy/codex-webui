@@ -164,6 +164,7 @@
           <SidebarMenuRow
             as="div"
             class="project-header-row"
+            :data-active="group.projectName === activeProjectName"
             role="button"
             tabindex="0"
             @click="toggleProjectCollapse(group.projectName)"
@@ -189,7 +190,7 @@
               :data-dragging-handle="isDraggingProject(group.projectName)"
               @mousedown.left="onProjectHandleMouseDown($event, group.projectName)"
             >
-              <span class="project-title" :class="{ 'project-title-active': group.projectName === activeProjectName }" :title="getProjectTooltipTitle(group.projectName)">
+              <span class="project-title" :title="getProjectTooltipTitle(group.projectName)">
                 {{ getProjectVisibleName(group) }}
               </span>
             </span>
@@ -279,7 +280,7 @@
             <template #left>
               <span class="project-empty-spacer" />
             </template>
-            <span class="project-empty">{{ t('No threads') }}</span>
+            <span class="project-empty">{{ isSearchActive ? t('No matching threads') : t('No threads') }}</span>
           </SidebarMenuRow>
 
           <SidebarMenuRow v-if="hasHiddenThreads(group)" class="thread-show-more-row">
@@ -472,6 +473,7 @@ const props = defineProps<{
   projectDisplayNameById: Record<string, string>
   projectGitRepoByName: Record<string, boolean>
   selectedThreadId: string
+  activeProjectName: string | null
   isLoading: boolean
   isThreadListFullyLoaded: boolean
   searchQuery: string
@@ -701,16 +703,13 @@ function threadMatchesSearch(thread: UiThread): boolean {
   return thread.title.toLowerCase().includes(q) || thread.preview.toLowerCase().includes(q)
 }
 
-// Resolve against all threads so pinned, collapsed, and search-hidden chats retain their project.
-const activeProjectName = computed(() => {
-  if (!props.selectedThreadId) return null
-  return props.groups.find((group) => group.threads.some((thread) => thread.id === props.selectedThreadId))?.projectName ?? null
-})
-
 const filteredGroups = computed<UiProjectGroup[]>(() => {
   return props.groups.flatMap((group) => {
     const threads = group.threads.filter((thread) => !isProjectlessChatPath(thread.cwd) && threadMatchesSearch(thread))
     if (threads.length > 0) return [{ ...group, threads }]
+    if (isSearchActive.value && group.projectName === props.activeProjectName) {
+      return [{ ...group, threads }]
+    }
     return !isSearchActive.value && group.threads.length === 0 ? [{ ...group, threads }] : []
   })
 })
@@ -848,7 +847,7 @@ const threadProjectNameById = computed(() => {
 })
 const unpinnedThreadsByProjectName = computed(() => {
   const map = new Map<string, UiThread[]>()
-  for (const group of props.groups) {
+  for (const group of filteredGroups.value) {
     const rows = group.threads.filter((thread) => !pinnedThreadIdSet.value.has(thread.id) && !optimisticallyArchivedThreadIdSet.value.has(thread.id))
     map.set(group.projectName, rows)
   }
@@ -2037,6 +2036,10 @@ onBeforeUnmount(() => {
   @apply hover:bg-zinc-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400;
 }
 
+.project-header-row[data-active='true'] {
+  @apply bg-zinc-200;
+}
+
 .project-main-button {
   @apply min-w-0 w-full text-left rounded px-0 py-0 flex items-center gap-1.5 min-h-5 cursor-grab;
 }
@@ -2059,10 +2062,6 @@ onBeforeUnmount(() => {
 
 .project-title {
   @apply min-w-0 flex-1 text-sm font-normal text-zinc-700 truncate select-none;
-}
-
-.project-title.project-title-active {
-  font-weight: 700;
 }
 
 .project-menu-wrap {
