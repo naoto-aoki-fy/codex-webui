@@ -717,12 +717,12 @@
                   v-if="showEditMessageButton(message)"
                   type="button"
                   class="message-edit-button"
-                  aria-label="Edit this message"
-                  title="Edit this message"
+                  aria-label="Revert"
+                  title="Revert"
                   @click="editMessage(message.id)"
                 >
-                  <IconTablerFilePencil class="icon-svg message-edit-icon" />
-                  <span class="message-edit-label">Edit message</span>
+                  <IconTablerArrowBackUp class="icon-svg message-edit-icon" />
+                  <span class="message-edit-label">Revert</span>
                 </button>
                 <button
                   v-if="message.role === 'user'"
@@ -865,7 +865,6 @@ import ThreadDiffViewer from './ThreadDiffViewer.vue'
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
 import IconTablerCopy from '../icons/IconTablerCopy.vue'
-import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerGitFork from '../icons/IconTablerGitFork.vue'
 import IconTablerX from '../icons/IconTablerX.vue'
 
