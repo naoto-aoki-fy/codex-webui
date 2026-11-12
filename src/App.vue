@@ -74,8 +74,7 @@
             @rename-thread="onRenameThread"
             @fork-thread="onForkThread"
             @remove-project="onRemoveProject"
-            @copy-thread-chat="onCopyThreadChat"
-            @start-new-chat="onStartProjectlessNewChat" />
+            @copy-thread-chat="onCopyThreadChat" />
         </div>
 
         <div
@@ -1072,14 +1071,6 @@ function onStartNewThreadFromToolbar(): void {
   void router.push({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value } : {} })
 }
 
-function onStartProjectlessNewChat(): void {
-  newThreadCwd.value = ''
-  newThreadRuntime.value = 'local'
-  if (isMobile.value) setSidebarCollapsed(true)
-  if (isHomeRoute.value) return
-  void router.push({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value } : {} })
-}
-
 async function loadGitRepoStatus(cwdRaw: string): Promise<void> {
   const cwd = cwdRaw.trim()
   if (!cwd || Object.prototype.hasOwnProperty.call(gitRepoStatusByCwd.value, cwd)) return
@@ -1733,6 +1724,10 @@ async function submitFirstMessageForNewThread(
   try {
     worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
     let targetCwd = newThreadCwd.value
+    if (!targetCwd.trim()) {
+      desktopError.value = 'Select an existing workspace before starting a conversation.'
+      return
+    }
     if (newThreadRuntime.value === 'worktree') {
       worktreeInitStatus.value = {
         phase: 'running',
@@ -1752,9 +1747,6 @@ async function submitFirstMessageForNewThread(
         }
         return
       }
-    } else if (!targetCwd.trim()) {
-      desktopError.value = 'Select an existing workspace before starting a conversation.'
-      return
     }
     const threadId = await sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments)
     if (!threadId) return
