@@ -44,9 +44,6 @@ import {
   REASONING_BY_MODEL_STORAGE_KEY,
   NEW_THREAD_COLLABORATION_MODE_CONTEXT,
   NEW_THREAD_MODEL_CONTEXT,
-  loadReadStateMap,
-  saveReadStateMap,
-  loadUnreadCutoffIso,
   normalizeStoredModelId,
   createStringKeyedRecord,
   cloneStringKeyedRecord,
@@ -176,23 +173,6 @@ function isThreadNotFoundError(error: unknown): boolean {
   if (error instanceof CodexApiError && error.status === 404) return true
   const message = error instanceof Error ? error.message : String(error ?? '')
   return /\b404\b|thread.*not found|conversation.*not found|no such thread|no rollout found for thread id/i.test(message)
-}
-
-function isThreadUpdatedAfterCutoff(updatedAtIso: string, cutoffIso: string): boolean {
-  if (!updatedAtIso || !cutoffIso) return false
-  const updatedAtMs = new Date(updatedAtIso).getTime()
-  const cutoffMs = new Date(cutoffIso).getTime()
-  if (!Number.isFinite(updatedAtMs) || !Number.isFinite(cutoffMs)) return false
-  return updatedAtMs > cutoffMs
-}
-
-export function isThreadUnreadByLastRead(
-  updatedAtIso: string,
-  threadReadStateIso: string | undefined,
-  unreadCutoffIso: string,
-): boolean {
-  const effectiveLastReadIso = threadReadStateIso ?? unreadCutoffIso
-  return isThreadUpdatedAfterCutoff(updatedAtIso, effectiveLastReadIso)
 }
 
 type TurnSummaryState = {
@@ -440,7 +420,6 @@ export function useDesktopState() {
     effort: ReasoningEffort | ''
     collaborationMode: CollaborationModeKind
   }
-  const eventUnreadByThreadId = ref<Record<string, boolean>>({})
   const availableModelIds = ref<string[]>([])
   const modelUsageOrder = ref(loadModelUsageOrder())
   const orderedModelIds = computed(() => orderModelIdsByUsage(availableModelIds.value, modelUsageOrder.value))
@@ -475,8 +454,6 @@ export function useDesktopState() {
   const selectedReasoningEffort = computed(() => readReasoningEffortForThread(selectedThreadId.value))
   const selectedSpeedMode = ref<SpeedMode>('standard')
   const codexCliMissingError = ref('')
-  const readStateByThreadId = ref<Record<string, string>>(loadReadStateMap())
-  const unreadCutoffIso = ref(loadUnreadCutoffIso())
   try {
     window.localStorage.removeItem('codex-web-local.project-order.v1')
     window.localStorage.removeItem('codex-web-local.project-display-name.v1')
@@ -1096,14 +1073,7 @@ export function useDesktopState() {
       threads: group.threads.map((thread) => {
         const inProgress = inProgressById.value[thread.id] === true
         const pendingRequestState = readPendingRequestState(getThreadPendingRequests(thread.id))
-        const isSelected = selectedThreadId.value === thread.id
-        const unreadByEvent = eventUnreadByThreadId.value[thread.id] === true
-        const unreadByTime = isThreadUnreadByLastRead(
-          thread.updatedAtIso,
-          readStateByThreadId.value[thread.id],
-          unreadCutoffIso.value,
-        )
-        const unread = !isSelected && !inProgress && (thread.nativeReadState ? thread.nativeReadState.firstUnread !== null : (unreadByEvent || unreadByTime))
+        const unread = thread.nativeReadState?.firstUnread != null
 
         return {
           ...thread,
@@ -1185,11 +1155,6 @@ export function useDesktopState() {
       )
       saveSelectedCollaborationModeMap(nextSelectedCollaborationModeMap)
     }
-    const nextReadState = pruneThreadStateMap(readStateByThreadId.value, activeThreadIds)
-    if (nextReadState !== readStateByThreadId.value) {
-      readStateByThreadId.value = nextReadState
-      saveReadStateMap(nextReadState)
-    }
     hasMoreOlderMessagesByThreadId.value = pruneThreadStateMap(hasMoreOlderMessagesByThreadId.value, activeThreadIds)
     loadingOlderMessagesByThreadId.value = pruneThreadStateMap(loadingOlderMessagesByThreadId.value, activeThreadIds)
     loadedMessagesByThreadId.value = pruneThreadStateMap(loadedMessagesByThreadId.value, activeThreadIds)
@@ -1215,7 +1180,6 @@ export function useDesktopState() {
     threadListedByServerById.value = pruneThreadStateMap(threadListedByServerById.value, activeThreadIds)
     persistedUserMessageByThreadId.value = pruneThreadStateMap(persistedUserMessageByThreadId.value, activeThreadIds)
     threadTokenUsageByThreadId.value = pruneThreadStateMap(threadTokenUsageByThreadId.value, activeThreadIds)
-    eventUnreadByThreadId.value = pruneThreadStateMap(eventUnreadByThreadId.value, activeThreadIds)
     inProgressById.value = pruneThreadStateMap(inProgressById.value, activeThreadIds)
     const nextPending: Record<string, UiServerRequest[]> = {}
     for (const [threadId, requests] of Object.entries(pendingServerRequestsByThreadId.value)) {
@@ -1228,31 +1192,24 @@ export function useDesktopState() {
 
   const pendingNativeReadUpdates = new Set<string>()
 
-  function markThreadAsRead(threadId: string): void {
+  function markThreadAsRead(threadId: string, observedRevision?: string): void {
     const thread = flattenThreads(sourceGroups.value).find((row) => row.id === threadId)
-    if (!thread) return
+    if (!thread || selectedThreadId.value !== threadId) return
+    if (observedRevision !== undefined && thread.nativeReadState?.revision !== observedRevision) return
 
     if (thread.nativeReadState) {
-      if (thread.nativeReadState.firstUnread === null || pendingNativeReadUpdates.has(threadId)) return
+      if (thread.nativeReadState.firstUnread == null || pendingNativeReadUpdates.has(threadId)) return
       const revision = thread.nativeReadState.revision
       pendingNativeReadUpdates.add(threadId)
       void markNativeThreadRead(threadId, revision).then(state => {
-        if (thread.nativeReadState?.revision === revision) thread.nativeReadState = state
+        const current = flattenThreads(sourceGroups.value).find(row => row.id === threadId)
+        if (current?.nativeReadState?.revision === revision) current.nativeReadState = state
         applyThreadFlags()
       }).catch(cause => {
         error.value = `Native read state update failed. Select the thread again to retry: ${cause instanceof Error ? cause.message : String(cause)}`
       }).finally(() => pendingNativeReadUpdates.delete(threadId))
       return
     }
-    readStateByThreadId.value = {
-      ...readStateByThreadId.value,
-      [threadId]: thread.updatedAtIso,
-    }
-    saveReadStateMap(readStateByThreadId.value)
-    if (eventUnreadByThreadId.value[threadId]) {
-      eventUnreadByThreadId.value = omitKey(eventUnreadByThreadId.value, threadId)
-    }
-    applyThreadFlags()
   }
 
   function setTurnSummaryForThread(threadId: string, summary: TurnSummaryState | null): void {
@@ -1372,17 +1329,6 @@ export function useDesktopState() {
       }
     }
     maybeUnblockInterruptForPersistedThread(threadId)
-  }
-
-  function markThreadUnreadByEvent(threadId: string): void {
-    if (!threadId) return
-    if (threadId === selectedThreadId.value) return
-    if (eventUnreadByThreadId.value[threadId] === true) return
-    eventUnreadByThreadId.value = {
-      ...eventUnreadByThreadId.value,
-      [threadId]: true,
-    }
-    applyThreadFlags()
   }
 
   function setTurnActivityForThread(threadId: string, activity: TurnActivityState | null): void {
@@ -2122,9 +2068,6 @@ export function useDesktopState() {
       setTurnSummaryForThread(startedTurn.threadId, null)
       setTurnErrorForThread(startedTurn.threadId, null)
       setThreadInProgress(startedTurn.threadId, true)
-      if (eventUnreadByThreadId.value[startedTurn.threadId]) {
-        eventUnreadByThreadId.value = omitKey(eventUnreadByThreadId.value, startedTurn.threadId)
-      }
     }
 
     const completedTurn = readTurnCompletedInfo(notification)
@@ -2154,7 +2097,6 @@ export function useDesktopState() {
       }
       setThreadInProgress(completedTurn.threadId, false)
       setTurnActivityForThread(completedTurn.threadId, null)
-      markThreadUnreadByEvent(completedTurn.threadId)
       clearPendingTurnRequest(completedTurn.threadId)
     }
 
@@ -2305,7 +2247,6 @@ export function useDesktopState() {
         clearDelayedTurnSync(completedThreadId)
         setThreadInProgress(completedThreadId, false)
         setTurnActivityForThread(completedThreadId, null)
-        markThreadUnreadByEvent(completedThreadId)
         clearPendingTurnRequest(completedThreadId)
         if (turnErrorMessage) {
           clearLivePlansForThread(completedThreadId)
@@ -2322,7 +2263,7 @@ export function useDesktopState() {
 
   function queueEventDrivenSync(notification: RpcNotification): void {
     const generation = lifecycleGeneration
-    if (notification.method === 'thread/tokenUsage/updated') return
+    if (notification.method === 'thread/tokenUsage/updated' || notification.method === 'thread/readState/changed') return
 
     const method = notification.method
     const shouldRefreshMessages =
@@ -2688,6 +2629,7 @@ export function useDesktopState() {
       const loadedRecently =
         Date.now() - (lastMessageLoadAtByThreadId.get(threadId) ?? 0) < RECENT_THREAD_MESSAGE_LOAD_REUSE_MS
       const canReuseLoadedMessages =
+        flattenThreads(sourceGroups.value).find(row => row.id === threadId)?.nativeReadState?.firstUnread == null &&
         options.force !== true &&
         alreadyLoaded &&
         (version.length === 0 || loadedVersion === version) &&
@@ -2701,12 +2643,18 @@ export function useDesktopState() {
         return
       }
 
+      const observedReadRevision = flattenThreads(sourceGroups.value).find(row => row.id === threadId)?.nativeReadState?.revision
       const needsResume = resumedThreadById.value[threadId] !== true
       const realtimeRevision = realtimeRevisionByThreadId.get(threadId) ?? 0
       const resumedThread = needsResume ? await resumeThread(threadId) : null
       if (!isCurrent()) return
       const detail = resumedThread ?? await getThreadDetail(threadId)
       if (!isCurrent()) return
+      const currentThread = flattenThreads(sourceGroups.value).find(row => row.id === threadId)
+      if ('nativeReadState' in detail && currentThread?.nativeReadState?.revision === observedReadRevision && currentThread) {
+        currentThread.nativeReadState = detail.nativeReadState
+        applyThreadFlags()
+      }
       const currentActiveTurnId = activeTurnIdByThreadId.value[threadId]
       const hasNewerTurnState = realtimeRevision !== (realtimeRevisionByThreadId.get(threadId) ?? 0)
         || (inProgressById.value[threadId] === true && !detail.inProgress
@@ -2786,7 +2734,7 @@ export function useDesktopState() {
           clearCompletedTurnLiveState(threadId)
         }
       }
-      markThreadAsRead(threadId)
+      if (observedReadRevision !== undefined) markThreadAsRead(threadId, observedReadRevision)
       } catch (unknownError) {
         if (!isCurrent()) throw unknownError
         const message = unknownError instanceof Error ? unknownError.message : 'Unknown application error'

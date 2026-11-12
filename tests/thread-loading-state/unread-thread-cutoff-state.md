@@ -1,50 +1,24 @@
-### Unread thread cutoff state
+# Native read receipts
 
-#### Feature/Change Name
-Unread thread state uses a local cutoff timestamp so existing threads are not all marked unread after first load.
+## Prerequisites
+Use an independently managed Codex 0.167.2 app-server with experimental APIs.
+Connect two browser clients to the same server. Use disposable threads; retain
+existing browser storage, sessions and databases.
 
-#### Prerequisites/Setup
-1. Dev server running (`pnpm run dev`).
-2. Browser localStorage is available for the app origin.
-3. At least two existing threads are present.
-4. Light theme and dark theme are available from the appearance switcher.
+## Actions and expected results
+1. In light theme, complete a turn in an inactive durable thread. Its native
+   unread marker appears. Repeat in dark theme.
+2. Open the thread. Check that `thread/readState/update` sends
+   `operation: {type: "read"}` and the observed `expectedRevision`.
+3. Confirm the second client receives `thread/readState/changed` and clears
+   its marker. Refresh both clients and confirm the server receipt persists.
+4. Race a completion with history loading or mark-read. The new unread receipt
+   must survive. A conflict displays an error and does not automatically retry.
+5. Connect a server omitting receipts, or inspect an ineligible thread. No
+   unread marker is invented. Legacy timestamp keys have no effect.
+6. Disconnect during mark-read. Confirm no timestamp fallback or optimistic
+   clearing; reconnect and inspect the server state before selecting again.
 
-#### Steps
-1. Clear only `codex-web-local.thread-unread-cutoff.v1` from localStorage for the app origin.
-2. Load the app in light theme.
-3. Confirm existing threads are not all marked unread on first load.
-4. Create or receive an update in a different thread after the app has loaded.
-5. Confirm that updated thread can show unread when it is not selected or in progress.
-6. Create or receive an update in a second unselected thread.
-7. Open the first updated thread and confirm only that thread's unread indicator clears.
-8. Confirm the second updated thread remains unread until it is opened.
-9. Switch to dark theme and repeat steps 4 through 8.
-
-#### Expected Results
-- Missing cutoff state initializes to the current time instead of treating every thread as unread.
-- Threads updated after the cutoff can still become unread.
-- Opening a thread updates only that thread's read state and clears only that thread's unread indicator.
-- Unread indicators remain readable in both light theme and dark theme.
-
-#### Rollback/Cleanup
-- Remove any disposable test threads created for this validation.
-
----
-
-## Native durable read receipts
-
-Prerequisite: an independently managed Codex server supporting experimental
-`thread/list.readStates`, `thread/readState/update`, and `thread/readState/changed`;
-connect two clients to the same server state.
-
-1. Complete a turn in an inactive durable thread. Confirm its native unread marker.
-2. Open the thread. Inspect RPC traffic for `thread/readState/update` with
-   `operation: {type: "read"}` and the displayed receipt's `expectedRevision`.
-3. Refresh both clients; confirm read status persists and the second client receives
-   the change notification. Browser timestamp values must not override native status.
-4. Race a completion with mark-read. A revision conflict must not trigger a retry
-   using a newly fetched revision or overwrite the new unread activity.
-5. Repeat with an older server omitting receipts: existing timestamp behavior remains.
-
-Cleanup: close the second client; retain existing browser state and server data.
-These live-server steps require manual execution; fixture tests do not establish them.
+## Cleanup
+Close the second client. Do not clear localStorage or delete server data.
+Fixture/unit tests do not establish real multi-client server behavior.
