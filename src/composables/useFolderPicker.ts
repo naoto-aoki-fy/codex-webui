@@ -59,8 +59,17 @@ export function useFolderPicker(options: FolderPickerOptions) {
   })
   async function onOpenExistingFolder(): Promise<void> {
     const startPath = await options.resolveStartPath()
-    if (!startPath) return
     isExistingFolderPickerOpen.value = true
+    if (!startPath) {
+      existingFolderPathDraft.value = ''
+      existingFolderBrowsePath.value = ''
+      existingFolderParentPath.value = ''
+      existingFolderEntries.value = []
+      existingFolderError.value = 'Enter an absolute directory path on the App Server host, then choose Browse or Select.'
+      await nextTick()
+      if (isExistingFolderPickerOpen.value) options.focusPathInput()
+      return
+    }
     existingFolderFilter.value = ''
     const opening = loadExistingFolderListing(startPath)
     const requestId = existingFolderBrowseRequestId
