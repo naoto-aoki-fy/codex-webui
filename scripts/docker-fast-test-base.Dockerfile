@@ -17,4 +17,4 @@ RUN mkdir -p /codex-home /projects
 WORKDIR /repo
 EXPOSE 4191
 
-CMD ["node", "/repo/dist-cli/index.js", "--port", "4191", "--no-password", "--no-open", "--no-login"]
+CMD ["node", "/repo/dist-cli/index.js", "--port", "4191", "--no-password", "--no-open"]

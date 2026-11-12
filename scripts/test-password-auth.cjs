@@ -30,7 +30,7 @@ async function run(label, flags, protectedMode) {
   const port = String(probe.address().port)
   await new Promise(resolve => probe.close(resolve))
   const home = mkdtempSync(join(tmpdir(), 'codex-password-smoke-'))
-  const child = spawn(process.execPath, ['dist-cli/index.js', '--port', port, '--no-open', '--no-login', ...flags], {
+  const child = spawn(process.execPath, ['dist-cli/index.js', '--port', port, '--no-open', ...flags], {
     env: { ...process.env, CODEX_HOME: home, CODEXUI_CODEX_COMMAND: '/bin/true' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })

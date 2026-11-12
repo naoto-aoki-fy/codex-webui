@@ -37,7 +37,7 @@ async function run() {
   const port = String(probe.address().port)
   await new Promise(resolve => probe.close(resolve))
   const startedAt = performance.now()
-  const child = spawn(process.execPath, ['dist-cli/index.js', '--port', port, '--no-open', '--no-login'], {
+  const child = spawn(process.execPath, ['dist-cli/index.js', '--port', port, '--no-open'], {
     env: { ...process.env, CODEX_HOME: home, CODEXUI_CODEX_COMMAND: '/bin/true' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
