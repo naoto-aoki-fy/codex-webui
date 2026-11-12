@@ -170,7 +170,6 @@ const zhCN: Record<string, string> = {
   'Loading method catalog...': '加载方法目录中...',
   'Disabled': '已禁用',
   'Installed': '已安装',
-  'Browse files': '浏览文件',
   'Loading skill contents...': '加载技能内容中...',
   'View on GitHub': '在 GitHub 查看',
   'Show all': '显示全部',

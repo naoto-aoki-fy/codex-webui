@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer as createHttpServer, type Server } from 'node:http'
@@ -16,13 +16,14 @@ import { createServer } from './httpServer'
 import { createLocalFileMiddleware } from './localFileHttp'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-it('preserves local read-only navigation and image routes without direct-file serving', async () => {
+it('preserves file and image access and workspace selection without directory browsing', async () => {
   const root = await mkdtemp(join(tmpdir(), 'local-file-retirement-'))
   const textPath = join(root, 'example.txt')
   const imagePath = join(root, 'example.svg')
   const text = 'unique-local-file-content'
   const image = '<svg xmlns="http://www.w3.org/2000/svg"/>'
   await mkdir(join(root, 'subdirectory'))
+  await symlink(root, join(root, 'directory-link'))
   await writeFile(textPath, text)
   await writeFile(imagePath, image)
   await writeFile(join(root, 'binary.bin'), Buffer.from([0, 1, 2]))
@@ -45,12 +46,17 @@ it('preserves local read-only navigation and image routes without direct-file se
       expect(await (await fetch(base + browse)).text()).toBe(text)
       const listing = await fetch(base + '/codex-local-directories?path=' + encodeURIComponent(root))
       expect(listing.status).toBe(200)
-      expect(await listing.text()).toContain('subdirectory')
-      const directoryHtml = await (await fetch(base + '/codex-local-browse' + encodeURI(root))).text()
-      expect(directoryHtml).toContain('example.txt')
-      expect(directoryHtml).toContain('Open folder in Codex')
-      expect(directoryHtml).not.toContain('/codex-local-edit')
-      expect(directoryHtml).not.toContain('icon-btn')
+      const folders = (await listing.json() as { data: { entries: { name: string; path: string }[] } }).data.entries
+      expect(folders).toContainEqual({ name: 'subdirectory', path: join(root, 'subdirectory') })
+      expect(folders.some((entry: { name: string }) => entry.name === 'example.txt')).toBe(false)
+      for (const directory of [root, root + '/', join(root, 'subdirectory'), join(root, 'directory-link')]) {
+        for (const method of ['GET', 'HEAD']) {
+          const response = await fetch(base + '/codex-local-browse' + encodeURI(directory), { method })
+          expect(response.status).toBe(404)
+          expect(response.headers.get('content-type')).toContain('application/json')
+          expect(await response.text()).toBe(method === 'HEAD' ? '' : JSON.stringify({ error: 'File not found.' }))
+        }
+      }
       const renderedImage = await fetch(base + '/codex-local-image?path=' + encodeURIComponent(imagePath))
       expect(renderedImage.headers.get('content-type')).toContain('image/svg+xml')
       expect(await renderedImage.text()).toBe(image)

@@ -43,15 +43,6 @@
             >
               {{ props.isTrying ? 'Starting...' : 'Try it!' }}
             </button>
-
-            <button
-              v-if="skillDirPath"
-              class="sdm-btn sdm-btn-secondary"
-              type="button"
-              @click="onBrowseFiles"
-            >
-              {{ t('Browse files') }}
-            </button>
           </div>
         </div>
       </div>
@@ -86,11 +77,6 @@ const { t } = useUiLanguage()
 
 const effectiveEnabled = computed(() => localEnabled.value ?? props.skill.enabled ?? true)
 const effectiveDescription = computed(() => localDescription.value || props.skill.description)
-const skillDirPath = computed(() => {
-  const p = props.skill.path
-  if (!p) return ''
-  return p.endsWith('/SKILL.md') ? p.slice(0, -'/SKILL.md'.length) : p
-})
 
 const renderedReadme = computed(() => {
   const raw = readmeContent.value
@@ -157,11 +143,6 @@ function onTry(): void {
   emit('try', props.skill)
 }
 
-function onBrowseFiles(): void {
-  const dir = skillDirPath.value
-  if (!dir) return
-  window.open(`/codex-local-browse${encodeURI(dir)}`, '_blank', 'noopener,noreferrer')
-}
 </script>
 
 <style scoped>

@@ -6,7 +6,7 @@ Build the app. Use an isolated `CODEX_HOME` with a registered project, normal an
 #### Actions
 1. Open Home in light and dark themes. Confirm `Select folder` remains while `Create Project` is absent while `Import Project` and the ZIP input are absent.
 2. Open an existing project using `Select folder`. Verify its name and historical conversations appear in the sidebar; switch between them and reload.
-3. Open thread and project menus in both themes. Confirm `Browse files` remains and `Export Project` is absent. Open the existing chat and check historical messages and file/image attachments.
+3. Open thread and project menus in both themes. Confirm `Browse files` and `Export Project` are absent. Open the existing chat and check historical messages and file/image attachments.
 4. Resume the conversation, send a message, observe streaming, and immediately steer with a follow-up. Archive/unarchive a disposable conversation with the normal Codex flow and verify historical messages are available after resumption.
 5. Request the retired GET/HEAD `/codex-api/project-zip` and POST `/codex-api/project-import` routes. Confirm no archive handling or filesystem changes occur.
 6. Compare existing project files, `.codex-project` metadata, session logs and prior ZIP archive bytes with the initial copies.

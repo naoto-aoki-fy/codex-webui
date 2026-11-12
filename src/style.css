@@ -1199,10 +1199,6 @@
   @apply text-zinc-100;
 }
 
-:root.dark .skill-card-browse {
-  @apply text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200;
-}
-
 :root.dark .skill-card-desc {
   @apply text-zinc-300;
 }

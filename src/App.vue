@@ -70,8 +70,6 @@
             :search-matched-thread-ids="serverMatchedThreadIds"
             @select="onSelectThread"
             @archive="onArchiveThread" @start-new-thread="onStartNewThread"
-            @browse-thread-files="onBrowseThreadFiles"
-            @browse-project-files="onBrowseProjectFiles"
             @request-project-git-status="onRequestProjectGitStatus"
             @rename-thread="onRenameThread"
             @fork-thread="onForkThread"
@@ -1050,28 +1048,9 @@ function onStartNewThread(projectName: string): void {
   void router.push({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value } : {} })
 }
 
-function onBrowseThreadFiles(threadId: string): void {
-  let targetCwd = ''
-  for (const group of projectGroups.value) {
-    const thread = group.threads.find((row) => row.id === threadId)
-    if (thread?.cwd?.trim()) {
-      targetCwd = thread.cwd.trim()
-      break
-    }
-  }
-  if (!targetCwd || typeof window === 'undefined') return
-  window.open(`/codex-local-browse${encodeURI(targetCwd)}`, '_blank', 'noopener,noreferrer')
-}
-
 function getProjectCwd(projectName: string): string {
   const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
   return resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
-}
-
-function onBrowseProjectFiles(projectName: string): void {
-  const targetCwd = getProjectCwd(projectName)
-  if (!targetCwd || typeof window === 'undefined') return
-  window.open(`/codex-local-browse${encodeURI(targetCwd)}`, '_blank', 'noopener,noreferrer')
 }
 
 function resolveSelectedThreadProjectCwd(): string {
