@@ -15,7 +15,7 @@ beforeEach(async () => {
   vi.stubEnv('CODEX_HOME', home)
   previous = scope.__codexRemoteSharedBridge__
   rpc.mockReset().mockResolvedValue({ data: [] })
-  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-v1', appServer: { rpc }, telegramBridge: {},  methodCatalog: {} }
+  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-v1', appServer: { rpc }, methodCatalog: {} }
 })
 afterEach(async () => { scope.__codexRemoteSharedBridge__ = previous; vi.unstubAllEnvs(); await rm(home, { recursive: true, force: true }) })
 async function request(path: string, method = 'GET') {
@@ -129,10 +129,9 @@ it('retires cached workers and never recovers persisted prompts across cold brid
   const oldRpc = vi.fn()
   const worker = { dispose: vi.fn(), scheduleThreadQueueDrain: vi.fn(), processThreadQueue: vi.fn(), startQueuedTurn: vi.fn() }
   const dispose = vi.fn()
-  const stop = vi.fn()
   scope.__codexRemoteSharedBridge__ = {
     version: 'project-history-api-v1', appServer: { rpc: oldRpc, dispose },
-    telegramBridge: { stop }, backendQueueProcessor: worker,
+    backendQueueProcessor: worker,
   }
   const old = scope.__codexRemoteSharedBridge__ as { appServer: { rpc: (method: string) => Promise<unknown> } }
   vi.useFakeTimers()
@@ -146,7 +145,6 @@ it('retires cached workers and never recovers persisted prompts across cold brid
     }
     expect(worker.dispose).toHaveBeenCalledOnce()
     expect(dispose).toHaveBeenCalledOnce()
-    expect(stop).toHaveBeenCalledOnce()
     await worker.scheduleThreadQueueDrain()
     await worker.processThreadQueue()
     await worker.startQueuedTurn()

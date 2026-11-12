@@ -1,3 +1,5 @@
+> Historical audit: Telegram integration has since been removed. References below describe the earlier implementation, not current behavior.
+
 # Phase 9-D-1: Desktop State Modularization Audit
 
 Audit date: 2026-11-11  

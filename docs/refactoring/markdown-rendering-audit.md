@@ -1,3 +1,5 @@
+> Historical audit: Telegram integration has since been removed. References below describe the earlier implementation, not current behavior.
+
 # Markdown rendering audit (Task 9-B-7)
 
 ## Scope and preceding work

@@ -10,7 +10,7 @@ const previous = scope.__codexRemoteSharedBridge__
 afterEach(() => { scope.__codexRemoteSharedBridge__ = previous; vi.unstubAllEnvs() })
 function seed() {
   const client = new AppServerClient()
-  const runtime = { version: 'external-websocket-v1', appServer: client, telegramBridge: { stop: vi.fn() }, methodCatalog: {} }
+  const runtime = { version: 'external-websocket-v1', appServer: client, methodCatalog: {} }
   scope.__codexRemoteSharedBridge__ = runtime
   return { client, runtime, dispose: vi.spyOn(client, 'dispose') }
 }
@@ -42,7 +42,6 @@ it('keeps RPCs, pending calls and notifications alive until the final owner rele
     await sent
     a.dispose(); a.dispose()
     expect(dispose).not.toHaveBeenCalled()
-    expect(runtime.telegramBridge.stop).not.toHaveBeenCalled()
     expect(scope.__codexRemoteSharedBridge__).toBe(runtime)
     const req = Readable.from([JSON.stringify({ method: 'test/echo', params: {} })])
     Object.assign(req, { method: 'POST', url: '/codex-api/rpc', headers: {} })
@@ -56,7 +55,6 @@ it('keeps RPCs, pending calls and notifications alive until the final owner rele
     b.dispose(); b.dispose(); a.dispose()
     expect(await rejected).toEqual(expect.objectContaining({ message: expect.stringMatching(/disposed|disconnected/i) }))
     expect(dispose).toHaveBeenCalledOnce()
-    expect(runtime.telegramBridge.stop).toHaveBeenCalledOnce()
     expect(scope.__codexRemoteSharedBridge__).toBeUndefined()
   } finally {
     unsubscribe(); a.dispose(); b.dispose()
@@ -97,6 +95,5 @@ it('shares ownership across compatible module reloads and releases a single owne
   const only = reloaded.createCodexBridgeMiddleware()
   only.dispose(); only.dispose()
   expect(single.dispose).toHaveBeenCalledOnce()
-  expect(single.runtime.telegramBridge.stop).toHaveBeenCalledOnce()
   expect(scope.__codexRemoteSharedBridge__).toBeUndefined()
 })

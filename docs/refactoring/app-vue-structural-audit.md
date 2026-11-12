@@ -1,3 +1,5 @@
+> Historical audit: Telegram integration has since been removed. References below describe the earlier implementation, not current behavior.
+
 # App.vue structural audit after component extractions
 
 This audit reviews `src/App.vue` after the `ProjectSetupModal` (`28b475c`), `FolderPickerModal` (`a947f92`), and `GeneralPreferencesSettings` (`f792c21`) extractions. It is a static analysis; no code was changed or runtime profiling performed.

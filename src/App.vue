@@ -113,66 +113,6 @@
                 @update:ui-language="setUiLanguage"
                 @cycle-chat-width="cycleChatWidth"
               />
-              <button class="sidebar-settings-row" type="button" aria-live="polite" @click="toggleTelegramConfig">
-                <span class="sidebar-settings-label">{{ t('Telegram') }}</span>
-                <span class="sidebar-settings-value">{{ telegramStatusText }}</span>
-              </button>
-              <div v-if="isTelegramConfigOpen" class="sidebar-settings-telegram-panel">
-                <label class="sidebar-settings-field">
-                  <span class="sidebar-settings-field-label">{{ t('Bot token') }}</span>
-                  <input
-                    v-model="telegramBotTokenDraft"
-                    class="sidebar-settings-input"
-                    type="password"
-                    placeholder="123456:ABCDEF"
-                    autocomplete="off"
-                    spellcheck="false"
-                  >
-                </label>
-                <label class="sidebar-settings-field">
-                  <span class="sidebar-settings-field-label inline-flex items-center gap-1"><input v-model="telegramNotifyEnabledDraft" type="checkbox" />{{ t('Enable completion notifications') }}</span>
-                </label>
-                <label class="sidebar-settings-field">
-                  <span class="sidebar-settings-field-label">{{ t('Destination chat ID') }}</span>
-                  <input v-model="telegramNotifyChatIdDraft" class="sidebar-settings-input" type="text" inputmode="numeric" placeholder="123456789" />
-                </label>
-                <label class="sidebar-settings-field">
-                  <span class="sidebar-settings-field-label">{{ t('App URL reachable from your phone') }}</span>
-                  <input v-model="telegramAppUrlDraft" class="sidebar-settings-input" type="url" placeholder="https://your-app.example" />
-                </label>
-                <p class="sidebar-settings-field-help">{{ t('Notifies successful turns observed by this running backend. A finished turn does not guarantee the whole task succeeded.') }}</p>
-                <div class="sidebar-settings-field-help" role="status">
-                  <p>{{ t('Notification status') }}: {{ telegramNotificationStatusText }}</p>
-                  <p v-if="telegramStatus.notification?.lastTestAt">{{ t('Last test') }}: {{ new Date(telegramStatus.notification.lastTestAt).toLocaleString() }}</p>
-                  <p v-if="telegramStatus.notification?.lastSuccessAt">{{ t('Last notification sent') }}: {{ new Date(telegramStatus.notification.lastSuccessAt).toLocaleString() }}</p>
-                  <p v-if="telegramStatus.notification?.lastFailureAt">{{ t('Last notification failure') }}: {{ new Date(telegramStatus.notification.lastFailureAt).toLocaleString() }}</p>
-                  <p v-if="telegramStatus.notification?.pendingCount">{{ t('Pending notifications') }}: {{ telegramStatus.notification.pendingCount }} ({{ t('retrying') }}: {{ telegramStatus.notification.retryingCount }})</p>
-                  <p v-if="telegramStatus.notification?.lastError">{{ t('Notification delivery failed') }}: {{ telegramStatus.notification.lastError }}</p>
-                  <template v-if="telegramStatus.notification?.lastTestResult === 'failure'">
-                    <p>{{ t('Check the bot token, chat ID, network connection, DNS, and proxy settings.') }}</p>
-                    <p>{{ t('Technical details') }}: {{ telegramStatus.notification.lastTestError }}</p>
-                  </template>
-                  <p v-if="telegramTestUnavailable">{{ telegramTestUnavailable }}</p>
-                  <p v-if="telegramTestError">{{ telegramTestError }}</p>
-                  <p>{{ t('A successful test means Telegram accepted the message; it does not guarantee display on your device.') }}</p>
-                </div>
-                <button class="sidebar-settings-telegram-save" type="button" :disabled="Boolean(telegramTestUnavailable)" @click="sendTelegramTest">
-                  {{ isTelegramTesting ? t('Sending test notification…') : telegramStatus.notification?.lastTestResult === 'failure' ? t('Retry Test Notification') : t('Send Test Notification') }}
-                </button>
-                <div v-if="telegramConfigError" class="sidebar-settings-telegram-error">
-                  <span>{{ telegramConfigError }}</span>
-                </div>
-                <div class="sidebar-settings-telegram-actions">
-                  <button
-                    class="sidebar-settings-telegram-save"
-                    type="button"
-                    :disabled="isTelegramSaving"
-                    @click="saveTelegramConfig"
-                  >
-                    {{ isTelegramSaving ? t('Saving…') : t('Save Telegram config') }}
-                  </button>
-                </div>
-              </div>
               <div
                 v-if="showThreadContextBadge"
                 class="sidebar-settings-row sidebar-settings-context-row"
@@ -464,23 +404,18 @@ import { useMobile } from './composables/useMobile'
 import { useUiLanguage } from './composables/useUiLanguage'
 import {
   cloneGithubRepository,
-  configureTelegramBot,
   createWorktree,
   createProjectlessThreadDirectory,
   getGitRepositoryStatus,
   logoutCodex,
   getHomeDirectory,
-  getTelegramConfig,
   getProjectRootSuggestion,
-  getTelegramStatus,
-  sendTelegramTestNotification,
   getWorkspaceRootsState,
   openProjectRoot,
   searchThreads,
 } from './api/codexGateway'
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
-import type { TelegramStatus } from './api/codexGateway'
 import { getCodexAuthenticationStatus } from './api/codexGateway'
 import { getPathLeafName, getPathParent, isProjectlessChatPath, normalizePathForComparison, normalizePathForUi } from './pathUtils.js'
 import { copyTextToClipboard } from './utils/clipboard'
@@ -642,34 +577,6 @@ const CHAT_WIDTH_KEY = 'codex-web-local.chat-width.v1'
 const sendWithEnter = ref(loadBoolPref(SEND_WITH_ENTER_KEY, true))
 const darkMode = ref<'system' | 'light' | 'dark'>(loadDarkModePref())
 const chatWidth = ref<ChatWidthMode>(loadChatWidthPref())
-const isTelegramConfigOpen = ref(false)
-const telegramBotTokenDraft = ref('')
-const telegramNotifyEnabledDraft = ref(false)
-const telegramNotifyChatIdDraft = ref('')
-const telegramAppUrlDraft = ref('')
-const telegramConfigError = ref('')
-const isTelegramSaving = ref(false)
-const isTelegramTesting = ref(false)
-const telegramTestError = ref('')
-const savedTelegramDraft = ref('')
-const telegramDraftSnapshot = () => JSON.stringify([telegramBotTokenDraft.value, telegramNotifyEnabledDraft.value, telegramNotifyChatIdDraft.value, telegramAppUrlDraft.value])
-const telegramTestUnavailable = computed(() => {
-  if (isTelegramTesting.value) return t('Sending test notification…')
-  if (isTelegramSaving.value) return t('Wait until settings are saved.')
-  if (!telegramBotTokenDraft.value.trim()) return t('Configure a bot token before testing.')
-  const id = telegramNotifyChatIdDraft.value.trim()
-  if (!/^-?\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) === 0) return t('Configure a valid destination chat ID before testing.')
-  if (!savedTelegramDraft.value || telegramDraftSnapshot() !== savedTelegramDraft.value) return t('Save configuration changes before testing.')
-  return ''
-})
-const telegramNotificationStatusText = computed(() => {
-  const status = telegramStatus.value.notification
-  if (!status?.lastTestResult && !status?.lastSuccessAt && !status?.lastFailureAt) return t('Not verified')
-  if (status.lastTestResult === 'failure') return t('Test notification failed')
-  if (status.lastError) return t('Notification delivery failed')
-  if (status.lastTestResult === 'success') return t('Test notification sent successfully')
-  return t('Last notification sent successfully')
-})
 const isProjectSetupModalOpen = ref(false)
 const projectSetupMode = ref<'create' | 'clone'>('create')
 const projectSetupBaseDir = ref('')
@@ -710,11 +617,6 @@ const {
   resolveCreationPath: (parent, name) => normalizeAbsolutePath(joinPath(parent, name)),
   focusPathInput: () => folderPickerModalRef.value?.focusPathInput(),
   focusCreateInput: () => folderPickerModalRef.value?.focusCreateInput(),
-})
-const telegramStatus = ref<TelegramStatus>({
-  configured: false,
-  active: false,
-  lastError: '',
 })
 let workspaceRootsResumeTimer: ReturnType<typeof setTimeout> | null = null
 let workspaceRootsResumeInProgress = false
@@ -1003,12 +905,6 @@ const contentStyle = computed(() => {
     '--virtual-keyboard-inset': `${keyboardInset}px`,
   }
 })
-const telegramStatusText = computed(() => {
-  if (!telegramStatus.value.configured) return t('Not configured')
-  const base = telegramStatus.value.active ? t('Online') : t('Configured (offline)')
-  return base
-})
-
 onMounted(() => {
   document.addEventListener('pointerdown', onDocumentPointerDown)
   window.addEventListener('keydown', onWindowKeyDown)
@@ -1025,13 +921,10 @@ onMounted(() => {
   void loadHomeDirectory()
   void loadWorkspaceRootOptionsState()
   void refreshDefaultProjectName()
-  void refreshTelegramConfig()
-  void refreshTelegramStatus()
   void loadCodexAuthStatus()
 })
 
 onUnmounted(() => {
-  clearInterval(telegramStatusTimer)
   document.removeEventListener('pointerdown', onDocumentPointerDown)
   window.removeEventListener('keydown', onWindowKeyDown)
   document.removeEventListener('visibilitychange', onDocumentVisibilityChange)
@@ -1082,99 +975,6 @@ watch(sidebarSearchQuery, (value) => {
 
 function onSkillsChanged(): void {
   void refreshSkills({ force: true })
-}
-
-async function refreshTelegramStatus(): Promise<void> {
-  try {
-    telegramStatus.value = await getTelegramStatus()
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to load Telegram status'
-    telegramStatus.value = {
-      configured: false,
-      active: false,
-      lastError: message,
-    }
-  }
-}
-
-async function refreshTelegramConfig(): Promise<void> {
-  try {
-    const config = await getTelegramConfig()
-    telegramBotTokenDraft.value = config.botToken
-    telegramNotifyEnabledDraft.value = config.completionNotifications.enabled
-    telegramNotifyChatIdDraft.value = config.completionNotifications.chatIds.join('')
-    telegramAppUrlDraft.value = config.completionNotifications.appUrl
-    savedTelegramDraft.value = telegramDraftSnapshot()
-    telegramConfigError.value = ''
-  } catch (error) {
-    telegramConfigError.value = error instanceof Error ? error.message : 'Failed to load Telegram configuration'
-  }
-}
-
-let telegramStatusTimer: ReturnType<typeof setInterval> | undefined
-function toggleTelegramConfig(): void {
-  isTelegramConfigOpen.value = !isTelegramConfigOpen.value
-  clearInterval(telegramStatusTimer)
-  if (isTelegramConfigOpen.value) {
-    void refreshTelegramStatus()
-    telegramStatusTimer = setInterval(() => { void refreshTelegramStatus() }, 10000)
-  }
-}
-
-async function sendTelegramTest(): Promise<void> {
-  if (telegramTestUnavailable.value) return
-  isTelegramTesting.value = true
-  telegramTestError.value = ''
-  try {
-    await sendTelegramTestNotification()
-  } catch (error) {
-    telegramTestError.value = error instanceof Error ? error.message : t('Test notification failed')
-  } finally {
-    await refreshTelegramStatus()
-    isTelegramTesting.value = false
-  }
-}
-
-async function saveTelegramConfig(): Promise<void> {
-  const botToken = telegramBotTokenDraft.value.trim()
-  if (!botToken) {
-    telegramConfigError.value = t('Telegram bot token is required.')
-    return
-  }
-  const chatIdText = telegramNotifyChatIdDraft.value.trim()
-  const chatId = Number(chatIdText)
-  if ((chatIdText || telegramNotifyEnabledDraft.value) && (!/^-?\d+$/.test(chatIdText) || !Number.isSafeInteger(chatId) || chatId === 0)) {
-    telegramConfigError.value = t('Enter a nonzero destination Telegram chat ID.')
-    return
-  }
-  const appUrl = telegramAppUrlDraft.value.trim()
-  if (appUrl) {
-    try {
-      const url = new URL(appUrl)
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid URL')
-    } catch {
-      telegramConfigError.value = t('Enter a valid HTTP or HTTPS app URL.')
-      return
-    }
-  }
-  isTelegramSaving.value = true
-  telegramConfigError.value = ''
-  try {
-    await configureTelegramBot(botToken, {
-      enabled: telegramNotifyEnabledDraft.value,
-      chatIds: chatIdText ? [chatId] : [],
-      appUrl,
-    })
-    await Promise.all([
-      refreshTelegramConfig(),
-      refreshTelegramStatus(),
-    ])
-  } catch (error) {
-    telegramConfigError.value = error instanceof Error ? error.message : t('Failed to connect Telegram bot')
-    void refreshTelegramStatus()
-  } finally {
-    isTelegramSaving.value = false
-  }
 }
 
 function toggleSidebarSearch(): void {
@@ -2546,47 +2346,6 @@ async function onLogoutCodex(): Promise<void> {
 
 .sidebar-settings-panel :deep(.sidebar-settings-row + .sidebar-settings-row) {
   @apply border-t border-zinc-100;
-}
-
-.sidebar-settings-telegram-panel {
-  @apply border-t border-zinc-100 bg-zinc-50/70 px-3 py-3;
-}
-
-.sidebar-settings-field {
-  @apply flex flex-col gap-1.5;
-}
-
-.sidebar-settings-field + .sidebar-settings-field {
-  @apply mt-3;
-}
-
-.sidebar-settings-field-label {
-  @apply text-xs font-medium text-zinc-700;
-}
-
-.sidebar-settings-input,
-.sidebar-settings-textarea {
-  @apply w-full rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-sm text-zinc-800 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200;
-}
-
-.sidebar-settings-textarea {
-  @apply min-h-20 resize-y font-mono text-xs;
-}
-
-.sidebar-settings-field-help {
-  @apply mt-2 text-xs leading-5 text-zinc-500;
-}
-
-.sidebar-settings-telegram-error {
-  @apply mt-2 rounded-md bg-rose-50 px-2.5 py-2 text-xs text-rose-700;
-}
-
-.sidebar-settings-telegram-actions {
-  @apply mt-3 flex items-center justify-end;
-}
-
-.sidebar-settings-telegram-save {
-  @apply rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-default disabled:opacity-60;
 }
 
 .sidebar-settings-label {

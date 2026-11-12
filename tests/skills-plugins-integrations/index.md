@@ -1,6 +1,6 @@
 # Skills and Integrations
 
-Skills Hub, local Skills management, MCP directory surfaces, prompts, Telegram, and installed skill behavior.
+Skills Hub, local Skills management, MCP directory surfaces, prompts and installed skill behavior.
 
 Return to the [manual test index](../../tests.md).
 
@@ -8,7 +8,6 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
-| [Feature: Telegram bot token stored in dedicated global file](telegram-bot-token-stored-in-dedicated-global-file.md) |
 | [Feature: Skills dropdown closes after selection in composer](skills-dropdown-closes-after-selection-in-composer.md) |
 | [Feature: Skills Hub local-only installed skills](skills-hub-local-only-installed-skills.md) |
 | [Composer skill chip opens SKILL.md](composer-skill-chip-opens-skill-md.md) |
@@ -22,5 +21,6 @@ Return to the [manual test index](../../tests.md).
 | [Removal of first-launch Plugins and Apps card](first-launch-home-card-for-plugins-and-apps.md) |
 | [Composer prompts inside Skills dropdown](composer-prompts-inside-skills-dropdown.md) |
 
-| [Telegram notification test and status](telegram-notification-test-and-status.md) |
 | [Local Skills without GitHub authentication or synchronization](local-skills-without-automatic-github-sync.md) |
+
+| [Removed notification integration](removed-notification-integration.md) |

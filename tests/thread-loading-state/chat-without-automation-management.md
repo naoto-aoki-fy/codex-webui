@@ -18,7 +18,7 @@ There is no Automations navigation, creation/editor dialog, schedule/status cont
 Restore theme/navigation and remove only disposable fixtures. Existing user automation data, Codex config, credentials, and conversation history must remain unchanged.
 
 #### Performance audit
-Sidebar mount no longer fetches thread/project automation maps or scans automation directories. The lazily loaded Automations panel, editor state/computed values, and automation CSS are removed. No replacement requests, polling, background timers, or caches are added. Telegram processing and SSE keepalive remain active infrastructure; prompt queue drain timers are removed. Live provider latency is not measured here.
+Sidebar mount no longer fetches thread/project automation maps or scans automation directories. The lazily loaded Automations panel, editor state/computed values, and automation CSS are removed. No replacement requests, polling, background timers, or caches are added. SSE keepalive remains active infrastructure; prompt queue drain timers are removed. Live provider latency is not measured here.
 
 #### Historical validation evidence and limits
 

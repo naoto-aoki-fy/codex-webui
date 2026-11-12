@@ -17,7 +17,7 @@ normalization, and HTTP value helpers directly; it never imports the bridge.
 The local string validation helper preserves the original semantics.
 
 The bridge retains HTTP routing, snapshot fallback selection, archive recovery,
-SSE, Telegram, middleware disposal, and the global shared runtime. The shared key
+SSE, middleware disposal, and the global shared runtime. The shared key
 and `external-websocket-v1` version are unchanged. Matching hot-reload generations
 reuse the existing object without an instanceof check; incompatible generations
 still retire legacy workers and dispose the previous runtime before replacement.

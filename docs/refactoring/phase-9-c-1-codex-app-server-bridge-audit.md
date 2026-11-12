@@ -1,3 +1,5 @@
+> Historical audit: Telegram integration has since been removed. References below describe the earlier implementation, not current behavior.
+
 # Phase 9-C-1: `codexAppServerBridge.ts` modularization audit
 
 ## Scope and verification

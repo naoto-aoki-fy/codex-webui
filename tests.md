@@ -20,7 +20,7 @@ Files marked historical preserve former behavior and are not current acceptance 
 | Folder | Scope |
 | --- | --- |
 | [Projects, Sidebar, and New Chat](tests/projects-sidebar-new-chat/index.md) | Home route, project picker, sidebar organization, new-chat setup, projectless folders, and project/worktree shell behavior. |
-| [Skills, Plugins, and Integrations](tests/skills-plugins-integrations/index.md) | Skills Hub, local Skills management, MCP status/authentication surfaces, prompts, Telegram, and installed skill behavior. |
+| [Skills, Plugins, and Integrations](tests/skills-plugins-integrations/index.md) | Skills Hub, local Skills management, MCP status/authentication surfaces, prompts and installed skill behavior. |
 | [Chat Composer and Message Rendering](tests/chat-composer-rendering/index.md) | Composer controls, immediate steering, plan mode, markdown parsing, file links, attachments, generated images, and visible message rows. |
 | [Thread Loading, Streaming, and State](tests/thread-loading-state/index.md) | Thread list/detail loading, pagination, selected-thread stability, streaming scroll behavior, retired live-state/stream-events diagnostic API checks, and missing-thread handling. |
 | [Codex Models](tests/providers-models/index.md) | Official Codex models, reasoning preferences, per-thread model selection, and catalog behavior. |
