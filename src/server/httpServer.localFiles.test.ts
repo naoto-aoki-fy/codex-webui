@@ -147,3 +147,34 @@ it('passes retired editor requests through without touching request or response 
     expect(next).toHaveBeenCalledExactlyOnceWith()
   }
 })
+
+it('proxies encoded drive and UNC links to the remote filesystem independent of the UI host OS', async () => {
+  const paths: string[] = []
+  const files = new ProjectFileService({ rpc: async (method, params) => {
+    paths.push((params as { path: string }).path)
+    return method === 'fs/getMetadata'
+      ? { isFile: true, isDirectory: false, modifiedAtMs: 0 }
+      : { dataBase64: Buffer.from('remote bytes').toString('base64') }
+  } })
+  const handler = createLocalFileMiddleware(files)
+  const server = createHttpServer((req, res) => handler(req, res, () => { res.statusCode = 404; res.end() }))
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  try {
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+    for (const [url, path] of [
+      ['/codex-local-browse/D%3A/remote/a%23b%3F.txt', 'D:/remote/a#b?.txt'],
+      ['/codex-local-browse//server/share/report.txt', '//server/share/report.txt'],
+      [`/codex-local-image?path=${encodeURIComponent('\\\\server\\share\\image.png')}`, '\\\\server\\share\\image.png'],
+    ]) {
+      paths.length = 0
+      const response = await fetch(base + url)
+      expect(response.status).toBe(200)
+      expect(await response.text()).toBe('remote bytes')
+      expect(paths).toEqual([path, path])
+    }
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
+})

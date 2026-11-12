@@ -4,7 +4,7 @@ function isFilePath(value: string): boolean {
   if (value.endsWith('/') || value.endsWith('\\')) return false
   if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//u.test(value)) return false
 
-  const looksLikeUnixAbsolute = value.startsWith('/')
+  const looksLikeUnixAbsolute = value.startsWith('/') || value.startsWith('\\\\')
   const looksLikeWindowsAbsolute = /^[A-Za-z]:[\\/]/u.test(value)
   const looksLikeRelative = value.startsWith('./') || value.startsWith('../') || value.startsWith('~/')
   if (looksLikeUnixAbsolute || looksLikeWindowsAbsolute || looksLikeRelative) return true
@@ -29,6 +29,8 @@ export function normalizePathSeparators(pathValue: string): string {
 function normalizeFileUrlToPath(pathValue: string): string {
   if (!pathValue.startsWith('file://')) return pathValue
   let stripped = pathValue.replace(/^file:\/\//u, '')
+  if (!stripped.startsWith('/') && !/^[A-Za-z]:/u.test(stripped)) stripped = `//${stripped}`
+  stripped = stripped.replace(/^\/\/localhost\//u, '/')
   try {
     stripped = decodeURIComponent(stripped)
   } catch {
@@ -59,6 +61,10 @@ export function normalizePathDots(pathValue: string): string {
   if (driveMatch) {
     root = `${driveMatch[1]}/`
     rest = (driveMatch[2] ?? '').replace(/^\/+/u, '')
+  } else if (rest.startsWith('//')) {
+    const [server, share, ...tail] = rest.slice(2).split('/')
+    root = `//${server}/${share}/`
+    rest = tail.join('/')
   } else if (rest.startsWith('/')) {
     root = '/'
     rest = rest.slice(1)
@@ -235,7 +241,7 @@ export function toRenderableImageUrl(value: string): string {
     normalized.startsWith('blob:') ||
     normalized.startsWith('http://') ||
     normalized.startsWith('https://') ||
-    normalized.startsWith('/codex-local-image?') || isAppAssetUrl(normalized)
+    (normalized === '/codex-local-image' || normalized.startsWith('/codex-local-image?')) || isAppAssetUrl(normalized)
   ) {
     return normalized
   }
@@ -244,7 +250,7 @@ export function toRenderableImageUrl(value: string): string {
     return `/codex-local-image?path=${encodeURIComponent(normalized)}`
   }
 
-  const looksLikeUnixAbsolute = normalized.startsWith('/')
+  const looksLikeUnixAbsolute = normalized.startsWith('/') || normalized.startsWith('\\\\')
   const looksLikeWindowsAbsolute = /^[A-Za-z]:[\\/]/u.test(normalized)
   if (looksLikeUnixAbsolute || looksLikeWindowsAbsolute) {
     return `/codex-local-image?path=${encodeURIComponent(normalized)}`
@@ -266,7 +272,7 @@ export function toBrowseUrl(pathValue: string, cwd: string): string {
 
   if (looksLikeAbsolutePath(resolved)) {
     const normalizedResolved = resolved.startsWith('/') ? resolved : `/${resolved}`
-    return `/codex-local-browse${encodeURI(normalizedResolved)}`
+    return `/codex-local-browse${normalizedResolved.split('/').map(segment => encodeURIComponent(segment)).join('/')}`
   }
 
   return '#'

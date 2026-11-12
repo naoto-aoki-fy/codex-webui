@@ -25,8 +25,8 @@ describe('conversation link characterization', () => {
     expect(resolveRelativePath('./a.ts', 'C:\\work')).toBe('C:/work/a.ts')
     expect(normalizePathDots('/a/../b/./c')).toBe('/b/c')
     expect(toBrowseUrl('src/a (copy).ts#L4', '/home/me')).toBe('/codex-local-browse/home/me/src/a%20(copy).ts')
-    expect(toBrowseUrl('/tmp/a#b?.ts', '')).toBe('/codex-local-browse/tmp/a#b?.ts')
-    expect(toBrowseUrl('C:\\work\\a.ts', '')).toBe('/codex-local-browse/C:/work/a.ts')
+    expect(toBrowseUrl('/tmp/a#b?.ts', '')).toBe('/codex-local-browse/tmp/a%23b%3F.ts')
+    expect(toBrowseUrl('C:\\work\\a.ts', '')).toBe('/codex-local-browse/C%3A/work/a.ts')
     expect(toBrowseUrl('a.ts', '')).toBe('#')
     expect(toBrowseUrl('', '/tmp')).toBe('#')
     expect(getBasename('C:\\work\\a.ts')).toBe('a.ts')
@@ -61,4 +61,11 @@ describe('conversation link characterization', () => {
 
 it('preserves web-owned asset URLs without routing them to remote filesystem reads', () => {
   expect(toRenderableImageUrl('/codex-app-asset?id=generated-image.png')).toBe('/codex-app-asset?id=generated-image.png')
+})
+
+it('preserves UNC roots, remote Windows image paths and encoded URL delimiters', () => {
+  expect(resolveRelativePath('\\\\server\\share\\dir\\report.txt', '/home/A')).toBe('//server/share/dir/report.txt')
+  expect(resolveRelativePath('file://server/share/dir/report.txt', '/home/A')).toBe('//server/share/dir/report.txt')
+  expect(toBrowseUrl('\\\\server\\share\\a#b?.txt', '/home/A')).toBe('/codex-local-browse//server/share/a%23b%3F.txt')
+  expect(toRenderableImageUrl('\\\\server\\share\\image.png')).toBe(`/codex-local-image?path=${encodeURIComponent('\\\\server\\share\\image.png')}`)
 })
