@@ -25,6 +25,31 @@ pnpm run dev --host 127.0.0.1 --port 4173
 
 Production builds use `pnpm run build` and do not read development certificates.
 
+## Ripgrep for file search and subprocess tests
+
+Composer file search and the real subprocess unit tests require ripgrep (`rg`).
+Install it with `sudo apt-get update && sudo apt-get install ripgrep` on Debian/Ubuntu,
+`brew install ripgrep` on macOS, or `winget install BurntSushi.ripgrep.MSVC` on Windows.
+Verify `rg --version` in the same environment that starts the app or tests
+(`command -v rg` on POSIX; `Get-Command rg` in PowerShell).
+The Linux verification workflow explicitly installs and verifies ripgrep before tests.
+
+Resolution tries `CODEXUI_RG_COMMAND` first, then PATH and known npm Codex package
+locations (on Windows, package locations precede PATH). Package fallback is best
+effort; a separate ripgrep installation is recommended. An invalid override falls
+back to the other candidates for compatibility. Set the override to an executable
+path without arguments or embedded quotes; spaces in the path are supported:
+
+```sh
+CODEXUI_RG_COMMAND='/opt/tools with spaces/rg' pnpm run dev
+```
+
+In PowerShell, use `$env:CODEXUI_RG_COMMAND = 'C:\Tools with spaces\rg.exe'`.
+If search reports missing ripgrep, check the override, executable permissions, and
+PATH inherited by the app process, then restart the app after changing its environment.
+No startup check requires ripgrep: other app functionality remains available.
+Search failures return HTTP 500 with an error message rather than an empty success.
+
 ## Optional HTTPS
 
 Generate a fresh key and certificate on each developer machine. Previously
