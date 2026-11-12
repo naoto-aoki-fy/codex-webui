@@ -49,63 +49,32 @@ async function init() {
   await run('git', ['add', '.'], { cwd: repo })
   await run('git', ['-c', 'user.name=Test', '-c', 'user.email=test@local', 'commit', '-m', 'initial'], { cwd: repo })
 }
-it.each([false, true])('creates from an empty/non-Git repository, permanent=%s', async permanent => {
-  payload = { sourceCwd: repo, worktreeName: 'permanent' }
-  const result = await create(permanent)
-  expect(result.status).toBe(200)
-  expect(result.body).toEqual({ data: { cwd: expect.any(String), branch: permanent ? 'permanent' : null, gitRoot: repo } })
-  const cwd = result.body.data.cwd
-  expect(await stat(join(cwd, 'AGENTS.md'))).toBeDefined()
-  expect(persist).toHaveBeenCalledExactlyOnceWith(cwd)
-  expect(await capture('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd })).toBe(permanent ? 'permanent' : 'HEAD')
-})
-it('allocates a collision suffix and supports a detached source HEAD', async () => {
-  await init()
-  await run('git', ['branch', 'feature'], { cwd: repo })
-  await run('git', ['checkout', '--detach'], { cwd: repo })
-  payload = { sourceCwd: repo, worktreeName: 'feature' }
-  expect((await create(true)).body.data.branch).toBe('feature-2')
-  expect((await create(true)).status).toBe(409)
-})
-it.each([false, true])('rolls back persistence failures in exact command order, permanent=%s', async permanent => {
-  await init()
+it.each([false, true])('rejects missing worktree prerequisites without mutations, empty Git=%s', async emptyGit => {
+  if (emptyGit) await run('git', ['init'], { cwd: repo })
   const spy = vi.spyOn(commands, 'runCommand')
-  persist.mockRejectedValueOnce(new Error('storage failed'))
-  payload = { sourceCwd: repo, worktreeName: 'feature' }
-  expect(await create(permanent)).toMatchObject({ status: 500, body: { error: 'storage failed' } })
-  const args = spy.mock.calls.map(call => call[1])
-  const add = args.findIndex(row => row[0] === 'worktree' && row[1] === 'add')
-  const cwd = args[add]![permanent ? 4 : 3]!
-  expect(args.slice(add + 1)).toEqual([
-    ['worktree', 'remove', '--force', cwd],
-    ...(permanent ? [['branch', '-D', 'feature']] : []),
-  ])
-  await expect(stat(cwd)).rejects.toThrow()
-  if (!permanent) await expect(stat(join(cwd, '..'))).rejects.toThrow()
-})
-it('falls back to filesystem cleanup and still removes the branch when Git removal fails', async () => {
-  await init()
-  vi.spyOn(commands, 'runCommand').mockImplementation(async (cmd, args, options) => {
-    if (args[0] === 'worktree' && args[1] === 'remove') throw new Error('remove failed')
-    return run(cmd, args, options)
-  })
-  persist.mockRejectedValueOnce(new Error('storage failed'))
-  payload = { sourceCwd: repo, worktreeName: 'feature' }
-  expect((await create(true)).status).toBe(500)
-  await expect(stat(join(root, 'feature'))).rejects.toThrow()
-})
-it('preserves partial add failure behavior without attempting rollback or persistence', async () => {
-  await init()
-  let partial = ''
-  const spy = vi.spyOn(commands, 'runCommand').mockImplementation(async (_cmd, args) => {
-    partial = args[3]!
-    await mkdir(partial, { recursive: true })
-    throw new Error('partial add failed')
-  })
-  expect(await create()).toMatchObject({ status: 500, body: { error: 'partial add failed' } })
-  expect(spy.mock.calls.map(call => call[1][0])).toEqual(['worktree'])
+  expect((await create()).status).toBe(500)
+  expect(spy).not.toHaveBeenCalled()
   expect(persist).not.toHaveBeenCalled()
-  expect((await stat(partial)).isDirectory()).toBe(true)
+  await expect(stat(join(repo, 'AGENTS.md'))).rejects.toThrow()
+  await expect(stat(join(root, 'home'))).rejects.toThrow()
+  if (!emptyGit) await expect(stat(join(repo, '.git'))).rejects.toThrow()
+})
+it('creates a detached worktree from an existing commit', async () => {
+  await init()
+  const result = await create()
+  expect(result.status).toBe(200)
+  expect(result.body.data.branch).toBeNull()
+  expect(await capture('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: result.body.data.cwd })).toBe('HEAD')
+  expect(persist).toHaveBeenCalledExactlyOnceWith(result.body.data.cwd)
+})
+it('cleans up a worktree when persistence fails', async () => {
+  await init()
+  persist.mockRejectedValueOnce(new Error('storage failed'))
+  expect(await create()).toMatchObject({ status: 500, body: { error: 'storage failed' } })
+  expect(await capture('git', ['worktree', 'list', '--porcelain'], { cwd: repo })).not.toContain('/home/worktrees/')
+})
+it('does not handle the retired permanent-worktree route', async () => {
+  expect((await create(true)).handled).toBe(false)
 })
 it('returns the Git error for an invalid start point', async () => {
   await init()
@@ -115,7 +84,6 @@ it('returns the Git error for an invalid start point', async () => {
 })
 it.each([
   ['POST', '/codex-api/worktree/create', {}, 400, 'Missing sourceCwd'],
-  ['POST', '/codex-api/worktree/create-permanent', { sourceCwd: '/tmp', worktreeName: '..' }, 400, 'Worktree name must be a single folder name'],
   ['GET', '/codex-api/git/repository-status', {}, 400, 'Missing cwd'],
   ['GET', '/codex-api/worktree/branches', {}, 400, 'Missing sourceCwd'],
 ])('validates %s %s', async (method, path, body, status, error) => {
@@ -188,15 +156,6 @@ it('returns exact status and branch errors for non-repository-independent comman
     .toMatchObject({ status: 500, body: { error: 'permission denied' } })
   expect(await request('GET', '/codex-api/worktree/branches?sourceCwd=' + repo))
     .toMatchObject({ status: 500, body: { error: 'permission denied' } })
-})
-it('keeps the bounded branch collision loop and never adds or persists a worktree on exhaustion', async () => {
-  await init()
-  const spy = vi.spyOn(commands, 'runCommand').mockResolvedValue()
-  payload = { sourceCwd: repo, worktreeName: 'feature' }
-  expect(await create(true)).toMatchObject({ status: 500, body: { error: 'Failed to allocate a unique branch name for worktree' } })
-  expect(spy.mock.calls).toHaveLength(100)
-  expect(spy.mock.calls[99]![1]).toEqual(['show-ref', '--verify', '--quiet', 'refs/heads/feature-50'])
-  expect(persist).not.toHaveBeenCalled()
 })
 it('rejects invalid clone URLs and existing destinations without issuing commands', async () => {
   const spy = vi.spyOn(commands, 'runCommand')

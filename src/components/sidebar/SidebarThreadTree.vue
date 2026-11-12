@@ -215,14 +215,6 @@
                       <button class="project-menu-item" type="button" @click="onBrowseProjectFiles(group.projectName)">
                         Browse files
                       </button>
-                      <button
-                        v-if="projectGitRepoByName[group.projectName]"
-                        class="project-menu-item"
-                        type="button"
-                        @click="onCreateProjectWorktree(group.projectName)"
-                      >
-                        New worktree
-                      </button>
                       <button class="project-menu-item" type="button" @click="openRenameProjectMenu(group)">
                         Rename project
                       </button>
@@ -495,7 +487,6 @@ const emit = defineEmits<{
   'browse-thread-files': [threadId: string]
   'browse-project-files': [projectName: string]
   'request-project-git-status': [projectName: string]
-  'create-project-worktree': [projectName: string]
   'rename-project': [payload: { projectName: string; displayName: string }]
   'rename-thread': [payload: { threadId: string; title: string }]
   'remove-project': [projectName: string]
@@ -1278,10 +1269,7 @@ function onBrowseProjectFiles(projectName: string): void {
   closeProjectMenu()
 }
 
-function onCreateProjectWorktree(projectName: string): void {
-  emit('create-project-worktree', projectName)
-  closeProjectMenu()
-}
+
 
 function onProjectNameInput(projectName: string): void {
   emit('rename-project', {

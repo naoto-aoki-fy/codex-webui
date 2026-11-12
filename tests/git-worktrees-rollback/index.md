@@ -29,7 +29,7 @@ Return to the [manual test index](../../tests.md).
 | [User message edit action replaces rollback button](user-message-edit-action-replaces-rollback-button.md) |
 | [Thread menu copy path action](thread-menu-copy-path-action.md) |
 | [Thread menu copy chat action](thread-menu-copy-chat-action.md) |
-| [Project menu permanent worktree action](project-menu-permanent-worktree-action.md) |
+| [Worktree creation requires an existing Git commit](project-menu-permanent-worktree-action.md) |
 | [Hide worktree controls for non-Git folders](hide-worktree-controls-for-non-git-folders.md) |
 | [Project worktree threads under canonical project](project-worktree-threads-under-canonical-project.md) |
 | [Worktree creation persists across refresh](worktree-creation-persists-across-refresh.md) |
