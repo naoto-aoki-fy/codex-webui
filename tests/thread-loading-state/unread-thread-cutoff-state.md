@@ -30,3 +30,21 @@ Unread thread state uses a local cutoff timestamp so existing threads are not al
 - Remove any disposable test threads created for this validation.
 
 ---
+
+## Native durable read receipts
+
+Prerequisite: an independently managed Codex server supporting experimental
+`thread/list.readStates`, `thread/readState/update`, and `thread/readState/changed`;
+connect two clients to the same server state.
+
+1. Complete a turn in an inactive durable thread. Confirm its native unread marker.
+2. Open the thread. Inspect RPC traffic for `thread/readState/update` with
+   `operation: {type: "read"}` and the displayed receipt's `expectedRevision`.
+3. Refresh both clients; confirm read status persists and the second client receives
+   the change notification. Browser timestamp values must not override native status.
+4. Race a completion with mark-read. A revision conflict must not trigger a retry
+   using a newly fetched revision or overwrite the new unread activity.
+5. Repeat with an older server omitting receipts: existing timestamp behavior remains.
+
+Cleanup: close the second client; retain existing browser state and server data.
+These live-server steps require manual execution; fixture tests do not establish them.

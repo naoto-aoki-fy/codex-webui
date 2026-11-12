@@ -1,3 +1,4 @@
+import { markNativeThreadRead } from '../api/codexGateway'
 import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
 import {
   toProjectNameFromWorkspaceRoot,
@@ -283,6 +284,7 @@ function areThreadFieldsEqual(first: UiThread, second: UiThread): boolean {
     first.createdAtIso === second.createdAtIso &&
     first.updatedAtIso === second.updatedAtIso &&
     first.preview === second.preview &&
+    first.nativeReadState?.revision === second.nativeReadState?.revision &&
     first.unread === second.unread &&
     first.inProgress === second.inProgress &&
     first.pendingRequestState === second.pendingRequestState
@@ -1101,7 +1103,7 @@ export function useDesktopState() {
           readStateByThreadId.value[thread.id],
           unreadCutoffIso.value,
         )
-        const unread = !isSelected && !inProgress && (unreadByEvent || unreadByTime)
+        const unread = !isSelected && !inProgress && (thread.nativeReadState ? thread.nativeReadState.firstUnread !== null : (unreadByEvent || unreadByTime))
 
         return {
           ...thread,
@@ -1224,10 +1226,24 @@ export function useDesktopState() {
     pendingServerRequestsByThreadId.value = nextPending
   }
 
+  const pendingNativeReadUpdates = new Set<string>()
+
   function markThreadAsRead(threadId: string): void {
     const thread = flattenThreads(sourceGroups.value).find((row) => row.id === threadId)
     if (!thread) return
 
+    if (thread.nativeReadState) {
+      if (thread.nativeReadState.firstUnread === null || pendingNativeReadUpdates.has(threadId)) return
+      const revision = thread.nativeReadState.revision
+      pendingNativeReadUpdates.add(threadId)
+      void markNativeThreadRead(threadId, revision).then(state => {
+        if (thread.nativeReadState?.revision === revision) thread.nativeReadState = state
+        applyThreadFlags()
+      }).catch(cause => {
+        error.value = `Native read state update failed. Select the thread again to retry: ${cause instanceof Error ? cause.message : String(cause)}`
+      }).finally(() => pendingNativeReadUpdates.delete(threadId))
+      return
+    }
     readStateByThreadId.value = {
       ...readStateByThreadId.value,
       [threadId]: thread.updatedAtIso,
@@ -2000,6 +2016,17 @@ export function useDesktopState() {
   }
 
   function applyRealtimeUpdates(notification: RpcNotification): void {
+    if (notification.method === 'thread/readState/changed') {
+      const params = asRecord(notification.params)
+      const state = asRecord(params?.readState)
+      const thread = flattenThreads(sourceGroups.value).find(row => row.id === params?.threadId)
+      if (thread && state && typeof state.revision === 'string' && 'firstUnread' in state) {
+        thread.nativeReadState = state as import('../types/codex').NativeThreadReadState
+        applyThreadFlags()
+      }
+      return
+    }
+
     const completion = readTurnCompletedInfo(notification)
     if (completion) {
       const activeTurnId = activeTurnIdByThreadId.value[completion.threadId]

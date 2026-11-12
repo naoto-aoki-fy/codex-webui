@@ -8,6 +8,7 @@ import type {
   UserInput,
 } from '../appServerDtos'
 import type {
+  NativeThreadReadState,
   CommandExecutionData,
   UiFileAttachment,
   UiFileChange,
@@ -485,13 +486,15 @@ function toUiThread(summary: Thread): UiThread {
     createdAtIso: toIso(summary.createdAt),
     updatedAtIso: toIso(summary.updatedAt),
     preview: summary.preview,
+    nativeReadState: (summary as Thread & { readState?: NativeThreadReadState }).readState,
     unread: false,
     inProgress: readThreadInProgress(summary),
   }
 }
 
 export function normalizeThreadSummaryV2(payload: ThreadReadResponse): UiThread {
-  return toUiThread(payload.thread)
+  const receipt = (payload as ThreadReadResponse & { readState?: NativeThreadReadState }).readState
+  return { ...toUiThread(payload.thread), ...(receipt ? { nativeReadState: receipt } : {}) }
 }
 
 function groupThreadsByProject(threads: UiThread[]): UiProjectGroup[] {
@@ -517,7 +520,8 @@ function groupThreadsByProject(threads: UiThread[]): UiProjectGroup[] {
 }
 
 export function normalizeThreadGroupsV2(payload: ThreadListResponse): UiProjectGroup[] {
-  const uiThreads = payload.data.map(toUiThread)
+  const receipts = (payload as ThreadListResponse & { readStates?: Record<string, NativeThreadReadState> }).readStates
+  const uiThreads = payload.data.map(thread => ({ ...toUiThread(thread), ...(receipts?.[thread.id] ? { nativeReadState: receipts[thread.id] } : {}) }))
   return groupThreadsByProject(uiThreads)
 }
 
