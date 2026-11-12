@@ -158,7 +158,6 @@
         class="project-group"
         :data-project-name="group.projectName"
         :data-expanded="!isCollapsed(group.projectName)"
-        :data-dragging="isDraggingProject(group.projectName)"
         :style="projectGroupStyle(group.projectName)"
       >
           <SidebarMenuRow
@@ -169,7 +168,6 @@
             tabindex="0"
             @click="toggleProjectCollapse(group.projectName)"
             @contextmenu.prevent="openProjectContextMenu(group.projectName)"
-            @keydown="onProjectHeaderKeyDown($event, group.projectName)"
             @keydown.enter.prevent="toggleProjectCollapse(group.projectName)"
             @keydown.space.prevent="toggleProjectCollapse(group.projectName)"
           >
@@ -187,8 +185,6 @@
             </template>
             <span
               class="project-main-button"
-              :data-dragging-handle="isDraggingProject(group.projectName)"
-              @mousedown.left="onProjectHandleMouseDown($event, group.projectName)"
             >
               <span class="project-title" :title="getProjectTooltipTitle(group.projectName)">
                 {{ getProjectVisibleName(group) }}
@@ -212,13 +208,11 @@
                     :data-open-direction="projectMenuDirectionById[group.projectName] ?? 'down'"
                     @click.stop
                   >
-                    <template v-if="projectMenuMode === 'actions'">
+                    <template>
                       <button class="project-menu-item" type="button" @click="onBrowseProjectFiles(group.projectName)">
                         Browse files
                       </button>
-                      <button class="project-menu-item" type="button" @click="openRenameProjectMenu(group)">
-                        Rename project
-                      </button>
+
                       <button
                         class="project-menu-item project-menu-item-danger"
                         type="button"
@@ -227,15 +221,7 @@
                         Remove
                       </button>
                     </template>
-                    <template v-else>
-                      <label class="project-menu-label">{{ t('Project name') }}</label>
-                      <input
-                        v-model="projectRenameDraft"
-                        class="project-menu-input"
-                        type="text"
-                        @input="onProjectNameInput(group.projectName)"
-                      />
-                    </template>
+
                   </div>
                 </div>
 
@@ -489,47 +475,15 @@ const emit = defineEmits<{
   'browse-thread-files': [threadId: string]
   'browse-project-files': [projectName: string]
   'request-project-git-status': [projectName: string]
-  'rename-project': [payload: { projectName: string; displayName: string }]
   'rename-thread': [payload: { threadId: string; title: string }]
   'remove-project': [projectName: string]
-  'reorder-project': [payload: { projectName: string; toIndex: number }]
   'copy-thread-chat': [threadId: string]
   'fork-thread': [threadId: string]
   'start-new-chat': []
 }>()
 
-type PendingProjectDrag = {
-  projectName: string
-  fromIndex: number
-  startClientX: number
-  startClientY: number
-  pointerOffsetY: number
-  groupLeft: number
-  groupWidth: number
-  groupHeight: number
-  groupOuterHeight: number
-}
-
-type ActiveProjectDrag = {
-  projectName: string
-  fromIndex: number
-  pointerOffsetY: number
-  groupLeft: number
-  groupWidth: number
-  groupHeight: number
-  groupOuterHeight: number
-  ghostTop: number
-  dropTargetIndexFull: number | null
-}
-
-type DragPointerSample = {
-  clientX: number
-  clientY: number
-}
-
 type MenuDirection = 'up' | 'down'
 type ChatSortMode = 'created' | 'updated'
-const DRAG_START_THRESHOLD_PX = 4
 const PROJECT_GROUP_EXPANDED_GAP_PX = 6
 const SECTION_EXPANSION_STORAGE_KEY = 'codex-web-local.sidebar-section-expansion.v1'
 const CHATS_FIRST_STORAGE_KEY = 'codex-web-local.sidebar-chats-first.v1'
@@ -552,8 +506,6 @@ const openThreadMenuId = ref('')
 const projectMenuDirectionById = ref<Record<string, MenuDirection>>({})
 const threadMenuDirectionById = ref<Record<string, MenuDirection>>({})
 const openThreadMenuStyle = ref<Record<string, string>>({})
-const projectMenuMode = ref<'actions' | 'rename'>('actions')
-const projectRenameDraft = ref('')
 const renameThreadDialogVisible = ref(false)
 const renameThreadDialogThreadId = ref('')
 const renameThreadDraft = ref('')
@@ -562,11 +514,6 @@ const deleteThreadDialogVisible = ref(false)
 const deleteThreadDialogThreadId = ref('')
 const deleteThreadTitle = ref('')
 const groupsContainerRef = ref<HTMLElement | null>(null)
-const pendingProjectDrag = ref<PendingProjectDrag | null>(null)
-const activeProjectDrag = ref<ActiveProjectDrag | null>(null)
-let pendingDragPointerSample: DragPointerSample | null = null
-let dragPointerRafId: number | null = null
-const suppressNextProjectToggleId = ref('')
 const measuredHeightByProject = ref<Record<string, number>>({})
 const projectGroupElementByName = new Map<string, HTMLElement>()
 const projectMenuWrapElementByName = new Map<string, HTMLElement>()
@@ -888,34 +835,7 @@ function toggleChatsSection(): void {
   isChatsSectionExpanded.value = !isChatsSectionExpanded.value
 }
 
-const projectedDropProjectIndex = computed<number | null>(() => {
-  const drag = activeProjectDrag.value
-  if (!drag || drag.dropTargetIndexFull === null || props.groups.length === 0) return null
-
-  const boundedDropIndex = Math.max(0, Math.min(drag.dropTargetIndexFull, props.groups.length))
-  const projectedIndex = boundedDropIndex > drag.fromIndex ? boundedDropIndex - 1 : boundedDropIndex
-  const boundedProjectedIndex = Math.max(0, Math.min(projectedIndex, props.groups.length - 1))
-  return boundedProjectedIndex === drag.fromIndex ? null : boundedProjectedIndex
-})
-
-const layoutProjectOrder = computed<string[]>(() => {
-  const sourceGroups = isSearchActive.value ? filteredGroups.value : props.groups
-  const names = sourceGroups.map((group) => group.projectName)
-  const drag = activeProjectDrag.value
-  const projectedIndex = projectedDropProjectIndex.value
-
-  if (!drag || projectedIndex === null) {
-    return names
-  }
-
-  const next = [...names]
-  const [movedProject] = next.splice(drag.fromIndex, 1)
-  if (!movedProject) {
-    return names
-  }
-  next.splice(projectedIndex, 0, movedProject)
-  return next
-})
+const layoutProjectOrder = computed(() => (isSearchActive.value ? filteredGroups.value : props.groups).map(group => group.projectName))
 
 const layoutTopByProject = computed<Record<string, number>>(() => {
   const topByProject: Record<string, number> = {}
@@ -1192,8 +1112,6 @@ function isProjectMenuOpen(projectName: string): boolean {
 
 function closeProjectMenu(): void {
   openProjectMenuId.value = ''
-  projectMenuMode.value = 'actions'
-  projectRenameDraft.value = ''
 }
 
 function toggleOrganizeMenu(): void {
@@ -1234,8 +1152,6 @@ function toggleProjectMenu(projectName: string): void {
   closeThreadMenu()
   isOrganizeMenuOpen.value = false
   openProjectMenuId.value = projectName
-  projectMenuMode.value = 'actions'
-  projectRenameDraft.value = getProjectDisplayName(projectName)
   requestProjectGitStatusAndUpdateMenuDirection(projectName)
 }
 
@@ -1243,24 +1159,7 @@ function openProjectContextMenu(projectName: string): void {
   closeThreadMenu()
   isOrganizeMenuOpen.value = false
   openProjectMenuId.value = projectName
-  projectMenuMode.value = 'actions'
-  projectRenameDraft.value = getProjectDisplayName(projectName)
   requestProjectGitStatusAndUpdateMenuDirection(projectName)
-}
-
-function getProjectRenameDraftName(group: UiProjectGroup): string {
-  return props.projectDisplayNameById[group.projectName] ?? getProjectVisibleName(group)
-}
-
-function openRenameProjectMenu(group: UiProjectGroup): void {
-  closeThreadMenu()
-  const projectName = group.projectName
-  openProjectMenuId.value = projectName
-  projectMenuMode.value = 'rename'
-  projectRenameDraft.value = getProjectRenameDraftName(group)
-  nextTick(() => {
-    updateProjectMenuDirection(projectName)
-  })
 }
 
 function onBrowseProjectFiles(projectName: string): void {
@@ -1268,36 +1167,9 @@ function onBrowseProjectFiles(projectName: string): void {
   closeProjectMenu()
 }
 
-
-
-function onProjectNameInput(projectName: string): void {
-  emit('rename-project', {
-    projectName,
-    displayName: projectRenameDraft.value,
-  })
-}
-
 function onRemoveProject(projectName: string): void {
   emit('remove-project', projectName)
   closeProjectMenu()
-}
-
-function onProjectHeaderKeyDown(event: KeyboardEvent, projectName: string): void {
-  if (!event.altKey) return
-  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
-
-  const currentIndex = props.groups.findIndex((group) => group.projectName === projectName)
-  if (currentIndex < 0) return
-
-  const delta = event.key === 'ArrowUp' ? -1 : 1
-  const targetIndex = Math.max(0, Math.min(currentIndex + delta, props.groups.length - 1))
-  if (targetIndex === currentIndex) return
-
-  event.preventDefault()
-  emit('reorder-project', {
-    projectName,
-    toIndex: targetIndex,
-  })
 }
 
 function isExpanded(projectName: string): boolean {
@@ -1320,10 +1192,6 @@ function toggleChatsListExpansion(): void {
 }
 
 function toggleProjectCollapse(projectName: string): void {
-  if (suppressNextProjectToggleId.value === projectName) {
-    suppressNextProjectToggleId.value = ''
-    return
-  }
 
   collapsedProjects.value = {
     ...collapsedProjects.value,
@@ -1333,9 +1201,7 @@ function toggleProjectCollapse(projectName: string): void {
 
 function getProjectOuterHeight(projectName: string): number {
   const measuredHeight = measuredHeightByProject.value[projectName] ?? 0
-  const drag = activeProjectDrag.value
-  const dragHeight = drag?.projectName === projectName ? drag.groupHeight : null
-  const baseHeight = dragHeight ?? measuredHeight
+  const baseHeight = measuredHeight
   const gap = isCollapsed(projectName) ? 0 : PROJECT_GROUP_EXPANDED_GAP_PX
   return Math.max(0, baseHeight + gap)
 }
@@ -1605,199 +1471,7 @@ function setProjectGroupRef(projectName: string, element: Element | ComponentPub
   projectGroupElementByName.delete(projectName)
 }
 
-function onProjectHandleMouseDown(event: MouseEvent, projectName: string): void {
-  if (event.button !== 0) return
-  if (isSearchActive.value) return
-  if (pendingProjectDrag.value || activeProjectDrag.value) return
-
-  const fromIndex = props.groups.findIndex((group) => group.projectName === projectName)
-  const projectGroupElement = projectGroupElementByName.get(projectName)
-  if (fromIndex < 0 || !projectGroupElement) return
-
-  const groupRect = projectGroupElement.getBoundingClientRect()
-  const groupGap = isCollapsed(projectName) ? 0 : PROJECT_GROUP_EXPANDED_GAP_PX
-  pendingProjectDrag.value = {
-    projectName,
-    fromIndex,
-    startClientX: event.clientX,
-    startClientY: event.clientY,
-    pointerOffsetY: event.clientY - groupRect.top,
-    groupLeft: groupRect.left,
-    groupWidth: groupRect.width,
-    groupHeight: groupRect.height,
-    groupOuterHeight: groupRect.height + groupGap,
-  }
-
-  event.preventDefault()
-  bindProjectDragListeners()
-}
-
-function bindProjectDragListeners(): void {
-  window.addEventListener('mousemove', onProjectDragMouseMove)
-  window.addEventListener('mouseup', onProjectDragMouseUp)
-  window.addEventListener('keydown', onProjectDragKeyDown)
-}
-
-function unbindProjectDragListeners(): void {
-  window.removeEventListener('mousemove', onProjectDragMouseMove)
-  window.removeEventListener('mouseup', onProjectDragMouseUp)
-  window.removeEventListener('keydown', onProjectDragKeyDown)
-}
-
-function onProjectDragMouseMove(event: MouseEvent): void {
-  pendingDragPointerSample = {
-    clientX: event.clientX,
-    clientY: event.clientY,
-  }
-  scheduleProjectDragPointerFrame()
-}
-
-function onProjectDragMouseUp(event: MouseEvent): void {
-  processProjectDragPointerSample({
-    clientX: event.clientX,
-    clientY: event.clientY,
-  })
-
-  const drag = activeProjectDrag.value
-  if (drag && projectedDropProjectIndex.value !== null) {
-    const currentProjectIndex = props.groups.findIndex((group) => group.projectName === drag.projectName)
-    if (currentProjectIndex >= 0) {
-      const toIndex = projectedDropProjectIndex.value
-      if (toIndex !== currentProjectIndex) {
-        emit('reorder-project', {
-          projectName: drag.projectName,
-          toIndex,
-        })
-      }
-    }
-  }
-
-  resetProjectDragState({ preserveToggleSuppression: Boolean(drag) })
-}
-
-function onProjectDragKeyDown(event: KeyboardEvent): void {
-  if (event.key !== 'Escape') return
-  if (!pendingProjectDrag.value && !activeProjectDrag.value) return
-
-  event.preventDefault()
-  resetProjectDragState()
-}
-
-function resetProjectDragState(options: { preserveToggleSuppression?: boolean } = {}): void {
-  if (dragPointerRafId !== null) {
-    window.cancelAnimationFrame(dragPointerRafId)
-    dragPointerRafId = null
-  }
-  pendingDragPointerSample = null
-  pendingProjectDrag.value = null
-  activeProjectDrag.value = null
-  if (!options.preserveToggleSuppression) {
-    suppressNextProjectToggleId.value = ''
-  }
-  unbindProjectDragListeners()
-}
-
-function scheduleProjectDragPointerFrame(): void {
-  if (dragPointerRafId !== null) return
-
-  dragPointerRafId = window.requestAnimationFrame(() => {
-    dragPointerRafId = null
-    if (!pendingDragPointerSample) return
-
-    const sample = pendingDragPointerSample
-    pendingDragPointerSample = null
-    processProjectDragPointerSample(sample)
-  })
-}
-
-function processProjectDragPointerSample(sample: DragPointerSample): void {
-  const pending = pendingProjectDrag.value
-  if (!activeProjectDrag.value && pending) {
-    const deltaX = sample.clientX - pending.startClientX
-    const deltaY = sample.clientY - pending.startClientY
-    const distance = Math.hypot(deltaX, deltaY)
-    if (distance < DRAG_START_THRESHOLD_PX) {
-      return
-    }
-
-    closeProjectMenu()
-    suppressNextProjectToggleId.value = pending.projectName
-    activeProjectDrag.value = {
-      projectName: pending.projectName,
-      fromIndex: pending.fromIndex,
-      pointerOffsetY: pending.pointerOffsetY,
-      groupLeft: pending.groupLeft,
-      groupWidth: pending.groupWidth,
-      groupHeight: pending.groupHeight,
-      groupOuterHeight: pending.groupOuterHeight,
-      ghostTop: sample.clientY - pending.pointerOffsetY,
-      dropTargetIndexFull: null,
-    }
-  }
-
-  if (!activeProjectDrag.value) return
-  updateProjectDropTarget(sample)
-}
-
-function updateProjectDropTarget(sample: DragPointerSample): void {
-  const drag = activeProjectDrag.value
-  if (!drag) return
-
-  drag.ghostTop = sample.clientY - drag.pointerOffsetY
-  if (!isPointerInProjectDropZone(sample)) {
-    drag.dropTargetIndexFull = null
-    return
-  }
-
-  const cursorY = sample.clientY
-  const groupsContainer = groupsContainerRef.value
-  if (!groupsContainer) {
-    drag.dropTargetIndexFull = null
-    return
-  }
-
-  const containerRect = groupsContainer.getBoundingClientRect()
-  const projectIndexByName = new Map(props.groups.map((group, index) => [group.projectName, index]))
-  const nonDraggedProjectNames = props.groups
-    .map((group) => group.projectName)
-    .filter((projectName) => projectName !== drag.projectName)
-
-  let accumulatedTop = 0
-  let nextDropTarget = props.groups.length
-
-  for (const projectName of nonDraggedProjectNames) {
-    const originalIndex = projectIndexByName.get(projectName)
-    if (originalIndex === undefined) continue
-
-    const groupOuterHeight = getProjectOuterHeight(projectName)
-    const groupMiddleY = containerRect.top + accumulatedTop + groupOuterHeight / 2
-    if (cursorY < groupMiddleY) {
-      nextDropTarget = originalIndex
-      break
-    }
-
-    accumulatedTop += groupOuterHeight
-  }
-
-  drag.dropTargetIndexFull = nextDropTarget
-}
-
-function isPointerInProjectDropZone(sample: DragPointerSample): boolean {
-  const groupsContainer = groupsContainerRef.value
-  if (!groupsContainer) return false
-
-  const bounds = groupsContainer.getBoundingClientRect()
-  const xInBounds = sample.clientX >= bounds.left && sample.clientX <= bounds.right
-  const yInBounds = sample.clientY >= bounds.top - 32 && sample.clientY <= bounds.bottom + 32
-  return xInBounds && yInBounds
-}
-
-function isDraggingProject(projectName: string): boolean {
-  return activeProjectDrag.value?.projectName === projectName
-}
-
 function projectGroupStyle(projectName: string): Record<string, string> | undefined {
-  const drag = activeProjectDrag.value
   const targetTop = layoutTopByProject.value[projectName] ?? 0
   const openThreadMenuProjectName = openThreadMenuId.value
     ? (threadProjectNameById.value.get(openThreadMenuId.value) ?? '')
@@ -1805,8 +1479,7 @@ function projectGroupStyle(projectName: string): Record<string, string> | undefi
   const shouldElevateForMenu =
     openProjectMenuId.value === projectName || openThreadMenuProjectName === projectName
 
-  if (!drag || drag.projectName !== projectName) {
-    return {
+  return {
       position: 'absolute',
       top: '0',
       left: '0',
@@ -1815,20 +1488,6 @@ function projectGroupStyle(projectName: string): Record<string, string> | undefi
       transform: `translate3d(0, ${targetTop}px, 0)`,
       willChange: 'transform',
       transition: 'transform 180ms ease',
-    }
-  }
-
-  return {
-    position: 'fixed',
-    top: '0',
-    left: `${drag.groupLeft}px`,
-    width: `${drag.groupWidth}px`,
-    height: `${drag.groupHeight}px`,
-    zIndex: '50',
-    pointerEvents: 'none',
-    transform: `translate3d(0, ${drag.ghostTop}px, 0)`,
-    willChange: 'transform',
-    transition: 'transform 0ms linear',
   }
 }
 
@@ -1856,10 +1515,6 @@ function hasThreads(group: UiProjectGroup): boolean {
 watch(
   () => props.groups.map((group) => group.projectName),
   (projectNames) => {
-    const dragProjectName = activeProjectDrag.value?.projectName ?? pendingProjectDrag.value?.projectName ?? ''
-    if (dragProjectName && !props.groups.some((group) => group.projectName === dragProjectName)) {
-      resetProjectDragState()
-    }
 
     const projectNameSet = new Set(projectNames)
     const nextMeasuredHeights = Object.fromEntries(
@@ -1921,7 +1576,6 @@ onBeforeUnmount(() => {
   projectMenuWrapElementByName.clear()
   unbindThreadMenuPositionListeners()
   unbindProjectMenuDismissListeners()
-  resetProjectDragState()
 })
 </script>
 
@@ -2028,10 +1682,6 @@ onBeforeUnmount(() => {
   @apply m-0 transition-shadow;
 }
 
-.project-group[data-dragging='true'] {
-  @apply shadow-lg;
-}
-
 .project-header-row {
   @apply hover:bg-zinc-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400;
 }
@@ -2041,11 +1691,7 @@ onBeforeUnmount(() => {
 }
 
 .project-main-button {
-  @apply min-w-0 w-full text-left rounded px-0 py-0 flex items-center gap-1.5 min-h-5 cursor-grab;
-}
-
-.project-main-button[data-dragging-handle='true'] {
-  @apply cursor-grabbing;
+  @apply min-w-0 w-full text-left rounded px-0 py-0 flex items-center gap-1.5 min-h-5 cursor-pointer;
 }
 
 .project-icon-stack {
@@ -2092,14 +1738,6 @@ onBeforeUnmount(() => {
 
 .project-menu-item-danger {
   @apply text-rose-700 hover:bg-rose-50;
-}
-
-.project-menu-label {
-  @apply px-2 pt-1 text-xs text-zinc-500;
-}
-
-.project-menu-input {
-  @apply px-2 py-1 text-sm text-zinc-800 bg-transparent border-none outline-none;
 }
 
 .project-empty-row {

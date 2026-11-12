@@ -679,13 +679,7 @@
   @apply bg-zinc-800 text-zinc-300;
 }
 
-:root.dark .file-change-action-button {
-  @apply border-zinc-700 bg-zinc-800 text-zinc-200 hover:border-zinc-600 hover:bg-zinc-700 hover:text-zinc-50;
-}
 
-:root.dark .file-change-action-error {
-  @apply text-rose-300;
-}
 
 :root.dark .file-change-signed-count[data-tone='add'] {
   @apply text-emerald-300;
@@ -1286,7 +1280,6 @@
   .composer-dropdown-search-input,
   .search-dropdown-search,
   .sidebar-search-input,
-  .project-menu-input,
   .rename-thread-input,
   .request-input {
     font-size: 16px !important;

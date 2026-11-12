@@ -1,5 +1,4 @@
 import type { CollaborationModeKind, UiThreadTokenUsage } from '../types/codex'
-import { normalizePathForUi } from '../pathUtils.js'
 
 export const READ_STATE_STORAGE_KEY = 'codex-web-local.thread-read-state.v1'
 export const UNREAD_CUTOFF_STORAGE_KEY = 'codex-web-local.thread-unread-cutoff.v1'
@@ -22,8 +21,6 @@ export function loadModelUsageOrder(): string[] {
 
 export const REASONING_BY_MODEL_STORAGE_KEY = 'codex-web-local.reasoning-by-provider-model.v1'
 export const LEGACY_SELECTED_MODEL_STORAGE_KEY = 'codex-web-local.selected-model-id.v1'
-export const PROJECT_ORDER_STORAGE_KEY = 'codex-web-local.project-order.v1'
-export const PROJECT_DISPLAY_NAME_STORAGE_KEY = 'codex-web-local.project-display-name.v1'
 export const COLLABORATION_MODE_STORAGE_KEY = 'codex-web-local.collaboration-mode-by-context.v1'
 export const LEGACY_COLLABORATION_MODE_STORAGE_KEY = 'codex-web-local.collaboration-mode.v1'
 export const NEW_THREAD_COLLABORATION_MODE_CONTEXT = '__new-thread__'
@@ -60,7 +57,6 @@ export function loadUnreadCutoffIso(): string {
   window.localStorage.setItem(UNREAD_CUTOFF_STORAGE_KEY, initialCutoff)
   return initialCutoff
 }
-
 
 export function normalizeCollaborationMode(value: unknown): CollaborationModeKind {
   return value === 'plan' ? 'plan' : 'default'
@@ -361,61 +357,5 @@ export function saveSelectedThreadId(threadId: string): void {
     return
   }
   window.localStorage.setItem(SELECTED_THREAD_STORAGE_KEY, threadId)
-}
-
-export function loadProjectOrder(): string[] {
-  if (typeof window === 'undefined') return []
-
-  try {
-    const raw = window.localStorage.getItem(PROJECT_ORDER_STORAGE_KEY)
-    if (!raw) return []
-
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    const order: string[] = []
-    for (const item of parsed) {
-      if (typeof item !== 'string' || item.length === 0) continue
-      const normalizedItem = normalizePathForUi(item).trim()
-      if (normalizedItem.length > 0 && !order.includes(normalizedItem)) {
-        order.push(normalizedItem)
-      }
-    }
-    return order
-  } catch {
-    return []
-  }
-}
-
-export function saveProjectOrder(order: string[]): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(PROJECT_ORDER_STORAGE_KEY, JSON.stringify(order))
-}
-
-export function loadProjectDisplayNames(): Record<string, string> {
-  if (typeof window === 'undefined') return {}
-
-  try {
-    const raw = window.localStorage.getItem(PROJECT_DISPLAY_NAME_STORAGE_KEY)
-    if (!raw) return {}
-
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-
-    const displayNames: Record<string, string> = {}
-    for (const [projectName, displayName] of Object.entries(parsed as Record<string, unknown>)) {
-      const normalizedProjectName = typeof projectName === 'string' ? normalizePathForUi(projectName).trim() : ''
-      if (normalizedProjectName.length > 0 && typeof displayName === 'string') {
-        displayNames[normalizedProjectName] = displayName
-      }
-    }
-    return displayNames
-  } catch {
-    return {}
-  }
-}
-
-export function saveProjectDisplayNames(displayNames: Record<string, string>): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(PROJECT_DISPLAY_NAME_STORAGE_KEY, JSON.stringify(displayNames))
 }
 

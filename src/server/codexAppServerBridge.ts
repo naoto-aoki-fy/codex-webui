@@ -1,8 +1,7 @@
 import { handleSseRequest } from './bridgeSse.js'
 export { refreshChatgptAuthTokensForExternalAuth } from './externalAuthRefresh.js'
 import { createGitWorkspaceRoutes } from './gitWorkspaceRoutes.js'
-import { applyV4aDiff, parseApplyPatchInput, reverseV4aDiff } from './turnFilePatches'
-import { listFilesWithRipgrep, runCommand, runCommandCapture } from './bridgeCommands.js'
+import { listFilesWithRipgrep } from './bridgeCommands.js'
 import { normalizeStringArray, canonicalizeThreadListResponseForRead, readWorkspaceRootsState, applyWorkspaceRootsOperation, persistWorkspaceRoot } from './workspaceRootsStore.js'
 export { canonicalizeWorkspaceRootsState, canonicalizeWorkspaceRootsStateForRead, canonicalizeThreadListResponseForRead, writeWorkspaceRootsState } from './workspaceRootsStore.js'
 export type { WorkspaceRootsState } from './workspaceRootsStore.js'
@@ -18,13 +17,12 @@ import { PersistentThreadIndex } from './persistentThreadIndex.js'
 import { createThreadSessionEnrichment } from './threadSessionEnrichment.js'
 export { mergeSessionSkillInputsIntoTurns } from './threadSessionEnrichment.js'
 import { spawnSync } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm, mkdir, stat, lstat } from 'node:fs/promises'
+import { mkdtemp, readdir, mkdir, stat } from 'node:fs/promises'
 import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { writeFile } from 'node:fs/promises'
 import { handleAccountRoutes } from './accountRoutes.js'
@@ -56,13 +54,9 @@ type ThreadSearchIndex = {
   docsById: Map<string, ThreadSearchDocument>
 }
 
-
 const THREAD_RESPONSE_TURN_LIMIT = 10
 const THREAD_METHODS_WITH_THREAD_SNAPSHOT = new Set([...THREAD_METHODS_WITH_TURNS, 'thread/start'])
 const THREAD_SEARCH_FULL_TEXT_THREAD_LIMIT = 100
-const PROJECTLESS_THREAD_DIRECTORY_MAX_ATTEMPTS = 100
-const PROJECTLESS_THREAD_READABLE_DIRECTORY_ATTEMPTS = 20
-const PROJECTLESS_THREAD_SLUG_MAX_LENGTH = 80
 const API_PERF_LOGGING_ENV_KEY = 'CODEXUI_API_PERF_LOGGING'
 const API_PERF_MS_THRESHOLD_ENV_KEY = 'CODEXUI_API_PERF_MS_THRESHOLD'
 const API_PERF_BODY_MB_THRESHOLD_ENV_KEY = 'CODEXUI_API_PERF_BODY_MB_THRESHOLD'
@@ -298,70 +292,6 @@ LIMIT 200;
   }
 }
 
-function formatProjectlessDateSegment(date = new Date()): string {
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
-}
-
-function buildProjectlessPromptSlug(prompt: string | null): string {
-  const slug = prompt
-    ?.toLowerCase()
-    .match(/[a-z0-9]+/g)
-    ?.slice(0, 6)
-    .join('-')
-    .slice(0, PROJECTLESS_THREAD_SLUG_MAX_LENGTH)
-  return slug && slug.length > 0 ? slug : 'new-chat'
-}
-
-function buildProjectlessUniqueSuffix(): string {
-  return `${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`
-}
-
-export function buildProjectlessFolderName(slug: string, index: number, uniqueSuffix = buildProjectlessUniqueSuffix()): string {
-  if (index === 0) return slug
-  if (index < PROJECTLESS_THREAD_READABLE_DIRECTORY_ATTEMPTS) return `${slug}-${index + 1}`
-
-  const suffix = `-${uniqueSuffix}`
-  const maxSlugLength = Math.max(1, PROJECTLESS_THREAD_SLUG_MAX_LENGTH - suffix.length)
-  return `${slug.slice(0, maxSlugLength)}${suffix}`
-}
-
-async function ensureRealDirectory(path: string, label: string): Promise<void> {
-  const info = await lstat(path)
-  if (info.isSymbolicLink() || !info.isDirectory()) {
-    throw new Error(`${label} must be a real directory`)
-  }
-}
-
-async function createProjectlessThreadDirectory(prompt: string | null): Promise<{ cwd: string; outputDirectory: string; workspaceRoot: string }> {
-  const workspaceRoot = join(homedir(), 'Documents', 'Codex')
-  await mkdir(workspaceRoot, { recursive: true })
-  await ensureRealDirectory(workspaceRoot, 'Projectless workspace root')
-
-  const dateDir = join(workspaceRoot, formatProjectlessDateSegment())
-  await mkdir(dateDir, { recursive: true })
-  await ensureRealDirectory(dateDir, 'Projectless thread date directory')
-
-  const slug = buildProjectlessPromptSlug(prompt)
-  for (let index = 0; index < PROJECTLESS_THREAD_DIRECTORY_MAX_ATTEMPTS; index += 1) {
-    const folderName = buildProjectlessFolderName(slug, index)
-    const cwd = join(dateDir, folderName)
-    try {
-      await mkdir(cwd, { recursive: false })
-      return { cwd, outputDirectory: cwd, workspaceRoot }
-    } catch {
-      try {
-        await stat(cwd)
-      } catch {
-        throw new Error('Failed to create new chat folder')
-      }
-    }
-  }
-
-  throw new Error('Unable to create a unique new chat folder')
-}
-
 function extractThreadMessageText(threadReadPayload: unknown): string {
   const payload = asRecord(threadReadPayload)
   const thread = asRecord(payload?.thread)
@@ -514,281 +444,6 @@ export async function callRpcWithArchiveRecovery(
     })
     return appServer.rpc(method, params ?? null)
   }
-}
-
-function extractFilePathsFromCommand(cmd: string, cwd: string): string[] {
-  const paths: string[] = []
-  const absPathPattern = /(?:^|\s|>>|>|<)(\/?(?:Users|home|tmp|var|etc|root)\/[^\s;|&><"']+)/g
-  let match: RegExpExecArray | null
-  while ((match = absPathPattern.exec(cmd)) !== null) {
-    const p = match[1]?.trim()
-    if (p && !p.endsWith('/') && !p.startsWith('-')) paths.push(p)
-  }
-
-  const redirectPattern = /(?:>>?|cat\s*>\s*)([^\s;|&><"']+)/g
-  while ((match = redirectPattern.exec(cmd)) !== null) {
-    const p = match[1]?.trim()
-    if (p && !p.startsWith('-') && !p.startsWith('/dev/')) {
-      paths.push(isAbsolute(p) ? p : join(cwd, p))
-    }
-  }
-
-  return [...new Set(paths)]
-}
-
-type CollectedTurnFileInfo = {
-  patchInputs: { callId: string; input: string }[]
-  commandFilePaths: string[]
-}
-
-function collectFileChangesForTurns(
-  sessionLogRaw: string,
-  turnIdsToRevert: Set<string>,
-  cwd: string,
-): Map<string, CollectedTurnFileInfo> {
-  let currentTurnId = ''
-  const infoByTurnId = new Map<string, CollectedTurnFileInfo>()
-
-  for (const line of sessionLogRaw.split('\n')) {
-    if (!line.trim()) continue
-    let row: Record<string, unknown> | null = null
-    try {
-      row = JSON.parse(line) as Record<string, unknown>
-    } catch {
-      continue
-    }
-
-    if (row.type === 'turn_context') {
-      const p = asRecord(row.payload)
-      currentTurnId = readNonEmptyString(p?.turn_id) || currentTurnId
-      continue
-    }
-    if (row.type === 'event_msg') {
-      const p = asRecord(row.payload)
-      if (p?.type === 'task_started') {
-        currentTurnId = readNonEmptyString(p.turn_id) || currentTurnId
-      }
-      continue
-    }
-
-    if (row.type !== 'response_item' || !currentTurnId || !turnIdsToRevert.has(currentTurnId)) continue
-    const payload = asRecord(row.payload)
-    if (!payload) continue
-
-    let info = infoByTurnId.get(currentTurnId)
-    if (!info) {
-      info = { patchInputs: [], commandFilePaths: [] }
-      infoByTurnId.set(currentTurnId, info)
-    }
-
-    if (payload.type === 'custom_tool_call' && payload.name === 'apply_patch' && payload.status === 'completed') {
-      const input = typeof payload.input === 'string' ? payload.input : ''
-      const callId = readNonEmptyString(payload.call_id)
-      if (input && callId) {
-        info.patchInputs.push({ callId, input })
-      }
-    }
-
-    if (payload.type === 'function_call' && payload.name === 'exec_command') {
-      let cmd = ''
-      try {
-        const args = JSON.parse(payload.arguments as string) as Record<string, unknown>
-        cmd = typeof args.cmd === 'string' ? args.cmd : ''
-      } catch { /* empty */ }
-      if (cmd) {
-        const extracted = extractFilePathsFromCommand(cmd, cwd)
-        for (const p of extracted) {
-          if (!info.commandFilePaths.includes(p)) info.commandFilePaths.push(p)
-        }
-      }
-    }
-  }
-
-  return infoByTurnId
-}
-
-async function applyTurnFileChanges(
-  cwd: string,
-  turnInfos: Map<string, CollectedTurnFileInfo>,
-  allowedPatchIds?: Set<string>,
-): Promise<{ applied: number; errors: string[]; appliedPatchIds: string[] }> {
-  if (turnInfos.size === 0) return { applied: 0, errors: [], appliedPatchIds: [] }
-
-  let applied = 0
-  const errors: string[] = []
-  const appliedPatchIds: string[] = []
-  const allPatchInputs = [...turnInfos.values()]
-    .flatMap((info) => info.patchInputs)
-    .filter((patch) => !allowedPatchIds || allowedPatchIds.has(patch.callId))
-
-  for (const patch of allPatchInputs) {
-    let patchApplied = false
-    let patchHadError = false
-    const changes = parseApplyPatchInput(patch.input)
-    for (const change of changes) {
-      const filePath = isAbsolute(change.path) ? change.path : join(cwd, change.path)
-      const movedToPath = change.movedToPath
-        ? (isAbsolute(change.movedToPath) ? change.movedToPath : join(cwd, change.movedToPath))
-        : null
-
-      try {
-        if (change.operation === 'add') {
-          await mkdir(dirname(filePath), { recursive: true })
-          await writeFile(filePath, change.diff ? `${change.diff}\n` : '', 'utf8')
-          applied++
-          patchApplied = true
-          continue
-        }
-
-        if (change.operation === 'delete') {
-          await rm(filePath, { force: true })
-          applied++
-          patchApplied = true
-          continue
-        }
-
-        let sourcePath = filePath
-        if (movedToPath) {
-          const sourceStat = await stat(sourcePath).catch(() => null)
-          if (!sourceStat) {
-            const movedStat = await stat(movedToPath).catch(() => null)
-            if (movedStat) sourcePath = movedToPath
-          }
-        }
-
-        const currentContent = await readFile(sourcePath, 'utf8')
-        const newContent = applyV4aDiff(currentContent, change.diff)
-        if (newContent === null) {
-          patchHadError = true
-          errors.push(`Could not apply patch for ${sourcePath}`)
-          continue
-        }
-
-        if (movedToPath) {
-          if (sourcePath === movedToPath) {
-            if (newContent !== currentContent) {
-              await writeFile(movedToPath, newContent, 'utf8')
-            }
-          } else {
-            await mkdir(dirname(movedToPath), { recursive: true })
-            await writeFile(movedToPath, newContent, 'utf8')
-            await rm(filePath, { force: true })
-          }
-        } else if (newContent !== currentContent) {
-          await writeFile(filePath, newContent, 'utf8')
-        }
-        applied++
-        patchApplied = true
-      } catch (err) {
-        patchHadError = true
-        errors.push(`Failed to apply patch for ${filePath}: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
-    if (patchApplied && !patchHadError) appliedPatchIds.push(patch.callId)
-  }
-
-  return { applied, errors, appliedPatchIds }
-}
-
-async function revertTurnFileChanges(
-  cwd: string,
-  turnInfos: Map<string, CollectedTurnFileInfo>,
-  allowedPatchIds?: Set<string>,
-): Promise<{ reverted: number; errors: string[]; revertedPatchIds: string[] }> {
-  if (turnInfos.size === 0) return { reverted: 0, errors: [], revertedPatchIds: [] }
-
-  let reverted = 0
-  const errors: string[] = []
-  const revertedPatchIds: string[] = []
-
-  const allEntries = [...turnInfos.values()]
-  const allPatchInputs = allEntries
-    .flatMap((info) => info.patchInputs)
-    .filter((patch) => !allowedPatchIds || allowedPatchIds.has(patch.callId))
-    .reverse()
-  const allCommandPaths = new Set(allEntries.flatMap((info) => info.commandFilePaths))
-
-  const patchRevertedPaths = new Set<string>()
-
-  for (const patch of allPatchInputs) {
-    let patchReverted = false
-    let patchHadError = false
-    const changes = parseApplyPatchInput(patch.input)
-    for (let ci = changes.length - 1; ci >= 0; ci--) {
-      const change = changes[ci]!
-      const filePath = isAbsolute(change.path) ? change.path : join(cwd, change.path)
-      const movedToPath = change.movedToPath
-        ? (isAbsolute(change.movedToPath) ? change.movedToPath : join(cwd, change.movedToPath))
-        : null
-
-      try {
-        if (change.operation === 'add') {
-          const fileStat = await lstat(filePath).catch((error: NodeJS.ErrnoException) => {
-            if (error.code === 'ENOENT') return null
-            throw error
-          })
-          if (fileStat) {
-            if (!fileStat.isFile()) throw new Error('Expected a regular added file')
-            const expected = change.diff ? `${change.diff}\n` : ''
-            if (!(await readFile(filePath)).equals(Buffer.from(expected))) {
-              throw new Error('Added file no longer matches the patch')
-            }
-            await rm(filePath)
-            reverted++
-            patchRevertedPaths.add(filePath)
-            patchReverted = true
-          }
-        } else if (change.operation === 'update' && (change.diff || movedToPath)) {
-          const sourcePath = movedToPath ?? filePath
-          if (!(await lstat(sourcePath)).isFile()) throw new Error('Expected a regular source file')
-          const currentBytes = await readFile(sourcePath)
-          const currentContent = currentBytes.toString('utf8')
-          if (!Buffer.from(currentContent).equals(currentBytes)) throw new Error('Cannot reverse non-UTF-8 content')
-          const newContent = reverseV4aDiff(currentContent, change.diff)
-          if (newContent === null || (newContent === currentContent && !movedToPath)) {
-            throw new Error('Current content does not match the reverse patch')
-          }
-          if (movedToPath) {
-            await mkdir(dirname(filePath), { recursive: true })
-            const destination = await lstat(filePath).catch((error: NodeJS.ErrnoException) => {
-              if (error.code === 'ENOENT') return null
-              throw error
-            })
-            if (destination) throw new Error('Rename destination already exists')
-          }
-          const { writeFile } = await import('node:fs/promises')
-          // Optimistic validation only: an external writer can still race the mutation.
-          if (!(await readFile(sourcePath)).equals(currentBytes)) throw new Error('File changed during Undo')
-          if (movedToPath) {
-            // Exclusive creation also protects a destination appearing after validation.
-            await writeFile(filePath, newContent, { flag: 'wx' })
-            await rm(movedToPath)
-          } else {
-            await writeFile(filePath, newContent)
-          }
-          reverted++
-          patchRevertedPaths.add(filePath)
-          if (movedToPath) patchRevertedPaths.add(movedToPath)
-          patchReverted = true
-        } else if (change.operation === 'delete') {
-          throw new Error('Cannot restore deleted file without a per-turn preimage')
-        }
-      } catch (err) {
-        patchHadError = true
-        errors.push(`Failed to revert patch for ${filePath}: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
-    if (patchReverted && !patchHadError) revertedPatchIds.push(patch.callId)
-  }
-
-  if (!allowedPatchIds) {
-    for (const filePath of allCommandPaths) {
-      if (patchRevertedPaths.has(filePath)) continue
-      errors.push(`Cannot restore command-modified file without a per-turn preimage: ${filePath}`)
-    }
-  }
-
-  return { reverted, errors, revertedPatchIds }
 }
 
 function isExactPhraseMatch(query: string, doc: ThreadSearchDocument): boolean {
@@ -1047,7 +702,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   let released = false
   const activeSse = new Set<() => void>()
   const { appServer, methodCatalog } = sharedState
-  const gitWorkspaceRoutes = createGitWorkspaceRoutes({ readJsonBody, getCodexHomeDir, persistWorkspaceRoot, ensureRealDirectory })
+  const gitWorkspaceRoutes = createGitWorkspaceRoutes({ readJsonBody, getCodexHomeDir, persistWorkspaceRoot })
   let threadSearchIndex: ThreadSearchIndex | null = null
   let threadSearchIndexPromise: Promise<ThreadSearchIndex> | null = null
 
@@ -1234,6 +889,14 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           return
         }
 
+        if (body.method === 'thread/start') {
+          const cwd = readNonEmptyString(asRecord(body.params)?.cwd)
+          if (!cwd || !(await stat(cwd).catch(() => null))?.isDirectory()) {
+            setJson(res, 400, { error: 'Select an existing workspace before starting a conversation.' })
+            return
+          }
+        }
+
         const responseFork = body.method === 'thread/fork-at-response'
         if (responseFork) body.method = 'thread/fork'
 
@@ -1369,82 +1032,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       // Retired API: terminate here so SPA middleware cannot serve HTML.
-      if (url.pathname.startsWith('/codex-api/telegram/') || url.pathname === '/codex-api/worktree/create-permanent' || url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
+      if (['/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion'].includes(url.pathname) || url.pathname.startsWith('/codex-api/telegram/') || url.pathname === '/codex-api/worktree/create-permanent' || url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
         setJson(res, 404, { error: 'Not found' })
-        return
-      }
-
-      if (req.method === 'POST' && url.pathname === '/codex-api/thread/rollback-files') {
-        try {
-          const body = asRecord(await readJsonBody(req))
-          const threadId = readNonEmptyString(body?.threadId)
-          const turnId = readNonEmptyString(body?.turnId)
-          const cwd = readNonEmptyString(body?.cwd)
-          const action = readNonEmptyString(body?.action) === 'redo' ? 'redo' : 'undo'
-          const scope = readNonEmptyString(body?.scope) === 'single_turn' ? 'single_turn' : 'turn_and_later'
-          const patchIds = Array.isArray(body?.patchIds)
-            ? new Set(body.patchIds.filter((value): value is string => typeof value === 'string' && value.length > 0))
-            : undefined
-          if (!threadId || !turnId || !cwd) {
-            setJson(res, 400, { error: 'Missing threadId, turnId, or cwd' })
-            return
-          }
-
-          const threadReadResult = await appServer.rpc('thread/read', { threadId, includeTurns: true })
-          const record = asRecord(threadReadResult)
-          const thread = asRecord(record?.thread)
-          const turns = Array.isArray(thread?.turns) ? thread.turns : []
-          const sessionPath = readNonEmptyString(thread?.path)
-
-          if (!sessionPath || !isAbsolute(sessionPath)) {
-            setJson(res, 200, { reverted: 0, errors: [], message: 'No session log available' })
-            return
-          }
-
-          let foundTurnIndex = -1
-          const turnIdsToRevert = new Set<string>()
-          for (let i = 0; i < turns.length; i++) {
-            const turnRecord = asRecord(turns[i])
-            const id = readNonEmptyString(turnRecord?.id)
-            if (id === turnId) {
-              foundTurnIndex = i
-            }
-            if (foundTurnIndex >= 0 && id) {
-              turnIdsToRevert.add(id)
-              if (scope === 'single_turn') break
-            }
-          }
-
-          if (turnIdsToRevert.size === 0) {
-            setJson(res, 200, { reverted: 0, errors: [], message: 'No turns to revert' })
-            return
-          }
-
-          let sessionLogRaw: string
-          try {
-            sessionLogRaw = await readFile(sessionPath, 'utf8')
-          } catch {
-            setJson(res, 200, { reverted: 0, errors: ['Could not read session log'], message: 'Session log unreadable' })
-            return
-          }
-
-          const turnInfos = collectFileChangesForTurns(sessionLogRaw, turnIdsToRevert, cwd)
-          if (turnInfos.size === 0) {
-            setJson(res, 200, { changed: 0, errors: [], message: action === 'redo' ? 'No file changes to redo' : 'No file changes to revert' })
-            return
-          }
-
-          if (action === 'redo') {
-            const result = await applyTurnFileChanges(cwd, turnInfos, patchIds)
-            setJson(res, 200, { ...result, changed: result.applied, message: `Reapplied ${result.applied} file change(s)` })
-            return
-          }
-
-          const result = await revertTurnFileChanges(cwd, turnInfos, patchIds)
-          setJson(res, 200, { ...result, changed: result.reverted, message: `Reverted ${result.reverted} file change(s)` })
-        } catch (error) {
-          setJson(res, 500, { error: getErrorMessage(error, 'Failed to revert file changes') })
-        }
         return
       }
 
@@ -1493,19 +1082,11 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       if (req.method === 'PATCH' && url.pathname === '/codex-api/workspace-roots-state') {
         const record = asRecord(await readJsonBody(req))
         let operation: WorkspaceRootsOperation
-        if (record?.type === 'reorder' && Array.isArray(record.order)
-          && record.order.every((item) => typeof item === 'string' && item.trim().length > 0)) {
-          operation = { type: 'reorder', order: normalizeStringArray(record.order) }
-        } else if ((record?.type === 'rename' || record?.type === 'delete')
-          && typeof record.path === 'string' && isAbsoluteLikePath(record.path.trim())
-          && (record.type === 'delete' || typeof record.label === 'string')) {
-          operation = record.type === 'delete'
-            ? { type: 'delete', path: record.path.trim() }
-            : { type: 'rename', path: record.path.trim(), label: record.label as string }
-        } else {
-          setJson(res, 400, { error: 'Expected a rename, reorder, or delete project operation with stable identifiers' })
+        if (record?.type !== 'delete' || typeof record.path !== 'string' || !isAbsoluteLikePath(record.path.trim())) {
+          setJson(res, 400, { error: 'Expected a delete project operation with a stable path' })
           return
         }
+        operation = { type: 'delete', path: record.path.trim() }
         const state = await applyWorkspaceRootsOperation(operation)
         setJson(res, 200, { data: state })
         return
@@ -1514,8 +1095,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       if (req.method === 'POST' && url.pathname === '/codex-api/project-root') {
         const payload = asRecord(await readJsonBody(req))
         const rawPath = typeof payload?.path === 'string' ? payload.path.trim() : ''
-        const createIfMissing = payload?.createIfMissing === true
-        const label = typeof payload?.label === 'string' ? payload.label : ''
         if (!rawPath) {
           setJson(res, 400, { error: 'Missing path' })
           return
@@ -1533,88 +1112,13 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           pathExists = false
         }
 
-        if (!pathExists && createIfMissing) {
-          await mkdir(normalizedPath, { recursive: true })
-        } else if (!pathExists) {
+        if (!pathExists) {
           setJson(res, 404, { error: 'Directory does not exist' })
           return
         }
 
-        await persistWorkspaceRoot(normalizedPath, label)
+        await persistWorkspaceRoot(normalizedPath)
         setJson(res, 200, { data: { path: normalizedPath } })
-        return
-      }
-
-      if (req.method === 'POST' && url.pathname === '/codex-api/local-directory') {
-        const payload = asRecord(await readJsonBody(req))
-        const rawPath = typeof payload?.path === 'string' ? payload.path.trim() : ''
-        if (!rawPath) {
-          setJson(res, 400, { error: 'Missing path' })
-          return
-        }
-
-        const normalizedPath = isAbsolute(rawPath) ? rawPath : resolve(rawPath)
-        try {
-          const info = await stat(normalizedPath)
-          if (!info.isDirectory()) {
-            setJson(res, 400, { error: 'Path exists but is not a directory' })
-            return
-          }
-        } catch {
-          await mkdir(normalizedPath, { recursive: true })
-        }
-
-        setJson(res, 200, { data: { path: normalizedPath } })
-        return
-      }
-
-      if (await gitWorkspaceRoutes.handleCloneRoutes(req, res, url)) return
-
-      if (req.method === 'POST' && url.pathname === '/codex-api/projectless-thread-cwd') {
-        const payload = asRecord(await readJsonBody(req))
-        const prompt = typeof payload?.prompt === 'string' ? payload.prompt : null
-        try {
-          const directory = await createProjectlessThreadDirectory(prompt)
-          setJson(res, 200, { data: directory })
-        } catch (error) {
-          setJson(res, 500, { error: error instanceof Error ? error.message : 'Failed to create new chat folder' })
-        }
-        return
-      }
-
-      if (req.method === 'GET' && url.pathname === '/codex-api/project-root-suggestion') {
-        const basePath = url.searchParams.get('basePath')?.trim() ?? ''
-        if (!basePath) {
-          setJson(res, 400, { error: 'Missing basePath' })
-          return
-        }
-        const normalizedBasePath = isAbsolute(basePath) ? basePath : resolve(basePath)
-        try {
-          const baseInfo = await stat(normalizedBasePath)
-          if (!baseInfo.isDirectory()) {
-            setJson(res, 400, { error: 'basePath is not a directory' })
-            return
-          }
-        } catch {
-          setJson(res, 404, { error: 'basePath does not exist' })
-          return
-        }
-
-        let index = 1
-        while (index < 100000) {
-          const candidateName = `New Project (${String(index)})`
-          const candidatePath = join(normalizedBasePath, candidateName)
-          try {
-            await stat(candidatePath)
-            index += 1
-            continue
-          } catch {
-            setJson(res, 200, { data: { name: candidateName, path: candidatePath } })
-            return
-          }
-        }
-
-        setJson(res, 500, { error: 'Failed to compute project name suggestion' })
         return
       }
 

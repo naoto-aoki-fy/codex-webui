@@ -50,40 +50,7 @@
             />
             <span>{{ t('Show hidden folders') }}</span>
           </label>
-          <button
-            class="new-thread-folder-action"
-            :class="{ 'new-thread-folder-action-primary': isCreateFolderOpen }"
-            type="button"
-            :aria-pressed="isCreateFolderOpen"
-            :disabled="!existingFolderBrowsePath || isExistingFolderLoading || isOpeningExistingFolder || isCreatingFolder || (!!existingFolderError && !isCreateFolderOpen)"
-            @click="emit('toggleCreate')"
-          >
-            {{ t('New folder') }}
-          </button>
-        </div>
-        <div v-if="isCreateFolderOpen" class="new-thread-open-folder-create">
-          <div class="new-thread-open-folder-create-composer">
-            <input
-              ref="createFolderInputRef"
-              v-model="createFolderDraftModel"
-              class="new-thread-open-folder-create-input"
-              type="text"
-              :placeholder="t('Folder name')"
-              @keydown.enter.prevent="emit('create')"
-              @keydown.esc.prevent="emit('closeCreate')"
-            />
-            <button
-              class="new-thread-folder-action new-thread-folder-action-primary new-thread-open-folder-create-submit"
-              type="button"
-              :disabled="!canCreateFolder || isCreatingFolder"
-              @click="emit('create')"
-            >
-              {{ createFolderSubmitLabel }}
-            </button>
-          </div>
-          <div v-if="createFolderError" class="new-thread-open-folder-error">
-            <span>{{ createFolderError }}</span>
-          </div>
+
         </div>
         <input
             v-model="existingFolderFilterModel"
@@ -143,33 +110,23 @@ import { t } from '../../composables/useUiLanguage'
 const props = defineProps<{
   existingFolderPathDraft: string
   showHiddenFolders: boolean
-  createFolderDraft: string
   existingFolderFilter: string
   resolvedExistingFolderPath: string
   isExistingFolderLoading: boolean
   isOpeningExistingFolder: boolean
   existingFolderBrowsePath: string
-  isCreatingFolder: boolean
   existingFolderError: string
-  isCreateFolderOpen: boolean
-  canCreateFolder: boolean
-  createFolderSubmitLabel: string
-  createFolderError: string
   existingFolderFilteredEntries: Array<{ key: string; name: string; path: string; kind: 'parent' | 'directory' }>
 }>()
 
 const emit = defineEmits<{
   'update:existingFolderPathDraft': [value: string]
   'update:showHiddenFolders': [value: boolean]
-  'update:createFolderDraft': [value: string]
   'update:existingFolderFilter': [value: string]
   close: []
   retry: []
   confirm: [path?: string]
   toggleHidden: []
-  toggleCreate: []
-  create: []
-  closeCreate: []
   browse: [path: string]
 }>()
 
@@ -183,21 +140,14 @@ const showHiddenFoldersModel = computed({
   set: (value: boolean) => emit('update:showHiddenFolders', value),
 })
 
-const createFolderDraftModel = computed({
-  get: () => props.createFolderDraft,
-  set: (value: string) => emit('update:createFolderDraft', value),
-})
-
 const existingFolderFilterModel = computed({
   get: () => props.existingFolderFilter,
   set: (value: string) => emit('update:existingFolderFilter', value),
 })
 
 const existingFolderPathInputRef = ref<HTMLInputElement | null>(null)
-const createFolderInputRef = ref<HTMLInputElement | null>(null)
 defineExpose({
   focusPathInput: () => existingFolderPathInputRef.value?.focus(),
-  focusCreateInput: () => createFolderInputRef.value?.focus(),
 })
 </script>
 
@@ -252,18 +202,6 @@ defineExpose({
 
 .new-thread-open-folder-filter {
   @apply w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-400;
-}
-
-.new-thread-open-folder-create {
-  @apply flex flex-col gap-2;
-}
-
-.new-thread-open-folder-create-composer {
-  @apply flex items-center gap-2;
-}
-
-.new-thread-open-folder-create-submit {
-  @apply shrink-0;
 }
 
 .new-thread-folder-action[aria-pressed='true'] {

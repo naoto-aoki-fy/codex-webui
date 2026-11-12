@@ -3,53 +3,7 @@ import type { UiProjectGroup } from '../types/codex'
 import { isProjectlessChatPath, normalizePathForUi, toProjectName } from '../pathUtils.js'
 import { areStringArraysEqual } from './desktopMessageReconciliation'
 
-export function mergeProjectOrder(previousOrder: string[], incomingGroups: UiProjectGroup[]): string[] {
-  const nextOrder: string[] = []
 
-  for (const projectName of previousOrder) {
-    if (!nextOrder.includes(projectName)) {
-      nextOrder.push(projectName)
-    }
-  }
-
-  for (const group of incomingGroups) {
-    if (!nextOrder.includes(group.projectName)) {
-      nextOrder.push(group.projectName)
-    }
-  }
-
-  return areStringArraysEqual(previousOrder, nextOrder) ? previousOrder : nextOrder
-}
-
-export function orderGroupsByProjectOrder(incoming: UiProjectGroup[], projectOrder: string[]): UiProjectGroup[] {
-  const incomingByName = new Map(incoming.map((group) => [group.projectName, group]))
-  const ordered: UiProjectGroup[] = projectOrder
-    .map((projectName) => incomingByName.get(projectName) ?? null)
-    .filter((group): group is UiProjectGroup => group !== null)
-
-  for (const group of incoming) {
-    if (!projectOrder.includes(group.projectName)) {
-      ordered.push(group)
-    }
-  }
-
-  return ordered
-}
-
-export function reorderStringArray(items: string[], fromIndex: number, toIndex: number): string[] {
-  if (fromIndex < 0 || fromIndex >= items.length || toIndex < 0 || toIndex >= items.length) {
-    return items
-  }
-
-  if (fromIndex === toIndex) {
-    return items
-  }
-
-  const next = [...items]
-  const [moved] = next.splice(fromIndex, 1)
-  next.splice(toIndex, 0, moved)
-  return next
-}
 
 export function toProjectNameFromWorkspaceRoot(value: string): string {
   return toProjectName(value)
@@ -118,22 +72,6 @@ export function collectWorkspaceRootPathsForProjectRemoval(
 ): Set<string> {
   const id = getWorkspaceProjectId(rootsState, projectName, [])
   return new Set(id && rootsState.order.includes(id) ? [id] : [])
-}
-
-export function buildWorkspaceRootsProjectOrderState(
-  rootsState: WorkspaceRootsState,
-  orderedProjectNames: string[],
-  groups: UiProjectGroup[],
-): Pick<WorkspaceRootsState, 'order' | 'active' | 'projectOrder'> {
-  const projectOrder = [...new Set([
-    ...orderedProjectNames.map((name) => getWorkspaceProjectId(rootsState, name, groups)).filter(Boolean),
-    ...getWorkspaceProjectOrderPaths(rootsState),
-  ])]
-  return {
-    order: projectOrder.filter((id) => rootsState.order.includes(id)),
-    active: [...rootsState.active],
-    projectOrder,
-  }
 }
 
 function orderGroupsByWorkspaceProjectOrder(

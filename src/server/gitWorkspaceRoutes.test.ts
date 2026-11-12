@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, rm, stat, lstat, writeFile, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -23,10 +23,6 @@ beforeEach(async () => {
     readJsonBody: async () => payload,
     getCodexHomeDir: () => join(root, 'home'),
     persistWorkspaceRoot: persist,
-    ensureRealDirectory: async (path, label) => {
-      const info = await lstat(path)
-      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`${label} must be a real directory`)
-    },
   })
 })
 afterEach(async () => {
@@ -38,7 +34,6 @@ async function request(method: string, path: string) {
   const url = new URL(path, 'http://localhost')
   const req = { method } as IncomingMessage
   const handled = await routes.handleWorktreeRoutes(req, res as unknown as ServerResponse, url)
-    || await routes.handleCloneRoutes(req, res as unknown as ServerResponse, url)
   if (handled) expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/json; charset=utf-8')
   return { handled, status: res.statusCode, body: res.end.mock.calls[0] ? JSON.parse(res.end.mock.calls[0][0]) : undefined }
 }
@@ -114,34 +109,6 @@ it.each(['GET', 'PUT', 'DELETE'])('falls through for wrong method %s without rea
   expect((await request('POST', '/codex-api/worktree/create/')).handled).toBe(false)
   expect((await request('POST', '/unrelated')).handled).toBe(false)
 })
-it.each([false, true])('clones with the original arguments and cleans partial failures=%s', async fail => {
-  const target = join(root, 'example')
-  const spy = vi.spyOn(commands, 'runCommand').mockImplementation(async () => {
-    await mkdir(target)
-    if (fail) throw new Error('clone failed')
-  })
-  payload = { url: 'https://github.com/owner/example', basePath: root }
-  expect(await request('POST', '/codex-api/github-clone')).toMatchObject(fail
-    ? { status: 400, body: { error: 'clone failed' } }
-    : { status: 200, body: { data: { path: target } } })
-  expect(spy).toHaveBeenCalledExactlyOnceWith('git', ['clone', 'https://github.com/owner/example.git', target], { cwd: root, timeoutMs: 300000 })
-  if (fail) {
-    await expect(stat(target)).rejects.toThrow()
-    expect(persist).not.toHaveBeenCalled()
-  } else expect(persist).toHaveBeenCalledExactlyOnceWith(target, '')
-})
-it('preserves a successful clone when persistence fails and rejects symlink destinations', async () => {
-  const target = join(root, 'example')
-  vi.spyOn(commands, 'runCommand').mockImplementation(async () => { await mkdir(target) })
-  persist.mockRejectedValueOnce(new Error('storage failed'))
-  payload = { url: 'git@github.com:owner/example.git', basePath: root }
-  expect(await request('POST', '/codex-api/github-clone')).toMatchObject({ status: 400, body: { error: 'storage failed' } })
-  expect((await stat(target)).isDirectory()).toBe(true)
-  const link = join(root, 'link')
-  await symlink(repo, link)
-  payload = { url: 'https://github.com/owner/example', basePath: link }
-  expect((await request('POST', '/codex-api/github-clone')).body).toEqual({ error: 'Clone destination folder must be a real directory' })
-})
 it('preserves branch activity sorting, normalization and origin/HEAD exclusion', async () => {
   vi.spyOn(commands, 'runCommandCapture')
     .mockResolvedValueOnce(repo)
@@ -156,30 +123,4 @@ it('returns exact status and branch errors for non-repository-independent comman
     .toMatchObject({ status: 500, body: { error: 'permission denied' } })
   expect(await request('GET', '/codex-api/worktree/branches?sourceCwd=' + repo))
     .toMatchObject({ status: 500, body: { error: 'permission denied' } })
-})
-it('rejects invalid clone URLs and existing destinations without issuing commands', async () => {
-  const spy = vi.spyOn(commands, 'runCommand')
-  payload = { url: 'https://example.com/owner/repo', basePath: root }
-  expect(await request('POST', '/codex-api/github-clone'))
-    .toMatchObject({ status: 400, body: { error: 'Only github.com repository URLs are supported' } })
-  payload = { url: 'https://github.com/owner/repo', basePath: root }
-  expect(await request('POST', '/codex-api/github-clone'))
-    .toMatchObject({ status: 400, body: { error: `Destination already exists: ${repo}` } })
-  expect(spy).not.toHaveBeenCalled()
-})
-it('keeps bridge dispatch at the original route boundaries', async () => {
-  const { readFile } = await import('node:fs/promises')
-  const bridge = await readFile(new URL('./codexAppServerBridge.ts', import.meta.url), 'utf8')
-  const positions = [
-    "url.pathname === '/codex-api/home-directory'",
-    'await gitWorkspaceRoutes.handleWorktreeRoutes(req, res, url)',
-    "url.pathname === '/codex-api/workspace-roots-state'",
-    "url.pathname === '/codex-api/local-directory'",
-    'await gitWorkspaceRoutes.handleCloneRoutes(req, res, url)',
-    "url.pathname === '/codex-api/projectless-thread-cwd'",
-  ].map((marker, index) => index === 2
-    ? bridge.indexOf(marker, bridge.indexOf('await gitWorkspaceRoutes.handleWorktreeRoutes'))
-    : bridge.indexOf(marker))
-  expect(positions.every(position => position >= 0)).toBe(true)
-  expect(positions).toEqual([...positions].sort((a, b) => a - b))
 })

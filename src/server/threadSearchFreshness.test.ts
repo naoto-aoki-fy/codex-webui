@@ -19,7 +19,7 @@ function setup() {
   })
   scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-v1', appServer: client, methodCatalog: {} }
   middleware = createCodexBridgeMiddleware()
-  const emit = (method: string) => (client as any).emitNotification({ method, params: { threadId: 'a' } })
+  const emit = (method: string) => (client as any).emitNotification({ method, params: { threadId: 'a', cwd: process.cwd() } })
   async function request(path: string, payload: unknown, owner = middleware) {
     const req = Object.assign(Readable.from([JSON.stringify(payload)]), { method: 'POST', url: '/codex-api/' + path, headers: {} })
     const end = vi.fn()
@@ -40,7 +40,7 @@ for (const method of ['thread/start', 'thread/name/set', 'thread/archive', 'thre
   it(`refreshes after successful ${method}`, async () => {
     const s = setup(); await s.search('original')
     s.rows([{ id: 'b', name: 'replacement', preview: '' }])
-    await s.request('rpc', { method, params: { threadId: 'a' } })
+    await s.request('rpc', { method, params: { threadId: 'a', cwd: process.cwd() } })
     expect((await s.search('replacement')).data.threadIds).toEqual(['b'])
     expect((await s.search('original')).data.threadIds).toEqual([])
   })
