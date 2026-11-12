@@ -209,9 +209,6 @@
                     @click.stop
                   >
                     <template>
-                      <button class="project-menu-item" type="button" @click="onBrowseProjectFiles(group.projectName)">
-                        Browse files
-                      </button>
 
                       <button
                         class="project-menu-item project-menu-item-danger"
@@ -357,9 +354,6 @@
         <button class="thread-menu-item" type="button" @click="onOpenThreadInNewTab(openThreadMenuThread.id)">
           Open in new tab
         </button>
-        <button class="thread-menu-item" type="button" @click="onBrowseThreadFiles(openThreadMenuThread.id)">
-          Browse files
-        </button>
         <button class="thread-menu-item" type="button" @click="onCopyThreadPath(openThreadMenuThread.id)">
           Copy path
         </button>
@@ -472,8 +466,6 @@ const emit = defineEmits<{
   select: [threadId: string]
   archive: [threadId: string]
   'start-new-thread': [projectName: string]
-  'browse-thread-files': [threadId: string]
-  'browse-project-files': [projectName: string]
   'request-project-git-status': [projectName: string]
   'rename-thread': [payload: { threadId: string; title: string }]
   'remove-project': [projectName: string]
@@ -926,11 +918,6 @@ function onStartNewThread(projectName: string): void {
   emit('start-new-thread', projectName)
 }
 
-function onBrowseThreadFiles(threadId: string): void {
-  emit('browse-thread-files', threadId)
-  closeThreadMenu()
-}
-
 async function onCopyThreadPath(threadId: string): Promise<void> {
   const path = threadById.value.get(threadId)?.cwd?.trim() ?? ''
   closeThreadMenu()
@@ -1160,11 +1147,6 @@ function openProjectContextMenu(projectName: string): void {
   isOrganizeMenuOpen.value = false
   openProjectMenuId.value = projectName
   requestProjectGitStatusAndUpdateMenuDirection(projectName)
-}
-
-function onBrowseProjectFiles(projectName: string): void {
-  emit('browse-project-files', projectName)
-  closeProjectMenu()
 }
 
 function onRemoveProject(projectName: string): void {

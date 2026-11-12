@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isAbsolute, extname } from 'node:path'
 import { stat } from 'node:fs/promises'
 import express from 'express'
-import { createDirectoryListingHtml, getLocalDirectoryListing, normalizeLocalPath } from './localBrowseUi.js'
+import { getLocalDirectoryListing, normalizeLocalPath } from './localBrowseUi.js'
 
 const imageTypes: Record<string, string> = {
   '.avif': 'image/avif', '.bmp': 'image/bmp', '.gif': 'image/gif',
@@ -58,10 +58,7 @@ export function createLocalFileMiddleware() {
         json(200, { data: await getLocalDirectoryListing(localPath, { showHidden }) })
       } else {
         res.setHeader('Cache-Control', kind === 'image' ? 'private, max-age=300' : 'private, no-store')
-        if (kind === 'browse' && info.isDirectory()) {
-          send(200, await createDirectoryListingHtml(localPath), 'text/html; charset=utf-8')
-          return
-        }
+        // File links never expose directory contents, including symlink targets.
         if (!info.isFile()) throw new Error('Not a regular file')
         if (kind === 'image') res.setHeader('Content-Type', imageTypes[extname(localPath).toLowerCase()]!)
         req.url = localPath.split('/').map(encodeURIComponent).join('/')

@@ -11,13 +11,13 @@ The thread overflow menu includes a `Copy path` item that copies the selected th
 
 #### Steps
 1. In light theme, hover a thread row in the sidebar and open its overflow menu
-2. Verify `Copy path` appears after `Browse files`
+2. Verify `Copy path` appears after `Open in new tab`
 3. Click `Copy path`
 4. Paste the clipboard contents into a text field or clipboard inspector
 5. Reopen the same menu in dark theme and verify the item remains readable and in the same position
 
 #### Expected Results
-- The menu order is `Open in new tab`, `Browse files`, `Copy path`, `Copy chat`, `Create chat fork`, `Pin thread` or `Unpin thread`, `Rename thread`, `Delete thread`
+- The menu order is `Open in new tab`, `Copy path`, `Copy chat`, `Create chat fork`, `Pin thread` or `Unpin thread`, `Rename thread`, `Delete thread`
 - Clicking `Copy path` closes the menu
 - Clipboard contents equal the thread's `cwd` path
 - Light theme and dark theme both keep the menu item readable

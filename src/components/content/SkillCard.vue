@@ -11,43 +11,16 @@
           <span class="skill-card-name">{{ skill.name }}</span>
         </div>
       </div>
-      <button
-        v-if="skillDirPath"
-        class="skill-card-browse"
-        type="button"
-        :title="t('Browse files')"
-        @click.stop="onBrowse"
-      >
-        <IconTablerFolder class="skill-card-browse-icon" />
-      </button>
     </div>
     <p v-if="skill.description" class="skill-card-desc">{{ skill.description }}</p>
   </button>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useUiLanguage } from '../../composables/useUiLanguage'
-import IconTablerFolder from '../icons/IconTablerFolder.vue'
-
 import type { LocalSkill } from '../../types/skills'
 
-const props = defineProps<{ skill: LocalSkill }>()
+defineProps<{ skill: LocalSkill }>()
 defineEmits<{ select: [skill: LocalSkill] }>()
-const { t } = useUiLanguage()
-
-const skillDirPath = computed(() => {
-  const p = props.skill.path
-  if (!p) return ''
-  return p.endsWith('/SKILL.md') ? p.slice(0, -'/SKILL.md'.length) : p
-})
-
-function onBrowse(): void {
-  const dir = skillDirPath.value
-  if (!dir) return
-  window.open(`/codex-local-browse${encodeURI(dir)}`, '_blank', 'noopener,noreferrer')
-}
-
 </script>
 
 <style scoped>
@@ -75,14 +48,6 @@ function onBrowse(): void {
 
 .skill-card-name {
   @apply text-sm font-medium text-zinc-900 truncate;
-}
-
-.skill-card-browse {
-  @apply shrink-0 ml-auto h-7 w-7 rounded-lg border-0 bg-transparent text-zinc-300 flex items-center justify-center transition hover:bg-zinc-100 hover:text-zinc-600;
-}
-
-.skill-card-browse-icon {
-  @apply w-4 h-4;
 }
 
 .skill-card-desc {
