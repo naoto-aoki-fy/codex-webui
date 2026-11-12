@@ -215,47 +215,6 @@
                   @browse="onBrowseExistingFolder"
                 />
 
-                <ComposerRuntimeDropdown
-                  v-if="isNewThreadCwdGitRepo"
-                  class="new-thread-runtime-dropdown"
-                  v-model="newThreadRuntime"
-                />
-                <div v-if="newThreadRuntime === 'worktree'" class="new-thread-branch-select">
-                  <p class="new-thread-branch-select-label">{{ t('Base branch') }}</p>
-                  <ComposerDropdown
-                    class="new-thread-branch-dropdown"
-                    :model-value="newWorktreeBaseBranch"
-                    :options="newWorktreeBranchDropdownOptions"
-                    :placeholder="t('Select branch')"
-                    :enable-search="true"
-                    :search-placeholder="t('Search branches...')"
-                    :disabled="isLoadingWorktreeBranches || newWorktreeBranchDropdownOptions.length === 0"
-                    @update:model-value="onSelectNewWorktreeBranch"
-                  />
-                  <p class="new-thread-branch-select-help">
-                    {{
-                      isLoadingWorktreeBranches
-                        ? t('Loading branches…')
-                        : selectedWorktreeBranchLabel
-                          ? t('New worktree branch will start from {branch}.', { branch: selectedWorktreeBranchLabel })
-                          : t('No Git branches found for this folder.')
-                    }}
-                  </p>
-                </div>
-                <p v-if="isNewThreadCwdGitRepo" class="new-thread-runtime-help">
-                  {{ t('Local project uses the selected folder directly. New worktree creates an isolated Git worktree before the first prompt.') }}
-                </p>
-                <div
-                  v-if="worktreeInitStatus.phase !== 'idle'"
-                  class="worktree-init-status"
-                  :class="{
-                    'is-running': worktreeInitStatus.phase === 'running',
-                    'is-error': worktreeInitStatus.phase === 'error',
-                  }"
-                >
-                  <strong class="worktree-init-status-title">{{ worktreeInitStatus.title }}</strong>
-                  <span class="worktree-init-status-message">{{ worktreeInitStatus.message }}</span>
-                </div>
               </div>
 
               <div class="composer-container" :class="{ 'is-disabled': !newThreadCwd.trim() }"
@@ -364,7 +323,6 @@ import ThreadComposer from './components/content/ThreadComposer.vue'
 import ThreadPendingRequestPanel from './components/content/ThreadPendingRequestPanel.vue'
 import RateLimitStatus from './components/content/RateLimitStatus.vue'
 import ComposerDropdown from './components/content/ComposerDropdown.vue'
-import ComposerRuntimeDropdown from './components/content/ComposerRuntimeDropdown.vue'
 import SidebarThreadControls from './components/sidebar/SidebarThreadControls.vue'
 import IconTablerBolt from './components/icons/IconTablerBolt.vue'
 import IconTablerSearch from './components/icons/IconTablerSearch.vue'
@@ -372,11 +330,9 @@ import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
 import { useDesktopState } from './composables/useDesktopState'
 import { useFolderPicker } from './composables/useFolderPicker'
-import { useNewThreadRuntime } from './composables/useNewThreadRuntime'
 import { useMobile } from './composables/useMobile'
 import { useUiLanguage } from './composables/useUiLanguage'
 import {
-  createWorktree,
   getGitRepositoryStatus,
   logoutCodex,
   getHomeDirectory,
@@ -505,11 +461,6 @@ const workspaceRootOptionsState = ref<{ order: string[]; labels: Record<string, 
   order: [],
   labels: {},
   projectOrder: [],
-})
-const worktreeInitStatus = ref<{ phase: 'idle' | 'running' | 'error'; title: string; message: string }>({
-  phase: 'idle',
-  title: '',
-  message: '',
 })
 const isSidebarCollapsed = ref(loadSidebarCollapsed())
 const sidebarSearchQuery = ref('')
@@ -804,10 +755,6 @@ const newThreadFolderOptions = computed(() => {
 
   return options
 })
-const isNewThreadCwdGitRepo = computed(() => {
-  const cwd = newThreadCwd.value.trim()
-  return cwd ? gitRepoStatusByCwd.value[cwd] === true : false
-})
 const projectGitRepoByName = computed<Record<string, boolean>>(() => {
   const result: Record<string, boolean> = {}
   for (const group of projectGroups.value) {
@@ -816,13 +763,6 @@ const projectGitRepoByName = computed<Record<string, boolean>>(() => {
   }
   return result
 })
-const {
-  newThreadRuntime,
-  newWorktreeBaseBranch,
-  newWorktreeBranchDropdownOptions,
-  selectedWorktreeBranchLabel,
-  isLoadingWorktreeBranches,
-} = useNewThreadRuntime(newThreadCwd, isNewThreadCwdGitRepo)
 const darkModeMediaQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
 const chatWidthLabel = computed(() => t(CHAT_WIDTH_PRESETS[chatWidth.value].label))
 const contentStyle = computed(() => {
@@ -1058,7 +998,6 @@ function onStartNewThreadFromToolbar(): void {
   if (resolvedCwd) {
     newThreadCwd.value = resolvedCwd
   }
-  newThreadRuntime.value = 'local'
   if (isMobile.value) setSidebarCollapsed(true)
   if (isHomeRoute.value) return
   void router.push({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value } : {} })
@@ -1255,9 +1194,6 @@ function onSelectNewThreadFolder(cwd: string): void {
   newThreadCwd.value = cwd.trim()
 }
 
-function onSelectNewWorktreeBranch(branch: string): void {
-  newWorktreeBaseBranch.value = branch.trim()
-}
 
 async function onConfirmExistingFolder(path = resolvedExistingFolderPath.value): Promise<void> {
   const targetPath = normalizePathForUi(path).trim()
@@ -1634,66 +1570,6 @@ watch(
 )
 
 watch(
-  () => newThreadCwd.value,
-  () => {
-    worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
-  },
-)
-
-watch(
-  () => [route.name, newThreadCwd.value] as const,
-  ([routeName, cwd]) => {
-    if (routeName !== 'home') return
-    void loadGitRepoStatus(cwd)
-  },
-  { immediate: true },
-)
-
-watch(
-  isNewThreadCwdGitRepo,
-  (isGitRepo) => {
-    if (!isGitRepo && newThreadRuntime.value === 'worktree') {
-      newThreadRuntime.value = 'local'
-    }
-  },
-  { immediate: true },
-)
-
-watch(
-  () => newThreadRuntime.value,
-  (runtime) => {
-    if (runtime === 'local') {
-      worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
-      const current = newThreadCwd.value.trim()
-      if (current && isWorktreePath(current)) {
-        const fallbackProjectName = selectedThread.value?.projectName ?? getPathLeafName(current)
-        const localCwd = resolvePreferredLocalCwd(fallbackProjectName, '')
-        if (localCwd) {
-          newThreadCwd.value = localCwd
-        }
-      }
-      return
-    }
-  },
-)
-
-watch(
-  () => route.name,
-  (name) => {
-    if (name !== 'home') {
-      worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
-    }
-  },
-)
-
-watch(
-  () => selectedThreadId.value,
-  () => {
-    worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
-  },
-)
-
-watch(
   pageTitle,
   (value) => {
     if (typeof document === 'undefined') return
@@ -1715,31 +1591,10 @@ async function submitFirstMessageForNewThread(
   fileAttachments: Array<{ label: string; path: string; fsPath: string }> = [],
 ): Promise<void> {
   try {
-    worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
     let targetCwd = newThreadCwd.value
     if (!targetCwd.trim()) {
       desktopError.value = 'Select an existing workspace before starting a conversation.'
       return
-    }
-    if (newThreadRuntime.value === 'worktree') {
-      worktreeInitStatus.value = {
-        phase: 'running',
-        title: t('Creating worktree'),
-        message: t('Creating a worktree and running setup.'),
-      }
-      try {
-        const created = await createWorktree(newThreadCwd.value, newWorktreeBaseBranch.value)
-        targetCwd = created.cwd
-        newThreadCwd.value = created.cwd
-        worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
-      } catch {
-        worktreeInitStatus.value = {
-          phase: 'error',
-          title: t('Worktree setup failed'),
-          message: t('Unable to create worktree. Try again or switch to Local project.'),
-        }
-        return
-      }
     }
     const threadId = await sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments)
     if (!threadId) return
@@ -1976,49 +1831,16 @@ async function onLogoutCodex(): Promise<void> {
   @apply mt-3 flex w-full max-w-3xl flex-wrap items-center justify-center gap-2;
 }
 
-.new-thread-runtime-dropdown {
-  @apply mt-3;
-}
 
-.new-thread-branch-select {
-  @apply mt-3 w-full max-w-3xl;
-}
 
-.new-thread-branch-select-label {
-  @apply m-0 mb-1 text-xs font-medium uppercase tracking-wide text-zinc-500;
-}
 
-.new-thread-branch-dropdown :deep(.composer-dropdown-trigger) {
-  @apply h-9 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-700;
-}
 
-.new-thread-branch-select-help {
-  @apply mt-1 mb-0 text-xs text-zinc-500;
-}
 
-.new-thread-runtime-help {
-  @apply mt-2 mb-0 max-w-3xl text-center text-xs text-zinc-500;
-}
 
-.worktree-init-status {
-  @apply mt-3 flex w-full max-w-xl flex-col gap-1 rounded-xl border px-3 py-2 text-sm;
-}
 
-.worktree-init-status.is-running {
-  @apply border-zinc-300 bg-zinc-50 text-zinc-700;
-}
 
-.worktree-init-status.is-error {
-  @apply border-rose-300 bg-rose-50 text-rose-800;
-}
 
-.worktree-init-status-title {
-  @apply font-medium;
-}
 
-.worktree-init-status-message {
-  @apply break-all;
-}
 
 .sidebar-settings-area {
   @apply shrink-0 bg-slate-100 pt-2 px-2 pb-2 border-t border-zinc-200;

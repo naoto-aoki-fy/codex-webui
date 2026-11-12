@@ -166,7 +166,7 @@ function workspaceRootsFromPayload(payload: Record<string, unknown>): WorkspaceR
 }
 
 export async function readWorkspaceRootsState(): Promise<WorkspaceRootsState> {
-  return canonicalizeWorkspaceRootsState(workspaceRootsFromPayload(await readCodexGlobalState()))
+  return workspaceRootsFromPayload(await readCodexGlobalState())
 }
 
 export async function writeWorkspaceRootsState(nextState: WorkspaceRootsState): Promise<void> {
@@ -181,20 +181,8 @@ async function updateWorkspaceRootsState(
   updater: (existingState: WorkspaceRootsState) => WorkspaceRootsState | Promise<WorkspaceRootsState>,
 ): Promise<WorkspaceRootsState> {
   return updateCodexGlobalState(async (payload) => {
-    const paths = new Map<string, Promise<string>>()
-    const resolvePath = (path: string): Promise<string> => {
-      let result = paths.get(path)
-      if (!result) {
-        result = canonicalizeWorkspaceRootPath(path, preserveRemotePath).then((canonical) => {
-          if (!paths.has(canonical)) paths.set(canonical, Promise.resolve(canonical))
-          return canonical
-        })
-        paths.set(path, result)
-      }
-      return result
-    }
-    const current = await canonicalizeWorkspaceRootsState(workspaceRootsFromPayload(payload), resolvePath)
-    const state = await canonicalizeWorkspaceRootsState(await updater(current), resolvePath)
+    const current = workspaceRootsFromPayload(payload)
+    const state = await updater(current)
     if (isDeepStrictEqual(current, state)) return state
     payload['electron-saved-workspace-roots'] = state.order
     payload['electron-workspace-root-labels'] = state.labels

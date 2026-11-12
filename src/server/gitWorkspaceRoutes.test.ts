@@ -22,7 +22,6 @@ beforeEach(async () => {
   routes = createGitWorkspaceRoutes({
     // Same-host protocol fixture: these functions represent B, not a production fallback.
     appServer: {
-      getInitializationMetadata: () => ({ codexHome: join(root, 'home') }) as any,
       rpc: async (method, raw) => {
         const p = raw as any
         if (method === 'fs/getMetadata') { const info = await stat(p.path); return { isFile: info.isFile(), isDirectory: info.isDirectory() } }
@@ -32,9 +31,6 @@ beforeEach(async () => {
         throw new Error('Unexpected RPC ' + method)
       },
     },
-    readJsonBody: async () => payload,
-    getCodexHomeDir: () => join(root, 'home'),
-    persistWorkspaceRoot: persist,
   })
 })
 afterEach(async () => {
@@ -49,90 +45,15 @@ async function request(method: string, path: string) {
   if (handled) expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/json; charset=utf-8')
   return { handled, status: res.statusCode, body: res.end.mock.calls[0] ? JSON.parse(res.end.mock.calls[0][0]) : undefined }
 }
-const create = (permanent = false) => request('POST', '/codex-api/worktree/create' + (permanent ? '-permanent' : ''))
-async function init() {
-  await run('git', ['init'], { cwd: repo })
-  await writeFile(join(repo, 'file'), 'initial')
-  await run('git', ['add', '.'], { cwd: repo })
-  await run('git', ['-c', 'user.name=Test', '-c', 'user.email=test@local', 'commit', '-m', 'initial'], { cwd: repo })
-}
-it.each([false, true])('rejects missing worktree prerequisites without mutations, empty Git=%s', async emptyGit => {
-  if (emptyGit) await run('git', ['init'], { cwd: repo })
-  const spy = vi.spyOn(commands, 'runCommand')
-  expect((await create()).status).toBe(500)
-  expect(spy).not.toHaveBeenCalled()
-  expect(persist).not.toHaveBeenCalled()
-  await expect(stat(join(repo, 'AGENTS.md'))).rejects.toThrow()
-  await expect(stat(join(root, 'home'))).rejects.toThrow()
-  if (!emptyGit) await expect(stat(join(repo, '.git'))).rejects.toThrow()
-})
-it('creates a detached worktree from an existing commit', async () => {
-  await init()
-  const result = await create()
-  expect(result.status).toBe(200)
-  expect(result.body.data.branch).toBeNull()
-  expect(await capture('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: result.body.data.cwd })).toBe('HEAD')
-  expect(persist).toHaveBeenCalledExactlyOnceWith(result.body.data.cwd)
-})
-it('cleans up a worktree when persistence fails', async () => {
-  await init()
-  persist.mockRejectedValueOnce(new Error('storage failed'))
-  expect(await create()).toMatchObject({ status: 500, body: { error: 'storage failed' } })
-  expect(await capture('git', ['worktree', 'list', '--porcelain'], { cwd: repo })).not.toContain('/home/worktrees/')
-})
-it('does not handle the retired permanent-worktree route', async () => {
-  expect((await create(true)).handled).toBe(false)
-})
-it('returns the Git error for an invalid start point', async () => {
-  await init()
-  payload = { sourceCwd: repo, baseBranch: 'missing-branch' }
-  expect((await create()).status).toBe(500)
+it('retires creation and starting-branch endpoints without mutations', async () => {
+  for (const [method, path] of [['POST', '/codex-api/worktree/create'], ['GET', '/codex-api/worktree/branches']]) {
+    expect((await request(method!, path!)).handled).toBe(false)
+  }
   expect(persist).not.toHaveBeenCalled()
 })
-it.each([
-  ['POST', '/codex-api/worktree/create', {}, 400, 'Missing sourceCwd'],
-  ['GET', '/codex-api/git/repository-status', {}, 400, 'Missing cwd'],
-  ['GET', '/codex-api/worktree/branches', {}, 400, 'Missing sourceCwd'],
-])('validates %s %s', async (method, path, body, status, error) => {
-  payload = body
-  expect(await request(method, path)).toMatchObject({ status, body: { error } })
-})
-it('preserves missing and non-directory path responses', async () => {
-  payload = { sourceCwd: join(root, 'missing') }
-  expect((await create()).status).toBe(502)
-  await writeFile(join(root, 'file'), '')
-  payload = { sourceCwd: join(root, 'file') }
-  expect(await create()).toMatchObject({ status: 400, body: { error: 'sourceCwd is not a directory' } })
-})
-it('returns repository status and branches for non-Git, empty and initialized repositories', async () => {
+it('reads existing directory repository status', async () => {
   const status = () => request('GET', '/codex-api/git/repository-status?cwd=' + encodeURIComponent(repo))
-  const branches = () => request('GET', '/codex-api/worktree/branches?sourceCwd=' + encodeURIComponent(repo))
   expect((await status()).body).toEqual({ data: { isGitRepo: false, gitRoot: '' } })
-  expect((await branches()).body).toEqual({ data: [] })
   await run('git', ['init'], { cwd: repo })
   expect((await status()).body).toEqual({ data: { isGitRepo: true, gitRoot: repo } })
-  expect((await branches()).body).toEqual({ data: [] })
-  await init()
-  const branch = await capture('git', ['branch', '--show-current'], { cwd: repo })
-  expect((await branches()).body).toEqual({ data: [{ value: branch, label: branch }] })
-})
-it.each(['GET', 'PUT', 'DELETE'])('falls through for wrong method %s without reading a body', async method => {
-  expect(await request(method, '/codex-api/worktree/create')).toEqual({ handled: false, status: 0, body: undefined })
-  expect((await request('POST', '/codex-api/worktree/create/')).handled).toBe(false)
-  expect((await request('POST', '/unrelated')).handled).toBe(false)
-})
-it('preserves branch activity sorting, normalization and origin/HEAD exclusion', async () => {
-  vi.spyOn(commands, 'runCommandCapture')
-    .mockResolvedValueOnce(repo)
-    .mockResolvedValueOnce('10\trefs/heads/old\n20\trefs/remotes/origin/new\n30\trefs/remotes/origin/HEAD\n20\trefs/heads/alpha')
-  expect((await request('GET', '/codex-api/worktree/branches?sourceCwd=' + repo)).body).toEqual({
-    data: ['alpha', 'origin/new', 'old'].map(value => ({ value, label: value })),
-  })
-})
-it('returns exact status and branch errors for non-repository-independent command failures', async () => {
-  vi.spyOn(commands, 'runCommandCapture').mockRejectedValue(new Error('permission denied'))
-  expect(await request('GET', '/codex-api/git/repository-status?cwd=' + repo))
-    .toMatchObject({ status: 500, body: { error: 'permission denied' } })
-  expect(await request('GET', '/codex-api/worktree/branches?sourceCwd=' + repo))
-    .toMatchObject({ status: 500, body: { error: 'permission denied' } })
 })

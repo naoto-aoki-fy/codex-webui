@@ -12,3 +12,11 @@ Conversation revert uses native Codex history operations and never restores loca
 8. Call retired creation, clone, and rollback endpoints. Expect JSON 404, no filesystem changes, and no Codex RPC calls.
 
 Cleanup: Delete only the disposable fixtures you created using normal filesystem tools. Unregistering a project must not delete its directory. Restore the original theme. Native thread history changes cannot be undone by this app.
+
+## Existing directories without automatic worktree creation
+
+Prerequisites: existing local project, existing worktree, and a conversation in each.
+Actions: select each directory, send a turn, switch projects, reload, and reopen both conversations.
+Expected: cwd associations, empty saved folders, labels and ordering survive. No worktree creation or starting-branch UI appears. No branches or directories are created/deleted. Workspace UI preferences remain because Codex exposes conversation cwd, not a saved empty-folder registry.
+Cleanup: restore sidebar ordering and remove only test conversations if desired.
+Performance: workspace mutations no longer traverse identity-only path canonicalization promises; removed worktree branch requests and creation commands. No live timings measured.
