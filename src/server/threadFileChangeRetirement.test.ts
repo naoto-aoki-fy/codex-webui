@@ -62,7 +62,7 @@ beforeEach(async () => {
   storeSnapshot.mockReset()
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
   scope.__codexRemoteSharedBridge__ = {
-    version: 'external-websocket-v1', appServer: { rpc, storeThreadReadSnapshot: storeSnapshot, getStreamEvents: () => [], readThreadForTurnPage: () => rpc('thread/read', {}) },
+    version: 'external-websocket-v1', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getStreamEvents: () => [], readThreadForTurnPage: () => rpc('thread/read', {}) },
     telegramBridge: {},  methodCatalog: {},
   }
 })
@@ -133,10 +133,10 @@ it.each(['single_turn', 'turn_and_later'])('preserves patch redo/undo for %s sco
   await expect(readFile(join(project, 'moved.txt'))).rejects.toThrow()
   if (scope === 'turn_and_later') {
     rpc.mockResolvedValue({ thread: { id: 'historical-thread', turns: [] } } as never)
-    const rollback = await request('/codex-api/rpc', 'POST', { method: 'thread/rollback', params: { threadId: 'historical-thread', numTurns: 1 } })
+    const rollback = await request('/codex-api/rpc', 'POST', { method: 'thread/revert', params: { threadId: 'historical-thread', beforeTurnId: 'turn' } })
     expect(rollback.res.statusCode).toBe(200)
     expect(rollback.json.result.thread.turns).toEqual([])
-    expect(rpc).toHaveBeenCalledWith('thread/rollback', { threadId: 'historical-thread', numTurns: 1 })
+    expect(rpc).toHaveBeenCalledWith('thread/revert', { threadId: 'historical-thread', beforeTurnId: 'turn' })
   }
 })
 

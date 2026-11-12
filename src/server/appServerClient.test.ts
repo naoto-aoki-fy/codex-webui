@@ -260,3 +260,22 @@ it('retains no pagination epoch bookkeeping for invalidated threads or rejected 
     expect(internal.threadTurnPageReadCacheByThreadId.size).toBe(0)
   } finally { client.dispose() }
 })
+
+it('discards fallback snapshots, buffered events and pending pages on thread/reverted', async () => {
+  const client = new AppServerClient()
+  const internal = client as any
+  const old = deferredRead()
+  vi.spyOn(client, 'rpc').mockReturnValueOnce(old.promise)
+  try {
+    client.storeThreadReadSnapshot('reverted', { thread: { id: 'reverted', turns: ['deleted'] } })
+    const epoch = client.getSnapshotEpoch()
+    const pending = client.readThreadForTurnPage('reverted')
+    internal.emitNotification({ method: 'thread/reverted', params: { threadId: 'reverted' } })
+    expect(client.getSnapshotEpoch()).not.toBe(epoch)
+    expect(client.getLastThreadReadSnapshot('reverted')).toBeNull()
+    expect(client.getStreamEvents('reverted', 100)).toEqual([])
+    old.resolve('deleted')
+    await pending
+    expect(internal.threadTurnPageReadCacheByThreadId.has('reverted')).toBe(false)
+  } finally { client.dispose() }
+})

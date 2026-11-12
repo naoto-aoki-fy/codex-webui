@@ -1,6 +1,6 @@
 import { rpcCall } from './codexRpcClient'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { archiveThread, forkThread, forkThreadFromResponse, renameThread, resumeThread, rollbackThread, startThread, startThreadTurn } from './codexGateway'
+import { archiveThread, forkThread, forkThreadFromResponse, renameThread, resumeThread, revertThreadHistory, startThread, startThreadTurn } from './codexGateway'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -16,7 +16,7 @@ const invalidates = (name: string) => name === 'rollback' || name === 'turn star
 const mutations = [
   ['archive', (id: string) => archiveThread(id), 'thread/archive'],
   ['rename', (id: string) => renameThread(id, 'new title'), 'thread/name/set'],
-  ['rollback', (id: string) => rollbackThread(id, 1), 'thread/rollback'],
+  ['rollback', (id: string) => revertThreadHistory(id, 'turn'), 'thread/revert'],
   ['turn start', (id: string) => startThreadTurn(id, 'next'), 'turn/start'],
   ['fork', (id: string) => forkThread(id), 'thread/fork'],
   ['fork with options', (id: string) => forkThread(id, '/workspace', 'model'), 'thread/fork'],
@@ -116,7 +116,7 @@ describe('Resume freshness regression (Gateway only, not server history recovery
   it.each(['success', 'failure'] as const)('handles Resume settlement before mutation %s', async outcome => {
     const f = fixture()
     const first = resumeThread('A')
-    const mutation = rollbackThread('A', 1)
+    const mutation = revertThreadHistory('A', 'turn')
     const checked = outcome === 'failure' ? expect(mutation).rejects.toThrow('mutation failed') : mutation
     f.resumes[0]!.resolve(response('before'))
     const before = await first
@@ -136,11 +136,11 @@ describe('Resume freshness regression (Gateway only, not server history recovery
     const original = fetch.getMockImplementation()!
     let mutations = 0
     fetch.mockImplementation((url, init) => {
-      if (JSON.parse(String(init?.body)).method === 'thread/rollback' && ++mutations === 2) return secondMutation.promise
+      if (JSON.parse(String(init?.body)).method === 'thread/revert' && ++mutations === 2) return secondMutation.promise
       return original(url, init)
     })
-    const first = rollbackThread('A', 1)
-    const second = rollbackThread('A', 1)
+    const first = revertThreadHistory('A', 'turn')
+    const second = revertThreadHistory('A', 'turn')
     f.mutation.resolve(response('after'))
     await first
     const during = resumeThread('A')
@@ -175,7 +175,7 @@ describe('Resume freshness regression (Gateway only, not server history recovery
     const f = fixture()
     const first = resumeThread('A')
     const rejected = expect(first).rejects.toThrow('resume failed')
-    const mutation = rollbackThread('A', 1)
+    const mutation = revertThreadHistory('A', 'turn')
     f.resumes[0]!.reject(new Error('resume failed'))
     await rejected
     f.mutation.resolve(response('after'))
@@ -183,7 +183,7 @@ describe('Resume freshness regression (Gateway only, not server history recovery
     const retry = resumeThread('A')
     f.resumes[1]!.resolve(response('after'))
     expect(await retry).toMatchObject({ inProgress: false })
-    expect(f.requests.map(r => r.method)).toEqual(['thread/resume', 'thread/rollback', 'thread/resume'])
+    expect(f.requests.map(r => r.method)).toEqual(['thread/resume', 'thread/revert', 'thread/resume'])
   })
 
   for (const outcome of ['success', 'failure'] as const) {
@@ -244,7 +244,7 @@ describe('Resume freshness regression (Gateway only, not server history recovery
         const observed = old.then(value => { settled = true; return value }, error => { settled = true; return error })
         const joined = resumeThread('A').catch(error => error)
         f.mutation.resolve(response('after'))
-        await rollbackThread('A', 1)
+        await revertThreadHistory('A', 'turn')
         expect(settled).toBe(false)
         const replacement = resumeThread('A')
         expect(f.resumes).toHaveLength(2)

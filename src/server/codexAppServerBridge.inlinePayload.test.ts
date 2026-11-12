@@ -360,7 +360,7 @@ describe('inline payload compatibility contracts', () => {
   const sanitize = async (input: ReturnType<typeof payload>, method = 'thread/read') =>
     await sanitizeThreadTurnsInlinePayloads(method, input) as typeof input
 
-  it.each(['thread/read', 'thread/resume', 'thread/fork', 'thread/rollback'])('sanitizes %s without mutating input and reuses persisted bytes', async method => {
+  it.each(['thread/read', 'thread/resume', 'thread/fork'])('sanitizes %s without mutating input and reuses persisted bytes', async method => {
     const untouched = { text: pngBase64 }
     const item = { id: 'contract-item', nested: { images: [[pngBase64]] }, untouched }
     const input = payload(item)

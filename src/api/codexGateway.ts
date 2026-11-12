@@ -403,7 +403,7 @@ export async function resumeThread(threadId: string): Promise<ResumedThread> {
 // pending. Detached requests still settle for their callers; their identity-guarded
 // timers cannot delete a replacement, and completion never reinserts an entry.
 // Failed mutations leave the current generation (including rejection retention) intact.
-function invalidateResumeThread(threadId: string): void {
+export function invalidateResumeThread(threadId: string): void {
   recentResumeThreadById.delete(threadId)
 }
 
@@ -417,10 +417,36 @@ export async function renameThread(threadId: string, threadName: string): Promis
   await callRpc('thread/name/set', { threadId, name: threadName })
 }
 
-export async function rollbackThread(threadId: string, numTurns: number): Promise<UiMessage[]> {
-  const payload = await callRpc<ThreadReadResponse>('thread/rollback', { threadId, numTurns })
+// Resume also ensures the thread is loaded before any filesystem mutation.
+export async function validateThreadRevert(threadId: string, beforeTurnId: string): Promise<void> {
+  const payload = await callRpc<{ thread: { historyMode?: string; ephemeral?: boolean; status?: { type?: string } } }>(
+    'thread/resume', { threadId, excludeTurns: true },
+  )
+  const thread = payload.thread
+  if (thread.historyMode !== 'paginated' || thread.ephemeral !== false) {
+    throw new Error('Editing history requires a persisted paginated thread.')
+  }
+  if (thread.status?.type === 'active' || thread.status?.type === 'inProgress') {
+    throw new Error('Stop the active turn before editing history.')
+  }
+  // Check the target against durable history before restoring files.
+  const detail = await getThreadDetail(threadId)
+  let page = detail
+  let found = page.messages.some(message => message.turnId === beforeTurnId)
+  while (!found && page.hasMoreOlder) {
+    const boundary = page.messages.find(message => message.turnId)?.turnId
+    if (!boundary) break
+    const older = await getOlderThreadMessages(threadId, boundary)
+    if (!older.messages.length || older.messages[0]?.turnId === boundary) break
+    page = { ...detail, ...older }
+    found = page.messages.some(message => message.turnId === beforeTurnId)
+  }
+  if (!found) throw new Error('The selected turn is no longer available. Refresh the thread.')
+}
+
+export async function revertThreadHistory(threadId: string, beforeTurnId: string): Promise<void> {
+  await callRpc('thread/revert', { threadId, beforeTurnId })
   invalidateResumeThread(threadId)
-  return normalizeThreadMessagesV2(payload, readThreadTurnStartIndex(payload))
 }
 
 export async function updateThreadFileChanges(

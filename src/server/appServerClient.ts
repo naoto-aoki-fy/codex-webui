@@ -67,6 +67,9 @@ export class AppServerClient {
   private readonly notificationListeners = new Set<(value: { method: string; params: unknown }) => void>()
   private readonly pendingServerRequests = new Map<number | string, PendingServerRequest>()
   private readonly streamEventsByThreadId = new Map<string, StreamEventFrame[]>()
+  private snapshotEpoch = {}
+  getSnapshotEpoch(): object { return this.snapshotEpoch }
+
   private readonly lastThreadReadSnapshotByThreadId = new Map<string, unknown>()
   private readonly threadTurnPageReadCacheByThreadId = new Map<string, { result: unknown; expiresAt: number }>()
   private readonly threadTurnPageReadPromiseByThreadId = new Map<string, Promise<unknown>>()
@@ -143,6 +146,11 @@ export class AppServerClient {
     const nThreadId = this.extractThreadIdFromParams(notification.params)
     if (nThreadId) {
       this.invalidateThreadTurnPageRead(nThreadId)
+      if (notification.method === 'thread/reverted') {
+        this.snapshotEpoch = {}
+        this.lastThreadReadSnapshotByThreadId.delete(nThreadId)
+        this.streamEventsByThreadId.delete(nThreadId)
+      }
     }
     for (const listener of this.notificationListeners) {
       listener(notification)
@@ -378,6 +386,13 @@ export class AppServerClient {
     if (method !== 'turn/start') {
       const result = method === 'thread/list' ? await this.call(method, params)
         : await this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, (m, p) => this.call(m, p))
+      if (method === 'thread/revert') {
+        this.snapshotEpoch = {}
+        const id = readNonEmptyString(asRecord(params)?.threadId)
+        this.lastThreadReadSnapshotByThreadId.delete(id)
+        this.streamEventsByThreadId.delete(id)
+        this.invalidateThreadTurnPageRead(id)
+      }
       if (['thread/start', 'thread/resume', 'thread/fork'].includes(method)) {
         const id = readNonEmptyString(asRecord(asRecord(result)?.thread)?.id)
         if (id) this.subscribedThreads.add(id)

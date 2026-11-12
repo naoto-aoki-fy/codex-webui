@@ -1128,11 +1128,11 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   }
   const searchMutationMethods = new Set([
     'thread/start', 'thread/fork', 'thread/name/set', 'thread/archive',
-    'thread/unarchive', 'thread/rollback', 'thread/compact/start', 'turn/start', 'turn/steer',
+    'thread/unarchive', 'thread/revert', 'thread/compact/start', 'turn/start', 'turn/steer',
   ])
   const searchChangeNotifications = new Set([
     'thread/started', 'thread/name/updated', 'thread/archived', 'thread/unarchived',
-    'thread/updated', 'thread/compacted', 'turn/started', 'turn/completed',
+    'thread/updated', 'thread/reverted', 'thread/compacted', 'turn/started', 'turn/completed',
     'item/started', 'item/completed', 'item/agentMessage/delta',
     'item/commandExecution/outputDelta', 'app-server/disconnected',
   ])
@@ -1312,6 +1312,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         const responseFork = body.method === 'thread/fork-at-response'
         if (responseFork) body.method = 'thread/fork'
 
+        const snapshotEpoch = appServer.getSnapshotEpoch()
         let rpcResult: unknown
         try {
           const params = asRecord(body.params)
@@ -1366,7 +1367,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           ? await mergeSessionSkillInputsIntoThreadResult(sanitizedResult)
           : sanitizedResult
 
-	        if (THREAD_METHODS_WITH_THREAD_SNAPSHOT.has(body.method)) {
+	        if (THREAD_METHODS_WITH_THREAD_SNAPSHOT.has(body.method) && !asRecord(body.params)?.excludeTurns && snapshotEpoch === appServer.getSnapshotEpoch()) {
 	          const rpcRecord = asRecord(result)
 	          const rpcThread = asRecord(rpcRecord?.thread)
 	          const rpcThreadId = typeof rpcThread?.id === 'string' ? rpcThread.id : ''

@@ -109,7 +109,9 @@ import {
   pickCodexRateLimitSnapshot,
   replyToServerRequest,
   revertThreadFileChanges,
-  rollbackThread,
+  revertThreadHistory,
+  validateThreadRevert,
+  invalidateResumeThread,
   getThreadGroupsPage,
   getWorkspaceRootsState,
   getWorkspaceRootsStateGeneration,
@@ -2311,6 +2313,7 @@ export function useDesktopState() {
     const shouldRefreshMessages =
       method === 'turn/started' ||
       method === 'turn/completed' ||
+      method === 'thread/reverted' ||
       method === 'error'
     const shouldRefreshThreads =
       method.startsWith('thread/') ||
@@ -2319,6 +2322,16 @@ export function useDesktopState() {
     if (!shouldRefreshMessages && !shouldRefreshThreads) return
 
     const threadId = extractThreadIdFromNotification(notification)
+    if (threadId && method === 'thread/reverted') {
+      invalidateResumeThread(threadId)
+      invalidateThreadHistory(threadId)
+      setLiveAgentMessagesForThread(threadId, [])
+      clearLiveReasoningForThread(threadId)
+      liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
+      setTurnSummaryForThread(threadId, null)
+      setTurnActivityForThread(threadId, null)
+      setTurnErrorForThread(threadId, null)
+    }
     if (threadId && shouldRefreshMessages) {
       pendingThreadMessageRefresh.add(threadId)
     }
@@ -3494,24 +3507,24 @@ export function useDesktopState() {
     if (isRollingBack.value) return
     if (!turnId.trim()) return
 
-    const persisted = persistedMessagesByThreadId.value[threadId] ?? []
-    const matchedMessage = persisted.find((message) => message.turnId === turnId)
-    const turnIndex = typeof matchedMessage?.turnIndex === 'number' ? matchedMessage.turnIndex : -1
-    if (turnIndex < 0) return
-    const maxTurnIndex = persisted.reduce((max, m) => (typeof m.turnIndex === 'number' && m.turnIndex > max ? m.turnIndex : max), -1)
-    if (maxTurnIndex < 0 || turnIndex > maxTurnIndex) return
-    const numTurns = maxTurnIndex - turnIndex + 1
-    if (numTurns < 1) return
+    if (inProgressById.value[threadId]) return
 
     isRollingBack.value = true
     error.value = ''
+    const threadCwd = selectedThread.value?.cwd?.trim() ?? ''
+    let filesRestored = false
+    let historyReverted = false
     try {
-      const threadCwd = selectedThread.value?.cwd?.trim() ?? ''
+      await validateThreadRevert(threadId, turnId)
       if (threadCwd) {
-        await revertThreadFileChanges(threadId, turnId, threadCwd)
+        const restoration = await revertThreadFileChanges(threadId, turnId, threadCwd)
+        if (restoration.errors.length) throw new Error('File restoration failed; some files may already have changed. History was preserved. ' + restoration.errors.join('; '))
+        filesRestored = true
       }
-      const nextMessages = await rollbackThread(threadId, numTurns)
-      setPersistedMessagesForThread(threadId, nextMessages)
+      invalidateThreadHistory(threadId)
+      await revertThreadHistory(threadId, turnId)
+      historyReverted = true
+      invalidateThreadHistory(threadId)
       setLiveAgentMessagesForThread(threadId, [])
       clearLiveReasoningForThread(threadId)
       if (liveCommandsByThreadId.value[threadId]) {
@@ -3520,10 +3533,22 @@ export function useDesktopState() {
       setTurnSummaryForThread(threadId, null)
       setTurnActivityForThread(threadId, null)
       setTurnErrorForThread(threadId, null)
+      const owner = historyReadOwner(threadId)
+      const detail = await getThreadDetail(threadId)
+      if (historyReadOwnerByThreadId.get(threadId) !== owner) return
+      setPersistedMessagesForThread(threadId, detail.messages)
+      turnIndexByTurnIdByThreadId.value = { ...turnIndexByTurnIdByThreadId.value, [threadId]: detail.turnIndexByTurnId }
+      hasMoreOlderMessagesByThreadId.value = { ...hasMoreOlderMessagesByThreadId.value, [threadId]: detail.hasMoreOlder }
       pendingThreadsRefresh = true
       await syncFromNotifications()
     } catch (unknownError) {
-      error.value = unknownError instanceof Error ? unknownError.message : 'Failed to rollback thread'
+      const reason = unknownError instanceof Error ? unknownError.message : 'Failed to revert thread'
+      invalidateThreadHistory(threadId)
+      error.value = historyReverted
+        ? 'History reverted, but refresh failed. Reload the thread; do not repeat the edit. ' + reason
+        : filesRestored
+          ? 'Files restored, but history revert was not confirmed. Reload the thread before retrying. ' + reason
+          : reason
     } finally {
       isRollingBack.value = false
     }
