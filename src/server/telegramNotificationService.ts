@@ -196,7 +196,7 @@ export class TelegramNotificationService {
     return [
       'Codex turn completed', `Task: ${title}`, project ? `Project: ${project}` : '',
       link ? `Open conversation: ${link}` : '',
-    ].filter(Boolean).join('\n\n').slice(0, 3500)
+    ].filter(Boolean).join('\n').slice(0, 3500)
   }
 
 }
