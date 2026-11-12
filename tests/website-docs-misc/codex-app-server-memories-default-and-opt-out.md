@@ -1,19 +1,7 @@
-> **Historical locally managed configuration.** Memories defaults now belong
-> to the external server. Backend launch flags must not configure them.
-> See [current contract](../../docs/external-app-server.md).
+# External runtime configuration
 
-# External ownership of memories
-
-Prerequisites: build CLI with `pnpm run build:cli` and start an external Codex
-app-server with the desired memories configuration and matching CODEX_HOME.
-
-1. Run `node dist-cli/index.js --no-memories --no-open`.
-2. Expect an error explaining that memories must be configured on the external
-   server. No internal app-server should start.
-3. Start without `--no-memories`; send a turn and verify the external server's
-   configured memories behavior is preserved.
-4. Repeat using `--memories`, `--sandbox-mode read-only`, and
-   `--approval-policy never`; expect the same explicit deprecation error.
-
-Cleanup: stop test web backends and externally managed test servers manually.
-See [external connection cases](external-app-server.md) for lifecycle validation.
+Setup: build the CLI and independently start Codex 0.167.2 app-server.
+Actions: start with --app-server-url and --no-open. Inspect --help. Pass each removed option: --login, --no-login, --memories, --no-memories, --sandbox-mode read-only, --approval-policy never.
+Expected: supported startup connects externally; help omits removed options and Commander rejects them as unknown. Configure authentication, memories and runtime defaults on Codex itself; per-thread permissions remain in the UI.
+Cleanup: stop only the test web backend; preserve external server and configuration.
+Performance: option parsing only; no runtime requests or persistence added.

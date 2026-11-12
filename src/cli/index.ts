@@ -203,12 +203,6 @@ program
   .option('--open', 'open browser on startup', true)
   .option('--no-open', 'do not open browser on startup')
   .option('--app-server-url <url>', 'external Codex app-server URL (ws://, wss://, unix:///path.sock)')
-  .option('--login', 'deprecated compatibility flag; authentication is managed externally', true)
-  .option('--no-login', 'deprecated compatibility flag; authentication is managed externally')
-  .option('--memories', 'deprecated; configure memories on the external server', true)
-  .option('--no-memories', 'deprecated; configure memories on the external server')
-  .option('--sandbox-mode <mode>', 'deprecated; configure sandbox on the external server')
-  .option('--approval-policy <policy>', 'deprecated; configure approvals on the external server')
   .action(async (
     projectPath: string | undefined,
     opts: {
@@ -221,9 +215,6 @@ program
     },
   ) => {
     const rawArgv = process.argv.slice(2)
-    if (rawArgv.some(arg => /^(--(no-)?memories|--sandbox-mode|--approval-policy)(=|$)/.test(arg))) {
-      throw new Error('Configure memories, sandbox and approval defaults on the external app-server; use thread settings for per-thread choices.')
-    }
     const openProjectFlagIndex = rawArgv.findIndex((arg) => arg === '--open-project' || arg.startsWith('--open-project='))
 
     let openProjectOnly = (opts.openProject ?? '').trim()

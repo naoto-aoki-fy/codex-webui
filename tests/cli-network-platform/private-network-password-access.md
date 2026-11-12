@@ -5,7 +5,7 @@
 - A Tailscale client can reach the host over Tailscale IPv4 (`100.64.0.0/10`) or IPv6 (`fd7a:115c:a1e0::/48`).
 
 #### Steps
-1. Start CLI: `node dist-cli/index.js --no-login --no-open --port 5900`.
+1. Start CLI: `node dist-cli/index.js --no-open --port 5900`.
 2. From a Tailscale client, open `http://100.x.x.x:5900` using a host address in `100.64.0.0/10` (replace with host tailnet IP).
 3. Confirm the app opens directly without the password login page.
 4. (Optional IPv6 check) Open the same service using the host Tailscale IPv6 address in `fd7a:115c:a1e0::/48` and confirm it also opens without login by default.

@@ -1,6 +1,6 @@
 # Precompressed frontend assets
 
-Prerequisites: install dependencies and run `pnpm run build`. Start the production CLI with `node dist-cli/index.js --port 4192 --no-password --no-open --no-login`.
+Prerequisites: install dependencies and run `pnpm run build`. Start the production CLI with `node dist-cli/index.js --port 4192 --no-password --no-open`.
 
 1. Request `/` and a JavaScript asset using `curl -sS -D /tmp/asset-headers -o /tmp/asset-body -H 'Accept-Encoding: zstd, gzip' http://127.0.0.1:4192/`.
    Expect zstd, HTML MIME, Vary: Accept-Encoding, and the encoded Content-Length.
