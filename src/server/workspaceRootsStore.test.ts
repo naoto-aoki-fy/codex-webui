@@ -85,12 +85,12 @@ it('normalizes malformed persisted fields while preserving unknown records on wr
     order: ['remote'], active: [], labels: { remote: 'Label' }, projectOrder: [],
     remoteProjects: [{ id: 'r', hostId: 'h', remotePath: '', label: '' }],
   })
-  await store.persistWorkspaceRoot(' another ', ' New ')
+  await store.persistWorkspaceRoot(' another ')
   const raw = JSON.parse(await readFile(file(), 'utf8'))
   expect(raw.unknown).toEqual({ nested: true })
   expect(raw['remote-projects']).toEqual([null, { id: ' r ', hostId: ' h ', future: 42 }, { id: 'r' }, {}])
   expect(raw['electron-saved-workspace-roots']).toEqual(['another', 'remote'])
-  expect(raw['electron-workspace-root-labels']).toEqual({ remote: 'Label', another: 'New' })
+  expect(raw['electron-workspace-root-labels']).toEqual({ remote: 'Label' })
 })
 
 it('handles absent state and blank roots without creating a file', async () => {

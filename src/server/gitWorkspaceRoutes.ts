@@ -9,68 +9,11 @@ type GitWorkspaceRouteContext = {
   readJsonBody: (req: IncomingMessage) => Promise<unknown>
   getCodexHomeDir: () => string
   persistWorkspaceRoot: (path: string, label?: string) => Promise<void>
-  ensureRealDirectory: (path: string, label: string) => Promise<void>
 }
 
 // Storage and shared path validation remain owned by the bridge.
 export function createGitWorkspaceRoutes(context: GitWorkspaceRouteContext) {
-  const { readJsonBody, getCodexHomeDir, persistWorkspaceRoot, ensureRealDirectory } = context
-
-  function normalizeGithubCloneUrl(rawUrl: string): { url: string; repoName: string } {
-    const trimmedUrl = rawUrl.trim()
-    if (!trimmedUrl) throw new Error('Missing GitHub repository URL')
-
-    const sshMatch = trimmedUrl.match(/^git@github\.com:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/u)
-    if (sshMatch) {
-      const repoName = sshMatch[2]
-      return { url: `git@github.com:${sshMatch[1]}/${repoName}.git`, repoName }
-    }
-
-    let parsed: URL
-    try {
-      parsed = new URL(trimmedUrl)
-    } catch {
-      throw new Error('Enter a valid GitHub repository URL')
-    }
-    if (parsed.hostname.toLowerCase() !== 'github.com') {
-      throw new Error('Only github.com repository URLs are supported')
-    }
-    const segments = parsed.pathname.split('/').filter(Boolean)
-    if (segments.length < 2) {
-      throw new Error('Enter a GitHub repository URL with owner and repository name')
-    }
-    const owner = segments[0]
-    const repoName = segments[1].replace(/\.git$/iu, '')
-    if (!/^[A-Za-z0-9_.-]+$/u.test(owner) || !/^[A-Za-z0-9_.-]+$/u.test(repoName)) {
-      throw new Error('GitHub repository owner or name contains unsupported characters')
-    }
-    return { url: `https://github.com/${owner}/${repoName}.git`, repoName }
-  }
-
-  async function cloneGithubRepositoryIntoBase(rawUrl: string, rawBasePath: string): Promise<string> {
-    const basePath = rawBasePath.trim()
-    if (!basePath) throw new Error('Missing clone destination folder')
-    const normalizedBasePath = isAbsolute(basePath) ? basePath : resolve(basePath)
-    await ensureRealDirectory(normalizedBasePath, 'Clone destination folder')
-
-    const { url, repoName } = normalizeGithubCloneUrl(rawUrl)
-    const targetPath = join(normalizedBasePath, repoName)
-    try {
-      await stat(targetPath)
-      throw new Error(`Destination already exists: ${targetPath}`)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error
-    }
-
-    try {
-      await runCommand('git', ['clone', url, targetPath], { cwd: normalizedBasePath, timeoutMs: 5 * 60_000 })
-    } catch (error) {
-      await rm(targetPath, { recursive: true, force: true }).catch(() => undefined)
-      throw error
-    }
-    await persistWorkspaceRoot(targetPath, '')
-    return targetPath
-  }
+  const { readJsonBody, getCodexHomeDir, persistWorkspaceRoot } = context
 
   function isNotGitRepositoryError(error: unknown): boolean {
     const message = getErrorMessage(error, '').toLowerCase()
@@ -99,7 +42,6 @@ export function createGitWorkspaceRoutes(context: GitWorkspaceRouteContext) {
     if (cleanupDirectory && cleanupDirectory !== worktreeCwd) {
       await rm(cleanupDirectory, { recursive: true, force: true }).catch(() => undefined)
     }
-
 
   }
 
@@ -287,22 +229,5 @@ export function createGitWorkspaceRoutes(context: GitWorkspaceRouteContext) {
     return false
   }
 
-  async function handleCloneRoutes(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
-    if (req.method === 'POST' && url.pathname === '/codex-api/github-clone') {
-      const payload = asRecord(await readJsonBody(req))
-      const repoUrl = typeof payload?.url === 'string' ? payload.url.trim() : ''
-      const basePath = typeof payload?.basePath === 'string' ? payload.basePath.trim() : ''
-      try {
-        const clonedPath = await cloneGithubRepositoryIntoBase(repoUrl, basePath)
-        setJson(res, 200, { data: { path: clonedPath } })
-      } catch (error) {
-        setJson(res, 400, { error: error instanceof Error ? error.message : 'Failed to clone GitHub repository' })
-      }
-      return true
-    }
-
-    return false
-  }
-
-  return { handleWorktreeRoutes, handleCloneRoutes }
+  return { handleWorktreeRoutes }
 }

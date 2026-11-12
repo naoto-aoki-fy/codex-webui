@@ -22,30 +22,8 @@
         </div>
       </div>
 
-      <div v-if="folderUploadGroups.length > 0" class="thread-composer-folder-chips">
-        <span v-for="group in folderUploadGroups" :key="group.id" class="thread-composer-folder-chip">
-          <IconTablerFolder class="thread-composer-folder-chip-icon" />
-          <span class="thread-composer-folder-chip-name" :title="group.name">{{ group.name }}</span>
-          <span class="thread-composer-folder-chip-meta">
-            <template v-if="group.isUploading">
-              {{ getFolderUploadPercent(group) }}% uploading ({{ group.processed }}/{{ group.total }})
-            </template>
-            <template v-else>
-              {{ group.filePaths.length }} file{{ group.filePaths.length === 1 ? '' : 's' }}
-            </template>
-          </span>
-          <button
-            class="thread-composer-folder-chip-remove"
-            type="button"
-            :aria-label="`Remove folder ${group.name}`"
-            :disabled="isInteractionDisabled"
-            @click="removeFolderAttachment(group.id)"
-          >×</button>
-        </span>
-      </div>
-
-      <div v-if="standaloneFileAttachments.length > 0" class="thread-composer-file-chips">
-        <span v-for="att in standaloneFileAttachments" :key="att.fsPath" class="thread-composer-file-chip">
+      <div v-if="fileAttachments.length > 0" class="thread-composer-file-chips">
+        <span v-for="att in fileAttachments" :key="att.fsPath" class="thread-composer-file-chip">
           <IconTablerFilePencil class="thread-composer-file-chip-icon" />
           <span class="thread-composer-file-chip-name" :title="att.fsPath">{{ att.label }}</span>
           <button
@@ -179,22 +157,7 @@
             >
               {{ t('Add photos & files') }}
             </button>
-            <button
-              class="thread-composer-attach-item"
-              type="button"
-              :disabled="isInteractionDisabled"
-              @click="triggerFolderPicker"
-            >
-              {{ t('Add folder') }}
-            </button>
-            <button
-              class="thread-composer-attach-item"
-              type="button"
-              :disabled="isInteractionDisabled"
-              @click="triggerCameraCapture"
-            >
-              {{ t('Take photo') }}
-            </button>
+
             <div class="thread-composer-attach-separator" />
             <button
               v-if="isFastModeSupported"
@@ -326,25 +289,7 @@
       :disabled="isInteractionDisabled"
       @change="onPhotoLibraryChange"
     />
-    <input
-      ref="cameraCaptureInputRef"
-      class="thread-composer-hidden-input"
-      type="file"
-      accept="image/*"
-      capture="environment"
-      :disabled="isInteractionDisabled"
-      @change="onCameraCaptureChange"
-    />
-    <input
-      ref="folderPickerInputRef"
-      class="thread-composer-hidden-input"
-      type="file"
-      multiple
-      webkitdirectory
-      directory
-      :disabled="isInteractionDisabled"
-      @change="onFolderPickerChange"
-    />
+
   </form>
 </template>
 
@@ -370,7 +315,6 @@ import {
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
 import IconTablerBolt from '../icons/IconTablerBolt.vue'
 import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
-import IconTablerFolder from '../icons/IconTablerFolder.vue'
 import IconTablerMaximize from '../icons/IconTablerMaximize.vue'
 import IconTablerMinimize from '../icons/IconTablerMinimize.vue'
 import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
@@ -443,15 +387,6 @@ type SelectedImage = {
   url: string
 }
 
-type FolderUploadGroup = {
-  id: string
-  name: string
-  total: number
-  processed: number
-  filePaths: string[]
-  isUploading: boolean
-}
-
 type AttachmentBatchStats = {
   total: number
   succeeded: number
@@ -506,14 +441,11 @@ const selectedImages = ref<SelectedImage[]>([])
 const selectedSkills = ref<SkillItem[]>([])
 const savedPrompts = ref<ComposerPromptInfo[]>([])
 const fileAttachments = ref<FileAttachment[]>([])
-const folderUploadGroups = ref<FolderUploadGroup[]>([])
 const pendingAttachmentCount = ref(0)
 const attachmentBatchStats = ref<AttachmentBatchStats | null>(null)
 const isDragActive = ref(false)
 const attachMenuRootRef = ref<HTMLElement | null>(null)
 const photoLibraryInputRef = ref<HTMLInputElement | null>(null)
-const cameraCaptureInputRef = ref<HTMLInputElement | null>(null)
-const folderPickerInputRef = ref<HTMLInputElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const { isMobile } = useMobile()
 const isAttachMenuOpen = ref(false)
@@ -588,15 +520,7 @@ const hasUnsavedDraft = computed(() =>
   || selectedImages.value.length > 0
   || selectedSkills.value.length > 0
   || fileAttachments.value.length > 0
-  || folderUploadGroups.value.length > 0,
 )
-const standaloneFileAttachments = computed(() => {
-  const grouped = new Set<string>()
-  for (const group of folderUploadGroups.value) {
-    for (const path of group.filePaths) grouped.add(path)
-  }
-  return fileAttachments.value.filter((att) => !grouped.has(att.fsPath))
-})
 const isInteractionDisabled = computed(() => props.disabled || !props.activeThreadId)
 const isComposerConfigDisabled = computed(() => props.disabled || !props.activeThreadId)
 const isFastModeSupported = computed(() => /^gpt-5\.(?:4|5)(?:$|-)/.test(props.selectedModel.trim()))
@@ -676,7 +600,6 @@ function onSubmit(): void {
   clearPersistedDraftForThread(props.activeThreadId)
   clearDraftState()
   isComposerExpanded.value = false
-  folderUploadGroups.value = []
   isAttachMenuOpen.value = false
   closeFileMention()
   if (isAndroid || isMobile.value) {
@@ -699,7 +622,6 @@ function replaceDraftState(payload: ComposerDraftPayload): void {
     ?? { name: skill.name, displayName: undefined, description: '', path: skill.path }
   ))
   fileAttachments.value = payload.fileAttachments.map((attachment) => ({ ...attachment }))
-  folderUploadGroups.value = []
   attachmentBatchStats.value = null
   pendingAttachmentCount.value = 0
   isAttachMenuOpen.value = false
@@ -856,14 +778,6 @@ function triggerPhotoLibrary(): void {
   photoLibraryInputRef.value?.click()
 }
 
-function triggerCameraCapture(): void {
-  cameraCaptureInputRef.value?.click()
-}
-
-function triggerFolderPicker(): void {
-  folderPickerInputRef.value?.click()
-}
-
 function removeImage(id: string): void {
   selectedImages.value = selectedImages.value.filter((image) => image.id !== id)
 }
@@ -886,19 +800,6 @@ function openSkillMarkdown(skill: SkillItem): void {
 
 function removeFileAttachment(fsPath: string): void {
   fileAttachments.value = fileAttachments.value.filter((a) => a.fsPath !== fsPath)
-}
-
-function removeFolderAttachment(groupId: string): void {
-  const group = folderUploadGroups.value.find((item) => item.id === groupId)
-  if (!group) return
-  const toRemove = new Set(group.filePaths)
-  fileAttachments.value = fileAttachments.value.filter((a) => !toRemove.has(a.fsPath))
-  folderUploadGroups.value = folderUploadGroups.value.filter((item) => item.id !== groupId)
-}
-
-function getFolderUploadPercent(group: FolderUploadGroup): number {
-  if (group.total <= 0) return 0
-  return Math.round((group.processed / group.total) * 100)
 }
 
 function addFileAttachment(filePath: string, customLabel?: string): void {
@@ -1060,55 +961,6 @@ function hasFilePayload(dataTransfer: DataTransfer | null): boolean {
   return Array.from(dataTransfer.types ?? []).includes('Files')
 }
 
-async function addFolderFiles(files: FileList | null): Promise<void> {
-  if (!files || files.length === 0) return
-  const generation = draftGeneration.value
-  const rows = Array.from(files)
-  const firstRelativePath = (rows[0] as File & { webkitRelativePath?: string }).webkitRelativePath || rows[0].name
-  const folderName = firstRelativePath.split('/').filter(Boolean)[0] || 'Folder'
-  const groupId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  folderUploadGroups.value = [
-    ...folderUploadGroups.value,
-    {
-      id: groupId,
-      name: folderName,
-      total: rows.length,
-      processed: 0,
-      filePaths: [],
-      isUploading: true,
-    },
-  ]
-
-  const updateGroup = (updater: (group: FolderUploadGroup) => FolderUploadGroup): void => {
-    if (generation !== draftGeneration.value) return
-    folderUploadGroups.value = folderUploadGroups.value.map((group) => (
-      group.id === groupId ? updater(group) : group
-    ))
-  }
-
-  for (const file of rows) {
-    try {
-      const serverPath = await uploadFile(file)
-      if (generation !== draftGeneration.value) return
-      if (serverPath) {
-        const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
-        addFileAttachment(serverPath, relativePath)
-        updateGroup((group) => ({
-          ...group,
-          processed: group.processed + 1,
-          filePaths: [...group.filePaths, serverPath],
-        }))
-        continue
-      }
-      updateGroup((group) => ({ ...group, processed: group.processed + 1 }))
-    } catch {
-      updateGroup((group) => ({ ...group, processed: group.processed + 1 }))
-    }
-  }
-
-  updateGroup((group) => ({ ...group, isUploading: false }))
-}
-
 function clearInputValue(inputRefEl: HTMLInputElement | null): void {
   if (inputRefEl) inputRefEl.value = ''
 }
@@ -1116,20 +968,6 @@ function clearInputValue(inputRefEl: HTMLInputElement | null): void {
 function onPhotoLibraryChange(event: Event): void {
   const input = event.target as HTMLInputElement | null
   attachIncomingFiles(input?.files ?? null)
-  clearInputValue(input)
-  isAttachMenuOpen.value = false
-}
-
-function onCameraCaptureChange(event: Event): void {
-  const input = event.target as HTMLInputElement | null
-  attachIncomingFiles(input?.files ?? null)
-  clearInputValue(input)
-  isAttachMenuOpen.value = false
-}
-
-function onFolderPickerChange(event: Event): void {
-  const input = event.target as HTMLInputElement | null
-  void addFolderFiles(input?.files ?? null)
   clearInputValue(input)
   isAttachMenuOpen.value = false
 }
@@ -1572,30 +1410,6 @@ watch(
 
 .thread-composer-file-chips {
   @apply mb-2 flex flex-wrap gap-1.5;
-}
-
-.thread-composer-folder-chips {
-  @apply mb-2 flex flex-wrap gap-1.5;
-}
-
-.thread-composer-folder-chip {
-  @apply inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800;
-}
-
-.thread-composer-folder-chip-icon {
-  @apply h-3.5 w-3.5 text-amber-600 shrink-0;
-}
-
-.thread-composer-folder-chip-name {
-  @apply truncate max-w-40 font-medium;
-}
-
-.thread-composer-folder-chip-meta {
-  @apply text-amber-700/90;
-}
-
-.thread-composer-folder-chip-remove {
-  @apply ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border-0 bg-transparent text-amber-600 transition hover:bg-amber-200 hover:text-amber-800 text-xs leading-none p-0;
 }
 
 .thread-composer-file-chip {

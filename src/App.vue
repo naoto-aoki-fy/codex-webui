@@ -68,13 +68,13 @@
             :search-query="sidebarSearchQuery"
             :search-matched-thread-ids="serverMatchedThreadIds"
             @select="onSelectThread"
-            @archive="onArchiveThread" @start-new-thread="onStartNewThread" @rename-project="onRenameProject"
+            @archive="onArchiveThread" @start-new-thread="onStartNewThread"
             @browse-thread-files="onBrowseThreadFiles"
             @browse-project-files="onBrowseProjectFiles"
             @request-project-git-status="onRequestProjectGitStatus"
             @rename-thread="onRenameThread"
             @fork-thread="onForkThread"
-            @remove-project="onRemoveProject" @reorder-project="onReorderProject"
+            @remove-project="onRemoveProject"
             @copy-thread-chat="onCopyThreadChat"
             @start-new-chat="onStartProjectlessNewChat" />
         </div>
@@ -198,51 +198,27 @@
                   <button class="new-thread-folder-action new-thread-folder-action-primary" type="button" @click="onOpenExistingFolder">
                     {{ t('Select folder') }}
                   </button>
-                  <button class="new-thread-folder-action" type="button" @click="onOpenProjectSetupModal">
-                    {{ t('Create Project') }}
-                  </button>
+
                 </div>
                 <FolderPickerModal
                   v-if="isExistingFolderPickerOpen"
                   ref="folderPickerModalRef"
                   v-model:existing-folder-path-draft="existingFolderPathDraft"
                   v-model:show-hidden-folders="showHiddenFolders"
-                  v-model:create-folder-draft="createFolderDraft"
                   v-model:existing-folder-filter="existingFolderFilter"
                   :resolved-existing-folder-path="resolvedExistingFolderPath"
                   :is-existing-folder-loading="isExistingFolderLoading"
                   :is-opening-existing-folder="isOpeningExistingFolder"
                   :existing-folder-browse-path="existingFolderBrowsePath"
-                  :is-creating-folder="isCreatingFolder"
                   :existing-folder-error="existingFolderError"
-                  :is-create-folder-open="isCreateFolderOpen"
-                  :can-create-folder="canCreateFolder"
-                  :create-folder-submit-label="createFolderSubmitLabel"
-                  :create-folder-error="createFolderError"
                   :existing-folder-filtered-entries="existingFolderFilteredEntries"
                   @close="onCloseExistingFolderPanel"
                   @retry="onRetryExistingFolderBrowse"
                   @confirm="onConfirmExistingFolder"
                   @toggle-hidden="onToggleHiddenFolders"
-                  @toggle-create="onOpenCreateFolderPanel"
-                  @create="onCreateFolder"
-                  @close-create="onCloseCreateFolderPanel"
                   @browse="onBrowseExistingFolder"
                 />
-                <ProjectSetupModal
-                  v-if="isProjectSetupModalOpen"
-                  ref="projectSetupModalRef"
-                  v-model:mode="projectSetupMode"
-                  v-model:base-dir="projectSetupBaseDir"
-                  v-model:project-name="projectNameDraft"
-                  v-model:clone-url="githubCloneUrlDraft"
-                  :submitting="isProjectSetupSubmitting"
-                  :error="projectSetupError"
-                  :can-submit="canSubmitProjectSetup"
-                  :submit-label="projectSetupSubmitLabel"
-                  @close="onCloseProjectSetupModal"
-                  @submit="onSubmitProjectSetup"
-                />
+
                 <ComposerRuntimeDropdown
                   v-if="isNewThreadCwdGitRepo"
                   class="new-thread-runtime-dropdown"
@@ -385,7 +361,6 @@ import AccountSettingsPanel from './components/sidebar/AccountSettingsPanel.vue'
 import SidebarThreadTree from './components/sidebar/SidebarThreadTree.vue'
 import ContentHeader from './components/content/ContentHeader.vue'
 import FolderPickerModal from './components/content/FolderPickerModal.vue'
-import ProjectSetupModal from './components/content/ProjectSetupModal.vue'
 import ThreadGoalPanel from './components/content/ThreadGoalPanel.vue'
 import ThreadComposer from './components/content/ThreadComposer.vue'
 import ThreadPendingRequestPanel from './components/content/ThreadPendingRequestPanel.vue'
@@ -403,13 +378,10 @@ import { useNewThreadRuntime } from './composables/useNewThreadRuntime'
 import { useMobile } from './composables/useMobile'
 import { useUiLanguage } from './composables/useUiLanguage'
 import {
-  cloneGithubRepository,
   createWorktree,
-  createProjectlessThreadDirectory,
   getGitRepositoryStatus,
   logoutCodex,
   getHomeDirectory,
-  getProjectRootSuggestion,
   getWorkspaceRootsState,
   openProjectRoot,
   searchThreads,
@@ -515,10 +487,7 @@ const {
   setSelectedReasoningEffort,
   updateSelectedSpeedMode,
   respondToPendingServerRequest,
-  renameProject,
   removeProject,
-  reorderProject,
-  pinProjectToTop,
   startPolling,
   stopPolling,
   primeSelectedThread,
@@ -564,7 +533,6 @@ let threadSearchTimer: ReturnType<typeof setTimeout> | null = null
 let sidebarScrollTop = 0
 let sidebarScrollRestoreRequestId = 0
 let isRestoringSidebarScroll = false
-const defaultNewProjectName = ref('New Project (1)')
 const homeDirectory = ref('')
 const isSettingsOpen = ref(false)
 const accountActionError = ref('')
@@ -577,20 +545,8 @@ const CHAT_WIDTH_KEY = 'codex-web-local.chat-width.v1'
 const sendWithEnter = ref(loadBoolPref(SEND_WITH_ENTER_KEY, true))
 const darkMode = ref<'system' | 'light' | 'dark'>(loadDarkModePref())
 const chatWidth = ref<ChatWidthMode>(loadChatWidthPref())
-const isProjectSetupModalOpen = ref(false)
-const projectSetupMode = ref<'create' | 'clone'>('create')
-const projectSetupBaseDir = ref('')
-const projectNameDraft = ref('')
-const githubCloneUrlDraft = ref('')
-const projectSetupError = ref('')
-const isProjectSetupSubmitting = ref(false)
-const projectSetupModalRef = ref<InstanceType<typeof ProjectSetupModal> | null>(null)
 const folderPickerModalRef = ref<InstanceType<typeof FolderPickerModal> | null>(null)
 const {
-  isCreateFolderOpen,
-  createFolderDraft,
-  createFolderError,
-  isCreatingFolder,
   isExistingFolderPickerOpen,
   existingFolderPathDraft,
   existingFolderBrowsePath,
@@ -599,24 +555,16 @@ const {
   isOpeningExistingFolder,
   showHiddenFolders,
   existingFolderFilter,
-  canCreateFolder,
   resolvedExistingFolderPath,
-  createFolderSubmitLabel,
   existingFolderFilteredEntries,
   onOpenExistingFolder,
   onCloseExistingFolderPanel,
   onBrowseExistingFolder,
   onToggleHiddenFolders,
   onRetryExistingFolderBrowse,
-  onOpenCreateFolderPanel,
-  onCloseCreateFolderPanel,
-  onCreateFolder,
 } = useFolderPicker({
   resolveStartPath: async () => newThreadCwd.value.trim() || await resolveProjectBaseDirectory(),
-  defaultFolderName: () => defaultNewProjectName.value,
-  resolveCreationPath: (parent, name) => normalizeAbsolutePath(joinPath(parent, name)),
   focusPathInput: () => folderPickerModalRef.value?.focusPathInput(),
-  focusCreateInput: () => folderPickerModalRef.value?.focusCreateInput(),
 })
 let workspaceRootsResumeTimer: ReturnType<typeof setTimeout> | null = null
 let workspaceRootsResumeInProgress = false
@@ -790,7 +738,7 @@ function getFolderOptionLabel(path: string, fallbackLabel = ''): string {
 
 function getOrderedWorkspaceRootOptions(): string[] {
   const savedRoots = new Set(workspaceRootOptionsState.value.order)
-  const orderedRoots = workspaceRootOptionsState.value.projectOrder.filter((item) => savedRoots.has(item))
+  const orderedRoots = [...savedRoots].sort()
   for (const rootPath of workspaceRootOptionsState.value.order) {
     if (!orderedRoots.includes(rootPath)) orderedRoots.push(rootPath)
   }
@@ -826,7 +774,7 @@ const newThreadFolderOptions = computed(() => {
     seenCwds.add(cwd)
     options.push({
       value: cwd,
-      label: getFolderOptionLabel(cwd, workspaceRootOptionsState.value.labels[cwd]),
+      label: getFolderOptionLabel(cwd),
     })
   }
 
@@ -869,26 +817,6 @@ const {
   selectedWorktreeBranchLabel,
   isLoadingWorktreeBranches,
 } = useNewThreadRuntime(newThreadCwd, isNewThreadCwdGitRepo)
-const isProjectNameDraftValid = computed(() => {
-  const draft = projectNameDraft.value.trim()
-  if (!draft) return false
-  if (draft === '.' || draft === '..') return false
-  return !/[\\/]/u.test(draft)
-})
-const canSubmitProjectSetup = computed(() => {
-  const baseDir = projectSetupBaseDir.value.trim()
-  if (!baseDir) return false
-  if (projectSetupMode.value === 'create') return isProjectNameDraftValid.value
-  return githubCloneUrlDraft.value.trim().length > 0
-})
-const projectSetupSubmitLabel = computed(() => {
-  if (isProjectSetupSubmitting.value) {
-    if (projectSetupMode.value === 'clone') return t('Cloning…')
-    return t('Creating…')
-  }
-  if (projectSetupMode.value === 'clone') return t('Clone repository')
-  return t('Create project')
-})
 const darkModeMediaQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
 const chatWidthLabel = computed(() => t(CHAT_WIDTH_PRESETS[chatWidth.value].label))
 const contentStyle = computed(() => {
@@ -920,7 +848,6 @@ onMounted(() => {
   void initialize()
   void loadHomeDirectory()
   void loadWorkspaceRootOptionsState()
-  void refreshDefaultProjectName()
   void loadCodexAuthStatus()
 })
 
@@ -1185,10 +1112,6 @@ async function loadGitRepoStatus(cwdRaw: string): Promise<void> {
   }
 }
 
-function onRenameProject(payload: { projectName: string; displayName: string }): void {
-  renameProject(payload.projectName, payload.displayName)
-}
-
 function onRenameThread(payload: { threadId: string; title: string }): void {
   void renameThreadById(payload.threadId, payload.title)
 }
@@ -1196,11 +1119,6 @@ function onRenameThread(payload: { threadId: string; title: string }): void {
 async function onRemoveProject(projectName: string): Promise<void> {
   await removeProject(projectName)
   await loadWorkspaceRootOptionsState()
-  void refreshDefaultProjectName()
-}
-
-function onReorderProject(payload: { projectName: string; toIndex: number }): void {
-  reorderProject(payload.projectName, payload.toIndex)
 }
 
 function onRequestProjectGitStatus(projectName: string): void {
@@ -1351,78 +1269,10 @@ function scheduleMobileConversationJumpToLatest(): void {
 
 function onSelectNewThreadFolder(cwd: string): void {
   newThreadCwd.value = cwd.trim()
-  createFolderError.value = ''
 }
 
 function onSelectNewWorktreeBranch(branch: string): void {
   newWorktreeBaseBranch.value = branch.trim()
-}
-
-async function onOpenProjectSetupModal(): Promise<void> {
-  const baseDir = await resolveProjectBaseDirectory()
-  if (!baseDir) return
-
-  await refreshDefaultProjectName()
-  projectSetupBaseDir.value = baseDir
-  projectNameDraft.value = defaultNewProjectName.value.trim() || 'New Project (1)'
-  githubCloneUrlDraft.value = ''
-  projectSetupError.value = ''
-  projectSetupMode.value = 'create'
-  isProjectSetupModalOpen.value = true
-  void nextTick(() => projectSetupModalRef.value?.focusPrimaryInput())
-}
-
-function onCloseProjectSetupModal(): void {
-  if (isProjectSetupSubmitting.value) return
-  isProjectSetupModalOpen.value = false
-  projectSetupError.value = ''
-}
-
-async function createProjectFromSetupModal(): Promise<string> {
-  const baseDir = projectSetupBaseDir.value.trim()
-  const normalizedProjectName = projectNameDraft.value.trim()
-  if (!isProjectNameDraftValid.value) {
-    throw new Error('Enter a single project folder name.')
-  }
-  const targetPath = normalizeAbsolutePath(joinPath(baseDir, normalizedProjectName))
-  if (!targetPath) return ''
-
-  return openProjectRoot(targetPath, {
-    createIfMissing: true,
-    label: '',
-  })
-}
-
-async function cloneGithubRepositoryFromSetupModal(): Promise<string> {
-  const baseDir = projectSetupBaseDir.value.trim()
-  const normalizedRepoUrl = githubCloneUrlDraft.value.trim()
-  if (!normalizedRepoUrl) return ''
-
-  return cloneGithubRepository(normalizedRepoUrl, baseDir)
-}
-
-async function onSubmitProjectSetup(): Promise<void> {
-  if (!canSubmitProjectSetup.value || isProjectSetupSubmitting.value) return
-
-  projectSetupError.value = ''
-  isProjectSetupSubmitting.value = true
-  try {
-    const normalizedPath =
-      projectSetupMode.value === 'clone'
-        ? await cloneGithubRepositoryFromSetupModal()
-        : await createProjectFromSetupModal()
-    if (!normalizedPath) return
-
-    newThreadCwd.value = normalizedPath
-    await pinProjectToTop(normalizedPath)
-    await loadWorkspaceRootOptionsState()
-    await refreshDefaultProjectName()
-    isProjectSetupModalOpen.value = false
-  } catch (error) {
-    projectSetupError.value = error instanceof Error ? error.message : 'Failed to create or clone project.'
-  } finally {
-    isProjectSetupSubmitting.value = false
-  }
 }
 
 async function onConfirmExistingFolder(path = resolvedExistingFolderPath.value): Promise<void> {
@@ -1432,20 +1282,15 @@ async function onConfirmExistingFolder(path = resolvedExistingFolderPath.value):
   existingFolderError.value = ''
   isOpeningExistingFolder.value = true
   try {
-    const normalizedPath = await openProjectRoot(targetPath, {
-      createIfMissing: false,
-      label: '',
-    })
+    const normalizedPath = await openProjectRoot(targetPath)
     if (!normalizedPath) {
       existingFolderError.value = 'Failed to open the selected folder.'
       return
     }
 
     newThreadCwd.value = normalizedPath
-    await pinProjectToTop(normalizedPath)
     await loadWorkspaceRootOptionsState()
     await refreshAll({ includeSelectedThreadMessages: false, forceThreadRefresh: true })
-    await refreshDefaultProjectName()
     onCloseExistingFolderPanel()
   } catch (error) {
     existingFolderError.value = error instanceof Error ? error.message : 'Failed to open the selected folder.'
@@ -1459,12 +1304,8 @@ async function applyLaunchProjectPathFromUrl(): Promise<boolean> {
   const launchProjectPath = new URLSearchParams(window.location.search).get('openProjectPath')?.trim() ?? ''
   if (!launchProjectPath) return false
   try {
-    const normalizedPath = await openProjectRoot(launchProjectPath, {
-      createIfMissing: false,
-      label: '',
-    })
+    const normalizedPath = await openProjectRoot(launchProjectPath)
     if (!normalizedPath) return false
-    await pinProjectToTop(normalizedPath)
     await router.replace({ name: 'home', query: { cwd: normalizedPath } })
     await loadWorkspaceRootOptionsState()
     const nextUrl = new URL(window.location.href)
@@ -1490,21 +1331,6 @@ async function resolveProjectBaseDirectory(): Promise<string> {
     // Fallback handled by empty return.
   }
   return ''
-}
-
-async function refreshDefaultProjectName(): Promise<void> {
-  const baseDir = getProjectBaseDirectory()
-  if (!baseDir) {
-    defaultNewProjectName.value = 'New Project (1)'
-    return
-  }
-
-  try {
-    const suggestion = await getProjectRootSuggestion(baseDir)
-    defaultNewProjectName.value = suggestion.name || 'New Project (1)'
-  } catch {
-    defaultNewProjectName.value = 'New Project (1)'
-  }
 }
 
 function getProjectBaseDirectory(): string {
@@ -1535,68 +1361,6 @@ async function loadWorkspaceRootOptionsState(): Promise<void> {
     desktopError.value = cause instanceof Error ? cause.message : 'Failed to load projects'
   }
 }
-
-function joinPath(parent: string, child: string): string {
-  const rawParent = normalizePathForUi(parent).trim()
-  const normalizedChild = normalizePathForUi(child).trim().replace(/^[\\/]+/u, '')
-  if (!rawParent || !normalizedChild) return ''
-  const separator = rawParent.includes('\\') && !rawParent.includes('/') ? '\\' : '/'
-  if (/^[a-zA-Z]:[\\/]?$/u.test(rawParent)) {
-    return `${rawParent.slice(0, 2)}${separator}${normalizedChild}`
-  }
-  if (/^\/+$/u.test(rawParent)) {
-    return `/${normalizedChild}`
-  }
-  const normalizedParent = rawParent.replace(/[\\/]+$/u, '')
-  if (!normalizedParent) return ''
-  return `${normalizedParent}${separator}${normalizedChild}`
-}
-
-function normalizeAbsolutePath(value: string): string {
-  const normalizedValue = normalizePathForUi(value).trim()
-  if (!normalizedValue) return ''
-
-  const uncMatch = normalizedValue.match(/^\\\\([^\\/]+)[\\/]+([^\\/]+)([\\/].*)?$/u)
-  if (uncMatch) {
-    const [, server, share, suffix = ''] = uncMatch
-    const segments = collapsePathSegments(suffix.split(/[\\/]+/u))
-    return segments.length > 0
-      ? `\\\\${server}\\${share}\\${segments.join('\\')}`
-      : `\\\\${server}\\${share}`
-  }
-
-  const driveMatch = normalizedValue.match(/^([a-zA-Z]:)([\\/].*)?$/u)
-  if (driveMatch) {
-    const [, drive, suffix = ''] = driveMatch
-    const separator = normalizedValue.includes('\\') && !normalizedValue.includes('/') ? '\\' : '/'
-    const segments = collapsePathSegments(suffix.split(/[\\/]+/u))
-    return segments.length > 0 ? `${drive}${separator}${segments.join(separator)}` : `${drive}${separator}`
-  }
-
-  if (normalizedValue.startsWith('/')) {
-    const segments = collapsePathSegments(normalizedValue.split('/'))
-    return segments.length > 0 ? `/${segments.join('/')}` : '/'
-  }
-
-  return normalizedValue
-}
-
-function collapsePathSegments(rawSegments: readonly string[]): string[] {
-  const segments: string[] = []
-  for (const rawSegment of rawSegments) {
-    const segment = rawSegment.trim()
-    if (!segment || segment === '.') continue
-    if (segment === '..') {
-      if (segments.length > 0) {
-        segments.pop()
-      }
-      continue
-    }
-    segments.push(segment)
-  }
-  return segments
-}
-
 
 function onSelectModel(modelId: string): void {
   setSelectedModelIdForThread(composerThreadContextId.value, modelId)
@@ -1629,7 +1393,6 @@ function onImplementPlan(payload: { turnId: string }): void {
   scheduleMobileConversationJumpToLatest()
   void sendMessageToSelectedThread('Implement', [], [], [], 'default')
 }
-
 
 async function copySelectedThreadChat(): Promise<void> {
   if (isHomeRoute.value || isSkillsRoute.value) return
@@ -1858,7 +1621,6 @@ watch(
   },
 )
 
-
 watch(
   () => [route.name, composerCwd.value] as const,
   ([routeName, cwd]) => {
@@ -1885,14 +1647,6 @@ watch(
     if (route.name === 'thread' && routeThreadId.value === threadId) return
     await router.replace({ name: 'thread', params: { threadId } })
   },
-)
-
-watch(
-  () => getProjectBaseDirectory(),
-  () => {
-    void refreshDefaultProjectName()
-  },
-  { immediate: true },
 )
 
 watch(
@@ -1964,7 +1718,6 @@ watch(
   { immediate: true },
 )
 
-
 watch(isMobile, (mobile) => {
   if (mobile && !isSidebarCollapsed.value) {
     setSidebarCollapsed(true)
@@ -2000,9 +1753,8 @@ async function submitFirstMessageForNewThread(
         return
       }
     } else if (!targetCwd.trim()) {
-      const directory = await createProjectlessThreadDirectory(text)
-      targetCwd = directory.cwd
-      newThreadCwd.value = directory.cwd
+      desktopError.value = 'Select an existing workspace before starting a conversation.'
+      return
     }
     const threadId = await sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments)
     if (!threadId) return

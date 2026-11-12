@@ -59,7 +59,7 @@ export function createLocalFileMiddleware() {
       } else {
         res.setHeader('Cache-Control', kind === 'image' ? 'private, max-age=300' : 'private, no-store')
         if (kind === 'browse' && info.isDirectory()) {
-          send(200, await createDirectoryListingHtml(localPath, { newProjectName: query.get('newProjectName') ?? '' }), 'text/html; charset=utf-8')
+          send(200, await createDirectoryListingHtml(localPath), 'text/html; charset=utf-8')
           return
         }
         if (!info.isFile()) throw new Error('Not a regular file')

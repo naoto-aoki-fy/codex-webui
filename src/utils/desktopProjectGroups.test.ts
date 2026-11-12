@@ -3,9 +3,9 @@ import type { WorkspaceRootsState } from '../api/codexGateway'
 import type { UiProjectGroup, UiThread } from '../types/codex'
 import * as legacy from '../composables/useDesktopState'
 import {
-  buildWorkspaceRootsProjectOrderState, collectWorkspaceRootPathsForProjectRemoval,
-  filterGroupsByWorkspaceRoots, mergeProjectOrder, orderGroupsByProjectOrder,
-  reorderStringArray, collectDuplicateProjectLeafNames, getWorkspaceProjectId,
+  collectWorkspaceRootPathsForProjectRemoval,
+  filterGroupsByWorkspaceRoots,
+  collectDuplicateProjectLeafNames, getWorkspaceProjectId,
   getWorkspaceProjectOrderPaths, getRemoteProjectDisplayName, toProjectNameFromWorkspaceRoot,
 } from './desktopProjectGroups'
 
@@ -24,7 +24,6 @@ describe('desktop project group presentation', () => {
   it('preserves the existing public function exports', () => {
     expect(legacy.filterGroupsByWorkspaceRoots).toBe(filterGroupsByWorkspaceRoots)
     expect(legacy.collectWorkspaceRootPathsForProjectRemoval).toBe(collectWorkspaceRootPathsForProjectRemoval)
-    expect(legacy.buildWorkspaceRootsProjectOrderState).toBe(buildWorkspaceRootsProjectOrderState)
   })
 
   it('preserves arrays and groups without roots or disambiguation', () => {
@@ -92,44 +91,6 @@ describe('desktop project group presentation', () => {
     expect(getRemoteProjectDisplayName({ ...remote, label: 'Custom' })).toBe('Custom host')
     expect(getRemoteProjectDisplayName({ ...remote, hostId: ' ' })).toBe('repo')
     expect([...collectWorkspaceRootPathsForProjectRemoval(state, remote.id)]).toEqual([])
-    const reordered = buildWorkspaceRootsProjectOrderState(state, ['api', remote.id, 'unknown'], [])
-    expect(reordered).toEqual({
-      order: ['/one/api'], active: ['/one/api'], projectOrder: ['/one/api', remote.id],
-    })
-    expect(reordered.active).not.toBe(state.active)
-  })
-
-  it('preserves custom ordering, unknown names, stable ties and group identity', () => {
-    const alpha = group('alpha')
-    const beta = group('beta')
-    const unknown = group('unknown')
-    const other = group('other')
-    const input = [alpha, beta, unknown, other]
-    const order = ['beta', 'stale', 'alpha']
-    expect(mergeProjectOrder(order, [beta, alpha])).toBe(order)
-    expect(mergeProjectOrder(['beta', 'beta'], input)).toEqual(['beta', 'alpha', 'unknown', 'other'])
-    const sorted = orderGroupsByProjectOrder(input, order)
-    expect(sorted).toEqual([beta, alpha, unknown, other])
-    expect(sorted[0]).toBe(beta)
-    const state = roots(['/one/alpha', '/one/beta'])
-    state.projectOrder = ['/one/beta', '/one/alpha']
-    expect(filterGroupsByWorkspaceRoots(input, state)).toEqual([beta, alpha])
-    expect(getWorkspaceProjectId(null, 'unknown', input)).toBe('')
-  })
-
-  it('retains the last duplicate-name group in explicit project ordering', () => {
-    const first = group('api', '/one/api')
-    const last = group('api', '/two/api')
-    expect(orderGroupsByProjectOrder([first, last], ['api'])).toEqual([last])
-  })
-
-  it('reorders copies and preserves arrays for invalid or unchanged positions', () => {
-    const order = ['alpha', 'beta', 'gamma']
-    for (const [from, to] of [[-1, 0], [0, 3], [3, 0], [0, -1], [1, 1]]) {
-      expect(reorderStringArray(order, from!, to!)).toBe(order)
-    }
-    expect(reorderStringArray(order, 2, 0)).toEqual(['gamma', 'alpha', 'beta'])
-    expect(order).toEqual(['alpha', 'beta', 'gamma'])
   })
 
   it('retains unknown metadata and existing malformed-path failures', () => {
@@ -146,8 +107,5 @@ describe('desktop project group presentation', () => {
     const state = roots(['', '   '])
     expect(filterGroupsByWorkspaceRoots([], state)).toEqual([])
     expect([...collectWorkspaceRootPathsForProjectRemoval(state, 'missing')]).toEqual([])
-    expect(buildWorkspaceRootsProjectOrderState(roots(), ['missing'], [])).toEqual({
-      order: [], active: [], projectOrder: [],
-    })
   })
 })

@@ -436,59 +436,6 @@ export async function revertThreadHistory(threadId: string, beforeTurnId: string
   invalidateResumeThread(threadId)
 }
 
-export async function updateThreadFileChanges(
-  threadId: string,
-  turnId: string,
-  cwd: string,
-  action: 'undo' | 'redo',
-  patchIds?: string[],
-  scope?: 'single_turn' | 'turn_and_later',
-): Promise<{ changed: number; errors: string[]; message?: string; revertedPatchIds?: string[]; appliedPatchIds?: string[] }> {
-  try {
-    const response = await fetch('/codex-api/thread/rollback-files', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadId, turnId, cwd, action, patchIds, scope }),
-    })
-    const payload = (await response.json().catch(() => ({}))) as {
-      changed?: number
-      reverted?: number
-      applied?: number
-      errors?: string[]
-      message?: string
-      error?: string
-      revertedPatchIds?: string[]
-      appliedPatchIds?: string[]
-    }
-    if (!response.ok) {
-      const message = typeof payload.message === 'string' && payload.message.trim()
-        ? payload.message.trim()
-        : typeof payload.error === 'string' && payload.error.trim()
-          ? payload.error.trim()
-          : 'Server error'
-      return {
-        changed: 0,
-        errors: Array.isArray(payload.errors) && payload.errors.length > 0 ? payload.errors : [message],
-        message: payload.message,
-      }
-    }
-    return {
-      changed: payload.changed ?? payload.reverted ?? payload.applied ?? 0,
-      errors: Array.isArray(payload.errors) ? payload.errors : [],
-      message: payload.message,
-      revertedPatchIds: Array.isArray(payload.revertedPatchIds) ? payload.revertedPatchIds : [],
-      appliedPatchIds: Array.isArray(payload.appliedPatchIds) ? payload.appliedPatchIds : [],
-    }
-  } catch (error) {
-    return { changed: 0, errors: [error instanceof Error ? error.message : 'Network error'] }
-  }
-}
-
-export async function revertThreadFileChanges(threadId: string, turnId: string, cwd: string): Promise<{ reverted: number; errors: string[] }> {
-  const result = await updateThreadFileChanges(threadId, turnId, cwd, 'undo')
-  return { reverted: result.changed, errors: result.errors }
-}
-
 export type StartedThread = {
   threadId: string
   model: string
@@ -1062,16 +1009,8 @@ export function updateWorkspaceRootsState(operation: WorkspaceRootsOperation): P
   return queueWorkspaceRootsMutation(() => updateWorkspaceRootsStateRequest(operation), (state) => state)
 }
 
-export function openProjectRoot(path: string, options?: { createIfMissing?: boolean; label?: string }): Promise<string> {
-  return queueWorkspaceRootsMutation(() => openProjectRootRequest(path, options))
-}
-
-export function createLocalDirectory(path: string): Promise<string> {
-  return queueWorkspaceRootsMutation(() => createLocalDirectoryRequest(path))
-}
-
-export function cloneGithubRepository(url: string, basePath: string): Promise<string> {
-  return queueWorkspaceRootsMutation(() => cloneGithubRepositoryRequest(url, basePath))
+export function openProjectRoot(path: string): Promise<string> {
+  return queueWorkspaceRootsMutation(() => openProjectRootRequest(path))
 }
 
 async function updateWorkspaceRootsStateRequest(operation: WorkspaceRootsOperation): Promise<WorkspaceRootsState> {
@@ -1089,14 +1028,12 @@ async function updateWorkspaceRootsStateRequest(operation: WorkspaceRootsOperati
   return cloneWorkspaceRootsState(state)
 }
 
-async function openProjectRootRequest(path: string, options?: { createIfMissing?: boolean; label?: string }): Promise<string> {
+async function openProjectRootRequest(path: string): Promise<string> {
   const response = await fetch('/codex-api/project-root', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       path,
-      createIfMissing: options?.createIfMissing === true,
-      label: options?.label ?? '',
     }),
   })
   const payload = (await response.json()) as unknown
@@ -1114,103 +1051,6 @@ async function openProjectRootRequest(path: string, options?: { createIfMissing?
       : {}
   const normalizedPath = typeof data.path === 'string' ? normalizePathForUi(data.path) : ''
   return normalizedPath
-}
-
-async function createLocalDirectoryRequest(path: string): Promise<string> {
-  const response = await fetch('/codex-api/local-directory', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path }),
-  })
-  const payload = await readJsonResponse(response)
-  if (!response.ok) {
-    const message = getErrorMessageFromPayload(payload, 'Failed to create local directory')
-    throw new Error(message)
-  }
-  const record =
-    payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? (payload as Record<string, unknown>)
-      : {}
-  const data =
-    record.data && typeof record.data === 'object' && !Array.isArray(record.data)
-      ? (record.data as Record<string, unknown>)
-      : {}
-  const normalizedPath = typeof data.path === 'string' ? normalizePathForUi(data.path) : ''
-  return normalizedPath
-}
-
-async function cloneGithubRepositoryRequest(url: string, basePath: string): Promise<string> {
-  const response = await fetch('/codex-api/github-clone', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, basePath }),
-  })
-  const payload = await readJsonResponse(response)
-  if (!response.ok) {
-    const message = getErrorMessageFromPayload(payload, 'Failed to clone GitHub repository')
-    throw new Error(message)
-  }
-  const record =
-    payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? (payload as Record<string, unknown>)
-      : {}
-  const data =
-    record.data && typeof record.data === 'object' && !Array.isArray(record.data)
-      ? (record.data as Record<string, unknown>)
-      : {}
-  return typeof data.path === 'string' ? normalizePathForUi(data.path) : ''
-}
-
-export async function createProjectlessThreadDirectory(prompt?: string): Promise<{ cwd: string; outputDirectory: string; workspaceRoot: string }> {
-  const response = await fetch('/codex-api/projectless-thread-cwd', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: prompt ?? null }),
-  })
-  const payload = await readJsonResponse(response)
-  if (!response.ok) {
-    const message = getErrorMessageFromPayload(payload, 'Failed to create new chat folder')
-    throw new Error(message)
-  }
-  const record =
-    payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? (payload as Record<string, unknown>)
-      : {}
-  const data =
-    record.data && typeof record.data === 'object' && !Array.isArray(record.data)
-      ? (record.data as Record<string, unknown>)
-      : {}
-  const cwd = typeof data.cwd === 'string' ? normalizePathForUi(data.cwd) : ''
-  if (!cwd) {
-    throw new Error('Failed to create new chat folder')
-  }
-  return {
-    cwd,
-    outputDirectory: typeof data.outputDirectory === 'string' ? normalizePathForUi(data.outputDirectory) : cwd,
-    workspaceRoot: typeof data.workspaceRoot === 'string' ? normalizePathForUi(data.workspaceRoot) : '',
-  }
-}
-
-export async function getProjectRootSuggestion(basePath: string): Promise<{ name: string; path: string }> {
-  const query = new URLSearchParams({ basePath })
-  const response = await fetch(`/codex-api/project-root-suggestion?${query.toString()}`)
-  const payload = (await response.json()) as unknown
-  if (!response.ok) {
-    const message = getErrorMessageFromPayload(payload, 'Failed to suggest project name')
-    throw new Error(message)
-  }
-  const record =
-    payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? (payload as Record<string, unknown>)
-      : {}
-  const data =
-    record.data && typeof record.data === 'object' && !Array.isArray(record.data)
-      ? (record.data as Record<string, unknown>)
-      : {}
-  return {
-    name: typeof data.name === 'string' ? data.name.trim() : '',
-    path: typeof data.path === 'string' ? normalizePathForUi(data.path) : '',
-  }
 }
 
 export async function searchComposerFiles(cwd: string, query: string, limit = 20): Promise<ComposerFileSuggestion[]> {

@@ -74,17 +74,6 @@ async function canonicalizeWorkspaceRootPath(
   }
 }
 
-async function canonicalizeWorkspaceRootPathList(
-  values: string[],
-  pathRealpath: PathRealpathResolver,
-): Promise<string[]> {
-  const paths: string[] = []
-  for (let offset = 0; offset < values.length; offset += 8) {
-    paths.push(...await Promise.all(values.slice(offset, offset + 8).map((value) => canonicalizeWorkspaceRootPath(value, pathRealpath))))
-  }
-  return normalizeStringArray(paths)
-}
-
 export async function canonicalizeWorkspaceRootsState(
   state: WorkspaceRootsState,
   pathRealpath: PathRealpathResolver = realpath,
@@ -217,50 +206,27 @@ async function updateWorkspaceRootsState(
 
 export async function applyWorkspaceRootsOperation(operation: WorkspaceRootsOperation): Promise<WorkspaceRootsState> {
   // Resolve only the requested identifiers here; read all saved values under the lock.
-  const normalizedOperation: WorkspaceRootsOperation = operation.type === 'reorder'
-    ? { type: 'reorder', order: await canonicalizeWorkspaceRootPathList(operation.order, realpath) }
-    : { ...operation, path: await canonicalizeWorkspaceRootPath(operation.path, realpath) }
+  const normalizedOperation = { ...operation, path: await canonicalizeWorkspaceRootPath(operation.path, realpath) }
   return updateWorkspaceRootsState((state) => {
-    if (normalizedOperation.type === 'rename') {
-      if (!state.order.includes(normalizedOperation.path)) return state
-      const labels = { ...state.labels }
-      const label = normalizedOperation.label.trim()
-      if (label) labels[normalizedOperation.path] = label
-      else delete labels[normalizedOperation.path]
-      return { ...state, labels }
-    }
-    if (normalizedOperation.type === 'delete') {
-      const path = normalizedOperation.path
-      const order = state.order.filter((item) => item !== path)
-      const labels = { ...state.labels }
-      delete labels[path]
-      const active = state.active.filter((item) => item !== path)
-      if (active.length === 0 && order.length > 0) active.push(order[0])
-      return { ...state, order, labels, active, projectOrder: state.projectOrder.filter((item) => item !== path) }
-    }
-    const existing = new Set([...state.order, ...state.remoteProjects.map((project) => project.id)])
-    const currentOrder = normalizeStringArray([...state.projectOrder, ...existing]).filter((item) => existing.has(item))
-    const requested = new Set(normalizedOperation.order.filter((item) => existing.has(item)))
-    const projectOrder = [...requested, ...currentOrder.filter((item) => !requested.has(item))]
-    const localRoots = new Set(state.order)
-    return { ...state, projectOrder, order: projectOrder.filter((item) => localRoots.has(item)) }
+    const path = normalizedOperation.path
+    const order = state.order.filter((item) => item !== path)
+    const labels = { ...state.labels }
+    delete labels[path]
+    const active = state.active.filter((item) => item !== path)
+    if (active.length === 0 && order.length > 0) active.push(order[0])
+    return { ...state, order, labels, active, projectOrder: state.projectOrder.filter((item) => item !== path) }
   })
 }
 
-export async function persistWorkspaceRoot(workspaceRoot: string, label = ''): Promise<void> {
+export async function persistWorkspaceRoot(workspaceRoot: string): Promise<void> {
   const trimmedRoot = workspaceRoot.trim()
   if (!trimmedRoot) return
   const normalizedRoot = await canonicalizeWorkspaceRootPath(trimmedRoot, realpath)
 
   await updateWorkspaceRootsState((existingState) => {
-    const nextLabels = { ...existingState.labels }
-    const trimmedLabel = label.trim()
-    if (trimmedLabel.length > 0) {
-      nextLabels[normalizedRoot] = trimmedLabel
-    }
     return {
       order: prependUniqueString(normalizedRoot, existingState.order),
-      labels: nextLabels,
+      labels: { ...existingState.labels },
       active: prependUniqueString(normalizedRoot, existingState.active),
       projectOrder: prependUniqueString(normalizedRoot, existingState.projectOrder),
       remoteProjects: existingState.remoteProjects,

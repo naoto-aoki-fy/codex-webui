@@ -86,7 +86,7 @@ it('opens and lists an existing project without importing or changing its files'
   expect(opened.json.data.path).toBe(project)
   const listing = await request('/codex-api/workspace-roots-state')
   expect(listing.json.data.order).toContain(project)
-  expect(listing.json.data.labels[project]).toBe('Existing project')
+  expect(listing.json.data.labels[project]).toBeUndefined()
   expect(sqlite).not.toHaveBeenCalled()
   await expectPreservedFiles()
 })
@@ -170,7 +170,7 @@ it('rejects legacy workspace PUT without reading its body or changing state', as
   expect(rpc).not.toHaveBeenCalled()
 })
 
-it('serializes concurrent workspace rename, reorder and delete without losing unrelated state', async () => {
+it('rejects retired metadata mutations while unregistering without losing data', async () => {
   const statePath = join(home, '.codex-global-state.json')
   const other = join(home, 'other')
   await writeFile(statePath, JSON.stringify({
@@ -183,11 +183,11 @@ it('serializes concurrent workspace rename, reorder and delete without losing un
     request('/codex-api/workspace-roots-state', 'PATCH', { type: 'reorder', order: ['remote', other, project] }),
     request('/codex-api/workspace-roots-state', 'PATCH', { type: 'delete', path: other }),
   ])
-  expect(responses.map(response => response.res.statusCode)).toEqual([200, 200, 200])
+  expect(responses.map(response => response.res.statusCode)).toEqual([400, 400, 200])
   const response = await request('/codex-api/workspace-roots-state')
   expect(response.json).toEqual({ data: {
-    order: [project], active: [project], labels: { [project]: 'Renamed' },
-    projectOrder: ['remote', project], remoteProjects: [{ id: 'remote', hostId: '', remotePath: '', label: '' }],
+    order: [project], active: [project], labels: {},
+    projectOrder: [project], remoteProjects: [{ id: 'remote', hostId: '', remotePath: '', label: '' }],
   } })
   const saved = JSON.parse(await readFile(statePath, 'utf8'))
   expect(saved.unknown).toEqual({ keep: true })

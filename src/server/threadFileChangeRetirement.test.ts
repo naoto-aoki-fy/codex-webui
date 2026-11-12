@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
@@ -14,23 +13,6 @@ const { sqlite } = vi.hoisted(() => ({
 vi.mock('node:child_process', async importOriginal => ({
   ...await importOriginal<typeof import('node:child_process')>(), spawnSync: sqlite,
 }))
-// Inject an external editor write after Undo reads its source, before it writes.
-const externalEdit = vi.hoisted(() => ({ path: '', content: '', skipReads: 0 }))
-vi.mock('node:fs/promises', async importOriginal => {
-  const fs = await importOriginal<typeof import('node:fs/promises')>()
-  return {
-    ...fs,
-    readFile: async (...args: Parameters<typeof fs.readFile>) => {
-      const result = await fs.readFile(...args)
-      if (externalEdit.path && String(args[0]) === externalEdit.path && externalEdit.skipReads-- <= 0) {
-        const path = externalEdit.path
-        externalEdit.path = ''
-        await fs.writeFile(path, externalEdit.content)
-      }
-      return result
-    },
-  }
-})
 const scope = globalThis as typeof globalThis & { __codexRemoteSharedBridge__?: unknown }
 const rpc = vi.fn<(method: string, params: unknown) => Promise<unknown>>()
 const storeSnapshot = vi.fn<(threadId: string, result: unknown) => void>()
@@ -42,9 +24,6 @@ let sessionRaw: string
 const archiveBytes = Buffer.from('PK\x05\x06' + '\0'.repeat(18), 'binary')
 
 beforeEach(async () => {
-  externalEdit.path = ''
-  externalEdit.content = ''
-  externalEdit.skipReads = 0
   home = await mkdtemp(join(tmpdir(), 'project-history-'))
   project = join(home, 'existing-project')
   sessionPath = join(home, 'sessions', 'rollout-existing.jsonl')
@@ -105,189 +84,19 @@ it('keeps normal history and earlier-history pagination available', async () => 
   expect(older.json.result.thread.turns).toEqual(turns.slice(0, 5))
   expect(older.json.hasMoreOlder).toBe(false)
 })
-it.each(['single_turn', 'turn_and_later'])('preserves patch redo/undo for %s scope', async scope => {
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: project })
-  git('init'); git('config', 'user.email', 'test@example.invalid'); git('config', 'user.name', 'Test')
-  for (const name of ['modified.txt', 'deleted.txt', 'source.txt']) await writeFile(join(project, name), 'before\n')
-  git('add', '.'); git('commit', '-m', 'fixture')
-  const input = '*** Begin Patch\n*** Add File: added.txt\n+added\n*** Update File: modified.txt\n@@ -1 +1 @@\n-before\n+after\n*** Delete File: deleted.txt\n*** Update File: source.txt\n*** Move to: moved.txt\n@@ -1 +1 @@\n-before\n+after\n*** End Patch'
-  await writeFile(sessionPath, [
-    { type: 'turn_context', payload: { turn_id: 't1' } },
-    { type: 'response_item', payload: { type: 'custom_tool_call', name: 'apply_patch', status: 'completed', call_id: 'patch1', input } },
-  ].map(row => JSON.stringify(row)).join('\n'))
-  rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
-  const payload = { threadId: 'historical-thread', turnId: 't1', cwd: project, scope }
-  const redo = await request('/codex-api/thread/rollback-files', 'POST', { ...payload, action: 'redo' })
-  expect(redo.json.errors).toEqual([])
-  expect(await readFile(join(project, 'added.txt'), 'utf8')).toBe('added\n')
-  expect(await readFile(join(project, 'modified.txt'), 'utf8')).toBe('after\n')
-  expect(await readFile(join(project, 'moved.txt'), 'utf8')).toBe('after\n')
-  await expect(readFile(join(project, 'deleted.txt'))).rejects.toThrow()
-  await expect(readFile(join(project, 'source.txt'))).rejects.toThrow()
-  const undo = await request('/codex-api/thread/rollback-files', 'POST', { ...payload, action: 'undo' })
-  expect(undo.json.errors).toHaveLength(1)
-  expect(undo.json.errors[0]).toContain('per-turn preimage')
-  for (const name of ['modified.txt', 'source.txt']) expect(await readFile(join(project, name), 'utf8')).toBe('before\n')
-  await expect(readFile(join(project, 'deleted.txt'))).rejects.toThrow()
-  await expect(readFile(join(project, 'added.txt'))).rejects.toThrow()
-  await expect(readFile(join(project, 'moved.txt'))).rejects.toThrow()
-  if (scope === 'turn_and_later') {
-    rpc.mockResolvedValue({ thread: { id: 'historical-thread', turns: [] } } as never)
-    const rollback = await request('/codex-api/rpc', 'POST', { method: 'thread/revert', params: { threadId: 'historical-thread', beforeTurnId: 'turn' } })
-    expect(rollback.res.statusCode).toBe(200)
-    expect(rollback.json.result.thread.turns).toEqual([])
-    expect(rpc).toHaveBeenCalledWith('thread/revert', { threadId: 'historical-thread', beforeTurnId: 'turn' })
-  }
+
+it.each(['/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion'])('retires %s without modifying existing files or history', async path => {
+  const response = await request(path, 'POST', { threadId: 'historical-thread', turnId: 't0', cwd: project, path: join(project, 'missing'), createIfMissing: true })
+  expect(response.res.statusCode).toBe(404)
+  expect(response.next).not.toHaveBeenCalled()
+  expect(rpc).not.toHaveBeenCalled()
+  expect(await readFile(join(project, 'notes.txt'), 'utf8')).toBe('Existing project data')
+  expect(await readFile(sessionPath, 'utf8')).toBe(sessionRaw)
 })
 
-it('preserves filtered patch order and reports partial Undo failures', async () => {
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: project })
-  git('init'); git('config', 'user.email', 'test@example.invalid'); git('config', 'user.name', 'Test')
-  await writeFile(join(project, 'tracked.txt'), 'HEAD\n')
-  git('add', '.'); git('commit', '-m', 'fixture')
-  const patches = [
-    ['skip', '*** Add File: skipped.txt\n+skip'],
-    ['first', '*** Add File: ordered.txt\n+one'],
-    ['second', '*** Update File: ordered.txt\n@@ -1 +1 @@\n-one\n+two'],
-    ['partial', '*** Add File: partial.txt\n+ok\n*** Update File: tracked.txt\n@@ -1 +1 @@\n-missing\n+new'],
-  ]
-  await writeFile(sessionPath, [
-    { type: 'turn_context', payload: { turn_id: 't1' } },
-    ...patches.map(([call_id, body]) => ({ type: 'response_item', payload: {
-      type: 'custom_tool_call', name: 'apply_patch', status: 'completed', call_id,
-      input: '*** Begin Patch\n' + body + '\n*** End Patch',
-    } })),
-  ].map(row => JSON.stringify(row)).join('\n'))
-  rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
-  const payload = { threadId: 'historical-thread', turnId: 't1', cwd: project, scope: 'single_turn', patchIds: ['first', 'second', 'partial'] }
-  const redo = await request('/codex-api/thread/rollback-files', 'POST', { ...payload, action: 'redo' })
-  expect(redo.json.applied).toBe(3)
-  expect(redo.json.appliedPatchIds).toEqual(['first', 'second'])
-  expect(redo.json.errors).toEqual(['Could not apply patch for ' + join(project, 'tracked.txt')])
-  expect(await readFile(join(project, 'ordered.txt'), 'utf8')).toBe('two\n')
-  await expect(readFile(join(project, 'skipped.txt'))).rejects.toThrow()
-  await writeFile(join(project, 'tracked.txt'), 'unmatched\n')
-  const undo = await request('/codex-api/thread/rollback-files', 'POST', { ...payload, action: 'undo' })
-  expect(undo.json.errors).toHaveLength(1)
-  expect(undo.json.reverted).toBe(3)
-  expect(undo.json.revertedPatchIds).toEqual(['second', 'first'])
-  expect(await readFile(join(project, 'tracked.txt'), 'utf8')).toBe('unmatched\n')
-  await expect(readFile(join(project, 'ordered.txt'))).rejects.toThrow()
-  await expect(readFile(join(project, 'partial.txt'))).rejects.toThrow()
-})
-
-// Regression coverage for the preservation contract.
-// Every Git command below runs only inside the disposable fixture repository.
-it.each(['unstaged', 'staged', 'mixed', 'untracked'] as const)(
-  'preserves %s edits when Undo cannot match the patch', async state => {
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: project, encoding: 'utf8' })
-    git('init'); git('config', 'user.email', 'test@example.invalid'); git('config', 'user.name', 'Test')
-    await writeFile(join(project, 'outside.txt'), 'outside HEAD\n')
-    if (state !== 'untracked') await writeFile(join(project, 'target.txt'), 'HEAD\n')
-    git('add', '.'); git('commit', '-m', 'fixture')
-    const head = git('rev-parse', 'HEAD')
-    await writeFile(join(project, 'outside.txt'), 'outside staged\n')
-    git('add', 'outside.txt')
-    await writeFile(join(project, 'outside.txt'), 'outside unstaged\n')
-    await writeFile(join(project, 'unrelated.txt'), 'untracked survivor\n')
-    if (state === 'staged' || state === 'mixed') {
-      await writeFile(join(project, 'target.txt'), 'user staged\n')
-      git('add', 'target.txt')
-    }
-    if (state !== 'staged') await writeFile(join(project, 'target.txt'), 'user unstaged\n')
-    await writeFile(sessionPath, [
-      { type: 'turn_context', payload: { turn_id: 't1' } },
-      { type: 'response_item', payload: { type: 'custom_tool_call', name: 'apply_patch', status: 'completed', call_id: 'unsafe',
-        input: '*** Begin Patch\n*** Update File: target.txt\n@@ -1 +1 @@\n-before\n+after\n*** Add File: generated.txt\n+generated\n*** End Patch' } },
-    ].map(row => JSON.stringify(row)).join('\n'))
-    await writeFile(join(project, 'generated.txt'), 'user edited generated content\n')
-    rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
-    const undo = await request('/codex-api/thread/rollback-files', 'POST', {
-      threadId: 'historical-thread', turnId: 't1', cwd: project, scope: 'single_turn', action: 'undo', patchIds: ['unsafe'],
-    })
-    expect(git('rev-parse', 'HEAD')).toBe(head)
-    expect(await readFile(join(project, 'outside.txt'), 'utf8')).toBe('outside unstaged\n')
-    expect(git('show', ':outside.txt')).toBe('outside staged\n')
-    expect(await readFile(join(project, 'unrelated.txt'), 'utf8')).toBe('untracked survivor\n')
-    expect(await readFile(join(project, 'generated.txt'), 'utf8')).toBe('user edited generated content\n')
-    expect(undo.json.revertedPatchIds).toEqual([])
-    expect(undo.json.reverted).toBe(0)
-    expect(undo.json.errors).toHaveLength(2)
-    expect(await readFile(join(project, 'target.txt'), 'utf8')).toBe(state === 'staged' ? 'user staged\n' : 'user unstaged\n')
-    if (state !== 'untracked') {
-      expect(git('show', ':target.txt')).toBe(state === 'staged' || state === 'mixed' ? 'user staged\n' : 'HEAD\n')
-    }
-  },
-)
-
-
-it.each([0, 1])('detects edits before validation but retains the accepted post-validation race (skip %s)', async skipReads => {
-  const target = join(project, 'race.txt')
-  await writeFile(target, 'after\n')
-  await writeFile(sessionPath, [
-    { type: 'turn_context', payload: { turn_id: 't1' } },
-    { type: 'response_item', payload: { type: 'custom_tool_call', name: 'apply_patch', status: 'completed', call_id: 'race',
-      input: '*** Begin Patch\n*** Update File: race.txt\n@@ -1 +1 @@\n-before\n+after\n*** End Patch' } },
-  ].map(row => JSON.stringify(row)).join('\n'))
-  rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
-  externalEdit.path = target
-  externalEdit.skipReads = skipReads
-  externalEdit.content = 'external editor content\n'
-  const undo = await request('/codex-api/thread/rollback-files', 'POST', {
-    threadId: 'historical-thread', turnId: 't1', cwd: project, scope: 'single_turn', action: 'undo', patchIds: ['race'],
-  })
-  expect(externalEdit.path).toBe('')
-  // Keep the deterministic loss characterization at the final validation boundary.
-  expect(await readFile(target, 'utf8')).toBe(skipReads ? 'before\n' : 'external editor content\n')
-  expect(undo.json.errors).toHaveLength(skipReads ? 0 : 1)
-  expect(undo.json.revertedPatchIds).toEqual(skipReads ? ['race'] : [])
-})
-
-
-it.each(['rename', 'missing', 'repeat'])('refuses unsafe Undo: %s', async scenario => {
-  const input = scenario === 'rename'
-    ? '*** Update File: original.txt\n*** Move to: moved.txt\n@@ -1 +1 @@\n-before\n+after'
-    : scenario === 'missing' ? '*** Delete File: original.txt' : '*** Add File: original.txt\n+generated'
-  await writeFile(sessionPath, [
-    { type: 'turn_context', payload: { turn_id: 't1' } },
-    { type: 'response_item', payload: { type: 'custom_tool_call', name: 'apply_patch', status: 'completed', call_id: 'p',
-      input: '*** Begin Patch\n' + input + '\n*** End Patch' } },
-  ].map(row => JSON.stringify(row)).join('\n'))
-  rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
-  await writeFile(join(project, 'original.txt'), scenario === 'repeat' ? 'generated\n' : 'user content\n')
-  if (scenario === 'rename') await writeFile(join(project, 'moved.txt'), 'after\n')
-  const payload = { threadId: 'historical-thread', turnId: 't1', cwd: project, action: 'undo', patchIds: ['p'] }
-  const first = await request('/codex-api/thread/rollback-files', 'POST', payload)
-  if (scenario === 'repeat') {
-    expect(first.json.reverted).toBe(1)
-    const second = await request('/codex-api/thread/rollback-files', 'POST', payload)
-    expect(second.json.reverted).toBe(0)
-    expect(second.json.revertedPatchIds).toEqual([])
-  } else {
-    expect(first.json.errors).toHaveLength(1)
-    expect(first.json.revertedPatchIds).toEqual([])
-    expect(await readFile(join(project, 'original.txt'), 'utf8')).toBe('user content\n')
-    if (scenario === 'rename') expect(await readFile(join(project, 'moved.txt'), 'utf8')).toBe('after\n')
-  }
-})
-
-
-it.each([true, false])('preserves command-only paths (patch selection %s)', async selected => {
-  const target = join(project, 'command.txt')
-  await writeFile(target, 'user content\n')
-  await writeFile(sessionPath, [
-    { type: 'turn_context', payload: { turn_id: 't1' } },
-    { type: 'response_item', payload: { type: 'function_call', name: 'exec_command',
-      arguments: JSON.stringify({ cmd: 'echo changed >command.txt' }) } },
-    { type: 'response_item', payload: { type: 'custom_tool_call', name: 'apply_patch', status: 'completed', call_id: 'p',
-      input: '*** Begin Patch\n*** Add File: independent.txt\n+generated\n*** End Patch' } },
-  ].map(row => JSON.stringify(row)).join('\n'))
-  await writeFile(join(project, 'independent.txt'), 'generated\n')
-  rpc.mockResolvedValue({ thread: { id: 'historical-thread', path: sessionPath, turns: [{ id: 't1', items: [] }] } } as never)
-  const undo = await request('/codex-api/thread/rollback-files', 'POST', {
-    threadId: 'historical-thread', turnId: 't1', cwd: project, action: 'undo', ...(selected ? { patchIds: ['p'] } : {}),
-  })
-  expect(await readFile(target, 'utf8')).toBe('user content\n')
-  expect(undo.json.revertedPatchIds).toEqual(['p'])
-  expect(undo.json.errors).toHaveLength(selected ? 0 : 1)
+it.each(['', '/nonexistent-codexapp-workspace'])('rejects missing workspace %s without RPC or filesystem creation', async cwd => {
+  const response = await request('/codex-api/rpc', 'POST', { method: 'thread/start', params: { cwd } })
+  expect(response.res.statusCode).toBe(400)
+  expect(response.json.error).toContain('Select an existing workspace')
+  expect(rpc).not.toHaveBeenCalled()
 })

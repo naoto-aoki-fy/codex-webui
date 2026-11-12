@@ -28,7 +28,7 @@ function setup(initial: Record<string, unknown> = {}) {
   vi.stubGlobal('window', { removeEventListener() {} })
   const parseCalls = vi.fn()
   const instrumentedSource = source.replace('function parseMessageBlocks(text: string): MessageBlock[] {', 'function parseMessageBlocks(text: string): MessageBlock[] { recordParse();')
-  const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, runFileChangeAction, fileChangeActionState, fileChangeActionError, fileChangeRedoPatchIds, loadMoreAbove, conversationListRef, renderWindowStart, isLoadingMore, scheduleConversationScroll, editMessage, bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput, messageBlockCache, inlineSegmentCache, markdownHtmlCache, highlightHtmlCache };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+  const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, loadMoreAbove, conversationListRef, renderWindowStart, isLoadingMore, scheduleConversationScroll, editMessage, bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput, messageBlockCache, inlineSegmentCache, markdownHtmlCache, highlightHtmlCache };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const state = scope.run(() => new Function('exports', 'require', 'defineProps', 'defineEmits', 'defineExpose', 'recordParse', code)({}, (path: string) => {
     if (path === 'highlight.js/lib/common') return { default: hljs }
     if (path === 'vue') return { ...vue, onMounted() {}, onBeforeUnmount: (fn: () => void) => unmount.push(fn) }
@@ -86,21 +86,6 @@ describe('conversation thread state isolation', () => {
     props.activeThreadId = 'B'
     await vue.nextTick()
     expect(s.isMarkdownImageFailed('message', 0, 'old.png')).toBe(false)
-  })
-  it.each(['success', 'error'])('ignores stale file-action %s after A → B → A', async outcome => {
-    const { props, state: s } = setup()
-    const pending = deferred()
-    update.mockReturnValueOnce(pending.promise)
-    const action = s.runFileChangeAction({ turnId: 'turn', changes: [] }, 'undo')
-    props.activeThreadId = 'B'
-    props.activeThreadId = 'A'
-    await vue.nextTick()
-    if (outcome === 'success') pending.resolve({ errors: [], revertedPatchIds: ['old'] })
-    else pending.reject(new Error('old failure'))
-    await action
-    expect(s.fileChangeActionState.value).toEqual({})
-    expect(s.fileChangeActionError.value).toEqual({})
-    expect(s.fileChangeRedoPatchIds.value).toEqual({})
   })
   it('settles canceled scroll work and ignores queued nextTick work after unmount', async () => {
     const { props, state: s, frames } = setup()
@@ -178,18 +163,7 @@ describe('conversation thread state isolation', () => {
     s.editMessage('user')
     expect(emit).toHaveBeenCalledTimes(3)
   })
-  it('preserves normal Undo/Redo and its patch IDs within a thread', async () => {
-    const { state: s } = setup()
-    update.mockResolvedValueOnce({ errors: [], revertedPatchIds: ['patch'] }).mockResolvedValueOnce({ errors: [], appliedPatchIds: ['patch'] })
-    const summary = { turnId: 'turn', changes: [] }
-    await s.runFileChangeAction(summary, 'undo')
-    expect(s.fileChangeActionState.value['thread:A:turn:turn']).toBe('undone')
-    await s.runFileChangeAction(summary, 'redo')
-    expect(update.mock.calls[1]?.[4]).toEqual(['patch'])
-    expect(s.fileChangeActionState.value['thread:A:turn:turn']).toBe('redone')
-  })
 })
-
 
 describe('conversation Markdown characterization', () => {
   const message = (text: string, id = 'markdown') => ({ id, role: 'assistant', text })

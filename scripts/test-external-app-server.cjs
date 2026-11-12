@@ -54,7 +54,7 @@ async function run() {
           await new Promise(resolve => setTimeout(resolve, 100))
         }
         assert(ready, output)
-        for (const path of ['/codex-api/telegram/config', '/codex-api/telegram/configure-bot', '/codex-api/telegram/status', '/codex-api/telegram/test-notification', '/codex-api/worktree/create-permanent', '/codex-api/thread-file-change-fallback', '/codex-api/thread-live-state', '/codex-api/thread-stream-events']) {
+        for (const path of ['/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion', '/codex-api/telegram/config', '/codex-api/telegram/configure-bot', '/codex-api/telegram/status', '/codex-api/telegram/test-notification', '/codex-api/worktree/create-permanent', '/codex-api/thread-file-change-fallback', '/codex-api/thread-live-state', '/codex-api/thread-stream-events']) {
           for (const method of ['GET', 'HEAD', 'POST']) {
             for (const query of ['', '?threadId=fixture-thread']) {
               const retired = await fetch(url + path + query, { method })

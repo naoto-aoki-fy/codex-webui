@@ -220,7 +220,6 @@ describe('resumeThread', () => {
   })
 })
 
-
 describe('official Codex model catalog', () => {
   afterEach(() => vi.unstubAllGlobals())
   it('loads all model/list pages and retains reasoning capabilities without external requests', async () => {
@@ -310,7 +309,6 @@ it('loads normal frontend history with one RPC and no legacy diagnostic request'
   } finally { vi.unstubAllGlobals() }
 })
 
-
 describe('response fork operation support', () => {
   afterEach(() => vi.unstubAllGlobals())
 
@@ -383,7 +381,7 @@ describe('workspace roots cache coordination', () => {
     const second = deferred()
     const fetch = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
     vi.stubGlobal('fetch', fetch)
-    const operation: WorkspaceRootsOperation = { type: 'rename', path: '/a', label: 'A' }
+    const operation: WorkspaceRootsOperation = { type: 'delete', path: '/a' }
     const failed = updateWorkspaceRootsState(operation)
     const failure = expect(failed).rejects.toThrow('failed')
     const updated = updateWorkspaceRootsState(operation)

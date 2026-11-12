@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  buildWorkspaceRootsProjectOrderState,
   collectWorkspaceRootPathsForProjectRemoval,
   filterGroupsByWorkspaceRoots,
   findAdjacentThreadId,
@@ -340,32 +339,6 @@ describe('workspace roots project persistence helpers', () => {
     ])
   })
 
-  it('preserves remote project ids in explicit project order when persisting workspace roots', () => {
-    const groups: UiProjectGroup[] = [
-      {
-        projectName: 'local-project',
-        threads: [thread('local-chat', '/tmp/local-project')],
-      },
-    ]
-    const rootsState: WorkspaceRootsState = {
-      order: ['/tmp/local-project'],
-      labels: {},
-      active: ['/tmp/local-project'],
-      projectOrder: ['remote-project-id', '/tmp/local-project'],
-      remoteProjects: [{
-        id: 'remote-project-id',
-        hostId: 'remote-ssh-discovered:a1',
-        remotePath: '/home/ubuntu',
-        label: 'ubuntu',
-      }],
-    }
-
-    expect(buildWorkspaceRootsProjectOrderState(rootsState, ['remote-project-id', 'local-project'], groups)).toEqual({
-      order: ['/tmp/local-project'],
-      active: ['/tmp/local-project'],
-      projectOrder: ['remote-project-id', '/tmp/local-project'],
-    })
-  })
 })
 
 describe('thread unread state helpers', () => {
@@ -1141,7 +1114,6 @@ describe('locally created threads awaiting sidebar indexing', () => {
   })
 })
 
-
 describe('response fork publication', () => {
   it('waits for server truncation and never rolls back using the browser cache', async () => {
     installTestWindow()
@@ -1233,7 +1205,7 @@ describe('fork and revert orchestration', () => {
 })
 
 describe('fork revert stage boundaries', () => {
-  it.each(['source', 'fork', 'target', 'files', 'history', 'refresh', 'success', 'navigation'])('handles %s without replaying work', async failure => {
+  it.each(['source', 'fork', 'target', 'history', 'refresh', 'success', 'navigation'])('handles %s without replaying work', async failure => {
     installTestWindow()
     for (const mock of [gatewayMocks.validateThreadRevert, gatewayMocks.forkThread, gatewayMocks.revertThreadFileChanges, gatewayMocks.revertThreadHistory, gatewayMocks.getThreadDetail]) mock.mockReset()
     gatewayMocks.getThreadGroupsPage.mockResolvedValue({
@@ -1249,7 +1221,6 @@ describe('fork revert stage boundaries', () => {
       if (failure === 'navigation') state.primeSelectedThread('other')
       return { threadId: 'destination', model: '' }
     })
-    gatewayMocks.revertThreadFileChanges.mockResolvedValueOnce({ reverted: 1, errors: failure === 'files' ? ['write failed'] : [] })
     gatewayMocks.revertThreadHistory.mockResolvedValueOnce(undefined)
     gatewayMocks.getThreadDetail.mockResolvedValueOnce({ messages: [], turnIndexByTurnId: {}, hasMoreOlder: false })
     if (failure === 'source') gatewayMocks.validateThreadRevert.mockRejectedValueOnce(new Error('source failed'))
@@ -1259,8 +1230,7 @@ describe('fork revert stage boundaries', () => {
     const result = await state.executeThreadRevert('source', 'turn-zero', 'fork-and-revert')
     expect(gatewayMocks.forkThread).toHaveBeenCalledTimes(failure === 'source' ? 0 : 1)
     const reachesFiles = !['source', 'fork', 'target'].includes(failure)
-    expect(gatewayMocks.revertThreadFileChanges).toHaveBeenCalledTimes(reachesFiles ? 1 : 0)
-    if (reachesFiles) expect(gatewayMocks.revertThreadFileChanges).toHaveBeenCalledWith('source', 'turn-zero', '/tmp/disposable')
+    expect(gatewayMocks.revertThreadFileChanges).not.toHaveBeenCalled()
     expect(gatewayMocks.revertThreadHistory).toHaveBeenCalledTimes(reachesFiles && failure !== 'files' ? 1 : 0)
     if (['success', 'navigation'].includes(failure)) {
       expect(result).toBe('destination')
@@ -1269,7 +1239,6 @@ describe('fork revert stage boundaries', () => {
       expect(result).toBe('')
       expect(state.error.value).not.toBe('')
     }
-    if (failure === 'history') expect(state.error.value).toContain('Files restored')
     if (failure === 'refresh') expect(state.error.value).toContain('History reverted')
     expect(state.isRollingBack.value).toBe(false)
   })

@@ -26,8 +26,6 @@ describe('desktop persistence compatibility', () => {
       MODEL_USAGE_STORAGE_KEY: 'codex-web-local.model-usage-order.v1',
       REASONING_BY_MODEL_STORAGE_KEY: 'codex-web-local.reasoning-by-provider-model.v1',
       LEGACY_SELECTED_MODEL_STORAGE_KEY: 'codex-web-local.selected-model-id.v1',
-      PROJECT_ORDER_STORAGE_KEY: 'codex-web-local.project-order.v1',
-      PROJECT_DISPLAY_NAME_STORAGE_KEY: 'codex-web-local.project-display-name.v1',
       COLLABORATION_MODE_STORAGE_KEY: 'codex-web-local.collaboration-mode-by-context.v1',
       LEGACY_COLLABORATION_MODE_STORAGE_KEY: 'codex-web-local.collaboration-mode.v1',
     })
@@ -102,29 +100,23 @@ describe('desktop persistence compatibility', () => {
   it('keeps ordering, deduplication, raw selected IDs, and serialization', () => {
     const mock = storage({
       [persistence.MODEL_USAGE_STORAGE_KEY]: '[" b ","a","b",4,""]',
-      [persistence.PROJECT_ORDER_STORAGE_KEY]: '[" /b ","/a","/b",4,""]',
-      [persistence.PROJECT_DISPLAY_NAME_STORAGE_KEY]: '{" /a ":" Name ","x":4}',
+      ['codex-web-local.project-order.v1']: '[" /b ","/a","/b",4,""]',
+      ['codex-web-local.project-display-name.v1']: '{" /a ":" Name ","x":4}',
       [persistence.SELECTED_THREAD_STORAGE_KEY]: ' t ',
       [persistence.READ_STATE_STORAGE_KEY]: '{"t":4}',
     })
     expect(persistence.loadModelUsageOrder()).toEqual(['b', 'a'])
-    expect(persistence.loadProjectOrder()).toEqual(['/b', '/a'])
-    expect(persistence.loadProjectDisplayNames()).toEqual({ '/a': ' Name ' })
     expect(persistence.loadSelectedThreadId()).toBe(' t ')
     expect(persistence.loadReadStateMap()).toEqual({ t: 4 })
     persistence.saveSelectedThreadId(' t ')
     expect(mock.setItem).toHaveBeenLastCalledWith(persistence.SELECTED_THREAD_STORAGE_KEY, ' t ')
     persistence.saveSelectedThreadId('')
     expect(mock.removeItem).toHaveBeenCalledWith(persistence.SELECTED_THREAD_STORAGE_KEY)
-    persistence.saveProjectOrder(['/b', '/a'])
-    expect(mock.setItem).toHaveBeenLastCalledWith(persistence.PROJECT_ORDER_STORAGE_KEY, '["/b","/a"]')
-    persistence.saveProjectDisplayNames({ '/a': ' Name ' })
-    expect(mock.setItem).toHaveBeenLastCalledWith(persistence.PROJECT_DISPLAY_NAME_STORAGE_KEY, '{"/a":" Name "}')
     persistence.saveReadStateMap({ t: 'iso' })
     expect(mock.setItem).toHaveBeenLastCalledWith(persistence.READ_STATE_STORAGE_KEY, '{"t":"iso"}')
   })
 
-  const forgivingLoaders = [persistence.loadModelUsageOrder, persistence.loadReadStateMap, persistence.loadReasoningPreferences, persistence.loadSelectedCollaborationModeMap, persistence.loadThreadTokenUsageMap, persistence.loadProjectOrder, persistence.loadProjectDisplayNames]
+  const forgivingLoaders = [persistence.loadModelUsageOrder, persistence.loadReadStateMap, persistence.loadReasoningPreferences, persistence.loadSelectedCollaborationModeMap, persistence.loadThreadTokenUsageMap]
   it('keeps malformed and unsupported values harmless for forgiving loaders', () => {
     for (const raw of ['{', 'null', '42', 'true', '"text"']) {
       const mock = storage()
@@ -141,7 +133,7 @@ describe('desktop persistence compatibility', () => {
     mock.setItem.mockImplementation(() => { throw new Error('write') })
     expect(() => persistence.saveSelectedModelMap({ t: 'm' })).not.toThrow()
     expect(() => persistence.saveSelectedCollaborationModeMap({ t: 'plan' })).not.toThrow()
-    for (const save of [() => persistence.saveReadStateMap({}), () => persistence.saveThreadTokenUsageMap({}), () => persistence.saveSelectedThreadId('t'), () => persistence.saveProjectOrder([]), () => persistence.saveProjectDisplayNames({})]) expect(save).toThrow('write')
+    for (const save of [() => persistence.saveReadStateMap({}), () => persistence.saveThreadTokenUsageMap({}), () => persistence.saveSelectedThreadId('t')]) expect(save).toThrow('write')
     mock.getItem.mockReturnValue(null)
     expect(persistence.loadUnreadCutoffIso).toThrow('write')
   })
@@ -180,7 +172,6 @@ describe('desktop persistence compatibility', () => {
     expect(persistence.loadUnreadCutoffIso).toThrow('unavailable')
     expect(() => persistence.saveSelectedModelMap({ t: 'm' })).not.toThrow()
     expect(() => persistence.saveSelectedCollaborationModeMap({ t: 'plan' })).not.toThrow()
-    expect(() => persistence.saveProjectOrder([])).toThrow('unavailable')
   })
 
   it('handles missing window without storage side effects', () => {
@@ -191,8 +182,6 @@ describe('desktop persistence compatibility', () => {
     persistence.saveReadStateMap({})
     persistence.saveThreadTokenUsageMap({})
     persistence.saveSelectedThreadId('t')
-    persistence.saveProjectOrder([])
-    persistence.saveProjectDisplayNames({})
     persistence.saveSelectedModelMap({})
     persistence.saveSelectedCollaborationModeMap({})
   })

@@ -49,14 +49,8 @@ function escapeHtml(value: string): string {
     .replace(/'/gu, '&#39;')
 }
 
-function normalizeNewProjectName(value: string): string {
-  return value.trim().replace(/[\\/]+/gu, '').trim()
-}
-
-function toBrowseHref(pathValue: string, newProjectName = ''): string {
-  const normalizedName = normalizeNewProjectName(newProjectName)
-  const query = normalizedName ? `?newProjectName=${encodeURIComponent(normalizedName)}` : ''
-  return `/codex-local-browse${encodeURI(pathValue)}${query}`
+function toBrowseHref(pathValue: string): string {
+  return '/codex-local-browse' + encodeURI(pathValue)
 }
 
 async function getDirectoryItems(localPath: string): Promise<DirectoryItem[]> {
@@ -79,44 +73,8 @@ async function getDirectoryItems(localPath: string): Promise<DirectoryItem[]> {
   })
 }
 
-function projectCreationTargetPath(parentPath: string, newProjectName: string): string {
-  const normalizedName = normalizeNewProjectName(newProjectName)
-  if (!normalizedName) return ''
-  return join(parentPath, normalizedName)
-}
-
-function projectCreationButtonLabel(newProjectName: string): string {
-  const normalizedName = normalizeNewProjectName(newProjectName)
-  return normalizedName ? `Create ${normalizedName} here` : ''
-}
-
-function projectCreationStatusText(newProjectName: string): string {
-  const normalizedName = normalizeNewProjectName(newProjectName)
-  return normalizedName ? `Creating ${normalizedName} in Codex...` : 'Creating project in Codex...'
-}
-
-function openFolderStatusText(newProjectName: string): string {
-  const normalizedName = normalizeNewProjectName(newProjectName)
-  return normalizedName
-    ? `Opening folder in Codex without creating ${normalizedName}...`
-    : 'Opening folder in Codex...'
-}
-
-function failureStatusText(newProjectName: string): string {
-  const normalizedName = normalizeNewProjectName(newProjectName)
-  return normalizedName
-    ? `Failed to open folder or create ${normalizedName}.`
-    : 'Failed to open folder.'
-}
-
-function actionButtonsHtml(localPath: string, newProjectName: string): string {
-  const normalizedName = normalizeNewProjectName(newProjectName)
-  const createTargetPath = projectCreationTargetPath(localPath, normalizedName)
-  const createButton = createTargetPath
-    ? `<button class="header-open-btn create-project-btn" type="button" aria-label="${escapeHtml(projectCreationButtonLabel(normalizedName))}" title="${escapeHtml(projectCreationButtonLabel(normalizedName))}" data-path="${escapeHtml(createTargetPath)}" data-label="${escapeHtml(normalizedName)}" data-status="${escapeHtml(projectCreationStatusText(normalizedName))}" data-error="${escapeHtml(failureStatusText(normalizedName))}">${escapeHtml(projectCreationButtonLabel(normalizedName))}</button>`
-    : ''
-  const openButton = `<button class="header-open-btn open-folder-btn" type="button" aria-label="Open current folder in Codex" title="Open folder in Codex" data-path="${escapeHtml(localPath)}" data-label="" data-status="${escapeHtml(openFolderStatusText(normalizedName))}" data-error="${escapeHtml(failureStatusText(normalizedName))}">Open folder in Codex</button>`
-  return `${createButton}${openButton}`
+function actionButtonsHtml(localPath: string): string {
+  return `<button class="header-open-btn open-folder-btn" type="button" data-path="${escapeHtml(localPath)}" data-status="Opening folder in Codex..." data-error="Failed to open folder.">Open folder in Codex</button>`
 }
 
 export async function getLocalDirectoryListing(
@@ -145,24 +103,20 @@ export async function getLocalDirectoryListing(
   }
 }
 
-export async function createDirectoryListingHtml(localPath: string, options?: { newProjectName?: string }): Promise<string> {
-  const newProjectName = normalizeNewProjectName(options?.newProjectName ?? '')
+export async function createDirectoryListingHtml(localPath: string): Promise<string> {
   const items = await getDirectoryItems(localPath)
   const parentPath = dirname(localPath)
   const rows = items
     .map((item) => {
       const suffix = item.isDirectory ? '/' : ''
-      return `<li class="file-row"><a class="file-link" href="${escapeHtml(toBrowseHref(item.path, newProjectName))}">${escapeHtml(item.name)}${suffix}</a></li>`
+      return `<li class="file-row"><a class="file-link" href="${escapeHtml(toBrowseHref(item.path))}">${escapeHtml(item.name)}${suffix}</a></li>`
     })
     .join('\n')
 
   const parentLink = localPath !== parentPath
-    ? `<a class="header-parent-link" href="${escapeHtml(toBrowseHref(parentPath, newProjectName))}">..</a>`
+    ? `<a class="header-parent-link" href="${escapeHtml(toBrowseHref(parentPath))}">..</a>`
     : ''
-  const pickerSummary = newProjectName
-    ? `<p class="picker-summary">Browse to the parent folder where you want to create <strong>${escapeHtml(newProjectName)}</strong>, or open the current folder directly.</p>`
-    : ''
-  const actionButtons = actionButtonsHtml(localPath, newProjectName)
+  const actionButtons = actionButtonsHtml(localPath)
 
   return `<!doctype html>
 <html lang="en">
@@ -205,7 +159,7 @@ export async function createDirectoryListingHtml(localPath: string, options?: { 
 </head>
 <body>
   <h1>Index of ${escapeHtml(localPath)}</h1>
-  ${pickerSummary}
+
   <div class="header-actions">
     ${parentLink}
     ${actionButtons}
@@ -217,7 +171,7 @@ export async function createDirectoryListingHtml(localPath: string, options?: { 
     document.addEventListener('click', async (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const button = target.closest('.open-folder-btn, .create-project-btn');
+      const button = target.closest('.open-folder-btn');
       if (!(button instanceof HTMLButtonElement)) return;
 
       const path = button.getAttribute('data-path') || '';
@@ -233,7 +187,6 @@ export async function createDirectoryListingHtml(localPath: string, options?: { 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             path,
-            createIfMissing: button.classList.contains('create-project-btn'),
             label,
           }),
         });
