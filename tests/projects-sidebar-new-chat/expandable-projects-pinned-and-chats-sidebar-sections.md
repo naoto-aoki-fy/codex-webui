@@ -38,3 +38,25 @@ The sidebar labels the grouped thread area as `Projects`, makes `Projects`, `Pin
 - Clear the sidebar search query if the filter step left it open
 
 ---
+
+### Active chat project title
+
+#### Prerequisites/Setup
+- Use grouped Projects view with chats in two projects, including a pinned chat.
+
+#### Steps
+1. Open a chat in the first project and inspect its project title.
+2. Collapse that project, then open its pinned chat from Pinned.
+3. Switch to a chat in the second project.
+4. Search for another chat in the active project so the selected chat is filtered out.
+5. Clear search and navigate to the new-chat screen.
+6. Repeat in light and dark themes.
+
+#### Expected Results
+- Only the open chat's project title is bold (weight 700); other titles use normal weight.
+- Collapsing, pinning, and filtering do not change which project is active.
+- Switching chats updates the bold title immediately. No project is bold when no chat is selected.
+- Text remains readable in both themes.
+
+#### Rollback/Cleanup
+- Clear search and restore the preferred theme and project expansion state.

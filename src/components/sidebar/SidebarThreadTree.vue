@@ -189,7 +189,7 @@
               :data-dragging-handle="isDraggingProject(group.projectName)"
               @mousedown.left="onProjectHandleMouseDown($event, group.projectName)"
             >
-              <span class="project-title" :title="getProjectTooltipTitle(group.projectName)">
+              <span class="project-title" :class="{ 'project-title-active': group.projectName === activeProjectName }" :title="getProjectTooltipTitle(group.projectName)">
                 {{ getProjectVisibleName(group) }}
               </span>
             </span>
@@ -709,6 +709,12 @@ function threadMatchesSearch(thread: UiThread): boolean {
   const q = normalizedSearchQuery.value
   return thread.title.toLowerCase().includes(q) || thread.preview.toLowerCase().includes(q)
 }
+
+// Resolve against all threads so pinned, collapsed, and search-hidden chats retain their project.
+const activeProjectName = computed(() => {
+  if (!props.selectedThreadId) return null
+  return props.groups.find((group) => group.threads.some((thread) => thread.id === props.selectedThreadId))?.projectName ?? null
+})
 
 const filteredGroups = computed<UiProjectGroup[]>(() => {
   return props.groups.flatMap((group) => {
@@ -2065,6 +2071,10 @@ onBeforeUnmount(() => {
 
 .project-title {
   @apply min-w-0 flex-1 text-sm font-normal text-zinc-700 truncate select-none;
+}
+
+.project-title.project-title-active {
+  font-weight: 700;
 }
 
 .project-menu-wrap {
