@@ -8,7 +8,7 @@
 
 ## Actions
 
-1. Create a new chat, paste the long text, confirm it becomes a `pasted-text-*.txt` attachment, and submit with an empty composer.
+1. Create a new chat, explicitly attach a text file using the file picker and submit with an empty composer.
 2. Record the thread URL. Wait for completion, refresh the thread list, reload the page, then restart the application with the same `CODEX_HOME` and reopen it.
 3. Confirm the thread remains in the sidebar and the persisted first user request is empty after `## My request for Codex:` and the file references remain intact. Ask Codex to read the file and report its unique marker.
 4. Repeat with only a manually uploaded `notes.txt`, then with whitespace-only composer content, then with both prepared files and no request text.
@@ -54,7 +54,7 @@ pnpm run test:unit -- src/composables/useDesktopState.messages.test.ts src/utils
 
 1. **New chat, pasted text only:** Paste at least 2,000 characters with a unique marker, confirm conversion to a `.txt` chip, and submit with no prompt. While `turn/start` is pending, expect one optimistic user row with one chip. Release the response and wait for canonical history. Without reloading, expect one persisted user row with one chip and zero corresponding `userMessage.optimistic` rows.
 2. **New chat, attachment plus text:** Repeat with the prompt `Read the unique marker`. Expect the same row replacement, the exact ordinary prompt, and the original attachment path/link. The user must not need a reload to remove a duplicate.
-3. **Existing chat, attachment only:** Wait for a previous turn to complete and record its row count. Send only a pasted-text attachment. Expect exactly one additional persisted user row, no stale optimistic row for that submission, and unchanged older messages and ordering.
+3. **Existing chat, attachment only:** Wait for a previous turn to complete and record its row count. Send only a explicitly selected text file attachment. Expect exactly one additional persisted user row, no stale optimistic row for that submission, and unchanged older messages and ordering.
 4. **Multiple attachments:** Send the pasted text and `notes.txt` together, first in a new chat and then in an existing chat. Expect one pending row, then one persisted row containing exactly two chips. Open/copy each link and confirm its full target and unique file content match the corresponding upload; filenames alone are insufficient evidence.
 5. **Intentional repeated submissions:** Submit the same file in two separate completed turns. Hold history for the second turn so it contains only the first turn, and confirm the second optimistic row remains. Release current history; expect two distinct persisted user rows in submission order, one chip each. Repeat with the same basename from different paths. Compare full targets; neither submission may disappear or be merged with the other.
 6. **Delayed responses and notifications:** Hold `turn/start` while delivering `turn/started` and a history snapshot containing the canonical attachment row; then release `turn/start`. After synchronization, expect exactly one persisted row. Separately return old history after an accepted send, then deliver `turn/completed` with current history. The optimistic row must remain until its persisted counterpart is available, then disappear without a reload. Repeat completion/history notifications; counts and order must stay unchanged.

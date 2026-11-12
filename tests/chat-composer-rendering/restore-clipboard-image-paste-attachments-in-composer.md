@@ -19,7 +19,7 @@
 - Image-only clipboard paste adds an image attachment to composer.
 - Plain-text paste still inserts text into the composer and does not create an attachment.
 - Mixed payload paste attaches the image while preserving text paste behavior.
-- Long plain-text paste (>= 2000 chars) creates a `.txt` attachment and does not insert raw text into the textarea.
+- Long plain-text paste remains editable multiline text in the textarea and does not create an attachment.
 - Sending proceeds with the attached pasted image.
 
 #### Rollback/Cleanup
