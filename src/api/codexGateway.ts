@@ -118,7 +118,7 @@ export type GitRepositoryStatus = {
 
 export type ThreadSearchResult = {
   threadIds: string[]
-  indexedThreadCount: number
+  groups: UiProjectGroup[]
 }
 
 export type LocalDirectoryEntry = {
@@ -1087,20 +1087,23 @@ export async function searchComposerFiles(cwd: string, query: string, limit = 20
   return suggestions
 }
 
-export async function searchThreads(
-  query: string,
-  limit = 200,
-): Promise<ThreadSearchResult> {
-  const response = await fetch('/codex-api/thread-search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, limit }),
-  })
-  const payload = (await response.json()) as { data?: ThreadSearchResult; error?: string }
-  if (!response.ok) {
-    throw new Error(payload.error || 'Failed to search threads')
-  }
-  return payload.data ?? { threadIds: [], indexedThreadCount: 0 }
+export async function searchThreads(query: string): Promise<ThreadSearchResult> {
+  const threads: ThreadListResponse['data'] = []
+  const cursors = new Set<string>()
+  let cursor: string | null = null
+  if (!query.trim()) return { threadIds: [], groups: [] }
+  do {
+    const page: { data: Array<{ thread: ThreadListResponse['data'][number] }>; nextCursor: string | null } =
+      await callRpc('thread/search', {
+        searchTerm: query.trim(), archived: false, sortKey: 'updated_at',
+        sortDirection: 'desc', limit: 100, cursor,
+      })
+    threads.push(...page.data.map(row => row.thread))
+    cursor = page.nextCursor
+    if (cursor && cursors.has(cursor)) throw new Error('Thread search returned a repeated pagination cursor')
+    if (cursor) cursors.add(cursor)
+  } while (cursor)
+  return { threadIds: threads.map(thread => thread.id), groups: normalizeThreadGroupsV2({ data: threads, nextCursor: null }) }
 }
 
 function getErrorMessageFromPayload(payload: unknown, fallback: string): string {
