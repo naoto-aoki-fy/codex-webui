@@ -8,6 +8,7 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
+| [Ctrl+Arrow message navigation](ctrl-arrow-message-navigation.md) |
 | [Thread titles without redundant generation](thread-titles-without-generation.md) |
 | [Pinned threads remain visible during background pagination](pinned-threads-remain-visible-during-background-pagination.md) |
 | [Thread archive recovery and sidebar pruning](thread-archive-recovery-and-sidebar-pruning.md) |
