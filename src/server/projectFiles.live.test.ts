@@ -51,6 +51,10 @@ it.skipIf(process.env.CODEX_PROJECT_FILES_LIVE !== '1' || process.platform === '
     expect(response.status).toBe(206)
     expect(await response.text()).toBe('remote')
     expect((await fetch(base + '/codex-local-browse' + encodeURI(file + '.missing'))).status).toBe(404)
+    client.dispose()
+    // Closing the UI's connection must leave the independently managed server alive.
+    await expect(fetch(`http://127.0.0.1:${port}`)).resolves.toBeInstanceOf(Response)
+    expect(child.exitCode).toBeNull()
   } finally {
     if (http) { http.closeAllConnections(); await new Promise<void>(resolve => http!.close(() => resolve())) }
     client.dispose()

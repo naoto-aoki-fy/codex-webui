@@ -337,6 +337,11 @@ export type ResumedThread = {
 const RESUME_THREAD_COALESCE_TTL_MS = 30_000
 const recentResumeThreadById = new Map<string, Promise<ResumedThread>>()
 
+// Restore background event delivery without fetching its history.
+export async function resumeThreadSubscription(threadId: string): Promise<void> {
+  await callRpc('thread/resume', { threadId, excludeTurns: true })
+}
+
 export async function resumeThread(threadId: string): Promise<ResumedThread> {
   const existing = recentResumeThreadById.get(threadId)
   if (existing) return existing

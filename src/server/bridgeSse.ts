@@ -1,3 +1,4 @@
+import { backendInstanceId } from './backendInstance.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 type SubscribeNotifications = (
@@ -46,7 +47,7 @@ export function handleSseRequest(
       res.write(`data: ${JSON.stringify(notification)}\n\n`)
     })
 
-    res.write(`event: ready\ndata: ${JSON.stringify({ ok: true })}\n\n`)
+    res.write(`event: ready\ndata: ${JSON.stringify({ ok: true, backendInstanceId })}\n\n`)
     keepAlive = setInterval(() => {
       res.write(': ping\n\n')
     }, 15000)
