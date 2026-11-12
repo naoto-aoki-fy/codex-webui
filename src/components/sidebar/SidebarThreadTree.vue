@@ -86,6 +86,13 @@
                 <span>{{ t('Chronological list') }}</span>
                 <span v-if="threadViewMode === 'chronological'">✓</span>
               </button>
+              <p class="organize-menu-title">{{ t('Sort by') }}</p>
+              <button class="organize-menu-item" type="button" :data-active="chatSortMode === 'updated'" @click="chatSortMode = 'updated'">
+                <span>{{ t('Updated') }}</span><span v-if="chatSortMode === 'updated'">✓</span>
+              </button>
+              <button class="organize-menu-item" type="button" :data-active="chatSortMode === 'created'" @click="chatSortMode = 'created'">
+                <span>{{ t('Created') }}</span><span v-if="chatSortMode === 'created'">✓</span>
+              </button>
             </div>
           </div>
         </template>
@@ -353,6 +360,7 @@ import { getPathLeafName, getPathParent, isProjectlessChatPath } from '../../pat
 import SidebarMenuRow from './SidebarMenuRow.vue'
 import SidebarThreadRow from './SidebarThreadRow.vue'
 import { reconcilePinnedThreadIds } from './pinnedThreadUtils'
+import { compareThreads, sortThreadGroups, type ThreadSortMode } from './threadSorting'
 
 const router = useRouter()
 
@@ -415,6 +423,12 @@ const organizeMenuWrapRef = ref<HTMLElement | null>(null)
 const openThreadMenuPanelRef = ref<HTMLElement | null>(null)
 const isOrganizeMenuOpen = ref(false)
 const THREAD_VIEW_MODE_STORAGE_KEY = 'codex-web-local.thread-view-mode.v1'
+const CHAT_SORT_MODE_STORAGE_KEY = 'codex-web-local.chat-sort-mode.v1'
+const chatSortMode = ref<ThreadSortMode>(typeof window !== 'undefined' && window.localStorage.getItem(CHAT_SORT_MODE_STORAGE_KEY) === 'created' ? 'created' : 'updated')
+watch(chatSortMode, value => {
+  if (typeof window !== 'undefined') window.localStorage.setItem(CHAT_SORT_MODE_STORAGE_KEY, value)
+})
+const sortedGroups = computed(() => sortThreadGroups(props.groups, chatSortMode.value))
 const threadViewMode = ref<'project' | 'chronological'>(loadThreadViewMode())
 const projectGroupResizeObserver =
   typeof window !== 'undefined'
@@ -517,7 +531,7 @@ function threadMatchesSearch(thread: UiThread): boolean {
 }
 
 const filteredGroups = computed<UiProjectGroup[]>(() => {
-  return props.groups.flatMap((group) => {
+  return sortedGroups.value.flatMap((group) => {
     const threads = group.threads.filter((thread) => !isProjectlessChatPath(thread.cwd) && threadMatchesSearch(thread))
     if (threads.length > 0) return [{ ...group, threads }]
     if (isSearchActive.value && group.projectName === props.activeProjectName) {
@@ -540,11 +554,7 @@ const globalThreads = computed<UiThread[]>(() => {
     }
   }
 
-  return rows.sort((first, second) => {
-    const firstTimestamp = new Date(first.updatedAtIso || first.createdAtIso).getTime()
-    const secondTimestamp = new Date(second.updatedAtIso || second.createdAtIso).getTime()
-    return secondTimestamp - firstTimestamp
-  })
+  return rows.sort(compareThreads(chatSortMode.value))
 })
 
 const threadById = computed(() => {
@@ -676,7 +686,7 @@ function toggleProjectsSection(): void {
   isProjectsSectionExpanded.value = !isProjectsSectionExpanded.value
 }
 
-const layoutProjectOrder = computed(() => (isSearchActive.value ? filteredGroups.value : props.groups).map(group => group.projectName))
+const layoutProjectOrder = computed(() => filteredGroups.value.map(group => group.projectName))
 
 const layoutTopByProject = computed<Record<string, number>>(() => {
   const topByProject: Record<string, number> = {}

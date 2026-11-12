@@ -2430,8 +2430,7 @@ export function useDesktopState() {
 
   function applyThreadGroups(groups: UiProjectGroup[], rootsState: WorkspaceRootsState | null): void {
     const visibleGroups = filterGroupsByWorkspaceRoots(groups, rootsState)
-    const orderedGroups = [...visibleGroups].sort((a, b) => a.projectName.localeCompare(b.projectName))
-    const serverThreadIds = new Set(flattenThreads(orderedGroups).map((thread) => thread.id))
+    const serverThreadIds = new Set(flattenThreads(visibleGroups).map((thread) => thread.id))
     markServerListedThreads(serverThreadIds)
     // Filter local candidates as well: retention must never resurrect a removed workspace.
     const visibleLocalGroups = filterGroupsByWorkspaceRoots(sourceGroups.value, rootsState)
@@ -2445,7 +2444,7 @@ export function useDesktopState() {
     }
     const mergedWithLocal = mergeIncomingWithLocalThreads(
       visibleLocalGroups,
-      orderedGroups,
+      visibleGroups,
       inProgressById.value,
       localThreadConfirmationDeadlineById,
     )
