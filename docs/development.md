@@ -1,7 +1,7 @@
 # Local development
 
-First start `codex app-server --listen ws://127.0.0.1:4500` independently, using the
-same user, `CODEX_HOME`, and workspace paths. See [connection details](external-app-server.md).
+First start `codex app-server --listen ws://127.0.0.1:4500` independently on the host that owns
+the repositories and Codex login. The web backend can use a separate host and SSH tunnel. See [connection details](external-app-server.md).
 Development honors `CODEXUI_APP_SERVER_URL`; `dev2` now preserves `CODEX_HOME`.
 
 Use Node.js 22 for development/CI (the runtime minimum in package.json is separate).

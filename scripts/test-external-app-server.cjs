@@ -37,7 +37,7 @@ async function run() {
       // Codex is absent on this host; CLI precedence deliberately overrides a refused env URL.
       const child = spawn(dev ? 'pnpm' : process.execPath, dev
         ? ['run', 'dev', '--host', '127.0.0.1', '--port', String(port)]
-        : ['dist-cli/index.js', '--port', String(port), '--no-open', '--app-server-url', endpoint], {
+        : ['dist-cli/index.js', '--host', '127.0.0.1', '--port', String(port), '--no-open', '--app-server-url', endpoint], {
         env: { ...process.env, CODEXUI_APP_SERVER_URL: dev ? endpoint : 'ws://127.0.0.1:1' },
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,

@@ -12,7 +12,7 @@ From the repository root, in a Linux shell or Windows PowerShell:
 ```sh
 pnpm install --frozen-lockfile
 pnpm run build
-# Separate terminal, same user and CODEX_HOME:
+# Separate terminal on the App Server host:
 codex app-server --listen ws://127.0.0.1:4500
 # Web backend:
 node dist-cli/index.js --app-server-url ws://127.0.0.1:4500
