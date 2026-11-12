@@ -217,7 +217,7 @@ export class PersistentThreadIndex {
         const page = await rpc('thread/list', { ...params, cursor: state.native, limit })
         state.native = page.nextCursor || null
         state.done = !state.native
-        state.buffer = (page.data ?? []).filter((thread: Row) => !state.seen.includes(thread.id) && !entries[thread.id]?.deleted)
+        state.buffer = (page.data ?? []).map((thread: Row) => ({ ...thread, ...(page.readStates?.[thread.id] ? { readState: page.readStates[thread.id] } : {}) })).filter((thread: Row) => !state.seen.includes(thread.id) && !entries[thread.id]?.deleted)
         // Native metadata wins whenever it is available in the current stream.
         preferNative()
         if (!state.buffer.length && !state.done) continue
