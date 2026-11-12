@@ -95,6 +95,11 @@ function streamReply(text = reply.text) {
   notify({ method: 'item/agentMessage/delta', params: { threadId: thread.id, turnId: 'turn-2', itemId: reply.id, delta: text } })
 }
 
+async function notificationReady() {
+  notify({ method: 'ready', params: { ok: true } })
+  await vi.advanceTimersByTimeAsync(0)
+}
+
 beforeEach(() => {
   vi.resetAllMocks()
   vi.useFakeTimers()
@@ -129,6 +134,195 @@ afterEach(() => {
   for (const state of states.splice(0)) state.stopPolling()
   vi.useRealTimers()
   vi.unstubAllGlobals()
+})
+
+describe('browser notification reconnection recovery', () => {
+  it('keeps the idle initial ready cheap but reloads cached history after a missed completion', async () => {
+    const state = await loadState()
+    await notificationReady()
+    expect(gateway.getThreadDetail).not.toHaveBeenCalled()
+    expect(gateway.getThreadGroupsPage).toHaveBeenCalledTimes(1)
+
+    await state.sendMessageToSelectedThread(nextUser.text)
+    expect(state.projectGroups.value[0]?.threads[0]?.inProgress).toBe(true)
+    const reads = gateway.getThreadDetail.mock.calls.length
+    gateway.getThreadDetail.mockResolvedValue(completedDetail)
+    // No turn/completed arrives while disconnected, and the list timestamp is unchanged.
+    await notificationReady()
+
+    expect(gateway.getThreadDetail).toHaveBeenCalledTimes(reads + 1)
+    expect(gateway.getThreadGroupsPage).toHaveBeenCalledTimes(2)
+    expect(state.messages.value).toEqual(completedDetail.messages)
+    expect(state.selectedLiveOverlay.value).toBeNull()
+    expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+    expect(gateway.resumeThread).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes an active thread even on the first ready after initial hydration', async () => {
+    gateway.resumeThread.mockResolvedValue(activeDetail)
+    const state = await loadState()
+    gateway.getThreadDetail.mockResolvedValue(completedDetail)
+    await notificationReady()
+    expect(gateway.getThreadDetail).toHaveBeenCalledTimes(1)
+    expect(state.messages.value).toEqual(completedDetail.messages)
+    expect(state.selectedLiveOverlay.value).toBeNull()
+  })
+
+  it('recovers the conversation while pending approvals and the sidebar read remain unanswered', async () => {
+    const state = await loadState()
+    await notificationReady()
+    const approvals = deferred<unknown[]>()
+    const list = deferred<{ groups: []; nextCursor: null }>()
+    gateway.getPendingServerRequests.mockReturnValueOnce(approvals.promise)
+    gateway.getThreadGroupsPage.mockReturnValueOnce(list.promise)
+    gateway.getThreadDetail.mockResolvedValue(completedDetail)
+    await notificationReady()
+    expect(state.messages.value).toEqual(completedDetail.messages)
+    expect(gateway.getThreadDetail).toHaveBeenCalledTimes(1)
+    approvals.resolve([])
+    list.resolve({ groups: [], nextCursor: null })
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  it.each(['success', 'failure'] as const)('replaces a pre-disconnect pending history read and ignores its late %s', async (outcome) => {
+    const state = await loadState()
+    await notificationReady()
+    const obsolete = deferred<ResumedThread>()
+    gateway.getThreadDetail.mockReturnValueOnce(obsolete.promise)
+    turnStarted()
+    await vi.advanceTimersByTimeAsync(220)
+    expect(gateway.getThreadDetail).toHaveBeenCalledTimes(1)
+    gateway.getThreadDetail.mockResolvedValue(completedDetail)
+    await notificationReady()
+    expect(gateway.getThreadDetail).toHaveBeenCalledTimes(2)
+    expect(state.messages.value).toEqual(completedDetail.messages)
+    if (outcome === 'success') obsolete.resolve(oldDetail)
+    else obsolete.reject(new Error('obsolete offline history'))
+    await vi.advanceTimersByTimeAsync(220)
+    expect(state.messages.value).toEqual(completedDetail.messages)
+    expect(state.isLoadingMessages.value).toBe(false)
+    expect(state.selectedLiveOverlay.value).toBeNull()
+
+    // A later completion must still be able to synchronize after the old sync settles.
+    turnCompleted()
+    await vi.advanceTimersByTimeAsync(220)
+    expect(gateway.getThreadDetail).toHaveBeenCalledTimes(3)
+  })
+
+  it('repairs a missing middle delta from the snapshot and continues streaming from the repaired text', async () => {
+    const state = await loadState()
+    await notificationReady()
+    turnStarted()
+    await vi.advanceTimersByTimeAsync(220)
+    streamReply('A')
+    const snapshot = deferred<ResumedThread>()
+    gateway.getThreadDetail.mockReturnValueOnce(snapshot.promise)
+    await notificationReady()
+    // B was missed offline. C arrives on the replacement stream before the read finishes.
+    streamReply('C')
+    snapshot.resolve({ ...activeDetail, messages: [oldUser, nextUser, { ...reply, text: 'ABC' }] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.messages.value.find(message => message.id === reply.id)?.text).toBe('ABC')
+    streamReply('D')
+    expect(state.messages.value.find(message => message.id === reply.id)?.text).toBe('ABCD')
+    expect(gateway.startThreadTurn).not.toHaveBeenCalled()
+  })
+
+  it('recovers a stalled read when the transport was interrupted before its first ready', async () => {
+    const state = await loadState()
+    const obsolete = deferred<ResumedThread>()
+    gateway.getThreadDetail.mockReturnValueOnce(obsolete.promise)
+    turnStarted()
+    await vi.advanceTimersByTimeAsync(220)
+    gateway.getThreadDetail.mockResolvedValue(completedDetail)
+    notify({ method: 'ready', params: { ok: true, reconnected: true } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.messages.value).toEqual(completedDetail.messages)
+    expect(gateway.getThreadDetail).toHaveBeenCalledTimes(2)
+    obsolete.resolve(oldDetail)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.messages.value).toEqual(completedDetail.messages)
+  })
+
+  it.each(['selection', 'refresh'] as const)('does not publish an obsolete %s error after recovery', async (entry) => {
+    const state = await loadState()
+    await notificationReady()
+    const obsolete = deferred<ResumedThread>()
+    gateway.getThreadDetail.mockReturnValueOnce(obsolete.promise)
+    const oldRead = state.loadMessages(thread.id, { force: true }).catch(() => {})
+    const oldCaller = entry === 'selection' ? state.selectThread(thread.id) : state.refreshAll()
+    await vi.advanceTimersByTimeAsync(0)
+    gateway.getThreadDetail.mockResolvedValue(completedDetail)
+    await notificationReady()
+    const recoveredError = state.error.value
+    obsolete.reject(new Error('obsolete offline request'))
+    await Promise.all([oldRead, oldCaller])
+    expect(state.error.value).toBe(recoveredError)
+    expect(state.selectedLiveOverlay.value).toBeNull()
+    expect(state.messages.value).toEqual(completedDetail.messages)
+  })
+
+  it('replaces a stalled pre-disconnect list without publishing its late result', async () => {
+    const state = await loadState()
+    await notificationReady()
+    const obsolete = deferred<{ groups: []; nextCursor: null }>()
+    gateway.getThreadGroupsPage.mockReturnValueOnce(obsolete.promise)
+    turnCompleted()
+    await vi.advanceTimersByTimeAsync(220)
+    gateway.getThreadDetail.mockResolvedValue(completedDetail)
+    await notificationReady()
+    expect(gateway.getThreadGroupsPage).toHaveBeenCalledTimes(3)
+    expect(state.messages.value.filter(message => message.role !== 'system')).toEqual(completedDetail.messages)
+    obsolete.resolve({ groups: [], nextCursor: null })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.projectGroups.value[0]?.threads[0]?.id).toBe(thread.id)
+    expect(state.messages.value.filter(message => message.role !== 'system')).toEqual(completedDetail.messages)
+    expect(gateway.getThreadGroupsPage).toHaveBeenCalledTimes(3)
+  })
+
+  it('invalidates other cached conversations lazily without fetching every history on reconnect', async () => {
+    gateway.getThreadGroupsPage.mockResolvedValue({
+      groups: [{ projectName: 'project', threads: [thread, { ...thread, id: 'thread-2' }] }], nextCursor: null,
+    })
+    const state = await loadState()
+    await notificationReady()
+    await state.loadMessages('thread-2')
+    gateway.getThreadDetail.mockResolvedValue(completedDetail)
+    await notificationReady()
+    expect(gateway.getThreadDetail.mock.calls).toEqual([[thread.id]])
+    await state.ensureThreadMessagesLoaded('thread-2')
+    expect(gateway.getThreadDetail.mock.calls).toEqual([[thread.id], ['thread-2']])
+    expect(gateway.resumeThread.mock.calls).toEqual([[thread.id], ['thread-2']])
+  })
+
+  it('does not mix recovery results into a different selected conversation', async () => {
+    const state = await loadState()
+    await notificationReady()
+    const snapshot = deferred<ResumedThread>()
+    gateway.getThreadDetail.mockReturnValueOnce(snapshot.promise)
+    await notificationReady()
+    gateway.resumeThread.mockResolvedValue({ ...oldDetail, messages: [{ ...oldUser, id: 'other-user', text: 'other conversation' }] })
+    state.primeSelectedThread('thread-2')
+    await state.loadMessages('thread-2')
+    snapshot.resolve(completedDetail)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.selectedThreadId.value).toBe('thread-2')
+    expect(state.messages.value.map(message => message.text)).toEqual(['other conversation'])
+  })
+
+  it('ignores an older approval snapshot after a new connection has recovered approvals', async () => {
+    const state = await loadState()
+    await notificationReady()
+    const obsolete = deferred<unknown[]>()
+    gateway.getPendingServerRequests.mockReturnValueOnce(obsolete.promise)
+    await notificationReady()
+    gateway.getPendingServerRequests.mockResolvedValue([{ id: 19, method: 'item/commandExecution/requestApproval', params: { threadId: thread.id } }])
+    await notificationReady()
+    expect(state.selectedThreadServerRequests.value).toMatchObject([{ id: 19 }])
+    obsolete.resolve([])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.selectedThreadServerRequests.value).toMatchObject([{ id: 19 }])
+  })
 })
 
 describe('message visibility during sends and history synchronization', () => {

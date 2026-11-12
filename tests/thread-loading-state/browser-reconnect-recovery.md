@@ -1,0 +1,168 @@
+# Browser reconnect recovery without reloading
+
+## Status and change
+
+This is an **unexecuted acceptance checklist**, not evidence of live browser or
+authenticated Codex verification. Record the environment, actual results and
+any blocked cases when it is run. Unit tests and the credential-free integration
+fixture do not establish recovery against a real external Codex app-server.
+
+The change reconnects browser notification delivery after network/page lifecycle
+recovery and refreshes the selected thread and thread list after the replacement
+stream is ready. Existing message caches must not hide updates missed while the
+browser was disconnected. Browser recovery must not replay a task submission or
+reset the shared backend connection to the external app-server.
+
+## Prerequisites and setup
+
+- Follow [External app-server connection](../website-docs-misc/external-app-server.md).
+  Start an independently managed real Codex app-server and this checkout's web
+  backend with matching user, `CODEX_HOME` and paths. Record the output of
+  `codex --version`, the tested commit, browser/version, operating system, app URL,
+  and whether the development or built production entry point is being tested.
+- Use disposable threads A and B. Give each task a unique marker such as
+  `reconnect-A-<timestamp>` and ask for a harmless response long enough to interrupt
+  notification delivery. Keep production work out of the test threads.
+- Open browser Network tools with preserved request history. Track
+  `/codex-api/ws`, `/codex-api/events`, `/codex-api/rpc` request methods and
+  `/codex-api/server-requests/pending`. Record the selected thread and accepted
+  turn IDs before interrupting connectivity.
+- Keep the backend and external app-server online while interrupting only the
+  tested browser's connection. Use a browser-scoped network control or test proxy;
+  verify that it actually prevents notification delivery. Some network controls
+  leave existing WebSockets usable, which would invalidate the missing-event test.
+- Have a separate, connected client or server-side observation available to
+  confirm when the accepted task finishes. Do not refresh the tested page to make
+  the test pass. Record light and dark theme results for the visible conversation,
+  running/completed indicator and approval panel.
+
+## 1. Task completes while the browser is offline
+
+1. Open thread A and wait until its existing messages have loaded. Submit a new
+   marked task and confirm that the server accepted it and the UI shows it running.
+2. Disconnect only the tested browser. Confirm new WS/SSE frames stop arriving.
+3. Wait until the independent observer confirms that the same turn completed.
+4. Restore the tested browser's connection. Do not reload, select another thread,
+   or send another message. Wait for the replacement notification stream's `ready`.
+5. Inspect the refreshed conversation, running indicator and sidebar. Repeat with
+   a shorter interruption so that the task is still running at reconnection.
+
+Expected: after readiness and successful recovery reads, the missing answer and
+completion state appear automatically even when no further task notification is
+sent. Recovery fetches current selected-thread history despite an already-loaded
+cache. If the turn is still active, subsequent deltas continue updating it without
+duplicated rows or a second task. Existing earlier-history pages remain usable.
+
+## 2. Hidden tab, suspended browser and restored page
+
+1. Start a marked task in A, switch to another tab/application, and let it finish
+   while the tested page is hidden. Return to the tested page without reloading.
+2. Repeat while the browser/device is genuinely suspended or frozen long enough
+   for the old connection to become unusable, then resume it. Record the suspension
+   mechanism; a hidden tab alone does not establish that suspension was tested.
+3. In a browser capable of back/forward cache restoration, start another task,
+   navigate away, wait for completion, then use Back. Confirm that the restored
+   page received `pageshow` with `persisted === true` using browser diagnostics or
+   a temporary event logger. If it was a new page load, mark the BFCache case as
+   not exercised and record the browser's eligibility reason.
+
+Expected: visible/resume restoration replaces an unusable old browser connection
+even if its previous `readyState` still appeared open, and refreshes missed state.
+BFCache restoration has the same result without depending on a new document load.
+Recovery does not submit another turn or call `/codex-api/reconnect`.
+
+## 3. SSE fallback
+
+1. Configure a test proxy to reject or stall only the `/codex-api/ws` upgrade while
+   allowing ordinary HTTP and `/codex-api/events` requests. Load the test page and
+   verify that notification delivery actually falls back to SSE.
+2. Repeat case 1 with SSE: disconnect the browser after an accepted turn, wait for
+   completion elsewhere, and reconnect without reloading.
+3. Repeat a hidden/suspended return with SSE. Keep the WS restriction active so a
+   successful WebSocket cannot accidentally stand in for the fallback test.
+
+Expected: a ready SSE stream triggers the same current-history recovery. Missed
+completion/answer content becomes visible and new notifications continue. There
+is one current notification subscription per page after recovery settles, not
+both a persistent WS subscription and an SSE subscription.
+
+## 4. Repeated recovery and stale transport callbacks
+
+1. During an accepted task, go offline and return online while also switching
+   away from and back to the tab. Repeat several times. Capture the notification
+   connections and RPC methods throughout the sequence.
+2. After connectivity stabilizes, inspect the active notification connection,
+   selected history and number of submitted turns bearing the task marker.
+3. For deterministic callback ordering, use the notification unit-test harness
+   in `src/api/codexRpcClient.notifications.test.ts`: retain callbacks belonging
+   to an old connection, replace/dispose that connection, then deliver its late
+   `message`, `ready`, `open`, `error` and `close` callbacks. Include callbacks
+   after the subscription disposer has run and the SSE fallback equivalents.
+   Run `pnpm exec vitest run src/api/codexRpcClient.notifications.test.ts` and
+   record its actual result separately from the live checks.
+
+Expected: overlapping recovery signals coalesce and stable connectivity leaves
+one current browser notification transport. Retired callbacks cannot publish old
+messages, mark the replacement ready, schedule another reconnect or cancel the
+replacement's recovery. Disposal removes lifecycle listeners/timers and prevents
+later recovery signals from opening another connection. There is exactly one
+accepted task submission for the marker; retries only concern delivery/read state.
+
+## 5. Selection changes and pending approvals during recovery
+
+1. In A, miss a task completion as in case 1. Delay the recovery history response
+   using a test proxy, restore connectivity, then select B before A's read returns.
+2. Release the delayed response and inspect B. Return to A and inspect its answer.
+   Repeat while B itself receives live notifications.
+3. In a disposable thread with an appropriate existing approval policy, trigger a
+   harmless request that requires user approval. Disconnect the tested browser
+   before the approval notification arrives, then reconnect. If no applicable
+   approval flow is available, record this case as blocked rather than passed.
+4. In a separate run, leave a visible request pending, disconnect, resolve it from
+   another authorized client, then reconnect the tested browser.
+
+Expected: A's response does not replace B's messages, loading state or live turn.
+Returning to A displays its recovered result. An unresolved server request appears
+in the existing approval UI; a request resolved elsewhere is removed. Recovery
+does not automatically approve, deny, replay or duplicate a server request.
+
+## 6. Startup and submission handoff boundaries
+
+1. With a marked task already accepted, load a test page while its network is
+   unavailable, then restore connectivity. Wait for successful notification
+   readiness and the normal initial thread/history load.
+2. Start loading the page online, interrupt connectivity before its first stream
+   has become ready, and restore it. Repeat with the task completing during this
+   gap. Initial caches or partial startup work must not suppress the later read.
+3. Separately, interrupt connectivity while `turn/start` is still in flight, before
+   the browser receives its response. Restore connectivity and inspect the known
+   thread from the recovered UI or independent observer before taking any new
+   submission action. Record whether the server accepted the original turn.
+
+Expected: failed initial connection attempts do not prevent eventual recovery.
+A successful response lost during submission handoff is not interpreted as
+permission to send the task again. The browser never automatically replays
+`turn/start`; if acceptance remains unknown, report that uncertainty explicitly.
+This checklist concerns browser delivery recovery, not restarting the external
+app-server or proving that tasks survive an app-server shutdown.
+
+## Request and performance evidence to record
+
+For one successful recovery burst, record notification connection attempts,
+`thread/list`, selected-thread `thread/read`, pending-request reads, transferred
+bytes and time from readiness to visible current state. Distinguish normal
+existing list pagination from duplicate requests. Check that cached, unselected
+thread histories are not all fetched, and that failed reconnects do not accumulate
+timers, subscriptions or pending recovery work. Confirm that no turn is replayed
+and no backend `/codex-api/reconnect` request is made. These measurements have not
+been performed by writing this checklist; do not claim a latency or memory result
+without capturing it.
+
+## Rollback and cleanup
+
+Restore normal connectivity, remove proxy/network restrictions and temporary
+event logging, and restore the previous theme. Close only test tabs/sockets and
+stop only processes started for this verification. Keep independently managed
+production Codex/backend processes running. Remove disposable test threads only
+when their contents are no longer needed as evidence. Do not delete sessions,
+reset shared credentials or change approval policy to clean up this test.

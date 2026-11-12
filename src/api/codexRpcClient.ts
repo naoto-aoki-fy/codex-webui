@@ -138,7 +138,18 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
 
   let cleanup: (() => void) | null = null
   let closed = false
+  let offline = typeof navigator !== 'undefined' && navigator.onLine === false
+  let interrupted = offline
+  let useSse = typeof WebSocket === 'undefined'
   let reconnectTimer: number | null = null
+  let recoveryTimer: number | null = null
+  let wasHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+
+  const detach = () => {
+    const previous = cleanup
+    cleanup = null
+    previous?.()
+  }
 
   const clearReconnectTimer = () => {
     if (reconnectTimer === null) return
@@ -147,29 +158,39 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
   }
 
   const scheduleReconnect = (attach: () => void, attempt: number) => {
-    if (closed || reconnectTimer !== null) return
+    if (closed || offline || reconnectTimer !== null || recoveryTimer !== null) return
+    interrupted = true
     const delayMs = Math.min(1000 * (2 ** attempt), 10000)
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = null
-      if (closed) return
+      if (closed || offline) return
       attach()
     }, delayMs)
+  }
+
+  const emitNotification = (notification: RpcNotification) => {
+    // Even the first ready can follow an interruption while startup/history was loading.
+    onNotification(notification.method === 'ready' && interrupted
+      ? { ...notification, params: { ...asRecord(notification.params), reconnected: true } }
+      : notification)
   }
 
   const handleNotificationPayload = (payload: unknown) => {
     const notification = toNotification(payload)
     if (notification) {
-      onNotification(notification)
+      emitNotification(notification)
     }
   }
 
   const attachSse = (attempt = 0) => {
-    if (typeof EventSource === 'undefined' || closed) return
-    cleanup?.()
+    if (typeof EventSource === 'undefined' || closed || offline) return
+    useSse = true
+    detach()
     const source = new EventSource('/codex-api/events')
     let isConnectionClosed = false
 
     source.onmessage = (event) => {
+      if (closed || isConnectionClosed) return
       try {
         handleNotificationPayload(JSON.parse(event.data) as unknown)
       } catch {
@@ -178,16 +199,18 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
     }
 
     source.addEventListener('ready', (event: MessageEvent<string>) => {
+      if (closed || isConnectionClosed) return
       try {
         const parsed = event.data ? JSON.parse(event.data) as unknown : { ok: true }
-        emitReadyNotification(onNotification, parsed)
+        emitReadyNotification(emitNotification, parsed)
       } catch {
-        emitReadyNotification(onNotification)
+        emitReadyNotification(emitNotification)
       }
     })
 
     source.onerror = () => {
       if (closed || isConnectionClosed) return
+      interrupted = true
       if (source.readyState === EventSource.CLOSED) {
         isConnectionClosed = true
         source.close()
@@ -196,30 +219,31 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
     }
 
     cleanup = () => {
+      if (isConnectionClosed) return
       isConnectionClosed = true
       source.close()
     }
   }
 
   const attachWebSocket = (attempt = 0) => {
-    if (typeof WebSocket === 'undefined' || closed) {
+    if (closed || offline) return
+    if (typeof WebSocket === 'undefined') {
       attachSse()
       return
     }
 
-    cleanup?.()
+    detach()
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const socket = new WebSocket(`${protocol}//${window.location.host}/codex-api/ws`)
     let didOpen = false
     let intentionallyClosed = false
     let fallbackTimer: number | null = window.setTimeout(() => {
       if (didOpen || closed || intentionallyClosed) return
-      intentionallyClosed = true
-      socket.close()
       attachSse()
     }, 2500)
 
     socket.onopen = () => {
+      if (closed || intentionallyClosed) return
       didOpen = true
       clearReconnectTimer()
       if (fallbackTimer !== null) {
@@ -229,6 +253,7 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
     }
 
     socket.onmessage = (event) => {
+      if (closed || intentionallyClosed) return
       try {
         handleNotificationPayload(JSON.parse(String(event.data)) as unknown)
       } catch {
@@ -256,6 +281,7 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
     }
 
     cleanup = () => {
+      if (intentionallyClosed) return
       intentionallyClosed = true
       if (fallbackTimer !== null) {
         window.clearTimeout(fallbackTimer)
@@ -265,16 +291,79 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
     }
   }
 
-  if (typeof WebSocket !== 'undefined') {
-    attachWebSocket()
-  } else {
-    attachSse()
+  const attach = () => {
+    if (useSse) attachSse()
+    else attachWebSocket()
   }
 
+  const clearRecoveryTimer = () => {
+    if (recoveryTimer === null) return
+    window.clearTimeout(recoveryTimer)
+    recoveryTimer = null
+  }
+
+  // A suspended browser can retain a dead socket without receiving close/error.
+  // Restart on lifecycle recovery and let the server's ready event reconcile the UI.
+  const recover = () => {
+    if (closed) return
+    interrupted = true
+    if (typeof navigator !== 'undefined') offline = navigator.onLine === false
+    if (offline) return
+    clearReconnectTimer()
+    if (recoveryTimer !== null) return
+    detach()
+    recoveryTimer = window.setTimeout(() => {
+      recoveryTimer = null
+      if (closed || offline) return
+      attach()
+    }, 100)
+  }
+
+  const onOffline = () => {
+    offline = true
+    interrupted = true
+    clearReconnectTimer()
+    clearRecoveryTimer()
+    detach()
+  }
+  const onOnline = () => {
+    offline = false
+    recover()
+  }
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') {
+      wasHidden = true
+    } else if (document.visibilityState === 'visible' && wasHidden) {
+      wasHidden = false
+      recover()
+    }
+  }
+  const onPageShow = (event: PageTransitionEvent) => {
+    if (event.persisted) recover()
+  }
+
+  window.addEventListener('online', onOnline)
+  window.addEventListener('offline', onOffline)
+  window.addEventListener('pageshow', onPageShow)
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    document.addEventListener('resume', recover)
+  }
+  attach()
+
   return () => {
+    if (closed) return
     closed = true
     clearReconnectTimer()
-    cleanup?.()
+    clearRecoveryTimer()
+    detach()
+    window.removeEventListener('online', onOnline)
+    window.removeEventListener('offline', onOffline)
+    window.removeEventListener('pageshow', onPageShow)
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      document.removeEventListener('resume', recover)
+    }
   }
 }
 

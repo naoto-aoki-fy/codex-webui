@@ -120,6 +120,41 @@ describe('desktop message reconciliation', () => {
     expect(removeRedundantLiveAgentMessages([{ ...live, messageType: undefined }], [{ ...live, id: 'server' }])).toHaveLength(1)
   })
 
+  it('prefers the recovery snapshot when a missing middle delta made the same live item diverge', () => {
+    const live = message({ role: 'assistant', text: 'AC', messageType: 'agentMessage.live', turnId: 'turn' })
+    const previous = [live]
+    const snapshot = [{ ...live, text: 'ABC' }]
+    // Ordinary history reads keep their existing reconciliation policy.
+    expect(removeRedundantLiveAgentMessages(previous, snapshot)).toBe(previous)
+    expect(removeRedundantLiveAgentMessages(previous, snapshot, { preferSnapshotOnMismatch: false })).toBe(previous)
+    expect(removeRedundantLiveAgentMessages(previous, snapshot, { preferSnapshotOnMismatch: true })).toEqual([])
+  })
+
+  it('preserves a genuinely newer live extension during recovery using normalized text', () => {
+    const live = message({ role: 'assistant', text: 'hello\n world continued', messageType: 'agentMessage.live', turnId: 'turn' })
+    const previous = [live]
+    expect(removeRedundantLiveAgentMessages(previous, [{ ...live, text: ' hello  world ' }], {
+      preferSnapshotOnMismatch: true,
+    })).toBe(previous)
+  })
+
+  it.each([' hello  world ', 'hello world continued'])('uses a recovery snapshot that covers the live text: %s', (text) => {
+    const live = message({ role: 'assistant', text: 'hello\nworld', messageType: 'agentMessage.live', turnId: 'turn' })
+    expect(removeRedundantLiveAgentMessages([live], [{ ...live, text }], {
+      preferSnapshotOnMismatch: true,
+    })).toEqual([])
+  })
+
+  it('preserves missing items and the existing cross-ID matching rules during recovery', () => {
+    const live = message({ role: 'assistant', text: 'hello world', messageType: 'agentMessage.live', turnId: 'turn' })
+    const previous = [live]
+    const recovery = { preferSnapshotOnMismatch: true }
+    expect(removeRedundantLiveAgentMessages(previous, [], recovery)).toBe(previous)
+    expect(removeRedundantLiveAgentMessages(previous, [{ ...live, id: 'other', text: 'different' }], recovery)).toBe(previous)
+    expect(removeRedundantLiveAgentMessages(previous, [{ ...live, id: 'other', turnId: 'different' }], recovery)).toBe(previous)
+    expect(removeRedundantLiveAgentMessages(previous, [{ ...live, id: 'other', text: ' hello  world ' }], recovery)).toEqual([])
+  })
+
   it('replaces partial plans and commands with incoming completed values without field merging', () => {
     const partial = message({ role: 'assistant', plan: { steps: [{ step: 'work', status: 'inProgress' }], isStreaming: true },
       commandExecution: { command: 'echo done', cwd: null, exitCode: null, status: 'inProgress', aggregatedOutput: 'partial' } })

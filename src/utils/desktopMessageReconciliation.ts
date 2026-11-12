@@ -181,7 +181,11 @@ export function hasEquivalentUserMessage(target: UiMessage, messages: UiMessage[
   })
 }
 
-export function removeRedundantLiveAgentMessages(previous: UiMessage[], incoming: UiMessage[]): UiMessage[] {
+export function removeRedundantLiveAgentMessages(
+  previous: UiMessage[],
+  incoming: UiMessage[],
+  options: { preferSnapshotOnMismatch?: boolean } = {},
+): UiMessage[] {
   const incomingById = new Map(incoming.map((message) => [message.id, message]))
   const incomingAssistantTexts = new Set(
     incoming
@@ -192,8 +196,15 @@ export function removeRedundantLiveAgentMessages(previous: UiMessage[], incoming
   const next = previous.filter((message) => {
     const persisted = incomingById.get(message.id)
     if (persisted) {
+      const snapshotText = normalizeMessageText(persisted.text)
+      const liveText = normalizeMessageText(message.text)
+      if (options.preferSnapshotOnMismatch === true) {
+        // Reconnection may have skipped deltas in the middle of this live item.
+        // Keep only a proper extension of the authoritative snapshot.
+        return liveText.length > snapshotText.length && liveText.startsWith(snapshotText)
+      }
       // A history snapshot can trail the latest delta for the same item.
-      return !normalizeMessageText(persisted.text).startsWith(normalizeMessageText(message.text))
+      return !snapshotText.startsWith(liveText)
     }
     if (message.messageType !== 'agentMessage.live') return true
     const normalized = normalizeMessageText(message.text)
