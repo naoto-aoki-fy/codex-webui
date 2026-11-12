@@ -12,12 +12,12 @@ Run `pnpm run dev --host 127.0.0.1 --port 4173` with an external app-server avai
 4. Repeat at 375x812 and 768x1024. On the phone, use the file-count button to open the bottom sheet. Selecting a file closes the sheet; tapping its backdrop closes only the sheet. Long patches scroll inside the patch panel.
 5. Repeat in light and dark themes. Check badges, toolbar, close button, sheet, line colors, and overflow against the previous viewer.
 6. Open the viewer and switch threads, including rapid A → B → A switches. The old viewer stays dismissed. Unmount the conversation while open; no viewer remains.
-7. Use Undo/Redo from the file summary. Existing parent-owned request, busy/error, and rollback behavior remains unchanged; switching threads during a request must not apply a stale response to the new thread.
+Conversation revert uses native Codex history operations and never restores local files. File diffs remain inspectable; file Undo/Redo has been removed.
 
 ## Cleanup
 
-Close the viewer. Restore any files changed by Undo/Redo through the normal summary controls. No new viewer persistence or backend state is introduced.
+Conversation revert uses native Codex history operations and never restores local files. File diffs remain inspectable; file Undo/Redo has been removed.
 
 ## Automated coverage
 
-`ThreadDiffViewer.test.ts` exercises the compiled presentation and event handlers. `ThreadConversation.test.ts` covers thread identity cleanup and stale Undo/Redo results. `diffViewerLines.test.ts` covers patch parsing and numbering.
+Conversation revert uses native Codex history operations and never restores local files. File diffs remain inspectable; file Undo/Redo has been removed.

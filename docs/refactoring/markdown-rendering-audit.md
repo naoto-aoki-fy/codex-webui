@@ -1,5 +1,7 @@
 > Historical audit: Telegram integration has since been removed. References below describe the earlier implementation, not current behavior.
 
+> Historical audit: application-managed file Undo/Redo, filesystem restoration during conversation revert, project creation, GitHub cloning, automatic chat directories, camera/folder attachments, and project aliases/manual ordering have since been removed. Native thread operations, existing workspaces, file/image attachments, and diff inspection remain. Earlier implementation details below describe the pre-removal code. Current verification: [workspace workflows](../../tests/projects-sidebar-new-chat/native-workspace-workflows.md).
+
 # Markdown rendering audit (Task 9-B-7)
 
 ## Scope and preceding work

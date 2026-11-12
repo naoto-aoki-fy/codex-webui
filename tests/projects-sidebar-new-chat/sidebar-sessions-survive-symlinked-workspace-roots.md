@@ -43,7 +43,7 @@ Workspace roots and thread-list cwd values are canonicalized through local `real
 
 #### Steps
 1. GET `/codex-api/workspace-roots-state`; confirm the existing `{ data: { order, labels, active, projectOrder, remoteProjects } }` envelope.
-2. Send concurrent PATCH requests to that endpoint: rename the symlinked root, reorder both roots, and delete the other root. Use `{ type: 'rename', path, label }`, `{ type: 'reorder', order }`, and `{ type: 'delete', path }` bodies.
+2. Send concurrent PATCH requests to that endpoint: reject rename and reorder operations, and unregister the other root. Use `{ type: 'rename', path, label }`, `{ type: 'reorder', order }`, and `{ type: 'delete', path }` bodies.
 3. GET the state again and inspect the persisted file. Confirm the rename and deletion both remain, ordering contains only surviving local roots plus remote IDs, and both unknown fields are intact.
 4. PUT a legacy state body to the endpoint; confirm HTTP 409 with `Workspace updates have changed. Reload this tab before editing projects.` and no file change.
 5. Repeat a no-op rename and confirm the file modification time does not change.

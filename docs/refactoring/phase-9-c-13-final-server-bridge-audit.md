@@ -1,5 +1,7 @@
 # Phase 9-C-13: Final server bridge refactoring audit
 
+> Historical audit: application-managed file Undo/Redo, filesystem restoration during conversation revert, project creation, GitHub cloning, automatic chat directories, camera/folder attachments, and project aliases/manual ordering have since been removed. Native thread operations, existing workspaces, file/image attachments, and diff inspection remain. Earlier implementation details below describe the pre-removal code. Current verification: [workspace workflows](../../tests/projects-sidebar-new-chat/native-workspace-workflows.md).
+
 Audited commit: `3abbf25` (`refactor(server): extract SSE notification handling`). The audit was read-only; no production or test files were changed.
 
 ## Recommendation
