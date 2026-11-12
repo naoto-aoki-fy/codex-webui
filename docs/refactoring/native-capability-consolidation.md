@@ -27,14 +27,13 @@ and `thread/name/updated` notifications. The separate title cache and disabled
 session_index.jsonl fallback are removed. Old global-state title fields are left
 untouched but never read or written.
 
-Unused session history enrichment, local session metadata parsing and fork metadata
-inheritance are removed after verifying no runtime consumers. The generation
-metadata JSONL store had an active writer but no active reader; disk writes and
-unused recovery are removed. Submitted model/reasoning values remain attached to
-live turns in memory. The 0.167.2 Turn schema has no historical per-turn model or
-reasoning fields, so reopened history cannot truthfully show those values. This
-matches the prior active read path; no thread defaults are presented as execution
-evidence. Existing metadata files remain untouched.
+Unused session history enrichment and local session metadata parsers are removed.
+History comes from native `thread/read`, with inline media sanitization and sparse
+attachment-only recovery retained. The native Turn schema alone cannot establish
+historical per-turn model/reasoning values. The current app-owned metadata store
+preserves submitted values and execution evidence separately, including best-effort
+fork inheritance; see [generation metadata](../turn-generation-metadata.md). Legacy
+files remain untouched unless explicitly enabled for compatible migration.
 
 The application no longer accepts --login, --no-login, --memories, --no-memories,
 --sandbox-mode or --approval-policy. Configure server defaults in Codex; supported
@@ -69,36 +68,19 @@ thread's section, consistent with native single-section semantics.
   reasoning settings, Plan mode, Goals, Skills and MCP adapters remain necessary
   to expose Codex in a browser.
 
-## Performance audit
+## Request costs
 
-Code-path analysis: removes composer prompt fetches, title-cache requests,
-per-turn metadata disk appends, worktree branch requests and creation commands,
-plus unused parsers/caches. Workspace mutations avoid repeated identity-only
-promise traversals. Native pin reads paginate serially at 100 rows per request;
-legacy migration makes one move per legacy ID and never scans history. Section
-listing bypasses custom history reconciliation. No new background polling or
-custom persistence is introduced. Live server latency and cross-client behavior
-require an independently authenticated server and were not measured here.
+Native pin reads paginate serially at 100 rows per request; legacy migration makes
+one move per legacy ID without scanning history. Section-filtered listing bypasses
+custom history reconciliation. Pin storage introduces no separate writable store
+or background polling. Cross-client behavior requires live deployment verification.
 
-## Verification
+## Verification boundaries
 
-- Full unit suite: 79 files passed, one live test skipped; 1,130 tests passed.
-- The final focused gateway suite passed 30 tests, including native pin ordering/unpin payloads.
-- Type checking and production build passed. No lint script is configured.
-- Credential-free external-server fixture passed for development and built CLI:
-  removed HTTP routes return JSON 404; RPC, metadata and browser WebSocket share
-  one upstream connection. The independently managed fixture survives shutdown.
-- ESM package entry smoke check (there is no public CJS export):
-  `node -e "process.argv = ['node', 'dist-cli/index.js', '--help']; import('./dist-cli/index.js')"`
-  exits 0 and prints supported options. Removed flags fail with unknown-option errors.
-- Playwright fixture checks at 1280x900: `http://127.0.0.1:4173/#/?cwd=/tmp`
-  and `http://127.0.0.1:4173/#/skills`; selected native Skill chip and configuration
-  remain, prompt CRUD/Try/worktree creation are absent, light/dark surfaces render,
-  and no page runtime errors occur. Evidence is under `output/playwright/`:
-  `native-cleanup-home-light.png`, `native-cleanup-home-dark.png`,
-  `native-cleanup-skill-light.png`, `native-cleanup-skill-dark.png`.
-- Browser Use was unavailable. Playwright Chromium was downloaded under `/tmp`;
-  initial missing-browser and strict-selector failures were corrected and rerun.
-- No live authenticated Codex turns, approval flow, durable cross-client pin
-  synchronization or real-user workspace mutation was performed. These remain
-  deployment checks; protocol fixture results are not live server evidence.
+Use [workspace acceptance tests](../../tests/projects-sidebar-new-chat/native-workspace-workflows.md),
+[development checks](../development.md) and the
+[external-server procedure](../../tests/website-docs-misc/external-app-server.md).
+Credential-free fixtures verify protocol/entry points, not authenticated turns,
+approvals or durable cross-client pins. Generated schemas establish available
+shapes, not deployment capability. Remaining verification work is tracked in
+[open items](../maintenance/open-items.md).

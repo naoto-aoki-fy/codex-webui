@@ -32,7 +32,7 @@ and configure a private network or external reverse proxy for remote access.
 - [Local development and optional HTTPS](docs/development.md)
 - [Implementation and feature status](PROJECT_SPEC.md)
 - [Native APIs, removed features, and migration](docs/refactoring/native-capability-consolidation.md)
-- [Maintenance and publishing](docs/maintenance-scope.md)
+- [Maintenance and publishing](docs/maintenance-scope.md) · [Open items](docs/maintenance/open-items.md)
 - [Manual tests](tests.md)
 
 Forked from [pavel-voronin/codex-web-local](https://github.com/pavel-voronin/codex-web-local).

@@ -33,8 +33,7 @@ Web password authentication protects the browser backend separately from Codex a
 - `src/server/httpServer.ts` and `src/cli/index.ts`: production hosting and CLI.
 - `documentation/`: retained upstream protocol reference and generated schemas.
 
-See [frontend boundaries](docs/refactoring/frontend-boundaries.md),
-[backend boundaries](docs/refactoring/backend-boundaries.md) and the
+See [client ownership](docs/app-server-client-boundaries.md) and the
 [schema inventory](documentation/app-server-schemas/README.md). Protocol presence
 and bundled method metadata do not guarantee UI support or live server capability.
 
@@ -92,9 +91,35 @@ Persistence does not make sending messages available while disconnected.
 | WS upgrade | `/codex-api/ws` | Primary WebSocket channel for real-time notifications |
 
 These are the core transport endpoints, not an exhaustive local API inventory.
-The notification catalog endpoint is retained for compatibility, even without an
-internal caller. Metadata is bundled advisory information, not live negotiation.
-Local file routes are documented in [API compatibility notes](docs/api-wrapper-cleanup.md).
+Metadata is bundled advisory information, not live negotiation.
+Project file routes and HTTP semantics are documented in
+[project file access](docs/project-file-access.md).
+
+GET `/codex-api/meta/notifications` remains a compatibility contract even without
+an internal caller; removing it requires an explicit retirement decision.
+`/codex-api/thread-file-change-fallback`, `/codex-api/thread-live-state`, and
+`/codex-api/thread-stream-events` return JSON 404 (`{"error":"Not found"}`)
+for all methods, including query strings, without RPC or SPA fallthrough. There
+is no replacement for diagnostic reconstruction or buffered-event retrieval.
+Normal history retains snapshots, archive/materialization recovery, pagination,
+inline media sanitization and stream-error merging; live WS/SSE is not replay.
+
+`/codex-local-file` and `/codex-local-edit` are retired; use read-only
+`/codex-local-browse`, `/codex-local-image`, and `/codex-local-directories`.
+The obsolete GET/PUT `/codex-api/preferences/first-launch-plugins-card` contract
+is removed; clients must stop calling it. Existing dismissal keys/files are left
+untouched. Generic `review/start` RPC remains available without a dedicated UI.
+
+Gateway model catalog reads retain record/page order, deduplicate trimmed IDs,
+stop repeated cursors, and return empty results on failure; config reads reject.
+Shared reasoning capabilities use owner leases and publication ordering. Resume
+coalescing is per thread: pending entries expire after 30 seconds without cancelling
+remote work; settled successes and failures reuse a two-second window. Successful
+turn start/steer/interrupt and history revert, plus relevant notifications,
+invalidate affected entries with identity-safe cleanup. Archive/rename alone do
+not invalidate Resume; see the freshness item in open items.
+Workspace reads coalesce and return clones; mutations serialize and invalidate
+the cache on success or failure. Preserve these distinct error/freshness contracts.
 
 ## Routing
 
@@ -108,6 +133,8 @@ Use the [development guide](docs/development.md) for the pinned pnpm/Node setup,
 build, typecheck, unit tests, isolated fixture, optional HTTPS and live-test boundaries.
 The package exposes an ESM CLI, not a public CJS library. Build output is `dist/`
 and `dist-cli/`; frontend build includes asset precompression.
+
+Track technical concerns and deferred decisions in [open items](docs/maintenance/open-items.md).
 
 Use the [manual test index](tests.md) for acceptance workflows. Historical tests and
 refactoring measurements describe their recorded revisions, not current results.
