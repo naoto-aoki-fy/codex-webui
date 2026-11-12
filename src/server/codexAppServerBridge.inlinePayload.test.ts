@@ -5,7 +5,6 @@ import { join, basename } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  mergeSessionSkillInputsIntoTurns,
   sanitizeThreadTurnsInlinePayloads,
 } from './codexAppServerBridge'
 
@@ -238,122 +237,6 @@ describe('thread inline media sanitization', () => {
     expect(result).toBe(payload)
   })
 })
-
-describe('thread session skill recovery', () => {
-  it('adds selected skill inputs from session JSONL to matching user messages', () => {
-    const turns = [{
-      id: 'turn-1',
-      items: [{
-        id: 'item-1',
-        type: 'userMessage',
-        content: [{ type: 'text', text: 'use a skill', text_elements: [] }],
-      }],
-    }]
-    const sessionLog = [
-      JSON.stringify({ type: 'turn_context', payload: { turn_id: 'turn-1' } }),
-      JSON.stringify({
-        type: 'response_item',
-        payload: {
-          type: 'message',
-          role: 'user',
-          content: [{ type: 'input_text', text: 'use a skill' }],
-        },
-      }),
-      JSON.stringify({
-        type: 'response_item',
-        payload: {
-          type: 'message',
-          role: 'user',
-          content: [{
-            type: 'input_text',
-            text: '<skill>\n<name>browser-use:browser</name>\n<path>/Users/igor/.codex/plugins/browser/SKILL.md</path>\n---\n# Browser\n</skill>',
-          }],
-        },
-      }),
-    ].join('\n')
-
-    const merged = mergeSessionSkillInputsIntoTurns(turns, sessionLog) as typeof turns
-    expect(merged[0].items[0].content).toEqual([
-      { type: 'text', text: 'use a skill', text_elements: [] },
-      { type: 'skill', name: 'browser-use:browser', path: '/Users/igor/.codex/plugins/browser/SKILL.md' },
-    ])
-  })
-
-  it('does not duplicate skill inputs that are already present', () => {
-    const turns = [{
-      id: 'turn-1',
-      items: [{
-        id: 'item-1',
-        type: 'userMessage',
-        content: [
-          { type: 'text', text: 'use a skill', text_elements: [] },
-          { type: 'skill', name: 'browser-use:browser', path: '/Users/igor/.codex/plugins/browser/SKILL.md' },
-        ],
-      }],
-    }]
-    const sessionLog = [
-      JSON.stringify({ type: 'turn_context', payload: { turn_id: 'turn-1' } }),
-      JSON.stringify({
-        type: 'response_item',
-        payload: {
-          type: 'message',
-          role: 'user',
-          content: [{
-            type: 'input_text',
-            text: '<skill>\n<name>browser-use:browser</name>\n<path>/Users/igor/.codex/plugins/browser/SKILL.md</path>\n</skill>',
-          }],
-        },
-      }),
-    ].join('\n')
-
-    expect(mergeSessionSkillInputsIntoTurns(turns, sessionLog)).toBe(turns)
-  })
-
-  it('adds selected skill inputs to the last user message in a multi-message turn', () => {
-    const turns = [{
-      id: 'turn-1',
-      items: [
-        {
-          id: 'item-1',
-          type: 'userMessage',
-          content: [{ type: 'text', text: 'first message', text_elements: [] }],
-        },
-        {
-          id: 'item-2',
-          type: 'agentMessage',
-          content: [{ type: 'text', text: 'assistant reply', text_elements: [] }],
-        },
-        {
-          id: 'item-3',
-          type: 'userMessage',
-          content: [{ type: 'text', text: 'second message', text_elements: [] }],
-        },
-      ],
-    }]
-    const sessionLog = [
-      JSON.stringify({ type: 'turn_context', payload: { turn_id: 'turn-1' } }),
-      JSON.stringify({
-        type: 'response_item',
-        payload: {
-          type: 'message',
-          role: 'user',
-          content: [{
-            type: 'input_text',
-            text: '<skill>\n<name>browser-use:browser</name>\n<path>/Users/igor/.codex/plugins/browser/SKILL.md</path>\n</skill>',
-          }],
-        },
-      }),
-    ].join('\n')
-
-    const merged = mergeSessionSkillInputsIntoTurns(turns, sessionLog) as typeof turns
-    expect(merged[0].items[0].content).toEqual([{ type: 'text', text: 'first message', text_elements: [] }])
-    expect(merged[0].items[2].content).toEqual([
-      { type: 'text', text: 'second message', text_elements: [] },
-      { type: 'skill', name: 'browser-use:browser', path: '/Users/igor/.codex/plugins/browser/SKILL.md' },
-    ])
-  })
-})
-
 
 describe('inline payload compatibility contracts', () => {
   const payload = (item: Record<string, unknown>) => ({ thread: { turns: [{ id: 'contract-turn', items: [item] }] } })

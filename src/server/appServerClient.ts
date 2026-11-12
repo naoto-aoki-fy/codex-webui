@@ -9,9 +9,6 @@ export interface AppServerClientDependencies {
   threadIndex: {
     call(method: string, params: Record<string, unknown>, rpc: (method: string, params: unknown) => Promise<unknown>): Promise<unknown>
   }
-  metadataStore: {
-    save(threadId: string, turnId: string, metadata: TurnGenerationMetadata): Promise<void>
-  }
 }
 
 function readNonEmptyString(value: unknown): string {
@@ -447,12 +444,6 @@ export class AppServerClient {
       const turn = asRecord(asRecord(result)?.turn)
       const turnId = readNonEmptyString(turn?.id)
       if (threadId && turnId) {
-        // Metadata persistence must never turn an accepted start into a failed send.
-        try {
-          await this.dependencies.metadataStore.save(threadId, turnId, metadata)
-        } catch (error) {
-          console.warn('Failed to persist turn generation metadata', error)
-        }
         this.emitNotification({ method: 'turn/generationMetadata', params: { threadId, turnId, generationMetadata: metadata } })
       }
       return turn ? { ...asRecord(result), turn: { ...turn, generationMetadata: metadata } } : result

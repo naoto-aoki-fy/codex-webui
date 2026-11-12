@@ -44,3 +44,11 @@ Prerequisites: current development or built app; disposable thread with more tha
 5. During pending first-turn materialization, expect empty in-progress normal RPC history. A recognized empty-rollout failure can reuse a saved snapshot.
 
 Cleanup: archive only disposable threads and restore theme. No replacement exists for the removed diagnostic command/file-change reconstruction.
+
+## Native history without local session enrichment
+
+Setup: existing conversation with skill inputs, images and an attachment-only first turn.
+Actions: reopen, reload and reconnect; inspect history and submit another turn.
+Expected: native history remains visible; first-turn recovery and duplicate-send prevention remain active. No local session log scan or codexapp-turn-metadata JSONL write occurs. Live response model/reasoning labels still use submitted settings.
+Cleanup: remove only test conversations if desired; retain existing metadata files.
+Performance: eliminates unused session parsing/cache implementations and one filesystem append per accepted turn; native history requests remain unchanged. Live timings were not measured.
