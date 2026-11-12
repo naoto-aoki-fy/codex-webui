@@ -22,3 +22,16 @@ it('retains legacy state on unsupported or failed migration', async () => {
   await expect(createThreadPresentationStore().readPinnedThreadIds(rpc)).rejects.toThrow('unsupported')
   expect(state.value['pinned-thread-ids']).toEqual(['a', 'b'])
 })
+it('retries an interrupted migration without discarding legacy IDs', async () => {
+  let fail = true
+  const rpc = vi.fn(async (method: string, params: any): Promise<any> => {
+    if (method === 'thread/section/move' && params.threadId === 'b' && fail) throw new Error('disconnected')
+    return method === 'thread/list' ? { data: [{ id: 'a' }, { id: 'b' }] } : {}
+  })
+  const store = createThreadPresentationStore()
+  await expect(store.readPinnedThreadIds(rpc)).rejects.toThrow('disconnected')
+  expect(state.value['pinned-thread-ids']).toEqual(['a', 'b'])
+  fail = false
+  expect(await store.readPinnedThreadIds(rpc)).toEqual(['a', 'b'])
+  expect(state.value).toEqual({ unrelated: 42 })
+})
