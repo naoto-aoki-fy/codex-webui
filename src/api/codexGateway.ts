@@ -1070,10 +1070,11 @@ export async function getPinnedThreadState(): Promise<ThreadPinnedState> {
   }
 }
 
-export async function setThreadPinned(threadId: string, pinned: boolean): Promise<void> {
+export async function setThreadPinned(threadId: string, pinned: boolean, beforeThreadId?: string): Promise<void> {
   await callRpc('thread/section/move', {
     threadId,
     sectionId: pinned ? '01984de2-8f74-7c91-a3b2-5c5e937cf318' : null,
+    ...(pinned && beforeThreadId ? { beforeThreadId } : {}),
   })
 }
 
