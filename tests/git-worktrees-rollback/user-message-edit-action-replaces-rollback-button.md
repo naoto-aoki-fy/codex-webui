@@ -1,7 +1,7 @@
-### User message edit action replaces rollback button
+### User message Revert action
 
 #### Feature/Change Name
-The old rollback button is replaced with an `Edit message` action under each eligible user message, while keeping the existing behavior that appends the original text into the composer and rolls the thread back from that turn.
+Eligible user messages show a `Revert` action under each eligible user message, while keeping the existing behavior that appends the original text into the composer and rolls the thread back from that turn.
 
 #### Prerequisites/Setup
 1. Dev server running (`pnpm run dev`)
@@ -10,16 +10,16 @@ The old rollback button is replaced with an `Edit message` action under each eli
 #### Steps
 1. Open a thread with multiple completed turns
 2. Hover a completed user message
-3. Confirm `Edit message` appears under that user message
+3. In both light and dark themes, confirm `Revert` appears under that user message with the back arrow icon. Hover and keyboard-focus it; confirm its tooltip and accessibility name are also `Revert`.
 4. Confirm assistant responses no longer show the old `Rollback` button
-5. Click `Edit message` on an earlier user message with recognizable text
+5. Click `Revert` on an earlier user message with recognizable text
 6. Observe the composer draft after the click
 7. Confirm the thread rolls back from the selected turn
 
 #### Expected Results
-- The action under eligible user messages is labeled `Edit message`
+- The action under eligible user messages is labeled `Revert`
 - Assistant responses no longer render the old rollback action
-- Clicking `Edit message` appends the original user text into the composer
+- Clicking `Revert` appends the original user text into the composer
 - The existing rollback behavior still truncates the selected turn and later turns
 
 #### Rollback/Cleanup
