@@ -34,15 +34,7 @@
               {{ effectiveEnabled ? t('Disable') : t('Enable') }}
             </button>
 
-            <button
-              v-if="effectiveEnabled"
-              class="sdm-btn sdm-btn-primary"
-              type="button"
-              :disabled="props.isTrying"
-              @click="onTry"
-            >
-              {{ props.isTrying ? 'Starting...' : 'Try it!' }}
-            </button>
+
           </div>
         </div>
       </div>
@@ -60,13 +52,11 @@ import type { LocalSkill } from '../../types/skills'
 const props = defineProps<{
   skill: LocalSkill
   visible: boolean
-  isTrying?: boolean
 }>()
 
 const emit = defineEmits<{
   close: []
   'toggle-enabled': [skill: LocalSkill, enabled: boolean]
-  try: [skill: LocalSkill]
 }>()
 
 const localEnabled = ref<boolean | null>(null)
@@ -138,10 +128,7 @@ function onToggleEnabled(): void {
   emit('toggle-enabled', props.skill, next)
 }
 
-function onTry(): void {
-  if (props.isTrying) return
-  emit('try', props.skill)
-}
+
 
 </script>
 
