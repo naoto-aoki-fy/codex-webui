@@ -558,10 +558,14 @@ export function useDesktopState() {
   let selectionGeneration = 0
   let stopNotificationStream: (() => void) | null = null
   let eventSyncTimer: number | null = null
+  let eventSyncGeneration = 0
   let rateLimitRefreshTimer: number | null = null
   const delayedTurnSyncTimerByThreadId = new Map<string, number>()
   let loadThreadsPromise: Promise<void> | null = null
+  let threadListLoadGeneration = 0
   const loadMessagePromiseByThreadId = new Map<string, Promise<void>>()
+  const reconnectingThreadHistory = new Set<string>()
+  let pendingServerRequestsVersion = 0
   type HistoryReadOwner = { olderPageBoundary?: string }
   const historyReadOwnerByThreadId = new Map<string, HistoryReadOwner>()
 
@@ -577,6 +581,7 @@ export function useDesktopState() {
   function invalidateThreadHistory(threadId: string, dropPayload = true): void {
     historyReadOwnerByThreadId.delete(threadId)
     loadMessagePromiseByThreadId.delete(threadId)
+    reconnectingThreadHistory.delete(threadId)
     visibleMessageLoads.delete(threadId)
     lastMessageLoadAtByThreadId.delete(threadId)
     lastMessageLoadFailureAtByThreadId.delete(threadId)
@@ -2590,6 +2595,7 @@ export function useDesktopState() {
     if (options.force !== true && hasLoadedThreads.value
       && Date.now() - lastThreadListLoadAt < RECENT_THREAD_LIST_LOAD_REUSE_MS) return
 
+    const requestGeneration = ++threadListLoadGeneration
     let completedGeneration = -1
     const run = (async () => {
       let force = options.force === true
@@ -2634,7 +2640,7 @@ export function useDesktopState() {
         } catch (cause) {
           if (generation === threadListGeneration) failure = cause
         }
-        if (lifecycle !== lifecycleGeneration) return
+        if (lifecycle !== lifecycleGeneration || requestGeneration !== threadListLoadGeneration) return
         force = pendingForcedThreadLoad
       } while (pendingForcedThreadLoad)
       if (failure) throw failure
@@ -2745,7 +2751,9 @@ export function useDesktopState() {
       setPersistedMessagesForThread(threadId, mergeMessages(earlierMessages, mergedMessages, { preserveMissing: true }))
 
       const previousLiveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
-      const nextLiveAgent = removeRedundantLiveAgentMessages(previousLiveAgent, nextMessages)
+      const nextLiveAgent = removeRedundantLiveAgentMessages(previousLiveAgent, nextMessages, {
+        preferSnapshotOnMismatch: reconnectingThreadHistory.has(threadId),
+      })
       setLiveAgentMessagesForThread(threadId, nextLiveAgent)
       removeLiveCommandsPersistedIn(threadId, nextMessages)
       removeLiveFileChangesPersistedIn(threadId, nextMessages)
@@ -2756,6 +2764,7 @@ export function useDesktopState() {
       }
       lastMessageLoadAtByThreadId.set(threadId, Date.now())
       lastMessageLoadFailureAtByThreadId.delete(threadId)
+      if (!inProgress) reconnectingThreadHistory.delete(threadId)
 
       if (version) {
         loadedVersionByThreadId.value = {
@@ -2927,6 +2936,8 @@ export function useDesktopState() {
     options: { includeSelectedThreadMessages?: boolean; awaitAncillaryRefreshes?: boolean; forceThreadRefresh?: boolean } = {},
   ) {
     const generation = lifecycleGeneration
+    const readGeneration = eventSyncGeneration
+    const isCurrent = () => generation === lifecycleGeneration && readGeneration === eventSyncGeneration
     error.value = ''
     codexCliMissingError.value = ''
     const includeSelectedThreadMessages = options.includeSelectedThreadMessages !== false
@@ -2934,23 +2945,23 @@ export function useDesktopState() {
 
     try {
       await loadThreads({ force: options.forceThreadRefresh === true })
-      if (generation !== lifecycleGeneration) return
+      if (!isCurrent()) return
       if (includeSelectedThreadMessages) {
         try {
           await loadMessages(selectedThreadId.value)
         } catch (unknownError) {
-          if (generation !== lifecycleGeneration) return
+          if (!isCurrent()) return
           error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
         }
       }
-      if (generation !== lifecycleGeneration) return
+      if (!isCurrent()) return
       if (awaitAncillaryRefreshes) {
         await refreshAncillaryState()
       } else {
         scheduleAncillaryStateRefresh()
       }
     } catch (unknownError) {
-      if (generation !== lifecycleGeneration) return
+      if (!isCurrent()) return
       error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
       if (isCodexCliMissingError(unknownError)) {
         codexCliMissingError.value = CODEX_CLI_MISSING_MESSAGE
@@ -2962,18 +2973,19 @@ export function useDesktopState() {
 
   async function selectThread(threadId: string): Promise<SelectThreadResult> {
     const generation = lifecycleGeneration
+    const readGeneration = eventSyncGeneration
     setSelectedThreadId(threadId)
     const selection = ++selectionGeneration
 
     try {
       await loadMessages(threadId)
-      if (generation !== lifecycleGeneration) return 'ok'
+      if (generation !== lifecycleGeneration || readGeneration !== eventSyncGeneration) return 'ok'
       await refreshModelPreferences()
       if (generation === lifecycleGeneration) void refreshSkills()
       return 'ok'
     } catch (unknownError) {
       const message = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-      if (generation !== lifecycleGeneration || selection !== selectionGeneration) {
+      if (generation !== lifecycleGeneration || readGeneration !== eventSyncGeneration || selection !== selectionGeneration) {
         return isThreadNotFoundError(unknownError) ? 'not-found' : 'error'
       }
       error.value = message
@@ -3605,6 +3617,8 @@ export function useDesktopState() {
 
   async function syncFromNotifications(): Promise<void> {
     const generation = lifecycleGeneration
+    const syncGeneration = eventSyncGeneration
+    const isCurrent = () => generation === lifecycleGeneration && syncGeneration === eventSyncGeneration
     if (isPolling.value) {
       if (typeof window !== 'undefined' && eventSyncTimer === null) {
         eventSyncTimer = window.setTimeout(() => {
@@ -3629,7 +3643,7 @@ export function useDesktopState() {
         await loadThreads({ force: shouldForceThreadRefresh })
       }
 
-      if (generation !== lifecycleGeneration) return
+      if (!isCurrent()) return
       const activeThreadId = selectedThreadId.value
       if (!activeThreadId) return
 
@@ -3651,7 +3665,7 @@ export function useDesktopState() {
     } catch {
       // Keep UI stable on transient event sync failures.
     } finally {
-      if (generation === lifecycleGeneration) {
+      if (isCurrent()) {
         isPolling.value = false
 
         if (
@@ -3668,14 +3682,54 @@ export function useDesktopState() {
     }
   }
 
-  async function recoverBridgeState(): Promise<void> {
-    const generation = lifecycleGeneration
-    await loadPendingServerRequestsFromBridge()
-    if (generation !== lifecycleGeneration) return
-    pendingThreadsRefresh = !hasLoadedThreads.value
+  function invalidateDisconnectedReads(): void {
+    // A fetch started before suspension may never settle. Detach read ownership
+    // without clearing visible messages, pagination boundaries, or pending sends.
+    ++eventSyncGeneration
+    isPolling.value = false
+    pendingThreadsRefresh = false
+    pendingThreadsRefreshForce = false
+    pendingThreadMessageRefresh.clear()
+    if (eventSyncTimer !== null) {
+      window.clearTimeout(eventSyncTimer)
+      eventSyncTimer = null
+    }
+    ++threadListLoadGeneration
+    invalidateThreadListGeneration()
+    loadThreadsPromise = null
+    pendingForcedThreadLoad = false
+    for (const [threadId, owner] of historyReadOwnerByThreadId) {
+      historyReadOwnerByThreadId.set(threadId, { ...owner })
+      reconnectingThreadHistory.add(threadId)
+    }
+    loadMessagePromiseByThreadId.clear()
+    visibleMessageLoads.clear()
+    loadingOlderMessagesByThreadId.value = {}
+    syncMessageLoading()
+    // Other conversations refresh when opened; do not fetch all cached histories.
+    loadedMessagesByThreadId.value = {}
+    loadedVersionByThreadId.value = {}
+    lastMessageLoadAtByThreadId.clear()
+    lastMessageLoadFailureAtByThreadId.clear()
+  }
+
+  async function recoverBridgeState(reconnected: boolean): Promise<void> {
+    // Approval/sidebar requests must not hold the conversation recovery hostage.
+    void loadPendingServerRequestsFromBridge()
+    if (reconnected) {
+      invalidateDisconnectedReads()
+      const threadId = selectedThreadId.value
+      await Promise.allSettled([
+        loadThreads({ force: true }),
+        ...(threadId ? [loadMessages(threadId, { silent: true, force: true })] : []),
+      ])
+      return
+    }
+    pendingThreadsRefresh ||= !hasLoadedThreads.value
     if (
       selectedThreadId.value &&
-      loadedMessagesByThreadId.value[selectedThreadId.value] !== true
+      (loadedMessagesByThreadId.value[selectedThreadId.value] !== true ||
+        inProgressById.value[selectedThreadId.value] === true)
     ) {
       pendingThreadMessageRefresh.add(selectedThreadId.value)
     }
@@ -3688,12 +3742,15 @@ export function useDesktopState() {
     if (typeof window === 'undefined') return
 
     if (stopNotificationStream) return
+    let receivedReady = false
     void loadPendingServerRequestsFromBridge()
     stopNotificationStream = subscribeCodexNotifications((notification) => {
       if (generation !== lifecycleGeneration) return
       if (notification.method === 'ready') {
+        const reconnected = receivedReady || asRecord(notification.params)?.reconnected === true
+        receivedReady = true
         clearAllTransientTurnErrors()
-        void recoverBridgeState()
+        void recoverBridgeState(reconnected)
         return
       }
       applyRealtimeUpdates(notification)
@@ -3703,9 +3760,10 @@ export function useDesktopState() {
 
   async function loadPendingServerRequestsFromBridge(): Promise<void> {
     const generation = lifecycleGeneration
+    const version = ++pendingServerRequestsVersion
     try {
       const rows = await getPendingServerRequests()
-      if (generation !== lifecycleGeneration) return
+      if (generation !== lifecycleGeneration || version !== pendingServerRequestsVersion) return
       const normalizedRequests = rows
         .map((row) => normalizeServerRequest(row))
         .filter((request): request is UiServerRequest => request !== null)
@@ -3733,6 +3791,8 @@ export function useDesktopState() {
 
   function stopPolling(): void {
     ++lifecycleGeneration
+    ++eventSyncGeneration
+    ++threadListLoadGeneration
     loadThreadsPromise = null
     isLoadingThreads.value = false
     loadMessagePromiseByThreadId.clear()
@@ -3759,6 +3819,7 @@ export function useDesktopState() {
     }
 
     pendingThreadsRefresh = false
+    pendingThreadsRefreshForce = false
     pendingThreadMessageRefresh.clear()
     pendingTurnStartsById.clear()
     if (eventSyncTimer !== null && typeof window !== 'undefined') {
@@ -3783,6 +3844,7 @@ export function useDesktopState() {
     // Invalidate history cache metadata together with the cleared message payload.
     // Keep resume state, which tracks server sessions rather than cached payloads.
     loadedMessagesByThreadId.value = {}
+    reconnectingThreadHistory.clear()
     loadedVersionByThreadId.value = {}
     hasMoreOlderMessagesByThreadId.value = {}
     lastMessageLoadAtByThreadId.clear()
