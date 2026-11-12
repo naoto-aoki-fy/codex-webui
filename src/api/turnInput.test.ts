@@ -100,3 +100,16 @@ describe('buildTurnInput', () => {
     expect(buildTurnInput('').attachments).not.toBe(buildTurnInput('').attachments)
   })
 })
+
+it.each(['/remote/image.png', 'D:\\remote\\image.png', '\\\\server\\share\\image.png'])('submits raw remote image path %s as localImage on the server host', (path) => {
+  const result = buildTurnInput('look', [path])
+  expect(result.input).toContainEqual({ type: 'localImage', path })
+})
+
+
+it('converts remote file URLs to filesystem paths for localImage input', () => {
+  expect(buildTurnInput('look', ['file:///D:/remote/image%20one.png']).input)
+    .toContainEqual({ type: 'localImage', path: 'D:/remote/image one.png' })
+  expect(buildTurnInput('look', ['file://server/share/image.png']).input)
+    .toContainEqual({ type: 'localImage', path: '//server/share/image.png' })
+})

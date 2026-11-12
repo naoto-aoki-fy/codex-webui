@@ -1,3 +1,4 @@
+import { resolveRelativePath, toRenderableImageUrl } from '../utils/conversationLinks.js'
 import { buildTextWithAttachments } from '../utils/attachmentPrompt.js'
 
 export type FileAttachmentParam = { label: string; path: string; fsPath: string }
@@ -8,7 +9,7 @@ function extractLocalImagePathFromUrl(value: string): string | null {
     const parsed = new URL(value, 'http://localhost')
     if (parsed.pathname !== '/codex-local-image') return null
     const path = parsed.searchParams.get('path')?.trim() ?? ''
-    return path.length > 0 ? path : null
+    return path.length > 0 ? (path.startsWith('file://') ? resolveRelativePath(path, '') : path) : null
   } catch {
     return null
   }
@@ -28,7 +29,7 @@ export function buildTurnInput(
 ): { input: Array<Record<string, unknown>>; attachments: FileAttachmentParam[] } {
   const localImageAttachments: FileAttachmentParam[] = []
   for (const imageUrl of imageUrls) {
-    const localImagePath = extractLocalImagePathFromUrl(imageUrl.trim())
+    const localImagePath = extractLocalImagePathFromUrl(toRenderableImageUrl(imageUrl))
     if (!localImagePath) continue
     localImageAttachments.push({
       label: fileNameFromPath(localImagePath),
@@ -42,7 +43,7 @@ export function buildTurnInput(
   const finalText = buildTextWithAttachments(text, dedupedFileAttachments)
   const input: Array<Record<string, unknown>> = [{ type: 'text', text: finalText }]
   for (const imageUrl of imageUrls) {
-    const normalizedUrl = imageUrl.trim()
+    const normalizedUrl = toRenderableImageUrl(imageUrl)
     if (!normalizedUrl) continue
     const localImagePath = extractLocalImagePathFromUrl(normalizedUrl)
     if (localImagePath) {

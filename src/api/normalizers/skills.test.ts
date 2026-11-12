@@ -116,3 +116,11 @@ describe('Skills presentation normalization', () => {
     expect(() => normalizeSkillsList(entries(skill(42 as unknown as string)))).toThrow(TypeError)
   })
 })
+
+it('keeps remote drive and UNC skill file paths and groups Windows nested skills', () => {
+  const root = 'D:\\Users\\remote\\.codex\\skills\\sample\\SKILL.md'
+  expect(normalizeSkillMarkdownPath(root)).toBe(root)
+  const unc = '\\\\server\\share\\skills\\sample\\SKILL.md'
+  expect(normalizeSkillMarkdownPath(unc)).toBe(unc)
+  expect(normalizeSkillsList(entries(skill(root), skill('D:\\Users\\remote\\.codex\\skills\\sample\\child')))).toHaveLength(1)
+})

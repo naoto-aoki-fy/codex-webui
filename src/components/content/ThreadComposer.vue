@@ -289,6 +289,8 @@
 </template>
 
 <script setup lang="ts">
+import { normalizeSkillMarkdownPath } from '../../api/normalizers/skills'
+import { toBrowseUrl } from '../../utils/conversationLinks'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   CollaborationModeKind,
@@ -768,13 +770,13 @@ function removeSkill(path: string): void {
 function skillMarkdownPath(path: string): string {
   const trimmed = path.trim()
   if (!trimmed) return ''
-  return trimmed.endsWith('/SKILL.md') ? trimmed : `${trimmed.replace(/\/+$/, '')}/SKILL.md`
+  return normalizeSkillMarkdownPath(trimmed.replace(/[\\/]+$/, ''))
 }
 
 function openSkillMarkdown(skill: SkillItem): void {
   const markdownPath = skillMarkdownPath(skill.path)
   if (!markdownPath || typeof window === 'undefined') return
-  window.open(`/codex-local-browse${encodeURI(markdownPath)}`, '_blank', 'noopener,noreferrer')
+  window.open(toBrowseUrl(markdownPath, ''), '_blank', 'noopener,noreferrer')
 }
 
 function removeFileAttachment(fsPath: string): void {
