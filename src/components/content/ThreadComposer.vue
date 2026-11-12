@@ -230,15 +230,10 @@
           :options="skillDropdownOptions"
           :selected-values="selectedSkillPaths"
           :placeholder="t('Skills')"
-          :search-placeholder="t('Search skills and prompts...')"
-          :create-label="t('Add new prompt')"
-          :allow-remove="true"
-          :remove-label="t('Remove prompt')"
+          :search-placeholder="t('Search skills...')"
           open-direction="up"
           :disabled="isComposerConfigDisabled"
           @toggle="onSkillDropdownToggle"
-          @create="onCreatePrompt"
-          @remove="onRemovePrompt"
         />
 
         <ComposerDropdown
@@ -304,13 +299,9 @@ import type {
 import { useMobile } from '../../composables/useMobile'
 import { useUiLanguage } from '../../composables/useUiLanguage'
 import {
-  createComposerPrompt,
-  getComposerPrompts,
-  removeComposerPrompt,
   searchComposerFiles,
   uploadFile,
   type ComposerFileSuggestion,
-  type ComposerPromptInfo,
 } from '../../api/codexGateway'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
 import IconTablerBolt from '../icons/IconTablerBolt.vue'
@@ -393,7 +384,6 @@ type AttachmentBatchStats = {
   failed: number
 }
 
-const PROMPT_OPTION_PREFIX = 'prompt:'
 
 const draft = ref('')
 type SlashSuggestion = { name: string; description: string; skill?: SkillItem }
@@ -439,7 +429,6 @@ function applySlashSuggestion(item: SlashSuggestion) {
 
 const selectedImages = ref<SelectedImage[]>([])
 const selectedSkills = ref<SkillItem[]>([])
-const savedPrompts = ref<ComposerPromptInfo[]>([])
 const fileAttachments = ref<FileAttachment[]>([])
 const pendingAttachmentCount = ref(0)
 const attachmentBatchStats = ref<AttachmentBatchStats | null>(null)
@@ -495,15 +484,6 @@ const skillDropdownOptions = computed(() =>
         removable: false,
       }
     }),
-    ...savedPrompts.value.map((prompt) => ({
-      value: promptOptionValue(prompt.path),
-      label: prompt.name,
-      description: prompt.description,
-      badge: 'T',
-      badgeLabel: 'Prompt',
-      badgeTone: 'prompt' as const,
-      removable: true,
-    })),
   ],
 )
 
@@ -1186,45 +1166,6 @@ function appendTextToDraft(text: string): void {
   nextTick(() => inputRef.value?.focus())
 }
 
-async function reloadPrompts(): Promise<void> {
-  savedPrompts.value = await getComposerPrompts()
-}
-
-function promptOptionValue(path: string): string {
-  return `${PROMPT_OPTION_PREFIX}${path}`
-}
-
-function promptPathFromOptionValue(value: string): string | null {
-  return value.startsWith(PROMPT_OPTION_PREFIX) ? value.slice(PROMPT_OPTION_PREFIX.length) : null
-}
-
-async function onCreatePrompt(): Promise<void> {
-  const name = window.prompt(t('Prompt name'))?.trim() ?? ''
-  if (!name) return
-  const content = window.prompt(t('Prompt content')) ?? ''
-  if (!content.trim()) return
-  const created = await createComposerPrompt(name, content)
-  if (!created) return
-  await reloadPrompts()
-  appendTextToDraft(created.content)
-}
-
-async function onRemovePrompt(path: string): Promise<void> {
-  const promptPath = promptPathFromOptionValue(path) ?? path
-  const target = savedPrompts.value.find((prompt) => prompt.path === promptPath)
-  const confirmed = window.confirm(target ? `${t('Remove prompt')} "${target.name}"?` : t('Remove prompt'))
-  if (!confirmed) return
-  const removed = await removeComposerPrompt(promptPath)
-  if (!removed) return
-  await reloadPrompts()
-}
-
-function onPromptDropdownToggle(path: string): void {
-  const prompt = savedPrompts.value.find((entry) => entry.path === path)
-  if (!prompt) return
-  appendTextToDraft(prompt.content)
-}
-
 function getMentionFileName(path: string): string {
   const idx = path.lastIndexOf('/')
   if (idx < 0) return path
@@ -1282,12 +1223,6 @@ function skillSourceBadge(skill: SkillItem): SkillSourceBadge {
 }
 
 function onSkillDropdownToggle(path: string, checked: boolean): void {
-  const promptPath = promptPathFromOptionValue(path)
-  if (promptPath) {
-    onPromptDropdownToggle(promptPath)
-    return
-  }
-
   if (checked) {
     const skill = (props.skills ?? []).find((s) => s.path === path)
     if (skill && !selectedSkills.value.some((s) => s.path === path)) {
@@ -1312,7 +1247,6 @@ onMounted(() => {
   window.addEventListener('drop', onWindowDragCleanup)
   window.addEventListener('dragend', onWindowDragCleanup)
   window.addEventListener('blur', onWindowDragCleanup)
-  void reloadPrompts()
   queueComposerOverflowMeasurement()
 })
 

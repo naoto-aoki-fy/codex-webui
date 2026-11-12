@@ -11,7 +11,6 @@ import { asRecord, getErrorMessage, getErrorCode, setJson, readJsonBody, isUnaut
 export { isUnauthenticatedRateLimitError, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
 import { sanitizeThreadTurnsInlinePayloads, THREAD_METHODS_WITH_TURNS } from './threadInlinePayloads.js'
 export { sanitizeThreadTurnsInlinePayloads } from './threadInlinePayloads.js'
-import { handlePromptRoutes } from './promptRoutes.js'
 import appServerMethods from './appServerMethods.json'
 import { AppServerClient as AppServerClientCore, STREAM_EVENT_BUFFER_LIMIT, type StreamEventFrame } from './appServerClient.js'
 import { PersistentThreadIndex } from './persistentThreadIndex.js'
@@ -870,14 +869,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         } catch (error) {
           setJson(res, 500, { error: getErrorMessage(error, 'Failed to search files') })
         }
-        return
-      }
-
-      if (await handlePromptRoutes(req, res, url, {
-        readJsonBody,
-        getPromptsDirectory: () => join(getCodexHomeDir(), 'prompts'),
-        getErrorMessage,
-      })) {
         return
       }
 

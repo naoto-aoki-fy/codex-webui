@@ -175,9 +175,7 @@
         <section class="content-body">
           <template v-if="isSkillsRoute">
             <DirectoryHub
-              :try-in-flight-key="directoryTryInFlightKey"
               @skills-changed="onSkillsChanged"
-              @try-item="onTryDirectoryItem"
             />
           </template>
           <template v-else-if="isHomeRoute">
@@ -407,12 +405,6 @@ const SETTINGS_HELP = {
 
 type ChatWidthMode = 'standard' | 'wide' | 'extra-wide'
 
-type DirectoryTryItemPayload = {
-  kind: 'skill'
-  name: string
-  displayName: string
-  skillPath?: string
-}
 
 type ChatWidthPreset = {
   label: string
@@ -503,7 +495,6 @@ const threadGoalPanelRef = ref<InstanceType<typeof ThreadGoalPanel> | null>(null
 const threadComposerRef = ref<ThreadComposerExposed | null>(null)
 const threadConversationRef = ref<{ jumpToLatest: () => void } | null>(null)
 const isRouteSyncInProgress = ref(false)
-const directoryTryInFlightKey = ref('')
 let hasPendingRouteSync = false
 const hasInitialized = ref(false)
 const newThreadCwd = ref('')
@@ -1756,35 +1747,6 @@ async function submitFirstMessageForNewThread(
     scheduleMobileConversationJumpToLatest()
   } catch {
     // Error is already reflected in state.
-  }
-}
-
-function buildDirectoryTryPrompt(payload: DirectoryTryItemPayload): string {
-  const label = payload.displayName.trim() || payload.name.trim()
-  return `Test ${label} skill. Give me a list of what it can do and one useful example.`
-}
-
-function getDirectoryTryItemKey(payload: DirectoryTryItemPayload): string {
-  return `${payload.kind}:${payload.name}:${payload.skillPath ?? ''}`
-}
-
-async function onTryDirectoryItem(payload: DirectoryTryItemPayload): Promise<void> {
-  if (directoryTryInFlightKey.value) return
-  directoryTryInFlightKey.value = getDirectoryTryItemKey(payload)
-  const text = buildDirectoryTryPrompt(payload)
-  const skills = payload.kind === 'skill' && payload.skillPath
-    ? [{ name: payload.name, path: payload.skillPath }]
-    : []
-  try {
-    const targetCwd = directoryCwd.value.trim() || composerCwd.value.trim()
-    const threadId = await sendMessageToNewThread(text, targetCwd, [], skills, [])
-    if (!threadId) return
-    await router.replace({ name: 'thread', params: { threadId } })
-    scheduleMobileConversationJumpToLatest()
-  } catch {
-    // Error is already reflected in shared thread state.
-  } finally {
-    directoryTryInFlightKey.value = ''
   }
 }
 

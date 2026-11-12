@@ -15,9 +15,7 @@
     <div v-if="toast" class="directory-toast" :class="{ 'is-error': toast.type === 'error' }">{{ toast.text }}</div>
     <section class="directory-section">
       <SkillsHub
-        :try-in-flight-key="props.tryInFlightKey"
         @skills-changed="emit('skills-changed')"
-        @try-item="(payload) => emit('try-item', payload)"
       >
         <template #before-installed>
           <div class="skills-embedded-section">
@@ -79,19 +77,11 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getMethodCatalog, listDirectoryMcpServers, reloadDirectoryMcpServers, startDirectoryMcpLogin, type DirectoryMcpServerStatus } from '../../api/codexGateway'
 import SkillsHub from './SkillsHub.vue'
 const props = defineProps<{
-  tryInFlightKey?: string
 }>()
 
-export type DirectoryTryItemPayload = {
-  kind: 'skill'
-  name: string
-  displayName: string
-  skillPath?: string
-}
 
 const emit = defineEmits<{
   'skills-changed': []
-  'try-item': [payload: DirectoryTryItemPayload]
 }>()
 
 const methodSet = ref<Set<string>>(new Set())

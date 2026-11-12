@@ -35,10 +35,8 @@
     <SkillDetailModal
       :skill="detailSkill"
       :visible="isDetailOpen"
-      :is-trying="props.tryInFlightKey === skillTryKey(detailSkill)"
       @close="isDetailOpen = false"
       @toggle-enabled="handleToggleEnabled"
-      @try="handleTrySkill"
     />
   </div>
 </template>
@@ -64,13 +62,8 @@ const toast = ref<{ text: string; type: 'success' | 'error' } | null>(null)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 const { t } = useUiLanguage()
 
-const props = defineProps<{
-  tryInFlightKey?: string
-}>()
-
 const emit = defineEmits<{
   'skills-changed': []
-  'try-item': [payload: { kind: 'skill'; name: string; displayName: string; skillPath?: string }]
 }>()
 
 const toastClass = computed(() => toast.value?.type === 'error' ? 'skills-hub-toast-error' : 'skills-hub-toast-success')
@@ -119,22 +112,6 @@ async function handleToggleEnabled(skill: LocalSkill, enabled: boolean): Promise
   } catch (e) {
     showToast(e instanceof Error ? e.message : 'Failed to update skill', 'error')
   }
-}
-
-function handleTrySkill(skill: LocalSkill): void {
-  if (skill.enabled === false) return
-  if (props.tryInFlightKey) return
-  emit('try-item', {
-    kind: 'skill',
-    name: skill.name,
-    displayName: skill.name,
-    skillPath: skill.path,
-  })
-  isDetailOpen.value = false
-}
-
-function skillTryKey(skill: LocalSkill): string {
-  return `skill:${skill.name}:${skill.path ?? ''}`
 }
 
 onMounted(() => {
