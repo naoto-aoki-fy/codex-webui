@@ -50,19 +50,18 @@ failures are returned from B. Upgrade B if its protocol lacks a required method.
   `fs/readFile`. Paths retain remote Windows or POSIX lexical semantics.
 - Registration and thread creation validate directories on B, without creating
   directories on A. Launch project arguments must be absolute remote paths.
-- Git status, branches and detached worktrees: `command/exec`, using argv and an
+- Git status and branch operations: `command/exec`, using argv and an
   explicit remote cwd, without sandbox or permission overrides. Git must exist
-  on B and server policy must permit the operation. Worktrees are allocated
-  below B's reported CODEX_HOME/worktrees. Ambiguous failures retain files for
-  inspection rather than risking deletion of an accepted operation.
+  on B and server policy must permit the operation. Automatic worktree creation
+  is not a supported UI capability.
 - Composer search: `fuzzyFileSearch`, using the selected remote root.
 - Skills: `skills/list` and remote Markdown via `fs/readFile`; no local catalog
   supplementation. Native thread history is authoritative. Local session scans,
   SQLite imports, and session-derived timestamps/Skills/execution enrichment are
   unavailable. Existing local data is preserved; history rebuild returns 501.
 
-Set `CODEXUI_REMOTE_INITIAL_DIRECTORY` to an absolute directory on B for a new
-installation. Otherwise the picker uses a saved workspace. Without either,
+Optionally set `CODEXUI_REMOTE_INITIAL_DIRECTORY` to an absolute directory on B.
+Otherwise the picker uses a saved workspace. Without either,
 enter an absolute remote workspace path. Neither A's home nor B's CODEX_HOME is
 assumed to be B's user home.
 
@@ -125,6 +124,14 @@ to reconnect. Subscriptions resume with `excludeTurns: true`, separately from
 initialization. A failed restored thread cannot gate account/model reads or
 subscription removal. Restoration is sequential to avoid fanout.
 
+Browser WS and SSE readiness include a process-scoped `backendInstanceId`. A new
+instance invalidates browser subscription flags: selected and running threads
+resume, while idle cached threads resume when opened. An ordinary browser socket
+reconnect retains subscription flags and refreshes selected history only.
+Concurrent resume calls coalesce; neither recovery path replays sends, steering
+or approval replies.
+After a successful snapshot, connection errors clear while execution errors remain.
+
 Approval handles are unique to a client lifetime and discarded on disconnect;
 stale browser replies cannot answer reused upstream IDs. There is no automatic
 approval recovery guarantee: server-side behavior after a dropped connection
@@ -154,5 +161,39 @@ per-request deadlines cleared on settlement/disconnect, sequential subscription
 restoration without full histories, no local session traversal, and no per-Skill
 Markdown read fanout when listing the catalog. Uploads are bounded; reads retain
 the whole-file transfer limitation above. Disconnect invalidates history caches.
-No browser profiler, real network latency, or two-host throughput measurement
-was performed for this change.
+Backend replacement resumes only the selected and known running threads;
+background subscriptions use `excludeTurns: true` and their histories remain lazy.
+Browser resume caches are invalidated for the replaced backend. Windows skill grouping uses a single normalized-path map with constant
+time root lookups, without per-skill filesystem requests. Protocol tests count
+resume and turn-start frames across reconnects. Browser fixture checks exercise
+the empty picker and drive/UNC TestChat links in light/dark themes. A real Codex
+0.167.2 test verifies filesystem RPCs, previews and independent process ownership.
+These checks do not measure real network latency or two-host throughput; no live
+browser profiler was run.
+
+## MCP OAuth across hosts
+
+`mcpServer/oauth/login` returns an authorization URL, not a callback relay. Codex
+runs the callback listener on B, often on a different, ephemeral loopback port.
+The browser must reach that listener; the WebSocket tunnel does not forward it.
+See the [official MCP setup guide](https://developers.openai.com/codex/mcp/) and
+[App Server protocol](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md).
+
+Prefer authenticating on B using `codex mcp login <name>` as the same user with
+the same CODEX_HOME as the server, then reload MCPs in the UI. Alternatively,
+configure `mcp_oauth_callback_port = 14501` in B's Codex config (check support in
+your Codex version), restart/reload configuration as required, and forward that
+port from the **browser machine** before starting OAuth:
+
+```sh
+ssh -N -L 127.0.0.1:14501:127.0.0.1:14501 user@machine-b
+```
+
+Keep the callback port in the redirect URL unchanged. If the browser is on a third
+machine, a tunnel on A alone is insufficient: forward from that machine to B.
+For a dynamically selected port, inspect the actual authorization redirect URI
+and forward that specific port before completing authorization; do not guess it
+or rewrite the URL. If login expires, fix connectivity and explicitly start a new
+login. Verify MCP status after reloading. This UI does not relay callbacks or
+expose them on public interfaces. Real provider OAuth completion across hosts
+requires manual verification and is not covered by the credential-free fixture.

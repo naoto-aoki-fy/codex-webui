@@ -52,7 +52,7 @@ for live notifications. Automated connection/cleanup checks need no credentials:
 
 1. Start development with `CODEXUI_APP_SERVER_URL=ws://127.0.0.1:4500 pnpm run dev`
    and repeat against the built production CLI. Connect to `/codex-api/ws` using a
-   WebSocket client. Expect one JSON `ready` frame with `{ok:true}` and `atIso`.
+   WebSocket client. Expect one JSON `ready` frame with `{ok:true,backendInstanceId:"..."}` and `atIso`.
 2. Trigger a turn in another client. Expect unchanged notification methods, params
    and timestamps. Close/reconnect the browser socket repeatedly; expect one active
    subscription per connection and no duplicate notifications.
@@ -387,3 +387,38 @@ tracked uploads only after deleting all histories that reference them. Preserve
 A's pre-existing UI state and credentials; restore test permissions/firewall
 rules. Record mocked, same-host and real two-host results separately; an unrun
 step is not a pass.
+
+## Split-host recovery, first project and Windows paths
+
+Prerequisites: A runs this checkout, B runs Codex 0.167.2 or compatible APIs;
+use separate homes/CODEX_HOME with no shared project mount. Keep a TestChat
+project on B. Use the deployment guide's SSH tunnel. Test light and dark themes.
+
+1. With no registered projects, no threads and no initial-directory override,
+   open the folder picker. Expect a focused editable path and guidance. Enter
+   an invalid remote path and Browse: expect the remote error. Enter an existing
+   absolute path on B and Select: expect registration without a directory on A.
+2. Start a long turn in TestChat. Drop only the SSH tunnel, restore it, and wait
+   for automatic recovery. Expect live events, consistent final history, no
+   duplicate text and no replayed turn. Repeat with a pending approval: stale
+   handles must not be sent again; if it does not reappear, inspect/resolve on B.
+3. During another long turn, restart only A's Node backend with the browser open.
+   Expect a new backendInstanceId, restored selected/running subscriptions, and
+   final history without a browser reload. Repeat reconnects; count turn/start
+   and approval replies to confirm no replay. Open an idle cached thread and
+   verify it resumes before receiving notifications.
+4. Restart only B's app server. Expect automatic handshake, subscription
+   restoration and history refresh; persisted history survives but an interrupted
+   execution may not. No automatic turn retry is expected. Genuine execution
+   errors remain visible; a recovered connection warning clears after history loads.
+5. On a Windows B with Linux/macOS A, preview drive and UNC skill paths, images,
+   and links containing spaces, # and ?. Expect exact remote filesystem targets.
+   In TestChat send a unique marker and representative links; assert hrefOk,
+   titleOk and textOk on the actual rendered row and capture light/dark evidence.
+6. For MCP OAuth, forward only the WebSocket initially. Expect callback guidance
+   in Skills & MCPs. Add the configured callback tunnel from the browser machine,
+   explicitly restart login and verify MCP status, or authenticate on B and reload.
+
+Cleanup: stop only test backends/tunnels, remove test registrations/threads and
+uploaded fixtures when no longer referenced. Restore original B config after
+OAuth testing. Never stop an independently managed non-test server.
