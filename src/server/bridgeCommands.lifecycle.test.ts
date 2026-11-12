@@ -58,7 +58,7 @@ it('preserves chunk toString decoding and raw whitespace', async () => {
 })
 it('preserves missing ripgrep error without spawning', async () => {
   mocks.resolve.mockReturnValue(null)
-  await expect(listFilesWithRipgrep('/cwd')).rejects.toThrow('ripgrep (rg) is not available')
+  await expect(listFilesWithRipgrep('/cwd')).rejects.toThrow(/ripgrep \(rg\) is not available.*rg --version.*CODEXUI_RG_COMMAND/)
   expect(mocks.spawn).not.toHaveBeenCalled()
 })
 it.each([['', '', 'rg --files failed'], [' partial\n', ' error\n', 'error\npartial']])('preserves rg nonzero failure %j', async (stdout, stderr, message) => {
@@ -73,4 +73,11 @@ it('preserves rg CRLF splitting and per-line trimming', async () => {
   proc.stdout.emit('data', Buffer.from(' a b \r\n\n.hidden\n'))
   proc.emit('close', 0)
   expect(await promise).toEqual(['a b', '.hidden'])
+})
+
+it('preserves rg spawn errors when the executable disappears after resolution', async () => {
+  const promise = listFilesWithRipgrep('/cwd')
+  const error = Object.assign(new Error('spawn fixture rg ENOENT'), { code: 'ENOENT' })
+  proc.emit('error', error)
+  await expect(promise).rejects.toBe(error)
 })

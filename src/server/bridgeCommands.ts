@@ -5,7 +5,9 @@ export async function listFilesWithRipgrep(cwd: string): Promise<string[]> {
   return await new Promise<string[]>((resolve, reject) => {
     const ripgrepCommand = resolveRipgrepCommand()
     if (!ripgrepCommand) {
-      reject(new Error('ripgrep (rg) is not available'))
+      reject(new Error('ripgrep (rg) is not available. Install ripgrep and verify rg --version, '
+        + 'or set CODEXUI_RG_COMMAND to an executable path (without arguments). '
+        + 'If CODEXUI_RG_COMMAND is already set, verify its path and executable permissions.'))
       return
     }
 
