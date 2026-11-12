@@ -3501,27 +3501,46 @@ export function useDesktopState() {
     }
   }
 
-  async function rollbackSelectedThread(turnId: string): Promise<void> {
-    const threadId = selectedThreadId.value
-    if (!threadId) return
-    if (isRollingBack.value) return
-    if (!turnId.trim()) return
+  async function rollbackSelectedThread(turnId: string): Promise<string> {
+    return executeThreadRevert(selectedThreadId.value, turnId, 'revert')
+  }
 
-    if (inProgressById.value[threadId]) return
+  async function executeThreadRevert(sourceThreadId: string, turnId: string, operation: 'revert' | 'fork-and-revert'): Promise<string> {
+    let threadId = sourceThreadId
+    if (!threadId) return ''
+    if (isRollingBack.value) return ''
+    if (!turnId.trim()) return ''
+
+    if (inProgressById.value[threadId]) return ''
 
     isRollingBack.value = true
     error.value = ''
-    const threadCwd = selectedThread.value?.cwd?.trim() ?? ''
+    const threadCwd = flattenThreads(sourceGroups.value).find(row => row.id === sourceThreadId)?.cwd?.trim() ?? ''
+    const originalSelection = selectedThreadId.value
+    const originalSelectionGeneration = selectionGeneration
+    let stage = 'Validate original target'
     let filesRestored = false
     let historyReverted = false
     try {
       await validateThreadRevert(threadId, turnId)
+      if (operation === 'fork-and-revert') {
+        stage = 'Fork conversation'
+        const forked = await forkThread(sourceThreadId, threadCwd || undefined, readModelIdForThread(sourceThreadId) || undefined)
+        threadId = forked.threadId.trim()
+        if (!threadId || threadId === sourceThreadId) throw new Error('Invalid fork destination')
+        insertOptimisticThread(threadId, threadCwd, 'Forked chat')
+        setThreadModelId(threadId, forked.model)
+        stage = 'Validate fork target'
+        await validateThreadRevert(threadId, turnId)
+      }
+      stage = 'Restore files'
       if (threadCwd) {
-        const restoration = await revertThreadFileChanges(threadId, turnId, threadCwd)
+        const restoration = await revertThreadFileChanges(sourceThreadId, turnId, threadCwd)
         if (restoration.errors.length) throw new Error('File restoration failed; some files may already have changed. History was preserved. ' + restoration.errors.join('; '))
         filesRestored = true
       }
       invalidateThreadHistory(threadId)
+      stage = 'Undo history'
       await revertThreadHistory(threadId, turnId)
       historyReverted = true
       invalidateThreadHistory(threadId)
@@ -3533,22 +3552,32 @@ export function useDesktopState() {
       setTurnSummaryForThread(threadId, null)
       setTurnActivityForThread(threadId, null)
       setTurnErrorForThread(threadId, null)
+      stage = 'Refresh destination'
       const owner = historyReadOwner(threadId)
       const detail = await getThreadDetail(threadId)
-      if (historyReadOwnerByThreadId.get(threadId) !== owner) return
+      if (historyReadOwnerByThreadId.get(threadId) !== owner) return ''
       setPersistedMessagesForThread(threadId, detail.messages)
       turnIndexByTurnIdByThreadId.value = { ...turnIndexByTurnIdByThreadId.value, [threadId]: detail.turnIndexByTurnId }
       hasMoreOlderMessagesByThreadId.value = { ...hasMoreOlderMessagesByThreadId.value, [threadId]: detail.hasMoreOlder }
-      pendingThreadsRefresh = true
-      await syncFromNotifications()
+      loadedMessagesByThreadId.value = { ...loadedMessagesByThreadId.value, [threadId]: true }
+      if (operation === 'fork-and-revert' && selectionGeneration === originalSelectionGeneration && selectedThreadId.value === originalSelection && originalSelection === sourceThreadId) {
+        setSelectedThreadId(threadId)
+      }
+      if (operation === 'revert') {
+        pendingThreadsRefresh = true
+        await syncFromNotifications()
+      }
+      return threadId
     } catch (unknownError) {
-      const reason = unknownError instanceof Error ? unknownError.message : 'Failed to revert thread'
+      const reason = stage + ': ' + (unknownError instanceof Error ? unknownError.message : 'Failed to revert thread')
+        + (threadId !== sourceThreadId ? ' Fork retained: ' + threadId + '.' : '')
       invalidateThreadHistory(threadId)
       error.value = historyReverted
         ? 'History reverted, but refresh failed. Reload the thread; do not repeat the edit. ' + reason
         : filesRestored
           ? 'Files restored, but history revert was not confirmed. Reload the thread before retrying. ' + reason
           : reason
+      return ''
     } finally {
       isRollingBack.value = false
     }
@@ -3941,6 +3970,7 @@ export function useDesktopState() {
     forkThreadById,
     forkThreadFromTurn,
     rollbackSelectedThread,
+    executeThreadRevert,
 
     sendMessageToSelectedThread,
     sendMessageToNewThread,

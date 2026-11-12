@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootRef" class="composer-dropdown">
+  <div ref="rootRef" class="composer-dropdown" @keydown.esc.stop.prevent="isOpen = false">
     <button
       class="composer-dropdown-trigger"
       type="button"
@@ -173,6 +173,7 @@ function removeLayoutListeners(): void {
 }
 
 function onSelect(value: string): void {
+  if (props.disabled) return
   emit('update:modelValue', value)
   isOpen.value = false
   searchQuery.value = ''
@@ -197,6 +198,8 @@ function onDocumentPointerDown(event: PointerEvent): void {
   isOpen.value = false
   searchQuery.value = ''
 }
+
+watch(() => props.disabled, disabled => { if (disabled) isOpen.value = false })
 
 watch(isOpen, (open) => {
   if (!open) {

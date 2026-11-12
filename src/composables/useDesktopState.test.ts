@@ -1196,3 +1196,81 @@ describe('thread revert orchestration', () => {
     expect(state.error.value).toContain('History reverted, but refresh failed')
   })
 })
+
+describe('fork and revert orchestration', () => {
+  it.each(['first-turn', 'older-page-turn'])('reverts only the fork at %s', async turnId => {
+    installTestWindow()
+    gatewayMocks.validateThreadRevert.mockResolvedValue(undefined)
+    gatewayMocks.forkThread.mockResolvedValueOnce({ threadId: 'fork', model: '' })
+    gatewayMocks.revertThreadHistory.mockResolvedValueOnce(undefined)
+    gatewayMocks.getThreadDetail.mockRejectedValueOnce(new Error('refresh failed'))
+    const state = useDesktopState()
+    state.selectedThreadId.value = 'source'
+    await state.executeThreadRevert('source', turnId, 'fork-and-revert')
+    expect(gatewayMocks.validateThreadRevert.mock.calls).toEqual([['source', turnId], ['fork', turnId]])
+    expect(gatewayMocks.revertThreadHistory).toHaveBeenCalledExactlyOnceWith('fork', turnId)
+    expect(state.error.value).toContain('Fork retained: fork')
+  })
+
+  it('stops at fork validation and blocks concurrent execution', async () => {
+    installTestWindow()
+    let finish!: () => void
+    gatewayMocks.validateThreadRevert.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+    gatewayMocks.forkThread.mockResolvedValueOnce({ threadId: 'fork', model: '' })
+    gatewayMocks.validateThreadRevert.mockRejectedValueOnce(new Error('missing target'))
+    const state = useDesktopState()
+    state.selectedThreadId.value = 'source'
+    const pending = state.executeThreadRevert('source', 'turn', 'fork-and-revert')
+    expect(await state.executeThreadRevert('source', 'turn', 'fork-and-revert')).toBe('')
+    finish()
+    await pending
+    expect(gatewayMocks.forkThread).toHaveBeenCalledTimes(1)
+    expect(gatewayMocks.revertThreadFileChanges).not.toHaveBeenCalled()
+    expect(gatewayMocks.revertThreadHistory).not.toHaveBeenCalled()
+    expect(state.error.value).toContain('Validate fork target')
+    expect(state.isRollingBack.value).toBe(false)
+  })
+})
+
+describe('fork revert stage boundaries', () => {
+  it.each(['source', 'fork', 'target', 'files', 'history', 'refresh', 'success', 'navigation'])('handles %s without replaying work', async failure => {
+    installTestWindow()
+    for (const mock of [gatewayMocks.validateThreadRevert, gatewayMocks.forkThread, gatewayMocks.revertThreadFileChanges, gatewayMocks.revertThreadHistory, gatewayMocks.getThreadDetail]) mock.mockReset()
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({
+      groups: [{ projectName: 'Project', threads: [thread('source', '/tmp/disposable')] }],
+      nextCursor: null,
+    })
+    const state = useDesktopState()
+    await state.refreshAll({ includeSelectedThreadMessages: false })
+    state.selectedThreadId.value = 'source'
+    gatewayMocks.validateThreadRevert.mockResolvedValue(undefined)
+    gatewayMocks.forkThread.mockImplementationOnce(async () => {
+      if (failure === 'fork') throw new Error('fork failed')
+      if (failure === 'navigation') state.primeSelectedThread('other')
+      return { threadId: 'destination', model: '' }
+    })
+    gatewayMocks.revertThreadFileChanges.mockResolvedValueOnce({ reverted: 1, errors: failure === 'files' ? ['write failed'] : [] })
+    gatewayMocks.revertThreadHistory.mockResolvedValueOnce(undefined)
+    gatewayMocks.getThreadDetail.mockResolvedValueOnce({ messages: [], turnIndexByTurnId: {}, hasMoreOlder: false })
+    if (failure === 'source') gatewayMocks.validateThreadRevert.mockRejectedValueOnce(new Error('source failed'))
+    if (failure === 'target') gatewayMocks.validateThreadRevert.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('target failed'))
+    if (failure === 'history') gatewayMocks.revertThreadHistory.mockReset().mockRejectedValueOnce(new Error('history failed'))
+    if (failure === 'refresh') gatewayMocks.getThreadDetail.mockReset().mockRejectedValueOnce(new Error('refresh failed'))
+    const result = await state.executeThreadRevert('source', 'turn-zero', 'fork-and-revert')
+    expect(gatewayMocks.forkThread).toHaveBeenCalledTimes(failure === 'source' ? 0 : 1)
+    const reachesFiles = !['source', 'fork', 'target'].includes(failure)
+    expect(gatewayMocks.revertThreadFileChanges).toHaveBeenCalledTimes(reachesFiles ? 1 : 0)
+    if (reachesFiles) expect(gatewayMocks.revertThreadFileChanges).toHaveBeenCalledWith('source', 'turn-zero', '/tmp/disposable')
+    expect(gatewayMocks.revertThreadHistory).toHaveBeenCalledTimes(reachesFiles && failure !== 'files' ? 1 : 0)
+    if (['success', 'navigation'].includes(failure)) {
+      expect(result).toBe('destination')
+      expect(state.selectedThreadId.value).toBe(failure === 'success' ? 'destination' : 'other')
+    } else {
+      expect(result).toBe('')
+      expect(state.error.value).not.toBe('')
+    }
+    if (failure === 'history') expect(state.error.value).toContain('Files restored')
+    if (failure === 'refresh') expect(state.error.value).toContain('History reverted')
+    expect(state.isRollingBack.value).toBe(false)
+  })
+})
