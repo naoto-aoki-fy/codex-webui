@@ -26,7 +26,7 @@ Web password authentication protects the browser backend separately from Codex a
 - `src/api/codexGateway.ts`: typed UI operations and normalization;
   `codexRpcClient.ts`: browser HTTP and notification transport.
 - `src/server/codexAppServerBridge.ts`: local HTTP dispatch and shared connection state;
-  account, skills and prompt routes delegate to dedicated modules.
+  account and skills routes delegate to dedicated modules.
 - `AppServerClient` in the bridge: RPC correlation, snapshots and history recovery;
   `appServerWebSocketClient.ts`: external transport and reconnect.
 - `src/server/httpServer.ts` and `src/cli/index.ts`: production hosting and CLI.
@@ -44,7 +44,7 @@ and bundled method metadata do not guarantee UI support or live server capabilit
 | Implemented | Thread listing/pagination, create/resume/archive, manual naming, forking and rollback; pins, unread state and project grouping |
 | Implemented | Streaming chat, interrupt, immediate steering during active turns, approval requests, plans, token usage, command output and file-change/diff presentation |
 | Implemented | Official Codex model catalog, per-context model/reasoning choices and collaboration modes; effort choices follow model capabilities |
-| Implemented | Project creation/clone, worktrees, file attachments/search, installed skills and composer prompts, MCP status/authentication |
+| Implemented | Existing project/worktree folder selection, file attachments/search, installed skills, MCP status/authentication |
 | Implemented | External account status/quotas, optional web password, responsive light/dark UI |
 | Removed | OpenRouter/Zen/custom provider proxies, local Codex process management and automatic authentication |
 | Removed | Automation management, deferred prompt queue, built-in tunnels, Open Terminal action, ZIP import/export, external skill catalog/install UI, Telegram integration |
@@ -72,7 +72,7 @@ pending RPC calls; requests are not replayed automatically.
 
 Browser storage retains read state, model/reasoning/collaboration preferences and
 layout state, including legacy migration keys. Opening home does not restore the
-last selected thread. Shared titles, pins and workspace roots use server-side global
+last selected thread. Thread names and pins use native Codex state. Workspace UI preferences use shared global
 state; attachment-only history has an [app-owned index](docs/persistent-thread-index.md).
 Persistence does not make sending messages available while disconnected.
 
@@ -115,3 +115,6 @@ The legacy `/codex-api/thread-stream-events` buffered-event diagnostic HTTP API 
 
 Read status uses native Codex receipts exclusively; see
 [native Codex cleanup](docs/native-codex-cleanup.md) for protocol and data-preservation details.
+
+Native API ownership, removed features, migration and retained adapters are documented in
+[capability consolidation](docs/refactoring/native-capability-consolidation.md).

@@ -1,6 +1,6 @@
 # Git, Worktrees, and Rollback
 
-Branch controls, worktree creation, rollback commits, changed-files panels, file browser links, and rollback debug behavior.
+Existing worktree directories, rollback commits, changed-files panels, file browser links, and rollback debug behavior.
 
 Return to the [manual test index](../../tests.md).
 
@@ -18,10 +18,10 @@ Return to the [manual test index](../../tests.md).
 | [Feature: Changed-files panel persists across refresh (assistant message level)](changed-files-panel-persists-across-refresh-assistant-message-level.md) |
 | [Feature: Auto-commit default is disabled for new preference state](auto-commit-default-is-disabled-for-new-preference-state.md) |
 | [Feature: Rollback appends rolled-back user text into composer input](rollback-appends-rolled-back-user-text-into-composer-input.md) |
-| [Feature: New thread worktree creation supports searchable base-branch selector](new-thread-worktree-creation-supports-searchable-base-branch-selector.md) |
+| [Existing worktree directory selection](new-thread-worktree-creation-supports-searchable-base-branch-selector.md) |
 | [Feature: Worktree branch selector sorts branches by last active commit](worktree-branch-selector-sorts-branches-by-last-active-commit.md) |
 | [Feature: New worktree base-branch dropdown aligns on same row to the right](new-worktree-base-branch-dropdown-aligns-on-same-row-to-the-right.md) |
-| [Feature: New worktree creation uses detached HEAD parity behavior](new-worktree-creation-uses-detached-head-parity-behavior.md) |
+| [Existing worktree preservation](new-worktree-creation-uses-detached-head-parity-behavior.md) |
 | [User message edit action replaces rollback button](user-message-edit-action-replaces-rollback-button.md) |
 | [Thread menu copy path action](thread-menu-copy-path-action.md) |
 | [Thread menu copy chat action](thread-menu-copy-chat-action.md) |
