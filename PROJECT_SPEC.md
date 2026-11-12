@@ -13,9 +13,10 @@ Express (production) / Vite middleware (development)
 Independently managed Codex app-server (ws/wss or Unix socket)
 ```
 
-The backend does not install, launch, authenticate, or terminate Codex. Use the same
-user, CODEX_HOME and filesystem paths for both processes. A remote endpoint alone
-is not split-host support. See [connection and lifecycle details](docs/external-app-server.md).
+The backend does not install, launch, authenticate, or terminate Codex. The UI and
+App Server may run on separate hosts with different homes and CODEX_HOME values.
+Project files, Git commands and uploads use App Server RPCs on the remote host.
+See [connection and lifecycle details](docs/external-app-server.md).
 Web password authentication protects the browser backend separately from Codex authentication.
 
 ## Responsibility boundaries
@@ -49,7 +50,7 @@ and bundled method metadata do not guarantee UI support or live server capabilit
 | Removed | OpenRouter/Zen/custom provider proxies, local Codex process management and automatic authentication |
 | Removed | Automation management, deferred prompt queue, built-in tunnels, Open Terminal action, ZIP import/export, external skill catalog/install UI, Telegram integration |
 | Not surfaced | Dedicated code-review workflow (`review/start`); generic RPC and protocol definitions remain |
-| Unsupported deployment | Split-host filesystem operation based solely on an external app-server URL |
+| Implemented | Split-host project filesystem, Git, uploads and previews through App Server APIs; no shared filesystem required |
 
 The Skills route manages already installed skills; installation is external.
 See [installed skills](docs/installed-skills.md). Removed UI does not imply removal

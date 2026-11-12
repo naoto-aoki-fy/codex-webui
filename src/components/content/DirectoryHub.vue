@@ -24,6 +24,7 @@
               <span class="skills-embedded-chevron" :class="{ 'is-open': isMcpSectionOpen }">›</span>
             </button>
             <div v-if="isMcpSectionOpen" class="skills-embedded-body">
+              <p class="directory-empty">OAuth callbacks run on the App Server host. If browser login cannot connect to localhost, forward the callback port separately or run <code>codex mcp login &lt;name&gt;</code> on that host, then reload MCPs. Forwarding the WebSocket port alone is insufficient.</p>
               <div v-if="!supportsMcps" class="directory-empty">
                 MCP status APIs unavailable in this Codex CLI. Update Codex CLI to inspect MCP servers.
               </div>
