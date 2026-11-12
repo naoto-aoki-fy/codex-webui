@@ -1,8 +1,10 @@
+import { createCodexBridgeMiddleware } from '../server/codexAppServerBridge.js'
+import { isAbsoluteLikePath } from '../pathUtils.js'
 import { resolveAppServerUrl } from '../server/appServerWebSocketClient.js'
 import { createServer } from 'node:http'
-import { readFile, realpath, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
@@ -56,7 +58,7 @@ function getAccessibleUrls(port: number): string[] {
   return Array.from(urls)
 }
 
-function listenWithFallback(server: ReturnType<typeof createServer>, startPort: number): Promise<number> {
+function listenWithFallback(server: ReturnType<typeof createServer>, startPort: number, host: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const attempt = (port: number) => {
       const onError = (error: NodeJS.ErrnoException) => {
@@ -74,7 +76,7 @@ function listenWithFallback(server: ReturnType<typeof createServer>, startPort: 
 
       server.once('error', onError)
       server.once('listening', onListening)
-      server.listen(port, '0.0.0.0')
+      server.listen(port, host)
     }
 
     attempt(startPort)
@@ -96,11 +98,13 @@ function normalizeUniqueStrings(value: unknown): string[] {
 async function persistLaunchProject(projectPath: string): Promise<void> {
   const trimmed = projectPath.trim()
   if (!trimmed) return
-  const normalizedPath = await realpath(isAbsolute(trimmed) ? trimmed : resolve(trimmed))
-  const directoryInfo = await stat(normalizedPath)
-  if (!directoryInfo.isDirectory()) {
-    throw new Error(`Not a directory: ${normalizedPath}`)
-  }
+  if (!isAbsoluteLikePath(trimmed)) throw new Error('Use an absolute project path on the App Server host')
+  const normalizedPath = trimmed
+  const bridge = createCodexBridgeMiddleware()
+  try {
+    const info = await bridge.files.getMetadata(normalizedPath)
+    if (!info.isDirectory) throw new Error(`Not a remote directory: ${normalizedPath}`)
+  } finally { bridge.dispose() }
 
   await updateCodexGlobalState((payload) => {
     for (const key of ['electron-saved-workspace-roots', 'active-workspace-roots', 'project-order']) {
@@ -120,12 +124,16 @@ async function addProjectOnly(projectPath: string): Promise<void> {
 
 async function startServer(options: {
   appServerUrl?: string
+  host: string
   port: string
   password: string | boolean
   open: boolean
   projectPath?: string
 }) {
+  process.env.CODEXUI_APP_SERVER_URL = resolveAppServerUrl(options.appServerUrl)
   const version = await readCliVersion()
+  const password = typeof options.password === 'string' ? options.password : undefined
+  const { app, dispose, attachWebSocket } = createApp({ password })
   const projectPath = options.projectPath?.trim() ?? ''
   if (projectPath.length > 0) {
     try {
@@ -135,23 +143,20 @@ async function startServer(options: {
       console.warn(`\n[project] Could not open launch project: ${message}\n`)
     }
   }
-  process.env.CODEXUI_APP_SERVER_URL = resolveAppServerUrl(options.appServerUrl)
   const requestedPort = parseInt(options.port, 10)
-  const password = typeof options.password === 'string' ? options.password : undefined
-  const { app, dispose, attachWebSocket } = createApp({ password })
   const server = createServer(app)
   attachWebSocket(server)
-  const port = await listenWithFallback(server, requestedPort)
+  const port = await listenWithFallback(server, requestedPort, options.host)
   const lines = [
     '',
     'Codex Web Local is running!',
     `  Version:  ${version}`,
     '',
-    `  Bind:     http://0.0.0.0:${String(port)}`,
+    `  Bind:     http://${options.host}:${String(port)}`,
     `  App-server: ${process.env.CODEXUI_APP_SERVER_URL}`,
     '  Runtime configuration and authentication: managed externally',
   ]
-  const accessUrls = getAccessibleUrls(port)
+  const accessUrls = ['127.0.0.1', '::1', 'localhost'].includes(options.host) ? [`http://${options.host === '::1' ? '[::1]' : options.host}:${port}`] : getAccessibleUrls(port)
   if (accessUrls.length > 0) {
     lines.push(`  Local:    ${accessUrls[0]}`)
     for (const accessUrl of accessUrls.slice(1)) {
@@ -191,6 +196,7 @@ async function runLogin(): Promise<void> {
 program
   .argument('[projectPath]', 'project directory to open on launch')
   .option('--open-project <path>', 'open project directory on launch (Codex desktop parity)')
+  .option('--host <address>', 'HTTP bind address (use 127.0.0.1 for loopback)', '0.0.0.0')
   .option('-p, --port <port>', 'port to listen on', '5900')
   .option('--password <pass>', 'enable password protection with a specific password', false)
   .option('--no-password', 'disable password protection (default)')
@@ -207,6 +213,7 @@ program
     projectPath: string | undefined,
     opts: {
       appServerUrl?: string
+      host: string
       port: string
       password: string | boolean
       open: boolean
@@ -225,6 +232,7 @@ program
       openProjectOnly = projectPath.trim()
     }
     if (openProjectOnly.length > 0) {
+      process.env.CODEXUI_APP_SERVER_URL = resolveAppServerUrl(opts.appServerUrl)
       await addProjectOnly(openProjectOnly)
       console.log(`Added project: ${openProjectOnly}`)
       return

@@ -1,7 +1,7 @@
 # External app-server connection
 
 Prerequisites: build with `pnpm run build`; start Codex independently with
-`codex app-server --listen ws://127.0.0.1:4500`. Use matching CODEX_HOME and paths.
+`codex app-server --listen ws://127.0.0.1:4500`. The App Server owns paths and credentials; no shared CODEX_HOME is required.
 
 1. Start `node dist-cli/index.js --app-server-url ws://127.0.0.1:4500`.
 2. List/read threads, create and resume a thread, send a turn, interrupt a turn,
@@ -326,3 +326,64 @@ and environment, and close fixture sockets/listeners. No persistent data changes
 The pagination cache and in-flight map are keyed only by thread ID. Notifications carrying a thread ID and `storeThreadReadSnapshot` invalidate that thread; TTL expiry removes only a completed cache entry. Transport disconnect clears both maps and increments the connection generation. An in-flight promise's identity serves as its invalidation epoch: removing it detaches the old read without cancelling the original caller. Completion may cache only while that identity and connection generation remain current; cleanup may remove only its own registration. No counter map, timer, retry, or subscription is added.
 
 Performance audit: deferred tests confirm one RPC for concurrent valid reads and exactly one fresh RPC after invalidation, including different cursors/limits. The changed path adds constant-time map operations and a connection-generation comparison; it adds no blocking work, payload copies, network fanout, timers, or subscriptions. Removed promises remain only with their existing awaiting callers until settlement; no per-thread epoch map is retained. Existing cache TTL eviction remains lazy. Browser latency and heap profiling were not measured; no performance improvement is claimed.
+
+
+## Two-host SSH tunnel ownership and recovery smoke test
+
+Prerequisites: two separate hosts with different home directories and no shared
+mounts; Codex 0.167.2 or a server implementing the APIs in the deployment guide;
+Codex-managed login on B; built codexapp on A. Record `codex --version` on B and
+both host/home names. Start B's listener and A's tunnel exactly as in
+[the deployment guide](../../docs/external-app-server.md). Use a disposable B repo
+with a committed file, and set CODEXUI_REMOTE_INITIAL_DIRECTORY on A. Bind A's
+HTTP listener with --host 127.0.0.1. Keep the browser reachable through your usual
+local access or separate browser tunnel.
+
+1. Create `/tmp/codexapp-smoke/repo` only on B (use an equivalent Windows path
+   when appropriate). Browse it, register it and start a thread. Expect success
+   with no placeholder created on A. Repeat with an opposite-platform path if
+   available; the picker must retain B's drive/separator semantics.
+2. Put different sentinel content at the same lexical file path on A and B.
+   Browse/read through codexapp, query Git/branches, create a detached worktree,
+   and search for a file existing only on B. Expect B's content/results and no
+   changed sentinel, repository or worktree on A. Repeat with command/exec
+   disabled on B: expect a specific operation error, never local execution.
+3. Upload a text file and a PNG. Compare checksums of original bytes and staged
+   files on B. Expect successful preview and remote paths in turn input. Deny
+   writes to B's staging area and upload again: expect a visible failure and no
+   attachment added. Restore permission. Test the 20 MiB file limit.
+4. Submit both attachments in an accepted turn. Restart codexapp, reconnect,
+   reload history and previews. Expect the files to remain available. Inspect
+   A's upload manifest; no cleanup may touch files outside tracked staging paths.
+5. Generate an inline image. In light and dark themes, inspect its full image
+   request: expect `/codex-app-asset?id=...`, never remote fs/readFile of A's
+   temporary path. Verify ordinary uploaded images still read B's staged path.
+6. With no Codex credentials, sessions or Skills installed on A, list Skills,
+   open SKILL.md and load native history. Expect B's catalog/content. Local-only
+   historical metadata may be absent. Expect explicit errors for unsupported
+   client-managed token refresh or local history rebuild.
+7. Run a long quiet turn. Wait beyond the ordinary RPC deadline; it must continue
+   while transport pong replies remain healthy. Break the SSH tunnel during a
+   second submission, then restore it. Expect backoff, a refreshed selected
+   history and no automatic duplicate submission. Inspect B to reconcile an
+   unknown accepted mutation before manually resending.
+8. Blackhole transport traffic (rather than closing it) to test missing pong
+   detection. Restore traffic and restart B's server. Issue concurrent reconnect
+   requests; expect one connection attempt at a time, refreshed selected history,
+   and no replay. A missing restored thread must not block models/accounts or
+   a healthy thread. Remove subscriptions while restoration is in progress.
+9. Disconnect with an approval pending. Attempt an old browser reply after
+   reconnect and after a new approval uses the same upstream ID. Expect rejection
+   of the stale handle. Record actual server recovery behavior; if no approval
+   reappears, inspect/resolve or interrupt the turn on B. This behavior requires
+   live verification and is not established by mocked fixtures.
+10. Stop codexapp and the tunnel. Expect B's independently managed process and
+    repositories to survive. Confirm loopback HTTP is inaccessible via A's LAN
+    address; separately verify intentional --host 0.0.0.0 and optional password.
+
+Cleanup/rollback: stop only smoke-test processes and the user-managed tunnel.
+Remove disposable B threads, worktrees and repositories deliberately. Remove
+tracked uploads only after deleting all histories that reference them. Preserve
+A's pre-existing UI state and credentials; restore test permissions/firewall
+rules. Record mocked, same-host and real two-host results separately; an unrun
+step is not a pass.

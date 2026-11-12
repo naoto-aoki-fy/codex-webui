@@ -2,7 +2,7 @@
 
 Build and startup commands are in the [README](../README.md#quick-start).
 Start Codex independently; see the [connection guide](external-app-server.md) for
-endpoint precedence, shared filesystem requirements and compatibility flags.
+endpoint precedence, SSH tunnels, remote path ownership and compatibility flags.
 For development and verification use the [development guide](development.md).
 
 ## Browser access
@@ -23,7 +23,7 @@ tailscale serve --bg 5900
 
 Open `https://<your-machine>.<your-tailnet>.ts.net`. Choose the actual backend port
 if startup selected another one. Stop Serve using your Tailscale configuration
-when no longer needed. Mobile browsers access the host's filesystem and sessions.
+when no longer needed. Mobile browsers access the App Server host's projects and native history.
 
 ## Conversation controls
 
@@ -41,17 +41,17 @@ validate explicit efforts before submission.
 
 ## Skills and projects
 
-Use the searchable folder picker or project creation/clone dialog to choose a
+Use the folder picker or enter an absolute path on the App Server host to choose a
 workspace. Existing projects, pins and worktrees remain available in the sidebar.
-The [Skills view](installed-skills.md) lists installed skills and supports local
+The [Skills view](installed-skills.md) lists remote installed skills and supports remote Markdown
 viewing, enable/disable and composer selection. Install skills outside the app.
 See the [implementation specification](../PROJECT_SPEC.md#feature-status) for
 implemented, removed and unsupported capabilities.
 
 ## Troubleshooting
 
-- Connection errors: check the independent server endpoint and matching user,
-  CODEX_HOME and paths using the connection guide.
+- Connection errors: check the independent server endpoint, tunnel and login on
+  the App Server host using the connection guide. No shared CODEX_HOME is required.
 - Remote browser cannot connect: check the printed port, bind address, firewall
   and proxy WebSocket forwarding.
 - Web login and Codex login are separate; authenticate Codex outside this app.
