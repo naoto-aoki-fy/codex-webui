@@ -1826,7 +1826,7 @@ describe('new-thread preference context across deferred creation', () => {
       expect(await sending).toBe(result.threadId)
       await vi.advanceTimersByTimeAsync(0)
       expect(gateway.startThreadTurn.mock.calls).toEqual([
-        [result.threadId, 'new context marker', [], gatewayModel, 'medium', undefined, [], 'default'],
+        [result.threadId, 'new context marker', [], gatewayModel, 'medium', undefined, [], 'default', expect.any(Function)],
       ])
       expect(requests).toEqual([
         {
@@ -2075,4 +2075,28 @@ it('restores running background threads after backend replacement and leaves idl
   expect(gateway.resumeThread.mock.calls.map(call => call[0])).toEqual(['idle-selected'])
   expect(gateway.resumeThreadSubscription).toHaveBeenCalledExactlyOnceWith(thread.id)
   expect(gateway.startThreadTurn).not.toHaveBeenCalled()
+})
+
+
+it('retains successful RPC metadata with no started notification and ignores later submitted downgrades', async () => {
+  gateway.getThreadDetail.mockResolvedValue(completedDetail)
+  const state = await loadState()
+  const metadata = { model: 'actual', modelSource: 'execution' as const, effort: 'none', effortSource: 'execution' as const }
+  gateway.startThreadTurn.mockImplementation(async (...args: any[]) => { args[8]?.('turn-2', metadata); return 'turn-2' })
+  await state.sendMessageToSelectedThread('missing notification')
+  notify({ method: 'turn/generationMetadata', params: { threadId: thread.id, turnId: 'turn-2', generationMetadata: { model: 'sent', modelSource: 'submitted', effort: 'high', effortSource: 'submitted' } } })
+  expect(state.messages.value.find(message => message.id === reply.id)?.generationMetadata).toEqual(metadata)
+})
+
+
+it.each([false, true])('restores metadata when frontend state is recreated after refresh (active=%s)', async active => {
+  const metadata = { model: 'A', modelSource: 'submitted' as const, effort: 'none', effortSource: 'submitted' as const }
+  const snapshot = { ...completedDetail, inProgress: active, activeTurnId: active ? 'turn-2' : '', messages: [oldUser, nextUser, { ...reply, generationMetadata: metadata }] }
+  gateway.getThreadDetail.mockResolvedValue(snapshot)
+  gateway.resumeThread.mockResolvedValue(snapshot)
+  const first = await loadState()
+  expect(first.messages.value.find(message => message.id === reply.id)?.generationMetadata).toEqual(metadata)
+  first.stopPolling()
+  const refreshed = await loadState()
+  expect(refreshed.messages.value.find(message => message.id === reply.id)?.generationMetadata).toEqual(metadata)
 })

@@ -31,6 +31,7 @@ type RpcProxyRequest = {
 }
 
 type RpcExecutor = {
+  forkWithMetadataSource?: (params: unknown, sourceTurns: unknown[]) => Promise<unknown>
   rpc: (method: string, params: unknown) => Promise<unknown>
 }
 
@@ -258,9 +259,10 @@ export async function forkThreadAtCutoff(appServer: RpcExecutor, params: Record<
   if (ids.length !== cutoff + 1 || ids.some(id => !id)) {
     throw new Error('Fork response cutoff is outside the source history')
   }
-  const result = await callRpcWithArchiveRecovery(appServer, 'thread/fork', {
-    ...forkParams, lastTurnId: ids[cutoff],
-  })
+  const cutoffParams = { ...forkParams, lastTurnId: ids[cutoff] }
+  const result = appServer.forkWithMetadataSource
+    ? await appServer.forkWithMetadataSource(cutoffParams, prefix)
+    : await callRpcWithArchiveRecovery(appServer, 'thread/fork', cutoffParams)
   const record = asRecord(result)
   const thread = asRecord(record?.thread)
   const id = readNonEmptyString(thread?.id)

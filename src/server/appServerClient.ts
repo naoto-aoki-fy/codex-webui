@@ -1,9 +1,13 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { TurnGenerationMetadataStore } from './turnGenerationMetadata.js'
+import { inheritForkTurnMetadata } from './forkGenerationMetadata.js'
 import { randomInt } from 'node:crypto'
-import { AppServerWebSocketClient, positiveEnv } from './appServerWebSocketClient.js'
+import { AppServerWebSocketClient, positiveEnv, resolveAppServerUrl } from './appServerWebSocketClient.js'
 import { asRecord, getErrorMessage } from './bridgeHttpUtils.js'
 import { readCodexCredentialStore } from './codexCredentials.js'
 import { refreshChatgptAuthTokensForExternalAuth, type ChatgptAuthTokensRefreshParams, type ChatgptAuthTokensRefreshResponse } from './externalAuthRefresh.js'
-import { submittedGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata.js'
+import { submittedGenerationMetadata, readGenerationMetadata, mergeGenerationMetadata } from '../turnGenerationMetadata.js'
 
 export interface AppServerClientDependencies {
   threadIndex: {
@@ -63,7 +67,18 @@ export class AppServerClient {
 
   getInitializationMetadata() { return this.transport.getInitializationMetadata() }
 
-  private readonly pendingGenerationSettings = new Map<string, Set<TurnGenerationMetadata>>()
+  private readonly metadataEndpoint = resolveAppServerUrl()
+  private metadataStore(): TurnGenerationMetadataStore {
+    const remoteHome = this.getInitializationMetadata()?.codexHome ?? ''
+    return new TurnGenerationMetadataStore(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex'),
+      JSON.stringify([this.metadataEndpoint, remoteHome]),
+      Boolean(remoteHome) && process.env.CODEXUI_LEGACY_METADATA_SERVER_URL === this.metadataEndpoint
+        && process.env.CODEXUI_LEGACY_METADATA_CODEX_HOME === remoteHome)
+  }
+  private async saveMetadata(store: TurnGenerationMetadataStore, threadId: string, entries: Parameters<TurnGenerationMetadataStore['saveMany']>[1]) {
+    try { await store.saveMany(threadId, entries) }
+    catch (error) { console.warn('Accepted turn metadata could not be persisted:', error) }
+  }
   private nextId = 1
   private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }>()
   private readonly notificationListeners = new Set<(value: { method: string; params: unknown }) => void>()
@@ -145,18 +160,6 @@ export class AppServerClient {
   }
 
   private emitNotification(notification: { method: string; params: unknown }): void {
-    if (notification.method === 'turn/started') {
-      const params = asRecord(notification.params)
-      const turn = asRecord(params?.turn)
-      const candidates = this.pendingGenerationSettings.get(this.extractThreadIdFromParams(params))
-      // Concurrent starts cannot be correlated until the RPC response supplies the ID.
-      if (params && turn && candidates?.size === 1) {
-        notification = {
-          ...notification,
-          params: { ...params, turn: { ...turn, generationMetadata: candidates.values().next().value } },
-        }
-      }
-    }
     this.recordStreamEvent(notification)
     const nThreadId = this.extractThreadIdFromParams(notification.params)
     if (nThreadId) {
@@ -412,11 +415,34 @@ export class AppServerClient {
     }
   }
 
-  async rpc(method: string, params: unknown): Promise<unknown> {
+  async forkWithMetadataSource(params: unknown, sourceTurns: unknown[]): Promise<unknown> {
+    return this.rpc('thread/fork', params, sourceTurns)
+  }
+
+  async rpc(method: string, params: unknown, forkSourceTurns?: unknown[]): Promise<unknown> {
     await this.ensureInitialized()
     if (method !== 'turn/start') {
-      const result = method === 'thread/list' ? await this.call(method, params)
+      let result = method === 'thread/list' ? await this.call(method, params)
         : await this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, (m, p) => this.call(m, p))
+      const record = asRecord(result)
+      const thread = asRecord(record?.thread)
+      const store = this.metadataStore()
+      if (thread && typeof thread.id === 'string' && Array.isArray(thread.turns)) {
+        let turns = await store.enrich(thread.id, thread.turns)
+        if (method === 'thread/fork') {
+          const sourceId = readNonEmptyString(asRecord(params)?.threadId)
+          if (sourceId && sourceId !== thread.id) {
+            try {
+              // One source snapshot per fork, never one request per message.
+              const source = forkSourceTurns ? null : asRecord(asRecord(await this.rpc('thread/read', { threadId: sourceId, includeTurns: true }))?.thread)
+              const inherited = inheritForkTurnMetadata(forkSourceTurns ?? (Array.isArray(source?.turns) ? source.turns : []), turns)
+              turns = inherited.turns
+              await this.saveMetadata(store, thread.id, inherited.entries)
+            } catch (error) { console.warn('Fork metadata recovery unavailable:', error) }
+          }
+        }
+        result = { ...record, thread: { ...thread, turns } }
+      }
       if (method === 'thread/revert') {
         this.snapshotEpoch = {}
         const id = readNonEmptyString(asRecord(params)?.threadId)
@@ -436,21 +462,16 @@ export class AppServerClient {
     }
     const threadId = readNonEmptyString(asRecord(params)?.threadId)
     const metadata = submittedGenerationMetadata(params)
-    const candidates = this.pendingGenerationSettings.get(threadId) ?? new Set<TurnGenerationMetadata>()
-    candidates.add(metadata)
-    this.pendingGenerationSettings.set(threadId, candidates)
-    try {
-      const result = await this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, (m, p) => this.call(m, p))
-      const turn = asRecord(asRecord(result)?.turn)
-      const turnId = readNonEmptyString(turn?.id)
-      if (threadId && turnId) {
-        this.emitNotification({ method: 'turn/generationMetadata', params: { threadId, turnId, generationMetadata: metadata } })
-      }
-      return turn ? { ...asRecord(result), turn: { ...turn, generationMetadata: metadata } } : result
-    } finally {
-      candidates.delete(metadata)
-      if (candidates.size === 0) this.pendingGenerationSettings.delete(threadId)
+    const store = this.metadataStore()
+    const result = await this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, (m, p) => this.call(m, p))
+    const turn = asRecord(asRecord(result)?.turn)
+    const turnId = readNonEmptyString(turn?.id)
+    const merged = mergeGenerationMetadata(metadata, readGenerationMetadata(turn?.generationMetadata))
+    if (threadId && turnId) {
+      await this.saveMetadata(store, threadId, [{ turnId, metadata: merged }])
+      this.emitNotification({ method: 'turn/generationMetadata', params: { threadId, turnId, generationMetadata: merged } })
     }
+    return turn ? { ...asRecord(result), turn: { ...turn, generationMetadata: merged } } : result
   }
 
   onNotification(listener: (value: { method: string; params: unknown }) => void): () => void {

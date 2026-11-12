@@ -1,3 +1,4 @@
+import { readGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata'
 import { normalizeSkillsList, type SkillInfo, type SkillsListResponseEntry } from './normalizers/skills'
 export type { SkillInfo } from './normalizers/skills'
 import { normalizeWorkspaceRootsState, cloneWorkspaceRootsState, type WorkspaceRootsState } from './normalizers/workspaceRoots'
@@ -570,6 +571,7 @@ export async function startThreadTurn(
   skills?: Array<{ name: string; path: string }>,
   fileAttachments: FileAttachmentParam[] = [],
   collaborationMode?: CollaborationModeKind,
+  onAccepted?: (turnId: string, metadata?: TurnGenerationMetadata) => void,
 ): Promise<string> {
   try {
     const normalizedModel = model?.trim() ?? ''
@@ -596,7 +598,9 @@ export async function startThreadTurn(
     }
     const payload = await callRpc<{ turn?: Turn }>('turn/start', params)
     invalidateResumeThread(threadId)
-    return typeof payload?.turn?.id === 'string' ? payload.turn.id.trim() : ''
+    const turnId = typeof payload?.turn?.id === 'string' ? payload.turn.id.trim() : ''
+    if (turnId) onAccepted?.(turnId, readGenerationMetadata((payload.turn as Turn & { generationMetadata?: unknown }).generationMetadata))
+    return turnId
   } catch (error) {
     throw normalizeCodexApiError(error, `Failed to start turn for thread ${threadId}`, 'turn/start')
   }
