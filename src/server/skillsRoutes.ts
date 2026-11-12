@@ -1,7 +1,5 @@
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { ProjectFileService, projectPath } from './appServerFileSystem.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 
 type AppServerLike = {
   rpc(method: string, params: unknown): Promise<unknown>
@@ -41,11 +39,6 @@ function setJson(res: ServerResponse, statusCode: number, payload: unknown): voi
   res.end(JSON.stringify(payload))
 }
 
-function getCodexHomeDir(): string {
-  const codexHome = process.env.CODEX_HOME?.trim()
-  return codexHome && codexHome.length > 0 ? codexHome : join(homedir(), '.codex')
-}
-
 function splitAbsolutePath(pathValue: string): string[] {
   return pathValue.split('/').filter(Boolean)
 }
@@ -56,7 +49,7 @@ function buildAbsolutePath(parts: string[]): string {
 
 function normalizeSkillMarkdownPath(skillPath: string): string {
   if (!skillPath) return ''
-  return skillPath.endsWith('/SKILL.md') ? skillPath : `${skillPath}/SKILL.md`
+  return projectPath(skillPath).basename(skillPath) === 'SKILL.md' ? skillPath : projectPath(skillPath).join(skillPath, 'SKILL.md')
 }
 
 function deriveSkillPathInfo(
@@ -105,10 +98,6 @@ function deriveSkillPathInfo(
   }
 }
 
-function getSkillsInstallDir(): string {
-  return join(getCodexHomeDir(), 'skills')
-}
-
 // Preserve the legacy HTTP response fields for existing API consumers.
 type SkillHubEntry = {
   name: string
@@ -123,13 +112,8 @@ type SkillHubEntry = {
   enabled?: boolean
 }
 
-async function buildLocalHubEntry(info: InstalledSkillInfo): Promise<SkillHubEntry> {
-  let description = ''
-  if (info.path) {
-    try {
-      description = extractSkillDescriptionFromMarkdown(await readFile(info.path, 'utf8'))
-    } catch {}
-  }
+function buildLocalHubEntry(info: InstalledSkillInfo): SkillHubEntry {
+  const description = info.description ?? ''
   return {
     name: info.name,
     owner: 'local',
@@ -216,39 +200,13 @@ function groupRpcSkillRecords<T extends RpcSkillRecord>(skills: T[]): T[] {
   }))
 }
 
-type InstalledSkillInfo = { name: string; path: string; enabled: boolean }
-async function scanInstalledSkillsFromDir(skillsDir: string): Promise<Map<string, InstalledSkillInfo>> {
-  const map = new Map<string, InstalledSkillInfo>()
-  try {
-    const entries = await readdir(skillsDir, { withFileTypes: true })
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
-      const skillMd = join(skillsDir, entry.name, 'SKILL.md')
-      try {
-        await stat(skillMd)
-        map.set(entry.name, { name: entry.name, path: skillMd, enabled: true })
-      } catch {}
-    }
-  } catch {}
-  return map
-}
-
-async function scanInstalledSkillsFromDisk(): Promise<Map<string, InstalledSkillInfo>> {
-  return await scanInstalledSkillsFromDir(getSkillsInstallDir())
-}
-
+type InstalledSkillInfo = { name: string; path: string; enabled: boolean; description?: string }
 async function collectInstalledSkillsMap(appServer: AppServerLike): Promise<Map<string, InstalledSkillInfo>> {
-  const installedMap = await scanInstalledSkillsFromDisk()
-  try {
-    const result = await appServer.rpc('skills/list', {}) as { data?: Array<{ skills?: RpcSkillRecord[] }> }
-    for (const entry of result.data ?? []) {
-      for (const skill of groupRpcSkillRecords(entry.skills ?? [])) {
-        if (skill.name) {
-          installedMap.set(skill.name, { name: skill.name, path: skill.path ?? '', enabled: skill.enabled !== false })
-        }
-      }
-    }
-  } catch {}
+  const installedMap = new Map<string, InstalledSkillInfo>()
+  const result = await appServer.rpc('skills/list', {}) as { data?: Array<{ skills?: RpcSkillRecord[] }> }
+  for (const entry of result.data ?? []) for (const skill of groupRpcSkillRecords(entry.skills ?? [])) {
+    if (skill.name) installedMap.set(skill.name, { name: skill.name, path: skill.path ?? '', enabled: skill.enabled !== false, description: skill.description ?? skill.shortDescription })
+  }
   return installedMap
 }
 
@@ -299,7 +257,7 @@ export async function handleSkillsRoutes(
   if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub') {
     try {
       const installedMap = await collectInstalledSkillsMap(appServer)
-      const installed = await Promise.all([...installedMap.values()].map((info) => buildLocalHubEntry(info)))
+      const installed = [...installedMap.values()].map(buildLocalHubEntry)
       installed.sort((a, b) => a.name.localeCompare(b.name))
       setJson(res, 200, { installed })
     } catch (error) {
@@ -319,12 +277,12 @@ export async function handleSkillsRoutes(
         return true
       }
       if (installed) {
-        const installedMap = await scanInstalledSkillsFromDisk()
+        const installedMap = await collectInstalledSkillsMap(appServer)
         const installedInfo = installedMap.get(name)
         const localSkillPath = installedInfo?.path
-          || (skillPath ? (skillPath.endsWith('/SKILL.md') ? skillPath : `${skillPath}/SKILL.md`) : '')
+          || normalizeSkillMarkdownPath(skillPath)
         if (localSkillPath) {
-          const content = await readFile(localSkillPath, 'utf8')
+          const content = (await new ProjectFileService(appServer).readFile(localSkillPath)).toString('utf8')
           const description = extractSkillDescriptionFromMarkdown(content)
           setJson(res, 200, { content, description, source: 'local' })
           return true

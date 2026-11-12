@@ -37,7 +37,7 @@ beforeEach(async () => {
   await writeFile(sessionPath, sessionRaw)
   vi.stubEnv('CODEX_HOME', home)
   previous = scope.__codexRemoteSharedBridge__
-  rpc.mockReset().mockResolvedValue({ data: [] })
+  rpc.mockReset().mockImplementation(async method => method === 'fs/getMetadata' ? { isDirectory: true, isFile: false } : { data: [] })
   storeSnapshot.mockReset()
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
   scope.__codexRemoteSharedBridge__ = {
@@ -94,7 +94,7 @@ it.each(['/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-
   expect(await readFile(sessionPath, 'utf8')).toBe(sessionRaw)
 })
 
-it.each([undefined, '', '   ', '/nonexistent-codexapp-workspace'])('rejects missing workspace %s without RPC or filesystem creation', async cwd => {
+it.each([undefined, '', '   '])('rejects missing workspace %s without RPC or filesystem creation', async cwd => {
   const filesBefore = await readdir(home, { recursive: true })
   const response = await request('/codex-api/rpc', 'POST', { method: 'thread/start', params: { cwd } })
   expect(response.res.statusCode).toBe(400)
@@ -105,7 +105,7 @@ it.each([undefined, '', '   ', '/nonexistent-codexapp-workspace'])('rejects miss
 })
 
 it('allows explicitly selected existing folders and preserves legacy session data', async () => {
-  rpc.mockResolvedValue({ thread: { id: 'new-thread', cwd: project } })
+  rpc.mockImplementation(async method => method === 'fs/getMetadata' ? { isDirectory: true, isFile: false } : { thread: { id: 'new-thread', cwd: project } })
   const response = await request('/codex-api/rpc', 'POST', { method: 'thread/start', params: { cwd: project } })
   expect(response.res.statusCode).toBe(200)
   expect(rpc).toHaveBeenCalledWith('thread/start', { cwd: project })

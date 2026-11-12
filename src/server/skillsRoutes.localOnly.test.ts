@@ -74,7 +74,7 @@ it.each([['GET', 'search?q=sample'], ['POST', 'install'], ['POST', 'uninstall']]
   expect(await readFile(path, 'utf8')).toBe('Keep local instructions')
 })
 
-it('reads installed SKILL.md content locally without metadata requests', async () => {
+it('reads installed remote SKILL.md despite different local content', async () => {
   const path = join(home, 'skills', 'sample', 'SKILL.md')
   const content = '---\nname: sample\ndescription: Local description\n---\nLocal instructions'
   await mkdir(join(home, 'skills', 'sample'), { recursive: true })
@@ -83,7 +83,7 @@ it('reads installed SKILL.md content locally without metadata requests', async (
   const res = { setHeader: vi.fn(), end } as unknown as ServerResponse
   expect(await handleSkillsRoutes({ method: 'GET' } as IncomingMessage, res,
     new URL('http://localhost/codex-api/skills-hub/readme?owner=example/skills&name=sample&installed=true'),
-    { appServer: { rpc: vi.fn() }, readJsonBody: async () => ({}) })).toBe(true)
+    { appServer: { rpc: vi.fn(async method => method === 'skills/list' ? { data: [{ skills: [{ name: 'sample', path, description: 'Local description' }] }] } : { dataBase64: Buffer.from(content).toString('base64') }) }, readJsonBody: async () => ({}) })).toBe(true)
   expect(res.statusCode).toBe(200)
   expect(JSON.parse(end.mock.calls[0]![0])).toMatchObject({ content, description: 'Local description', source: 'local' })
   expect(fetch).not.toHaveBeenCalled()
@@ -98,7 +98,7 @@ it('preserves legacy hub response fields for HTTP consumers', async () => {
   const res = { setHeader: vi.fn(), end } as unknown as ServerResponse
   await handleSkillsRoutes({ method: 'GET' } as IncomingMessage, res,
     new URL('http://localhost/codex-api/skills-hub'),
-    { appServer: { rpc: async () => ({ data: [] }) }, readJsonBody: async () => ({}) })
+    { appServer: { rpc: async method => method === 'skills/list' ? { data: [{ skills: [{ name: 'sample', path, description: 'Local description' }] }] } : { dataBase64: Buffer.from('---\ndescription: Local description\n---\nInstructions').toString('base64') } }, readJsonBody: async () => ({}) })
   expect(res.statusCode).toBe(200)
   expect(JSON.parse(end.mock.calls[0]![0])).toEqual({ installed: [{
     name: 'sample', owner: 'local', description: 'Local description', displayName: '',

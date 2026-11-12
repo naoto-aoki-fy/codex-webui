@@ -7,7 +7,7 @@ import { readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState
 // Instantiate once per bridge module evaluation, rather than owning a shared module cache.
 // Resolve the path on every read, preserving dynamic CODEX_HOME and signature-only keys.
 export function createThreadPresentationStore(
-  getCodexSessionIndexPath: () => string,
+  getCodexSessionIndexPath: () => string | null,
   normalizeStringArray: (value: unknown) => string[],
 ) {
   type ThreadTitleCache = { titles: Record<string, string>; order: string[] }
@@ -185,6 +185,7 @@ export function createThreadPresentationStore(
 
   async function readThreadTitlesFromSessionIndex(): Promise<ThreadTitleCache> {
     const sessionIndexPath = getCodexSessionIndexPath()
+    if (!sessionIndexPath) return EMPTY_THREAD_TITLE_CACHE
 
     try {
       const stats = await stat(sessionIndexPath)

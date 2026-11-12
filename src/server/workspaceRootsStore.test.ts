@@ -25,7 +25,7 @@ it('preserves the public bridge exports as the same functions', () => {
   expect(bridge.writeWorkspaceRootsState).toBe(store.writeWorkspaceRootsState)
 })
 
-it('canonicalizes symlinks, deduplicates stably and prefers canonical labels', async () => {
+it('preserves remote lexical paths despite local symlinks', async () => {
   const root = join(home, 'root')
   const alias = join(home, 'alias')
   await mkdir(root)
@@ -37,8 +37,8 @@ it('canonicalizes symlinks, deduplicates stably and prefers canonical labels', a
     labels: { [alias]: 'Alias', [root]: 'Canonical' },
   })
   expect(state).toEqual({
-    ...empty(), order: [root, 'remote', join(home, 'absent'), 'relative/../id'],
-    active: [root], projectOrder: ['remote', root], labels: { [root]: 'Canonical' },
+    ...empty(), order: [alias, 'remote', root, missing, 'relative/../id'],
+    active: [alias, root], projectOrder: ['remote', root, alias], labels: { [alias]: 'Alias', [root]: 'Canonical' },
   })
 })
 
@@ -64,7 +64,7 @@ it('falls back for realpath errors and preserves malformed thread-list rows and 
     data: [null, row, { cwd: '/missing/../root', extra: true }, { cwd: '/missing/../root' }, { cwd: 42 }],
     nextCursor: 'cursor', future: true,
   }, resolver)).toEqual({
-    data: [null, row, { cwd: '/root', extra: true }, { cwd: '/root' }, { cwd: 42 }],
+    data: [null, row, { cwd: '/missing/../root', extra: true }, { cwd: '/missing/../root' }, { cwd: 42 }],
     nextCursor: 'cursor', future: true,
   })
   expect(resolver).toHaveBeenCalledTimes(1)

@@ -32,13 +32,13 @@ it.each([['GET', 'status'], ['GET', 'connectors'], ['GET', 'connector'], ['POST'
   expect(body).toBe('')
   expect(rpc).not.toHaveBeenCalled()
 })
-it('still discovers a local installed skill without any Composio dependency', async () => {
+it('does not mix local installed skills into the remote catalog', async () => {
   await mkdir(join(home, 'skills', 'sample'), { recursive: true })
   await writeFile(join(home, 'skills', 'sample', 'SKILL.md'), '---\nname: sample\ndescription: Local example\n---\nInstructions')
   const { res, body, next } = await request('/codex-api/skills-hub')
   expect(res.statusCode).toBe(200)
   expect(next).not.toHaveBeenCalled()
-  expect(JSON.parse(body).installed).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'sample', installed: true })]))
+  expect(JSON.parse(body).installed).toEqual([])
 })
 
 it.each([
