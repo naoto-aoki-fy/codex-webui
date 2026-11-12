@@ -1,5 +1,5 @@
 <template>
-  <section class="thread-tree-root" :class="{ 'chats-first': showChatsFirst }">
+  <section class="thread-tree-root">
     <section v-if="pinnedThreads.length > 0" class="pinned-section">
       <SidebarMenuRow
         as="button"
@@ -85,35 +85,6 @@
               >
                 <span>{{ t('Chronological list') }}</span>
                 <span v-if="threadViewMode === 'chronological'">✓</span>
-              </button>
-              <button
-                class="organize-menu-item"
-                :data-active="showChatsFirst"
-                type="button"
-                @click="toggleShowChatsFirst"
-              >
-                <span>{{ t('Chats first') }}</span>
-                <span v-if="showChatsFirst">✓</span>
-              </button>
-              <div class="organize-menu-separator" />
-              <p class="organize-menu-title">{{ t('Sort by') }}</p>
-              <button
-                class="organize-menu-item"
-                :data-active="chatSortMode === 'created'"
-                type="button"
-                @click="setChatSortMode('created')"
-              >
-                <span>{{ t('Created') }}</span>
-                <span v-if="chatSortMode === 'created'">✓</span>
-              </button>
-              <button
-                class="organize-menu-item"
-                :data-active="chatSortMode === 'updated'"
-                type="button"
-                @click="setChatSortMode('updated')"
-              >
-                <span>{{ t('Updated') }}</span>
-                <span v-if="chatSortMode === 'updated'">✓</span>
               </button>
             </div>
           </div>
@@ -279,69 +250,6 @@
       </template>
     </section>
 
-    <section class="chats-section">
-      <SidebarMenuRow
-        as="button"
-        class="section-toggle-row"
-        type="button"
-        :aria-expanded="isChatsSectionExpanded"
-        @click="toggleChatsSection"
-      >
-        <template #left>
-          <IconTablerChevronRight v-if="!isChatsSectionExpanded" class="thread-icon" />
-          <IconTablerChevronDown v-else class="thread-icon" />
-        </template>
-        <span class="thread-tree-header">{{ t('Chats') }}</span>
-        <template #right>
-          <div class="chats-section-actions">
-            <button
-              class="chats-section-action"
-              type="button"
-              :aria-label="t('New chat')"
-              :title="t('New chat')"
-              @click.stop="$emit('start-new-chat')"
-            >
-              <IconTablerFilePencil class="thread-icon" />
-            </button>
-          </div>
-        </template>
-      </SidebarMenuRow>
-
-      <p v-if="isChatsSectionExpanded && chatThreads.length === 0" class="thread-tree-no-results">{{ t('No chats') }}</p>
-      <ul v-else-if="isChatsSectionExpanded" class="thread-list thread-list-global">
-        <li
-          v-for="thread in visibleChatThreads"
-          :key="thread.id"
-          class="thread-row-item"
-          :data-menu-open="isThreadMenuOpen(thread.id) ? 'true' : 'false'"
-        >
-          <SidebarThreadRow
-            :thread="thread"
-            :active="thread.id === selectedThreadId"
-            :pinned="isPinned(thread.id)"
-            :menu-open="isThreadMenuOpen(thread.id)"
-            :delete-confirming="isInlineDeleteConfirming(thread.id)"
-            :relative-time="formatRelativeThread(thread)"
-            @select="onSelect(thread.id)"
-            @leave="onThreadRowLeave(thread.id, $event)"
-            @contextmenu="onThreadRowContextMenu($event, thread.id)"
-            @delete="onInlineDeleteClick(thread.id)"
-            @toggle-menu="toggleThreadMenu(thread.id)"
-            @menu-anchor="setThreadMenuWrapRef(thread.id, $event)"
-          />
-        </li>
-      </ul>
-
-      <SidebarMenuRow v-if="isChatsSectionExpanded && hasHiddenChatThreads" class="thread-show-more-row">
-        <template #left>
-          <span class="thread-show-more-spacer" />
-        </template>
-        <button class="thread-show-more-button" type="button" @click="toggleChatsListExpansion">
-          {{ isChatsListExpanded ? 'Show less' : 'Show more' }}
-        </button>
-      </SidebarMenuRow>
-    </section>
-
     <Teleport to="body">
       <div
         v-if="openThreadMenuThread"
@@ -471,23 +379,15 @@ const emit = defineEmits<{
   'remove-project': [projectName: string]
   'copy-thread-chat': [threadId: string]
   'fork-thread': [threadId: string]
-  'start-new-chat': []
 }>()
 
 type MenuDirection = 'up' | 'down'
-type ChatSortMode = 'created' | 'updated'
 const PROJECT_GROUP_EXPANDED_GAP_PX = 6
 const SECTION_EXPANSION_STORAGE_KEY = 'codex-web-local.sidebar-section-expansion.v1'
-const CHATS_FIRST_STORAGE_KEY = 'codex-web-local.sidebar-chats-first.v1'
-const CHAT_SORT_MODE_STORAGE_KEY = 'codex-web-local.sidebar-chat-sort-mode.v1'
 const expandedProjects = ref<Record<string, boolean>>({})
 const collapsedProjects = ref<Record<string, boolean>>({})
 const isPinnedSectionExpanded = ref(true)
 const isProjectsSectionExpanded = ref(true)
-const isChatsSectionExpanded = ref(true)
-const isChatsListExpanded = ref(false)
-const showChatsFirst = ref(loadBooleanStorage(CHATS_FIRST_STORAGE_KEY, false))
-const chatSortMode = ref<ChatSortMode>(loadChatSortMode())
 let hasLoadedPinnedThreadState = false
 const pinnedThreadIds = ref<string[]>([])
 const hydratedPinnedThreadById = ref<Record<string, UiThread>>({})
@@ -550,19 +450,6 @@ function loadThreadViewMode(): 'project' | 'chronological' {
   return raw === 'chronological' ? 'chronological' : 'project'
 }
 
-function loadBooleanStorage(key: string, fallback: boolean): boolean {
-  if (typeof window === 'undefined') return fallback
-  const raw = window.localStorage.getItem(key)
-  if (raw === 'true') return true
-  if (raw === 'false') return false
-  return fallback
-}
-
-function loadChatSortMode(): ChatSortMode {
-  if (typeof window === 'undefined') return 'updated'
-  return window.localStorage.getItem(CHAT_SORT_MODE_STORAGE_KEY) === 'created' ? 'created' : 'updated'
-}
-
 collapsedProjects.value = loadCollapsedState()
 
 function loadSectionExpansionState(): void {
@@ -572,11 +459,9 @@ function loadSectionExpansionState(): void {
     const parsed = JSON.parse(window.localStorage.getItem(SECTION_EXPANSION_STORAGE_KEY) || '{}') as {
       pinned?: unknown
       projects?: unknown
-      chats?: unknown
     }
     if (typeof parsed.pinned === 'boolean') isPinnedSectionExpanded.value = parsed.pinned
     if (typeof parsed.projects === 'boolean') isProjectsSectionExpanded.value = parsed.projects
-    if (typeof parsed.chats === 'boolean') isChatsSectionExpanded.value = parsed.chats
   } catch {
     // Keep default expanded state when saved state is invalid.
   }
@@ -589,7 +474,6 @@ function persistSectionExpansionState(): void {
     JSON.stringify({
       pinned: isPinnedSectionExpanded.value,
       projects: isProjectsSectionExpanded.value,
-      chats: isChatsSectionExpanded.value,
     }),
   )
 }
@@ -610,17 +494,7 @@ watch(threadViewMode, (value) => {
   window.localStorage.setItem(THREAD_VIEW_MODE_STORAGE_KEY, value)
 })
 
-watch(showChatsFirst, (value) => {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(CHATS_FIRST_STORAGE_KEY, String(value))
-})
-
-watch(chatSortMode, (value) => {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(CHAT_SORT_MODE_STORAGE_KEY, value)
-})
-
-watch([isPinnedSectionExpanded, isProjectsSectionExpanded, isChatsSectionExpanded], persistSectionExpansionState)
+watch([isPinnedSectionExpanded, isProjectsSectionExpanded], persistSectionExpansionState)
 
 const normalizedSearchQuery = computed(() => props.searchQuery.trim().toLowerCase())
 
@@ -660,7 +534,7 @@ const globalThreads = computed<UiThread[]>(() => {
 
   for (const group of props.groups) {
     for (const thread of group.threads) {
-      if (pinnedThreadIdSet.value.has(thread.id)) continue
+      if (isProjectlessChatPath(thread.cwd) || pinnedThreadIdSet.value.has(thread.id)) continue
       if (!threadMatchesSearch(thread)) continue
       rows.push(thread)
     }
@@ -671,27 +545,6 @@ const globalThreads = computed<UiThread[]>(() => {
     const secondTimestamp = new Date(second.updatedAtIso || second.createdAtIso).getTime()
     return secondTimestamp - firstTimestamp
   })
-})
-
-const chatThreads = computed(() => {
-  const rows = globalThreads.value.filter((thread) => isProjectlessChatPath(thread.cwd))
-  const timestampKey = chatSortMode.value === 'created' ? 'createdAtIso' : 'updatedAtIso'
-  return rows
-    .sort((first, second) => {
-      const firstTimestamp = new Date(first[timestampKey] || first.updatedAtIso || first.createdAtIso).getTime()
-      const secondTimestamp = new Date(second[timestampKey] || second.updatedAtIso || second.createdAtIso).getTime()
-      return secondTimestamp - firstTimestamp
-    })
-})
-
-const visibleChatThreads = computed(() => {
-  if (isSearchActive.value) return chatThreads.value
-  return isChatsListExpanded.value ? chatThreads.value : chatThreads.value.slice(0, 10)
-})
-
-const hasHiddenChatThreads = computed(() => {
-  if (isSearchActive.value) return false
-  return chatThreads.value.length > 10
 })
 
 const threadById = computed(() => {
@@ -821,10 +674,6 @@ function togglePinnedSection(): void {
 
 function toggleProjectsSection(): void {
   isProjectsSectionExpanded.value = !isProjectsSectionExpanded.value
-}
-
-function toggleChatsSection(): void {
-  isChatsSectionExpanded.value = !isChatsSectionExpanded.value
 }
 
 const layoutProjectOrder = computed(() => (isSearchActive.value ? filteredGroups.value : props.groups).map(group => group.projectName))
@@ -1115,14 +964,6 @@ function setThreadViewMode(mode: 'project' | 'chronological'): void {
   isOrganizeMenuOpen.value = false
 }
 
-function toggleShowChatsFirst(): void {
-  showChatsFirst.value = !showChatsFirst.value
-}
-
-function setChatSortMode(mode: ChatSortMode): void {
-  chatSortMode.value = mode
-}
-
 function requestProjectGitStatusAndUpdateMenuDirection(projectName: string): void {
   emit('request-project-git-status', projectName)
   nextTick(() => {
@@ -1167,10 +1008,6 @@ function toggleProjectExpansion(projectName: string): void {
     ...expandedProjects.value,
     [projectName]: !isExpanded(projectName),
   }
-}
-
-function toggleChatsListExpansion(): void {
-  isChatsListExpanded.value = !isChatsListExpanded.value
 }
 
 function toggleProjectCollapse(projectName: string): void {
@@ -1576,18 +1413,6 @@ onBeforeUnmount(() => {
   @apply order-2;
 }
 
-.chats-section {
-  @apply order-3 mt-1;
-}
-
-.thread-tree-root.chats-first .chats-section {
-  @apply order-2;
-}
-
-.thread-tree-root.chats-first .projects-section {
-  @apply order-3;
-}
-
 .thread-tree-header-row {
   @apply cursor-pointer;
 }
@@ -1598,18 +1423,6 @@ onBeforeUnmount(() => {
 
 .thread-tree-header {
   @apply text-sm font-normal text-zinc-500 select-none;
-}
-
-.chats-section-actions {
-  @apply flex items-center gap-1;
-}
-
-.chats-section-action {
-  @apply h-5 w-5 rounded text-zinc-500 flex items-center justify-center transition hover:bg-zinc-200 hover:text-zinc-700;
-}
-
-.chats-section-action[aria-pressed='true'] {
-  @apply bg-zinc-200 text-zinc-800;
 }
 
 .organize-menu-wrap {

@@ -3283,7 +3283,7 @@ export function useDesktopState() {
     let threadId = ''
 
     try {
-      const startedThread = await startThread(targetCwd || undefined, selectedModel || undefined)
+      const startedThread = await startThread(targetCwd, selectedModel || undefined)
       threadId = startedThread.threadId
       const submissionModel = startedThread.model?.trim() || selectedModel
       const submissionContext = { generation, modelId: submissionModel, reasoningEffort, resumed: true }

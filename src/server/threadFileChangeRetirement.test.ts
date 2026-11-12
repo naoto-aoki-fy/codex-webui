@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -94,9 +94,21 @@ it.each(['/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-
   expect(await readFile(sessionPath, 'utf8')).toBe(sessionRaw)
 })
 
-it.each(['', '/nonexistent-codexapp-workspace'])('rejects missing workspace %s without RPC or filesystem creation', async cwd => {
+it.each([undefined, '', '   ', '/nonexistent-codexapp-workspace'])('rejects missing workspace %s without RPC or filesystem creation', async cwd => {
+  const filesBefore = await readdir(home, { recursive: true })
   const response = await request('/codex-api/rpc', 'POST', { method: 'thread/start', params: { cwd } })
   expect(response.res.statusCode).toBe(400)
   expect(response.json.error).toContain('Select an existing workspace')
+  expect(await readdir(home, { recursive: true })).toEqual(filesBefore)
+  expect(await readFile(sessionPath, 'utf8')).toBe(sessionRaw)
   expect(rpc).not.toHaveBeenCalled()
+})
+
+it('allows explicitly selected existing folders and preserves legacy session data', async () => {
+  rpc.mockResolvedValue({ thread: { id: 'new-thread', cwd: project } })
+  const response = await request('/codex-api/rpc', 'POST', { method: 'thread/start', params: { cwd: project } })
+  expect(response.res.statusCode).toBe(200)
+  expect(rpc).toHaveBeenCalledWith('thread/start', { cwd: project })
+  expect(await readFile(sessionPath, 'utf8')).toBe(sessionRaw)
+  expect(await readFile(join(project, 'notes.txt'), 'utf8')).toBe('Existing project data')
 })

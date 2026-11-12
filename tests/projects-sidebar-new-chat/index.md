@@ -1,6 +1,6 @@
 # Projects, Sidebar, and New Chat
 
-Home route, project picker, sidebar organization, new-chat setup, projectless folders, and project/worktree shell behavior.
+Home route, project picker, sidebar organization, new-chat setup, explicit folders, and project/worktree shell behavior.
 
 Return to the [manual test index](../../tests.md).
 
@@ -10,6 +10,7 @@ Return to the [manual test index](../../tests.md).
 | [Existing workspace and native conversation workflows](native-workspace-workflows.md) |
 | [Existing workspace and native conversation workflows](native-workspace-workflows.md) |
 | --- |
+| [Explicit folders and removal of legacy Chats](remove-projectless-chats.md) |
 | [Concurrent project state updates and stale responses](concurrent-project-state-updates.md) |
 | [Feature: Empty project new thread action](empty-project-new-thread-action.md) |
 | [Feature: Remove GitHub trending projects from the new-thread screen](remove-github-trending-projects-from-the-new-thread-screen.md) |
@@ -17,7 +18,6 @@ Return to the [manual test index](../../tests.md).
 | [Feature: Frontend missing-entry 404 page auto-redirects to chat](frontend-missing-entry-404-page-auto-redirects-to-chat.md) |
 | [Editable current folder path in the folder picker](editable-current-folder-path-in-the-folder-picker.md) |
 | [Expandable Projects, Pinned, and Chats sidebar sections](expandable-projects-pinned-and-chats-sidebar-sections.md) |
-| [Sidebar chats show more projectless chats](sidebar-chats-show-more-projectless-chats.md) |
 | [Sidebar sessions survive symlinked workspace roots](sidebar-sessions-survive-symlinked-workspace-roots.md) |
 | [Sidebar scroll position survives collapse](sidebar-scroll-position-survives-collapse.md) |
 | [Toolbar new thread keeps active project](toolbar-new-thread-keeps-active-project.md) |
