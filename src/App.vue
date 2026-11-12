@@ -377,6 +377,7 @@
                 <ThreadConversation ref="threadConversationRef" :messages="filteredMessages" :is-loading="isLoadingMessages"
                   :active-thread-id="composerThreadContextId" :cwd="composerCwd"
                   :live-overlay="liveOverlay"
+                  :is-revert-disabled="isRollingBack || isSelectedThreadInProgress"
                   :pending-requests="selectedThreadServerRequests"
                   :has-more-persisted-above="hasMoreOlderMessages"
                   :is-loading-persisted-above="isLoadingOlderMessages"
@@ -586,7 +587,8 @@ const {
   startPolling,
   stopPolling,
   primeSelectedThread,
-  rollbackSelectedThread,
+  executeThreadRevert,
+  isRollingBack,
 } = useDesktopState()
 
 const route = useRoute()
@@ -1812,21 +1814,13 @@ function onInterruptTurn(): void {
   void interruptSelectedThreadTurn()
 }
 
-function onRollback(payload: { turnId: string }): void {
-  const targetTurnId = payload.turnId.trim()
-  if (targetTurnId.length > 0) {
-    const rollbackUserMessage = [...filteredMessages.value]
-      .reverse()
-      .find((message) => (
-        message.role === 'user'
-        && (message.turnId?.trim() ?? '') === targetTurnId
-        && message.text.trim().length > 0
-      ))
-    if (rollbackUserMessage?.text && threadComposerRef.value) {
-      threadComposerRef.value.appendTextToDraft(rollbackUserMessage.text)
-    }
+async function onRollback(payload: { threadId: string; turnId: string; operation: 'revert' | 'fork-and-revert' }): Promise<void> {
+  const text = filteredMessages.value.find(message => message.role === 'user' && message.turnId === payload.turnId)?.text
+  const destination = await executeThreadRevert(payload.threadId, payload.turnId, payload.operation)
+  if (destination && selectedThreadId.value === destination && text) {
+    await nextTick()
+    if (selectedThreadId.value === destination) threadComposerRef.value?.appendTextToDraft(text)
   }
-  void rollbackSelectedThread(payload.turnId)
 }
 
 function onImplementPlan(payload: { turnId: string }): void {

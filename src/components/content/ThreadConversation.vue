@@ -713,17 +713,23 @@
                 class="message-toolbar"
                 :data-role="message.role"
               >
+                <span v-if="showEditMessageButton(message)" class="message-revert-split" style="display: inline-flex; align-items: center">
                 <button
-                  v-if="showEditMessageButton(message)"
                   type="button"
                   class="message-edit-button"
-                  aria-label="Revert"
-                  title="Revert"
+                  aria-label="Fork and Revert"
+                  title="Fork and Revert"
+                  :disabled="isRevertDisabled"
                   @click="editMessage(message.id)"
                 >
                   <IconTablerArrowBackUp class="icon-svg message-edit-icon" />
                   <span class="message-edit-label">Revert</span>
                 </button>
+                <ComposerDropdown :key="activeThreadId" model-value="" icon-only
+                  placeholder="Revert options" :disabled="isRevertDisabled" menu-align="end"
+                  :options="[{ value: 'revert', label: 'Revert' }, { value: 'fork-and-revert', label: 'Fork and Revert' }]"
+                  @update:model-value="editMessage(message.id, $event)" />
+                </span>
                 <button
                   v-if="message.role === 'user'"
                   type="button"
@@ -843,6 +849,7 @@
 </template>
 
 <script setup lang="ts">
+import ComposerDropdown from './ComposerDropdown.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { generationMetadataLabel } from '../../turnGenerationMetadata'
 import { formatMessageTimestamp } from '../../messageTimestamps'
@@ -1125,6 +1132,7 @@ const props = defineProps<{
   messages: UiMessage[]
   pendingRequests: UiServerRequest[]
   liveOverlay: UiLiveOverlay | null
+  isRevertDisabled?: boolean
   isLoading: boolean
   activeThreadId: string
   cwd: string
@@ -1135,7 +1143,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   forkThread: [payload: { threadId: string; turnIndex: number }]
-  rollback: [payload: { turnId: string }]
+  rollback: [payload: { threadId: string; turnId: string; operation: 'revert' | 'fork-and-revert' }]
   implementPlan: [payload: { turnId: string }]
 }>()
 
@@ -1732,10 +1740,11 @@ function showEditMessageButton(message: UiMessage): boolean {
   return typeof editableTurnIdByMessageId.value[message.id] === 'string'
 }
 
-function editMessage(messageId: string): void {
+function editMessage(messageId: string, operation: string = 'fork-and-revert'): void {
+  if (props.isRevertDisabled || (operation !== 'revert' && operation !== 'fork-and-revert')) return
   const turnId = editableTurnIdByMessageId.value[messageId]
   if (!turnId) return
-  emit('rollback', { turnId })
+  emit('rollback', { threadId: props.activeThreadId, turnId, operation })
 }
 
 function splitPlainTextByLinks(

@@ -85,3 +85,39 @@ The source still has its original five IDs. No rollback RPC is used by the fix.
 These are real-server observations, not fixture simulations. Existing UI styles
 were not changed; theme-specific rendering and production deployment of the new
 build were not verified in this investigation.
+
+## User-message Revert split button
+
+Prerequisites: an independently managed live app-server and a disposable working
+folder. Create a conversation with file edits in at least 15 completed turns,
+and save a draft in the original conversation.
+
+1. In light and dark themes, open the arrow beside Revert near the viewport edge.
+   Expect Revert and Fork and Revert, readable and within the screen. Opening
+   the menu must send no API requests. Check Tab, Enter, Escape and outside click;
+   switching conversations must close it.
+2. Click the left Revert button. Expect Fork and Revert: the source history and
+   draft remain intact, workspace changes from the selected turn onward are
+   restored, and the fork excludes the selected user turn and all later turns.
+   Expect navigation to the fork with the original message in its composer.
+3. Choose each menu item separately. Revert must modify only the source history;
+   Fork and Revert must modify only the fork. The next left click must always
+   Fork and Revert. Repeat for the first turn and an earlier paginated turn.
+4. Repeatedly click while pending; expect one fork, one restoration and one
+   history undo. Both operations must be disabled during a generated response.
+5. Navigate away while pending (including away and back). Expect no forced
+   navigation and no message inserted into another conversation's composer.
+6. Inject failures at source validation, fork, fork validation, restoration,
+   history undo and refresh. Expect no subsequent stages or automatic retries.
+   Created forks remain available; errors identify the stage and any confirmed
+   restoration/history undo. Inspect files after partial restoration failures.
+
+Cleanup: archive disposable threads and remove the disposable working folder.
+Files are shared between source and fork; no Git branch or worktree is created.
+
+Performance audit: menu rendering is local state only. The guarded state routine
+makes one fork call, one source file-restoration call and one destination revert
+call. Validation reads only source/destination history, paging only as necessary
+to find the target turn. Refresh and history invalidation target the destination;
+no full thread-list refresh is requested. Live RPC timings and file restoration
+require a connected independently managed app-server.
