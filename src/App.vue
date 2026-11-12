@@ -437,6 +437,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useNewThreadCwdRoute } from './composables/useNewThreadCwdRoute'
 import DesktopLayout from './components/layout/DesktopLayout.vue'
 import GeneralPreferencesSettings from './components/sidebar/GeneralPreferencesSettings.vue'
 import AccountSettingsPanel from './components/sidebar/AccountSettingsPanel.vue'
@@ -600,6 +601,7 @@ const directoryTryInFlightKey = ref('')
 let hasPendingRouteSync = false
 const hasInitialized = ref(false)
 const newThreadCwd = ref('')
+useNewThreadCwdRoute(router, newThreadCwd)
 const gitRepoStatusByCwd = ref<Record<string, boolean>>({})
 const gitRepoStatusRequestByCwd = new Map<string, Promise<boolean>>()
 const workspaceRootOptionsState = ref<{ order: string[]; labels: Record<string, string>; projectOrder: string[] }>({
@@ -1295,7 +1297,7 @@ function onStartNewThread(projectName: string): void {
   }
   if (isMobile.value) setSidebarCollapsed(true)
   if (isHomeRoute.value) return
-  void router.push({ name: 'home' })
+  void router.push({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value } : {} })
 }
 
 function onBrowseThreadFiles(threadId: string): void {
@@ -1338,7 +1340,7 @@ function onStartNewThreadFromToolbar(): void {
   newThreadRuntime.value = 'local'
   if (isMobile.value) setSidebarCollapsed(true)
   if (isHomeRoute.value) return
-  void router.push({ name: 'home' })
+  void router.push({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value } : {} })
 }
 
 function onStartProjectlessNewChat(): void {
@@ -1346,7 +1348,7 @@ function onStartProjectlessNewChat(): void {
   newThreadRuntime.value = 'local'
   if (isMobile.value) setSidebarCollapsed(true)
   if (isHomeRoute.value) return
-  void router.push({ name: 'home' })
+  void router.push({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value } : {} })
 }
 
 async function loadGitRepoStatus(cwdRaw: string): Promise<void> {
@@ -1660,9 +1662,8 @@ async function applyLaunchProjectPathFromUrl(): Promise<boolean> {
       label: '',
     })
     if (!normalizedPath) return false
-    newThreadCwd.value = normalizedPath
     await pinProjectToTop(normalizedPath)
-    await router.replace({ name: 'home' })
+    await router.replace({ name: 'home', query: { cwd: normalizedPath } })
     await loadWorkspaceRootOptionsState()
     const nextUrl = new URL(window.location.href)
     nextUrl.searchParams.delete('openProjectPath')
@@ -2082,7 +2083,7 @@ watch(
 
     if (!threadId) {
       if (route.name !== 'home') {
-        await router.replace({ name: 'home' })
+        await router.replace({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value } : {} })
       }
       return
     }
@@ -2093,20 +2094,8 @@ watch(
 )
 
 watch(
-  () => newThreadFolderOptions.value,
-  (options) => {
-    if (options.length === 0) {
-      newThreadCwd.value = ''
-      void refreshDefaultProjectName()
-      return
-    }
-    const selected = newThreadCwd.value.trim()
-    if (selected) {
-      const hasSelected = options.some((option) => option.value === selected)
-      if (!hasSelected) {
-        newThreadCwd.value = ''
-      }
-    }
+  () => getProjectBaseDirectory(),
+  () => {
     void refreshDefaultProjectName()
   },
   { immediate: true },
@@ -2116,7 +2105,6 @@ watch(
   () => newThreadCwd.value,
   () => {
     worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
-    void refreshDefaultProjectName()
   },
 )
 

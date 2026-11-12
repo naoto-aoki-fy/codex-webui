@@ -45,3 +45,21 @@ The global Start new thread action opens the new-thread composer with the active
 
 ### Rollback/Cleanup
 - Clear search, unpin temporary pins, and restore project ordering, expansion, and theme preferences. Remove only fixture projects created for this check. Leave the shared verification server on port 4173 running.
+
+## Home folder URL reflection and restoration
+
+### Prerequisites/Setup
+- Use the verification server on port 4173 and two registered folder candidates.
+- Repeat in light and dark themes. Include a full path containing Japanese characters, spaces, `#`, and `&`.
+
+### Actions and Expected Results
+1. Select a folder in Start new thread. The home URL contains `cwd` with the full path encoded by Vue Router. Modify the folder repeatedly; each change replaces the current history entry.
+2. Reload and wait for the candidate list to load. The dropdown and Selected folder text retain the full path.
+3. Open a home URL with an unregistered `cwd`. It displays as a completed selection without registering or creating that folder. Reload; it remains selected after candidates arrive.
+4. Navigate between home URLs with different `cwd` values, then use Back and Forward. The selected folder follows each URL. An absent or empty `cwd` clears selection.
+5. From a project thread, use toolbar Start new thread and project-specific new creation. Both push a home entry carrying the resolved project path. Chats new-chat pushes home without `cwd`.
+6. Add an existing folder, create a project, and clone a repository. Each successful selection updates home `cwd`. A successful `openProjectPath` startup takes precedence over an existing home `cwd`.
+7. Visit a thread and Skills. Folder state changes must not add `cwd` to either route. Home URL changes must not persist prompt text, model, or runtime settings.
+
+### Rollback/Cleanup
+- Restore theme preferences and remove only projects created for this check. Leave the shared verification server running.
