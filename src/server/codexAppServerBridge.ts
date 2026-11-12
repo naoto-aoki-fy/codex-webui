@@ -1443,7 +1443,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       // Retired API: terminate here so SPA middleware cannot serve HTML.
-      if (url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
+      if (url.pathname === '/codex-api/worktree/create-permanent' || url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
         setJson(res, 404, { error: 'Not found' })
         return
       }
