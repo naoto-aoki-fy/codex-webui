@@ -30,7 +30,7 @@ import { AppServerClient } from './appServerClient'
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); wire.sockets.length = 0 })
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve() }
 
-it.each(['disconnect', 'replacement'] as const)('keeps established unanswered calls pending until %s; isolates stale replies and never replays', async cause => {
+it.each(['disconnect', 'replacement'] as const)('isolates stale replies and never replays on %s', async cause => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   const client = new AppServerClient({
     threadIndex: { call: async (method: string, params: unknown, rpc: (method: string, params: unknown) => Promise<unknown>) => rpc(method, params) },
@@ -48,8 +48,8 @@ it.each(['disconnect', 'replacement'] as const)('keeps established unanswered ca
     expect(old.frames.slice(2).map((f: any) => f.method).sort()).toEqual(['test/independent', 'test/unanswered'])
     expect(internal.pending.size).toBe(2)
     expect(internal.transport.pending.size).toBe(0)
-    expect(vi.getTimerCount()).toBe(0)
-    await vi.advanceTimersByTimeAsync(120_000)
+    expect(vi.getTimerCount()).toBe(2)
+    await vi.advanceTimersByTimeAsync(20_000)
     expect(internal.pending.size).toBe(2)
     expect(wire.sockets).toHaveLength(1)
     const oldIds = old.frames.slice(2).map((f: any) => f.id)
@@ -99,4 +99,73 @@ it('retains connection metadata and structured RPC errors, and clears metadata o
     socket.terminate()
     expect(client.getInitializationMetadata()).toBeNull()
   } finally { client.dispose() }
+})
+
+it('expires ordinary calls without replay or cancelling a silent remote command', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) }, metadataStore: { save: vi.fn() } })
+  try {
+    const ordinary = client.rpc('fs/readFile', { path: '/B/file' })
+    const expired = expect(ordinary).rejects.toThrow('outcome unknown')
+    const command = client.rpc('command/exec', { command: ['long-turn'], cwd: '/B' })
+    await flush()
+    await vi.advanceTimersByTimeAsync(60_001)
+    await expired
+    expect((client as any).pending.size).toBe(1)
+    const socket = wire.sockets[0]
+    expect(socket.frames.filter((f: any) => f.method === 'command/exec')).toHaveLength(1)
+    expect(socket.frames.some((f: any) => /terminate|cancel/.test(f.method))).toBe(false)
+    socket.reply(socket.frames.find((f: any) => f.method === 'command/exec').id, 'completed')
+    expect(await command).toBe('completed')
+  } finally { client.dispose() }
+})
+
+it('a missing restored thread never blocks independent RPCs or healthy subscriptions', async () => {
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) }, metadataStore: { save: vi.fn() } })
+  try {
+    const internal = client as any
+    internal.subscribedThreads.add('missing')
+    internal.subscribedThreads.add('healthy')
+    await client.reconnect()
+    await flush()
+    const socket = wire.sockets[0]
+    const read = client.rpc('model/list', {})
+    await flush()
+    const missing = socket.frames.find((f: any) => f.params?.threadId === 'missing')
+    expect(missing.params.excludeTurns).toBe(true)
+    socket.emit('message', Buffer.from(JSON.stringify({ id: missing.id, error: { code: -1, message: 'missing thread' } })), false)
+    socket.reply(socket.frames.find((f: any) => f.method === 'model/list').id, 'models')
+    expect(await read).toBe('models')
+    await flush()
+    expect(socket.frames.find((f: any) => f.params?.threadId === 'healthy')).toBeTruthy()
+  } finally { client.dispose() }
+})
+
+it('coalesces automatic reconnects and never sends an old approval to a reused wire ID', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) }, metadataStore: { save: vi.fn() } })
+  try {
+    const first = client.rpc('test/read', {})
+    await flush()
+    const old = wire.sockets[0]
+    old.reply(old.frames.find((f: any) => f.method === 'test/read').id, {})
+    await first
+    const approval = { id: 7, method: 'item/commandExecution/requestApproval', params: { threadId: 't' } }
+    old.emit('message', Buffer.from(JSON.stringify(approval)), false)
+    const stale = client.listPendingServerRequests()[0].id
+    old.terminate()
+    await vi.advanceTimersByTimeAsync(500)
+    await flush()
+    expect(wire.sockets).toHaveLength(2)
+    const fresh = wire.sockets[1]
+    fresh.emit('message', Buffer.from(JSON.stringify(approval)), false)
+    const current = client.listPendingServerRequests()[0].id
+    expect(current).not.toBe(stale)
+    await expect(client.respondToServerRequest({ id: stale, result: {} })).rejects.toThrow('No pending')
+    expect(fresh.frames.some((f: any) => f.id === 7 && !f.method)).toBe(false)
+    await client.respondToServerRequest({ id: current, result: { decision: 'accept' } })
+    expect(fresh.frames).toContainEqual({ id: 7, result: { decision: 'accept' } })
+    expect(wire.sockets).toHaveLength(2)
+  } finally { client.dispose(); random.mockRestore() }
 })
