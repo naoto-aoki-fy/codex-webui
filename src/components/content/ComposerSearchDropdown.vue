@@ -34,25 +34,7 @@
               @keydown.arrow-down.prevent="moveHighlight(1)"
               @keydown.arrow-up.prevent="moveHighlight(-1)"
             />
-            <button
-              v-if="createLabel"
-              class="search-dropdown-create-icon"
-              type="button"
-              :aria-label="createLabel"
-              :title="createLabel"
-              @click="emit('create')"
-            >
-              +
-            </button>
           </div>
-          <button
-            v-if="createLabel"
-            class="search-dropdown-create"
-            type="button"
-            @click="emit('create')"
-          >
-            {{ createLabel }}
-          </button>
         </div>
         <ul v-if="filtered.length > 0" class="search-dropdown-list" role="listbox">
           <li v-for="(opt, idx) in filtered" :key="opt.value">
@@ -87,16 +69,6 @@
                   <span v-if="opt.description" class="search-dropdown-option-desc">{{ opt.description }}</span>
                 </span>
               </button>
-              <button
-                v-if="allowRemove && opt.removable"
-                class="search-dropdown-option-remove"
-                type="button"
-                :aria-label="`${removeLabel} ${opt.label}`"
-                :title="`${removeLabel} ${opt.label}`"
-                @click.stop="emit('remove', opt.value)"
-              >
-                ×
-              </button>
             </div>
           </li>
         </ul>
@@ -117,8 +89,7 @@ export type SearchDropdownOption = {
   description?: string
   badge?: string
   badgeLabel?: string
-  badgeTone?: 'repo' | 'system' | 'plugin' | 'user' | 'prompt'
-  removable?: boolean
+  badgeTone?: 'repo' | 'system' | 'plugin' | 'user'
 }
 
 const props = defineProps<{
@@ -128,16 +99,11 @@ const props = defineProps<{
   searchPlaceholder?: string
   disabled?: boolean
   openDirection?: 'up' | 'down'
-  createLabel?: string
-  allowRemove?: boolean
-  removeLabel?: string
   displayLabelOverride?: string
 }>()
 
 const emit = defineEmits<{
   toggle: [value: string, checked: boolean]
-  create: []
-  remove: [value: string]
 }>()
 
 const rootRef = ref<HTMLElement | null>(null)
@@ -307,14 +273,6 @@ onBeforeUnmount(() => {
   @apply flex items-center gap-2;
 }
 
-.search-dropdown-create {
-  @apply hidden;
-}
-
-.search-dropdown-create-icon {
-  @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-lg leading-none text-zinc-700 transition hover:bg-zinc-50;
-}
-
 .search-dropdown-search {
   @apply min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-800 outline-none placeholder-zinc-400 transition focus:border-zinc-300 focus:bg-white;
 }
@@ -363,10 +321,6 @@ onBeforeUnmount(() => {
   @apply border-emerald-200 bg-emerald-50 text-emerald-700;
 }
 
-.search-dropdown-option-badge.is-prompt {
-  @apply border-violet-200 bg-violet-50 text-violet-700;
-}
-
 .search-dropdown-option-copy {
   @apply flex min-w-0 flex-1 flex-col overflow-hidden pr-1;
 }
@@ -385,10 +339,6 @@ onBeforeUnmount(() => {
 
 .search-dropdown-option-desc {
   @apply mt-0.5 block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-zinc-500;
-}
-
-.search-dropdown-option-remove {
-  @apply absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-md border-0 bg-transparent text-lg font-medium leading-none text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800;
 }
 
 .search-dropdown-empty {
@@ -417,13 +367,6 @@ onBeforeUnmount(() => {
 }
 
 :global(:root.dark) .search-dropdown-search,
-:global(:root.dark) .search-dropdown-create {
-  @apply border-zinc-700 bg-zinc-950 text-zinc-100 placeholder-zinc-500;
-}
-
-:global(:root.dark) .search-dropdown-create:hover {
-  @apply bg-zinc-900;
-}
 
 :global(:root.dark) .search-dropdown-option {
   @apply text-zinc-200;
@@ -458,24 +401,12 @@ onBeforeUnmount(() => {
   @apply border-emerald-900/70 bg-emerald-950 text-emerald-300;
 }
 
-:global(:root.dark) .search-dropdown-option-badge.is-prompt {
-  @apply border-violet-900/70 bg-violet-950 text-violet-300;
-}
-
 :global(:root.dark) .search-dropdown-option-type {
   @apply text-zinc-500;
 }
 
 :global(:root.dark) .search-dropdown-option-desc {
   @apply text-zinc-400;
-}
-
-:global(:root.dark) .search-dropdown-option-remove {
-  @apply text-zinc-400;
-}
-
-:global(:root.dark) .search-dropdown-option-remove:hover {
-  @apply bg-zinc-700 text-zinc-200;
 }
 
 :global(:root.dark) .search-dropdown-empty {
