@@ -36,12 +36,10 @@ it('keeps generated image ownership through sanitization, normalization and rend
   const { sanitizeThreadTurnsInlinePayloads } = await import('./threadInlinePayloads')
   const { normalizeThreadMessagesV2 } = await import('../api/normalizers/v2')
   const { toRenderableImageUrl } = await import('../utils/conversationLinks')
-  const { toLocalImageUrl } = await import('../composables/desktopNotificationReaders')
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
   const sanitized = await sanitizeThreadTurnsInlinePayloads('thread/read', { thread: { id: 'asset', turns: [{ id: 'turn', items: [{ id: 'generated', type: 'imageGeneration', result: png }] }] } }) as any
   const url = sanitized.thread.turns[0].items[0].path
   expect(url).toMatch(/^\/codex-app-asset\?id=/)
   expect(normalizeThreadMessagesV2(sanitized)[0].images).toEqual([url])
   expect(toRenderableImageUrl(url)).toBe(url)
-  expect(toLocalImageUrl(url)).toBe(url)
 })

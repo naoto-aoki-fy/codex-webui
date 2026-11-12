@@ -110,3 +110,7 @@ describe('desktop notification readers compatibility', () => {
     for (const read of nullable) for (const params of [null, [], { item: [] }, { item: { type: {} } }]) expect(read(notification('unknown', params))).toBeNull()
   })
 })
+
+it('preserves generated web asset URLs in notification image readers', () => {
+  expect(readers.toLocalImageUrl('/codex-app-asset?id=image.png')).toBe('/codex-app-asset?id=image.png')
+})
