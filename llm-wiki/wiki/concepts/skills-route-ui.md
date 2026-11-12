@@ -16,7 +16,7 @@ The route previously surfaced a generic `Directory` label in the sidebar and con
 
 ## Persistence model
 
-The historical source below describes the former server-backed first-launch card. The card and its GET/PUT preference handlers are now removed (see [cleanup boundaries](../../../docs/api-wrapper-cleanup.md)). Existing `first-launch-plugins-card-dismissed` data is left untouched. Shared global-state persistence remains active for other features.
+The historical source below describes the former server-backed first-launch card. The card and its GET/PUT preference handlers are now removed (see [cleanup boundaries](../../../PROJECT_SPEC.md#bridge-contracts)). Existing `first-launch-plugins-card-dismissed` data is left untouched. Shared global-state persistence remains active for other features.
 
 ## UI implementation lessons
 

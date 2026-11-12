@@ -20,4 +20,4 @@ Close the disposable thread and any preview. No new persistence is introduced. R
 
 ## Automated checks
 
-Run `pnpm exec vitest run src/components/content/ThreadConversation.test.ts`. Setup-script instrumentation measures parse counts without production instrumentation. See [audit evidence and follow-ups](../../docs/refactoring/markdown-rendering-audit.md) for measured counts and limitations.
+Run `pnpm exec vitest run src/components/content/ThreadConversation.test.ts`. Setup-script instrumentation measures parse counts without production instrumentation. See [rendering follow-ups](../../docs/maintenance/open-items.md#history-and-rendering) for current limitations; operation-count tests do not establish browser frame time or heap usage.

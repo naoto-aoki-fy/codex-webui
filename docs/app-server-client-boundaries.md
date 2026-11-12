@@ -1,42 +1,38 @@
 # App-server client ownership
 
-`appServerClient.ts` owns the coherent client implementation: one transport per
-instance, monotonic RPC IDs, pending RPC promises, approval requests, notification
-listeners, connection generations, reconnect/restoration promises, subscribed
-thread IDs, authentication refresh single-flight, pending generation settings,
-400-frame per-thread event buffers, fallback snapshots, and 30-second earlier-page
-read caches and in-flight deduplication maps.
+`src/server/appServerClient.ts` owns one transport per client, monotonic RPC IDs,
+pending calls and approval handles, notification listeners, connection generations,
+reconnect, subscribed thread IDs, auth-refresh single-flight, stream buffers,
+snapshots and earlier-page caching. Construction does not connect. The bridge's
+zero-argument `AppServerClient` subclass injects its attachment-only thread index;
+the core never imports the bridge.
 
-The bridge owns the persistent attachment-only thread index. Generation settings are attached to live turns in memory; no metadata store is written.
-These were the class's mutable module-level dependencies before extraction. The
-core now receives narrow `threadIndex.call` interface;
-the bridge's zero-argument `AppServerClient` compatibility subclass supplies the
-same existing instances. No store, client, or transport is duplicated. The core
-imports transport, credential access, external refresh, generation metadata
-normalization, and HTTP value helpers directly; it never imports the bridge.
-The local string validation helper preserves the original semantics.
+The bridge owns HTTP routing, archive/materialization fallback, history shaping,
+search and shared runtime leases. Middleware release is idempotent and identity-safe;
+the last owner disposes the shared client and active SSE requests. Matching runtime
+versions reuse the shared object on hot reload; incompatible versions replace it.
+The transport never owns the independently managed Codex process.
 
-The bridge retains HTTP routing, snapshot fallback selection, archive recovery,
-SSE, middleware disposal, and the global shared runtime. The shared key
-and `external-websocket-v1` version are unchanged. Matching hot-reload generations
-reuse the existing object without an instanceof check; incompatible generations
-still retire legacy workers and dispose the previous runtime before replacement.
-The public bridge constructor remains callable without arguments and inherits all
-previous instance methods. Prototype method ownership moves to the core class.
+Disconnect rejects pending RPCs, clears approvals/events/snapshots/page caches,
+advances connection generation and schedules reconnect. Obsolete socket replies
+cannot settle new calls. Subscription restoration runs sequentially with
+`excludeTurns: true`, reports per-thread failures and never gates unrelated RPCs.
+Application operations are never automatically replayed. Ordinary calls have a
+default 60-second caller deadline; standalone commands default to 600 seconds. Deadlines
+release pending ownership without cancelling remote work: outcomes can be unknown.
+See [connection settings and recovery](external-app-server.md).
 
-Transport construction remains a field initializer in the original position;
-construction does not connect. Disconnect still advances the generation, rejects
-pending RPCs, clears approvals/events/snapshots/page caches, and emits the same
-notification. Subscriptions survive disconnect and restore once per generation.
-Authentication replies still check the captured generation. Disposal delegates
-to the existing transport. No method algorithm, RPC ordering, timer, or listener
-registration changes were introduced.
+Earlier-page reads share in-flight work and a 30-second cache. Promise identity,
+connection generation and invalidation protect publication; snapshot epochs prevent
+stale RPC results from repopulating invalidated snapshots. Stream history is bounded
+at 400 frames per thread, not globally. These buffers merge execution errors into
+history; they are not a browser replay API.
 
-## Performance audit
+Generation metadata is persisted by `turnGenerationMetadata.ts`, scoped to server
+endpoint and remote Codex home. Submitted values are distinguished from execution
+evidence; fork inheritance is best-effort. See [generation metadata](turn-generation-metadata.md)
+for provenance, legacy opt-in and storage compatibility.
 
-Code-path comparison shows the same transport allocation, RPC calls, cache keys,
-TTL, invalidation, payloads, and asynchronous fanout. Dependency injection adds
-only two property lookups in the existing store paths; the compatibility subclass
-adds no transport or background work. There are no new network requests, blocking
-filesystem operations, timers, listeners, or unbounded loops. Browser profiling
-and live-server latency were not measured; no performance improvement is claimed.
+Lifecycle tests live in `src/server/appServerClient*.test.ts`,
+`src/server/bridgeSse.test.ts`, and `src/server/sharedBridgeOwnership.test.ts`.
+Remaining resource and deployment concerns belong in [open items](maintenance/open-items.md).

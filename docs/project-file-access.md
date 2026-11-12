@@ -36,8 +36,8 @@ Web-generated inline images use `/codex-app-asset?id=...`, restricted to filenam
 inside the Web-owned inline-media cache. Project paths never enter that branch.
 Previously generated path-based inline-image URLs must be regenerated from the
 original inline payload; arbitrary local-path compatibility is intentionally not
-provided. Uploads remain deferred: an upload stored only on the Web host is not
-readable through the migrated project endpoints when the hosts differ.
+provided. Uploads are staged on the App Server host with an intent manifest and indefinite
+retention; see [upload operations](external-app-server.md).
 
 ## HTTP and performance
 
@@ -71,9 +71,11 @@ large-file RSS, latency, and remote-network throughput have not been benchmarked
   credentials, run turns, or touch the configured deployment server.
 
 The real local CLI test is not proof of deployment compatibility or a physically
-separate host. Before deployment, repeat the manual remote-host checks below
-against the independently managed target server. Uploads, Git/search, workspace
-creation, watchers, Undo/Redo and remaining filesystem consumers are deferred.
+separate host. Before deployment, run the
+[two-host checks](../tests/website-docs-misc/external-app-server.md) against the
+independently managed target server. Current Git/search/upload ownership is in the
+[connection guide](external-app-server.md); project/worktree creation and app-managed
+Undo/Redo are removed.
 
 ## Implementation verification result
 
