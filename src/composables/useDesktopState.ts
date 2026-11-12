@@ -119,7 +119,7 @@ import {
 } from '../api/codexGateway'
 import { CodexApiError } from '../api/codexErrors'
 import { normalizeFileChangeStatus, toUiFileChanges } from '../api/normalizers/v2'
-import { readGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata'
+import { readGenerationMetadata, mergeGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata'
 import type {
   CollaborationModeKind,
   CollaborationModeOption,
@@ -471,6 +471,15 @@ export function useDesktopState() {
   const turnErrorByThreadId = ref<Record<string, TurnErrorState>>({})
   const activeTurnIdByThreadId = ref<Record<string, string>>({})
   const generationMetadataByThreadId = ref<Record<string, Record<string, TurnGenerationMetadata>>>({})
+  function retainGenerationMetadata(threadId: string, turnId: string, metadata: TurnGenerationMetadata) {
+    const current = generationMetadataByThreadId.value[threadId]?.[turnId]
+    const merged = mergeGenerationMetadata(current, metadata)
+    if (JSON.stringify(current) === JSON.stringify(merged)) return
+    generationMetadataByThreadId.value = {
+      ...generationMetadataByThreadId.value,
+      [threadId]: { ...generationMetadataByThreadId.value[threadId], [turnId]: merged },
+    }
+  }
   const interruptBlockedUntilPersistedByThreadId = ref<Record<string, boolean>>({})
   const threadListedByServerById = ref<Record<string, boolean>>({})
   // Separate from the interrupt gate, which is cleared on turn start/completion.
@@ -677,7 +686,7 @@ export function useDesktopState() {
     ].map((message) => {
       const metadata = message.turnId ? generationMetadataByThreadId.value[threadId]?.[message.turnId] : undefined
       if (message.role !== 'assistant' || !metadata) return message
-      return { ...message, generationMetadata: { ...metadata, ...message.generationMetadata } }
+      return { ...message, generationMetadata: mergeGenerationMetadata(metadata, message.generationMetadata) }
     })
 
     const summary = turnSummaryByThreadId.value[threadId]
@@ -2029,10 +2038,7 @@ export function useDesktopState() {
       const turnId = readString(turn?.id) || readString(params?.turnId)
       const metadata = readGenerationMetadata(turn?.generationMetadata ?? params?.generationMetadata)
       if (turnId && metadata) {
-        generationMetadataByThreadId.value = {
-          ...generationMetadataByThreadId.value,
-          [notificationThreadId]: { ...generationMetadataByThreadId.value[notificationThreadId], [turnId]: metadata },
-        }
+        retainGenerationMetadata(notificationThreadId, turnId, metadata)
       }
     }
     const notificationErrorState = readNotificationErrorState(notification)
@@ -3342,6 +3348,10 @@ export function useDesktopState() {
         skills.length > 0 ? skills : undefined,
         fileAttachments,
         collaborationMode,
+        (turnId, metadata) => {
+          if (generation !== lifecycleGeneration || !metadata) return
+          retainGenerationMetadata(threadId, turnId, metadata)
+        },
       )
 
       if (generation !== lifecycleGeneration) return

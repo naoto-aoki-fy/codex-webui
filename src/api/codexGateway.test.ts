@@ -567,3 +567,12 @@ it('restores a background subscription without asking for turns or normalizing h
     })
   } finally { vi.unstubAllGlobals() }
 })
+
+
+it('returns accepted generation metadata directly without waiting for a notification', async () => {
+  const metadata = { model: 'A', modelSource: 'submitted', effort: null, effortSource: 'submitted' }
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ result: { turn: { id: 'accepted', generationMetadata: metadata } } }))))
+  const accepted = vi.fn()
+  await expect(startThreadTurn('thread', 'hello', [], 'A', undefined, undefined, [], undefined, accepted)).resolves.toBe('accepted')
+  expect(accepted).toHaveBeenCalledExactlyOnceWith('accepted', metadata)
+})
