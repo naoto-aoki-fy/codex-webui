@@ -1,6 +1,6 @@
 import { getWorkspaceRootsState, getWorkspaceRootsStateGeneration, invalidateWorkspaceRootsStateCache, updateWorkspaceRootsState, type WorkspaceRootsState, type WorkspaceRootsOperation } from './codexGateway'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { acquireReasoningCatalog, forkThreadFromResponse, reasoningCatalog, getAvailableModelIds, getThreadDetail, resumeThread, startThreadTurn } from './codexGateway'
+import { setThreadPinned, acquireReasoningCatalog, forkThreadFromResponse, reasoningCatalog, getAvailableModelIds, getThreadDetail, resumeThread, startThreadTurn } from './codexGateway'
 
 function mockRpcFetch(): { requests: Array<{ method: string, params: Record<string, unknown> }> } {
   const requests: Array<{ method: string, params: Record<string, unknown> }> = []
@@ -542,4 +542,16 @@ describe('shared reasoning catalog during gateway resolution', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(reasoningCatalog.value).toEqual(catalog)
   })
+})
+
+it('pins before the first native row and unpins without writing local state', async () => {
+  const { requests } = mockRpcFetch()
+  try {
+    await setThreadPinned('thread', true, 'first')
+    await setThreadPinned('thread', false)
+    expect(requests).toEqual([
+      { method: 'thread/section/move', params: { threadId: 'thread', sectionId: '01984de2-8f74-7c91-a3b2-5c5e937cf318', beforeThreadId: 'first' } },
+      { method: 'thread/section/move', params: { threadId: 'thread', sectionId: null } },
+    ])
+  } finally { vi.unstubAllGlobals() }
 })

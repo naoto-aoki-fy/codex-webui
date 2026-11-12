@@ -727,8 +727,12 @@ function isPinned(threadId: string): boolean {
 
 async function togglePin(threadId: string): Promise<void> {
   try {
-    await setThreadPinned(threadId, !isPinned(threadId))
-    pinnedThreadIds.value = (await getPinnedThreadState()).threadIds
+    const pinned = !isPinned(threadId)
+    await setThreadPinned(threadId, pinned, pinnedThreadIds.value[0])
+    // Apply the acknowledged move; the native notification refreshes other-client
+    // changes. Avoid issuing a second list request for our own notification.
+    const remaining = pinnedThreadIds.value.filter(id => id !== threadId)
+    pinnedThreadIds.value = pinned ? [threadId, ...remaining] : remaining
   } catch (error) {
     console.error('Unable to change native thread section', error)
   }
