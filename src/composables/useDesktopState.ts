@@ -107,8 +107,6 @@ import {
   setCodexSpeedMode,
   updateWorkspaceRootsState,
   invalidateWorkspaceRootsStateCache,
-  getThreadTitleCache,
-  persistThreadTitle,
   resumeThread,
 
   startThread,
@@ -481,7 +479,6 @@ export function useDesktopState() {
   const codexRateLimit = ref<UiRateLimitSnapshot | null>(null)
   const threadTokenUsageByThreadId = ref<Record<string, UiThreadTokenUsage>>(loadThreadTokenUsageMap())
 
-  const threadTitleById = ref<Record<string, string>>({})
 
   const installedSkills = ref<SkillInfo[]>([])
   const accountRateLimitSnapshots = ref<UiRateLimitSnapshot[]>([])
@@ -1030,16 +1027,11 @@ export function useDesktopState() {
     delayedTurnSyncTimerByThreadId.set(threadId, timerId)
   }
 
-  function applyCachedTitlesToGroups(groups: UiProjectGroup[]): UiProjectGroup[] {
-    const titles = threadTitleById.value
-    if (Object.keys(titles).length === 0) return groups
-    return groups.map((group) => ({
-      projectName: group.projectName,
-      threads: group.threads.map((thread) => {
-        const cached = titles[thread.id]
-        return cached ? { ...thread, title: cached } : thread
-      }),
+  function applyNativeThreadName(threadId: string, title: string): void {
+    sourceGroups.value = sourceGroups.value.map(group => ({
+      ...group, threads: group.threads.map(thread => thread.id === threadId ? { ...thread, title } : thread),
     }))
+    applyThreadFlags()
   }
 
   function getThreadPendingRequests(threadId: string): UiServerRequest[] {
@@ -1067,7 +1059,7 @@ export function useDesktopState() {
   }
 
   function applyThreadFlags(): void {
-    const withTitles = applyCachedTitlesToGroups(sourceGroups.value)
+    const withTitles = sourceGroups.value
     const flaggedGroups: UiProjectGroup[] = withTitles.map((group) => ({
       projectName: group.projectName,
       threads: group.threads.map((thread) => {
@@ -2013,9 +2005,7 @@ export function useDesktopState() {
       const threadId = readString(params?.threadId)
       const threadName = readString(params?.threadName)
       if (threadId && threadName) {
-        threadTitleById.value = { ...threadTitleById.value, [threadId]: threadName }
-        applyThreadFlags()
-        void persistThreadTitle(threadId, threadName)
+        applyNativeThreadName(threadId, threadName)
       }
     }
 
@@ -2349,20 +2339,6 @@ export function useDesktopState() {
     return run
   }
 
-  async function loadThreadTitleCacheIfNeeded(options: { force?: boolean } = {}): Promise<void> {
-    const generation = lifecycleGeneration
-    if (options.force !== true && Object.keys(threadTitleById.value).length > 0) return
-    try {
-      const cache = await getThreadTitleCache()
-      if (generation !== lifecycleGeneration) return
-      if (Object.keys(cache.titles).length > 0) {
-        threadTitleById.value = cache.titles
-      }
-    } catch {
-      // Title cache is optional; keep UI functional.
-    }
-  }
-
   async function loadWorkspaceRootsStateForThreadList(): Promise<WorkspaceRootsState | null> {
     const generation = lifecycleGeneration
     try {
@@ -2555,7 +2531,6 @@ export function useDesktopState() {
           const [page, requestedRootsState] = await Promise.all([
             getThreadGroupsPage(),
             loadWorkspaceRootsStateForThreadList(),
-            loadThreadTitleCacheIfNeeded({ force }),
           ])
           if (generation === threadListGeneration) {
             // A registration or edit can invalidate roots while the thread page loads.
@@ -2980,9 +2955,7 @@ export function useDesktopState() {
 
     try {
       await renameThread(threadId, normalizedName)
-      threadTitleById.value = { ...threadTitleById.value, [threadId]: normalizedName }
-      applyThreadFlags()
-      void persistThreadTitle(threadId, normalizedName)
+      applyNativeThreadName(threadId, normalizedName)
     } catch (unknownError) {
       error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
     }

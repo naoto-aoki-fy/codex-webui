@@ -339,13 +339,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   getPinnedThreadState,
   getThreadSummary,
-  persistPinnedThreadIds,
+  setThreadPinned,
+  subscribeCodexNotifications,
 } from '../../api/codexGateway'
 import type { UiProjectGroup, UiThread } from '../../types/codex'
 import IconTablerChevronDown from '../icons/IconTablerChevronDown.vue'
@@ -359,7 +360,6 @@ import { useUiLanguage } from '../../composables/useUiLanguage'
 import { getPathLeafName, getPathParent, isProjectlessChatPath } from '../../pathUtils.js'
 import SidebarMenuRow from './SidebarMenuRow.vue'
 import SidebarThreadRow from './SidebarThreadRow.vue'
-import { reconcilePinnedThreadIds } from './pinnedThreadUtils'
 import { compareThreads, sortThreadGroups, type ThreadSortMode } from './threadSorting'
 
 const router = useRouter()
@@ -570,27 +570,6 @@ const threadById = computed(() => {
   return map
 })
 
-watch(
-  pinnedThreadIds,
-  (threadIds) => {
-    if (!hasLoadedPinnedThreadState) return
-    void persistPinnedThreadIds(threadIds)
-  },
-)
-
-watch([threadById, () => props.isThreadListFullyLoaded], ([threadsById]) => {
-  const filtered = reconcilePinnedThreadIds(pinnedThreadIds.value, new Set(threadsById.keys()), {
-    canPruneMissing: props.isThreadListFullyLoaded,
-  })
-  if (filtered.length === pinnedThreadIds.value.length) return
-  const filteredIdSet = new Set(filtered)
-  const nextHydratedPinnedThreads = Object.fromEntries(
-    Object.entries(hydratedPinnedThreadById.value).filter(([threadId]) => filteredIdSet.has(threadId)),
-  )
-  hydratedPinnedThreadById.value = nextHydratedPinnedThreads
-  pinnedThreadIds.value = filtered
-})
-
 let pinnedThreadHydrationVersion = 0
 
 async function hydrateMissingPinnedThreads(): Promise<void> {
@@ -621,6 +600,13 @@ watch([pinnedThreadIds, threadById, () => props.isLoading], () => {
   if (!hasLoadedPinnedThreadState) return
   void hydrateMissingPinnedThreads()
 })
+
+const unsubscribeSections = subscribeCodexNotifications(notification => {
+  if (notification.method === 'thread/section/changed' || notification.method === 'app-server/reconnected') {
+    void getPinnedThreadState().then(state => { pinnedThreadIds.value = state.threadIds })
+  }
+})
+onUnmounted(unsubscribeSections)
 
 onMounted(async () => {
   const { threadIds } = await getPinnedThreadState()
@@ -739,13 +725,13 @@ function isPinned(threadId: string): boolean {
   return pinnedThreadIdSet.value.has(threadId)
 }
 
-function togglePin(threadId: string): void {
-  if (isPinned(threadId)) {
-    pinnedThreadIds.value = pinnedThreadIds.value.filter((id) => id !== threadId)
-    return
+async function togglePin(threadId: string): Promise<void> {
+  try {
+    await setThreadPinned(threadId, !isPinned(threadId))
+    pinnedThreadIds.value = (await getPinnedThreadState()).threadIds
+  } catch (error) {
+    console.error('Unable to change native thread section', error)
   }
-
-  pinnedThreadIds.value = [threadId, ...pinnedThreadIds.value]
 }
 
 function onTogglePinFromMenu(threadId: string): void {
