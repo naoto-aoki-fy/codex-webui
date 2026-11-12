@@ -315,7 +315,7 @@ import ComposerSearchDropdown from './ComposerSearchDropdown.vue'
 type SkillSourceBadge = {
   badge: string
   badgeLabel: string
-  badgeTone: 'repo' | 'system' | 'plugin' | 'user' | 'prompt'
+  badgeTone: 'repo' | 'system' | 'plugin' | 'user'
 }
 
 type SkillItem = { name: string; displayName?: string; description: string; path: string; scope?: string; enabled?: boolean }
@@ -481,7 +481,6 @@ const skillDropdownOptions = computed(() =>
         badge: source.badge,
         badgeLabel: source.badgeLabel,
         badgeTone: source.badgeTone,
-        removable: false,
       }
     }),
   ],
