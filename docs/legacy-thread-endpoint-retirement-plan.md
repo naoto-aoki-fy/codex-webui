@@ -1,3 +1,5 @@
+> Historical audit. Current feature ownership and removals are documented in [capability consolidation](refactoring/native-capability-consolidation.md).
+
 > Status: `thread-live-state` retirement is implemented. Its candidate-removal and compatibility discussion below records the prior assessment; the route now returns JSON 404. `thread-stream-events` is now also retired with JSON 404; only its HTTP adapter was removed and all shared buffers/error recovery remain. The sections below retain the prior assessment.
 
 > Historical audit: application-managed file Undo/Redo, filesystem restoration during conversation revert, project creation, GitHub cloning, automatic chat directories, camera/folder attachments, and project aliases/manual ordering have since been removed. Native thread operations, existing workspaces, file/image attachments, and diff inspection remain. Earlier implementation details below describe the pre-removal code. Current verification: [workspace workflows](../tests/projects-sidebar-new-chat/native-workspace-workflows.md).
@@ -24,7 +26,7 @@ All retirements must preserve the normal `thread/read` path and these shared rec
 - `isThreadMaterializationPendingError` and the generic RPC response for pending materialization.
 - Stream event recording and bounded buffering (`recordStreamEvent`, `streamEventsByThreadId`, and `getStreamEvents`) because `mergeStreamTurnErrorsIntoThreadResult` uses them to merge errors into normal history and earlier pages.
 - `mergeStreamTurnErrorsIntoThreadResult`, WebSocket/SSE notification delivery, thread ID extraction, earlier-history caching and deduplicated reads.
-- Session timestamp and generation metadata recovery, skill-input recovery, and inline-payload sanitization used by normal history.
+- Native history and inline-payload sanitization used by normal history.
 - `parseApplyPatchInput` and shared patch/file-change collection used by file rollback, Undo/Redo, and other active features.
 
 Removing `thread-live-state` cache invalidation must leave earlier-history cache invalidation intact. Removing `thread-stream-events` must not remove the buffer, its producer, or error merging.
@@ -53,7 +55,7 @@ This endpoint has the strongest documented compatibility signal and needs explic
 
 **Candidate removal in `src/server/codexAppServerBridge.ts`:** the GET handler and response assembly; `liveStateCache`, its get/set/invalidate methods, notification invalidation, and its disconnect cleanup; plus route-exclusive reconstruction helpers: `mergeSessionCommandsIntoTurns`, `buildSessionItemOrder`, `parseExecCommandOutput`, `SessionRecoveredCommand`, `SessionRecoveredFileChangeItem`, and `SessionItemSlot`.
 
-Current references also make `mergeItemsIntoTurns`, `captureItemFromNotification`, `capturedItemsByThreadId`, `CapturedItem`, and `MERGEABLE_ITEM_TYPES` candidates for removal with their producer call and disconnect cleanup. Confirm references again when implementing. Preserve stream buffering/error merging, snapshots, pending-materialization recovery, timestamps, generation metadata, skill recovery, and shared patch parsing.
+Current references also make `mergeItemsIntoTurns`, `captureItemFromNotification`, `capturedItemsByThreadId`, `CapturedItem`, and `MERGEABLE_ITEM_TYPES` candidates for removal with their producer call and disconnect cleanup. Confirm references again when implementing. Preserve stream buffering/error merging, snapshots, pending-materialization recovery, native history and shared patch parsing.
 
 **Documentation and manual procedures:** update `PROJECT_SPEC.md`, `docs/legacy-api-and-optional-feature-audit.md`, and `docs/api-wrapper-cleanup.md`. Update `tests/thread-loading-state/thread-stream-parity-stream-first-hydration-with-full-turn-history.md`, `thread-stream-parity-works-on-linux-oracle-a1-arm64.md`, `tests/auth-docker-runtime/docker-auth-startup-live-state-pending-read.md`, and `thread-detail-load-avoids-duplicate-live-state-history-fetch.md` so they describe supported behavior. Preserve historical context where useful; do not rewrite immutable `llm-wiki/raw/` sources.
 

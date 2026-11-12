@@ -1,3 +1,5 @@
+> Historical audit. Current feature ownership and removals are documented in [capability consolidation](refactoring/native-capability-consolidation.md).
+
 > Historical audit: Telegram integration has since been removed. References below describe the earlier implementation, not current behavior.
 
 > Historical audit: application-managed file Undo/Redo, filesystem restoration during conversation revert, project creation, GitHub cloning, automatic chat directories, camera/folder attachments, and project aliases/manual ordering have since been removed. Native thread operations, existing workspaces, file/image attachments, and diff inspection remain. Earlier implementation details below describe the pre-removal code. Current verification: [workspace workflows](../tests/projects-sidebar-new-chat/native-workspace-workflows.md).
@@ -13,12 +15,12 @@ The remaining handlers and explicit retirement responses are in `src/server/code
 | Endpoint | Repository evidence | Backend boundary and recommendation |
 |---|---|---|
 | `/codex-api/thread-file-change-fallback` | Retired by explicit compatibility-breaking decision; external use was not established absent. | Returns HTTP 404 JSON, with no replacement. Exclusive builder/type/merge helpers removed; shared parsing and rollback remain. |
-| `/codex-api/thread-live-state` | Retired by explicit authorization; all methods return JSON 404 without RPC. | Exclusive response reconstruction, live-state cache and captured-item cache removed. Normal history, earlier-page caches, snapshots, materialization handling, timestamps, generation metadata, skills and inline payload recovery remain. No replacement for diagnostic command/file-change reconstruction. |
+| `/codex-api/thread-live-state` | Retired by explicit authorization; all methods return JSON 404 without RPC. | Exclusive response reconstruction, live-state cache and captured-item cache removed. Normal history, earlier-page caches, snapshots, materialization handling, native history and inline payload recovery remain. No replacement for diagnostic command/file-change reconstruction. |
 | `/codex-api/thread-stream-events` | Intentionally retired by explicit authorization; all methods return JSON 404 without RPC or HTML fallback. | Buffered-event HTTP diagnostics are removed without replacement. `getStreamEvents`, buffering, error merging and WS/SSE live delivery remain; live transports do not replay historical buffered events. |
 
 Relevant tests include `tests/thread-loading-state/thread-stream-parity-stream-first-hydration-with-full-turn-history.md`, `thread-stream-parity-works-on-linux-oracle-a1-arm64.md`, and `thread-detail-load-avoids-duplicate-live-state-history-fetch.md`. The latter shows normal detail loading avoids a redundant live-state history fetch. The external-server fixture checks all three retired paths in built and development servers. Repository silence is not evidence that external clients do not depend on them.
 
-The fallback and live-state response builders and their exclusive implementations are removed. The stream-events HTTP response adapter is also removed. Shared code to retain includes stream event buffering/error merging, thread-read snapshots and pending-materialization recovery, session timestamp/generation metadata, and `parseApplyPatchInput` where used by retained recovery and file actions.
+The fallback and live-state response builders and their exclusive implementations are removed. The stream-events HTTP response adapter is also removed. Shared code to retain includes stream event buffering/error merging, thread-read snapshots and pending-materialization recovery, `parseApplyPatchInput` where used by retained recovery and file actions.
 
 ## Part B: Optional features
 
@@ -26,7 +28,7 @@ The fallback and live-state response builders and their exclusive implementation
 |---|---|---|---|
 | Telegram completion notifications | Optional feature requiring product decision | Medium–high | Completion alerts, test messages, status and retrying queued deliveries |
 | Git clone | Optional feature requiring product decision | Medium | In-app GitHub repository cloning |
-| Worktree creation | Optional feature requiring product decision | Medium–high | Automated detached and named permanent worktree creation |
+| Worktree creation | Removed | None | Select existing worktree directories instead |
 | File-change Undo/Redo | Optional feature requiring product decision; backend is active shared functionality | High | Per-turn file reversal/reapplication; conversation rollback currently calls the file-revert service |
 | Browser-based file editing | Optional feature requiring product decision | Medium | Editing and saving text files through browser UI |
 

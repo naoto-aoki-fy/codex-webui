@@ -1,3 +1,5 @@
+> Historical structural audit; removed-feature descriptions are superseded by [current capability ownership](native-capability-consolidation.md).
+
 > Historical audit: Telegram integration has since been removed. References below describe the earlier implementation, not current behavior.
 
 # Backend responsibility boundaries

@@ -1,21 +1,7 @@
-### Feature: New worktree creation uses detached HEAD parity behavior
+# Existing worktree working directories
 
-#### Prerequisites
-- Start the app from this repository (`pnpm run dev`).
-- Select a Git-backed folder on `New thread`.
-
-#### Steps
-1. Set runtime to `New worktree`.
-2. Choose any base branch in `Base branch` dropdown.
-3. Send first message to trigger worktree creation.
-4. Copy resulting worktree `cwd` from thread context.
-5. Run `git -C <worktree-cwd> status --branch --porcelain`.
-6. Run `git -C <worktree-cwd> rev-parse --abbrev-ref HEAD`.
-
-#### Expected Results
-- Worktree is created successfully.
-- Git status reports detached HEAD state (no local branch checkout).
-- `rev-parse --abbrev-ref HEAD` returns `HEAD`.
-
-#### Rollback/Cleanup
-- Remove test worktree when done: `git -C <repo-root> worktree remove <worktree-cwd>`.
+Setup: an existing Git worktree created outside this application; an existing conversation using it.
+Actions: select the worktree folder on home; send a turn; reopen the existing conversation; reload. Inspect home in light and dark themes.
+Expected: selected cwd remains the existing worktree. No runtime picker, automatic creation or starting-branch selector appears. Existing branches and worktrees remain intact. POST /codex-api/worktree/create and GET /codex-api/worktree/branches return 404.
+Cleanup: remove only the test conversation if desired. Do not remove the worktree.
+Performance: removes branch listing requests and worktree creation/rollback commands; folder selection uses existing paths directly. No new requests or timers; live timings not measured.

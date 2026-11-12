@@ -29,8 +29,8 @@ fixture, not a real Codex server. No live browser/theme or multi-client server
 verification was performed. The frontend build emitted 378.59 kB main JavaScript
 (123.77 kB gzip); no new runtime dependencies were added.
 
-## Remaining implementation
-Native pinning and explicit migration, custom worktree lifecycle removal, and
-legacy history retirement are not implemented by the read-receipt change.
-Existing history indexes must be inspected for native-list omissions and pending
-submissions before retirement; no historical files have been removed or rewritten.
+## Further consolidation
+
+Pins now use native sections; automatic worktree creation and unused session
+history enrichment are removed. See [current ownership and migration](refactoring/native-capability-consolidation.md).
+Attachment-only indexing and pending-send recovery remain necessary.

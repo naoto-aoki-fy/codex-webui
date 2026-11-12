@@ -20,13 +20,13 @@ Files marked historical preserve former behavior and are not current acceptance 
 | Folder | Scope |
 | --- | --- |
 | [Projects, Sidebar, and New Chat](tests/projects-sidebar-new-chat/index.md) | Home route, project picker, sidebar organization, new-chat setup, projectless folders, and project/worktree shell behavior. |
-| [Skills, Plugins, and Integrations](tests/skills-plugins-integrations/index.md) | Skills Hub, local Skills management, MCP status/authentication surfaces, prompts and installed skill behavior. |
+| [Skills, Plugins, and Integrations](tests/skills-plugins-integrations/index.md) | Skills Hub, local Skills management, MCP status/authentication surfaces and installed skill behavior. |
 | [Chat Composer and Message Rendering](tests/chat-composer-rendering/index.md) | Composer controls, immediate steering, plan mode, markdown parsing, file links, attachments, generated images, and visible message rows. |
 | [Thread Loading, Streaming, and State](tests/thread-loading-state/index.md) | Thread list/detail loading, pagination, selected-thread stability, streaming scroll behavior, retired live-state/stream-events diagnostic API checks, and missing-thread handling. |
 | [Codex Models](tests/providers-models/index.md) | Official Codex models, reasoning preferences, per-thread model selection, and catalog behavior. |
 | [Auth and Docker Runtime](tests/auth-docker-runtime/index.md) | External-auth acceptance links and historical Docker/local-auth records (excluded from current acceptance). |
 | [CLI, Network, and Platform](tests/cli-network-platform/index.md) | CLI startup, dev scripts, npx, private networks, external proxies, Windows, Linux, and platform packaging behavior. |
-| [Git, Worktrees, and Rollback](tests/git-worktrees-rollback/index.md) | Branch controls, worktree creation, rollback commits, changed-files panels, file browser links, and rollback debug behavior. |
+| [Git, Worktrees, and Rollback](tests/git-worktrees-rollback/index.md) | Existing worktrees, rollback commits, changed-files panels, file browser links, and rollback debug behavior. |
 | [Accounts and Observability](tests/accounts-feedback-observability/index.md) | External Codex account status, active-account quotas, visible errors, browser profiling, API perf logs, and Qodo diagnostic fixes. |
 | [Theme and Layout](tests/theme-layout-terminal/index.md) | Light/dark theme regressions, responsive layout, mobile keyboard behavior, dialog sizing, and visual alignment. |
 | [Website, Docs, and Miscellaneous](tests/website-docs-misc/index.md) | Static website checks and small compatibility checks that do not yet fit a narrower product area. |

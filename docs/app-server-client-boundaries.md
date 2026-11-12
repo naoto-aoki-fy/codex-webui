@@ -7,9 +7,9 @@ thread IDs, authentication refresh single-flight, pending generation settings,
 400-frame per-thread event buffers, fallback snapshots, and 30-second earlier-page
 read caches and in-flight deduplication maps.
 
-The bridge owns the existing persistent thread index and generation metadata store.
+The bridge owns the persistent attachment-only thread index. Generation settings are attached to live turns in memory; no metadata store is written.
 These were the class's mutable module-level dependencies before extraction. The
-core now receives narrow `threadIndex.call` and `metadataStore.save` interfaces;
+core now receives narrow `threadIndex.call` interface;
 the bridge's zero-argument `AppServerClient` compatibility subclass supplies the
 same existing instances. No store, client, or transport is duplicated. The core
 imports transport, credential access, external refresh, generation metadata
