@@ -1,5 +1,5 @@
-import { dirname, join } from 'node:path'
-import { readdir } from 'node:fs/promises'
+import { projectPath } from './appServerFileSystem.js'
+import type { ProjectFileService } from './appServerFileSystem.js'
 
 export type LocalDirectoryListingEntry = {
   name: string
@@ -21,7 +21,11 @@ export function normalizeLocalPath(rawPath: string): string {
   if (!trimmed) return ''
   if (trimmed.startsWith('file://')) {
     try {
-      return decodeURIComponent(trimmed.replace(/^file:\/\//u, ''))
+      const url = new URL(trimmed)
+      const path = decodeURIComponent(url.pathname)
+      return url.hostname && url.hostname !== 'localhost'
+        ? `\\\\${url.hostname}${path.replace(/\//gu, '\\')}`
+        : path.replace(/^\/([a-z]:\/)/iu, '$1')
     } catch {
       return trimmed.replace(/^file:\/\//u, '')
     }
@@ -35,14 +39,15 @@ function isHiddenName(value: string): boolean {
 
 export async function getLocalDirectoryListing(
   localPath: string,
+  files: ProjectFileService,
   options: LocalDirectoryListingOptions = {},
 ): Promise<LocalDirectoryListing> {
-  const entries = await readdir(localPath, { withFileTypes: true })
+  const entries = (await files.readDirectory(localPath)).entries
   const directories = entries
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory)
     .map((entry) => ({
-      name: entry.name,
-      path: join(localPath, entry.name),
+      name: entry.fileName,
+      path: projectPath(localPath).join(localPath, entry.fileName),
     }))
     .filter((entry) => options.showHidden === true || !isHiddenName(entry.name))
     .sort((a, b) => {
@@ -54,7 +59,7 @@ export async function getLocalDirectoryListing(
 
   return {
     path: localPath,
-    parentPath: dirname(localPath),
+    parentPath: projectPath(localPath).dirname(localPath),
     entries: directories,
   }
 }

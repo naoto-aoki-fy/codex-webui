@@ -1,3 +1,4 @@
+import { ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
 export { refreshChatgptAuthTokensForExternalAuth } from './externalAuthRefresh.js'
 import { createGitWorkspaceRoutes } from './gitWorkspaceRoutes.js'
@@ -515,6 +516,7 @@ class MethodCatalog {
 }
 
 type CodexBridgeMiddleware = ((req: IncomingMessage, res: ServerResponse, next: () => void) => Promise<void>) & {
+  files: ProjectFileService
   dispose: () => void
   subscribeNotifications: (listener: (value: { method: string; params: unknown; atIso: string }) => void) => () => void
 }
@@ -526,10 +528,11 @@ type SharedBridgeState = {
   version: string
   appServer: AppServerClient
   methodCatalog: MethodCatalog
+  files: ProjectFileService
 }
 
 const SHARED_BRIDGE_KEY = '__codexRemoteSharedBridge__'
-const SHARED_BRIDGE_VERSION = 'external-websocket-v1'
+const SHARED_BRIDGE_VERSION = 'external-websocket-files-v2'
 
 function disposeSharedBridgeState(state: SharedBridgeState): void {
   if (state.retired) return
@@ -567,6 +570,7 @@ function getSharedBridgeState(): SharedBridgeState {
     version: SHARED_BRIDGE_VERSION,
     appServer,
     methodCatalog: new MethodCatalog(),
+    files: new ProjectFileService(appServer),
   }
   globalScope[SHARED_BRIDGE_KEY] = created
   return created
@@ -1046,6 +1050,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
     }
   }
 
+  middleware.files = sharedState.files
   middleware.dispose = () => {
     if (released) return
     released = true

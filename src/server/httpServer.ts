@@ -55,7 +55,7 @@ export function createServer(options: ServerOptions = {}): ServerInstance {
   // 2. Bridge middleware for /codex-api/*
   app.use(bridge)
 
-  app.use(createLocalFileMiddleware())
+  app.use(createLocalFileMiddleware(bridge.files))
 
   const hasFrontendAssets = existsSync(spaEntryFile)
 

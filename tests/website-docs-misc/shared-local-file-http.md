@@ -58,3 +58,34 @@ that utility retains path resolution, line suffix parsing and image URL conversi
 by `codexAppServerBridge.ts`; that route and its multipart handling are unchanged.
 `useFolderPicker.ts` consumes `/codex-local-directories` for workspace selection.
 Authentication middleware, path validation and Express file transfer remain intact.
+
+## App-server file reads (Codex 0.167.2)
+
+This section supersedes the local-filesystem and streaming implementation notes
+above. Setup: independently run a compatible Codex 0.167.2 app server and configure
+`CODEXUI_APP_SERVER_URL`. Create a directory with a text file, image, hidden
+subdirectory, and Unicode filename **only on the app-server host**. Run both Vite
+and production backends on a host without that directory. Authenticate as needed.
+
+1. Repeat checks 1–5 above using the remote absolute paths. Expect the same
+   success/status semantics. HEAD and Range transfer complete files upstream.
+2. Open a SKILL.md file link and image link pointing at the remote fixtures.
+   Expect their actual contents. Request a known Web-host-only project path;
+   expect failure, never local bytes.
+3. Send an inline image payload and open its generated `/codex-app-asset?id=...`
+   URL. Expect the Web-owned image. Supply an invalid asset ID or path traversal;
+   expect 400. Project images continue to use `/codex-local-image`.
+4. Stop only the test app server and request a project file. Expect 502, not 404
+   or local fallback. Restart it and retry; expect success and fresh connection
+   initialization metadata. With an unsupported server, expect explicit RPC
+   errors; with denied files, expect 403. Failed directory reads must not appear
+   as an empty successful listing.
+5. Request the text twice with If-None-Match from the first response; expect 304.
+   Request an out-of-bounds range; expect 416 and Content-Range `bytes */<size>`.
+   Modify the file remotely and repeat an ordinary GET; expect fresh bytes/ETag.
+
+Cleanup: delete remote fixtures and the test conversation; stop only the servers
+started for these checks and restore the previous app-server URL. Upload behavior
+is deferred and is not evidence of remote file-access compatibility.
+
+See [the architecture and verification limits](../../docs/project-file-access.md).

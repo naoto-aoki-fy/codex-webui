@@ -29,6 +29,7 @@ type JsonRpcResponse = {
   error?: {
     code: number
     message: string
+    data?: unknown
   }
   method?: string
   params?: unknown
@@ -60,6 +61,8 @@ export type StreamEventFrame = {
 
 export class AppServerClient {
   constructor(private readonly dependencies: AppServerClientDependencies) {}
+
+  getInitializationMetadata() { return this.transport.getInitializationMetadata() }
 
   private readonly pendingGenerationSettings = new Map<string, Set<TurnGenerationMetadata>>()
   private nextId = 1
@@ -108,7 +111,7 @@ export class AppServerClient {
       if (!pendingRequest) return
 
       if (message.error) {
-        pendingRequest.reject(Object.assign(new Error(message.error.message), { code: message.error.code }))
+        pendingRequest.reject(Object.assign(new Error(message.error.message), { code: message.error.code, data: message.error.data }))
       } else {
         pendingRequest.resolve(message.result)
       }

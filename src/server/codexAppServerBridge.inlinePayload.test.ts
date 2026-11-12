@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -22,8 +22,8 @@ afterEach(() => {
 
 function localImagePathFromProxyUrl(value: string): string {
   const parsed = new URL(value, 'http://localhost')
-  expect(parsed.pathname).toBe('/codex-local-image')
-  const imagePath = parsed.searchParams.get('path')
+  expect(parsed.pathname).toBe('/codex-app-asset')
+  const imagePath = join(tmpdir(), 'codex-web-inline-media', parsed.searchParams.get('id') ?? '')
   expect(imagePath).toBeTruthy()
   return imagePath ?? ''
 }
@@ -68,11 +68,11 @@ describe('thread inline media sanitization', () => {
     const content = userMessage.content as Array<Record<string, unknown>>
     const images = userMessage.images as string[]
 
-    expect(content[0].url).toMatch(/^\/codex-local-image\?path=/)
-    expect(images[0]).toMatch(/^\/codex-local-image\?path=/)
+    expect(content[0].url).toMatch(/^\/codex-app-asset\?id=/)
+    expect(images[0]).toMatch(/^\/codex-app-asset\?id=/)
     expect(generatedImage.type).toBe('imageView')
     expect(generatedImage.path).toEqual(expect.any(String))
-    expect(toolOutput.result).toMatch(/^\/codex-local-image\?path=/)
+    expect(toolOutput.result).toMatch(/^\/codex-app-asset\?id=/)
 
     expect(existsSync(localImagePathFromProxyUrl(content[0].url as string))).toBe(true)
     expect(existsSync(localImagePathFromProxyUrl(images[0]))).toBe(true)
@@ -162,7 +162,7 @@ describe('thread inline media sanitization', () => {
 
     const images = result.thread.turns[0].items[0].images
     expect(images).toHaveLength(3)
-    expect(images.every((image) => image.startsWith('/codex-local-image?path='))).toBe(true)
+    expect(images.every((image) => image.startsWith('/codex-app-asset?id='))).toBe(true)
 
     const [jpegPath, webpPath, gifPath] = images.map(localImagePathFromProxyUrl)
     expect(jpegPath.endsWith('.jpg')).toBe(true)
@@ -211,7 +211,7 @@ describe('thread inline media sanitization', () => {
     }
 
     const imageUrl = result.thread.turns[0].items[0].replacement_history[0].content[0].image_url
-    expect(imageUrl).toMatch(/^\/codex-local-image\?path=/)
+    expect(imageUrl).toMatch(/^\/codex-app-asset\?id=/)
     expect(existsSync(localImagePathFromProxyUrl(imageUrl))).toBe(true)
   })
 
@@ -369,7 +369,7 @@ describe('inline payload compatibility contracts', () => {
     const changed = result.thread.turns[0].items[0] as typeof item
     const hash = createHash('sha1').update(Buffer.from(pngBase64, 'base64')).digest('hex')
     const path = join(tmpdir(), 'codex-web-inline-media', `inline-image-contract-turn-contract-item-images-0-${hash}.png`)
-    expect(changed.nested.images[0][0]).toBe(`/codex-local-image?path=${encodeURIComponent(path)}`)
+    expect(changed.nested.images[0][0]).toBe(`/codex-app-asset?id=${encodeURIComponent(basename(path))}`)
     expect(await readFile(path)).toEqual(Buffer.from(pngBase64, 'base64'))
     const firstStat = await stat(path)
     expect(await sanitize(input, method)).toEqual(result)

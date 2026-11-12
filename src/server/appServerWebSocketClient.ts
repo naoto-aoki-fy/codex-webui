@@ -1,3 +1,4 @@
+import type { InitializeResponse } from './protocol/0.167.2/InitializeResponse.js'
 import WebSocket from 'ws'
 import { createConnection } from 'node:net'
 
@@ -31,6 +32,9 @@ export function resolveAppServerUrl(cli?: string, env = process.env.CODEXUI_APP_
 
 /** One shared handshake per connection; never replays an application request. */
 export class AppServerWebSocketClient {
+  private initialization: Readonly<InitializeResponse> | null = null
+  getInitializationMetadata(): Readonly<InitializeResponse> | null { return this.initialization }
+
   private socket: WebSocket | null = null
   private ready: Promise<void> | null = null
   private reconnecting: Promise<void> | null = null
@@ -42,6 +46,7 @@ export class AppServerWebSocketClient {
 
   private fail(socket: WebSocket, error: Error): void {
     if (this.socket !== socket) return
+    this.initialization = null
     this.socket = null
     this.ready = null
     for (const request of this.pending.values()) request.reject(error)
@@ -65,7 +70,7 @@ export class AppServerWebSocketClient {
       const timer = setTimeout(() => this.fail(socket, new Error(`App-server connection/initialization timed out: ${this.url}`)), this.timeoutMs)
       const id = this.nextId++
       this.pending.set(id, {
-        resolve: () => { clearTimeout(timer); try { this.send({ method: 'initialized' }); resolve() } catch (error) { reject(error); this.fail(socket, error as Error) } },
+        resolve: (value) => { clearTimeout(timer); try { this.initialization = Object.freeze({ ...(value as InitializeResponse) }); this.send({ method: 'initialized' }); resolve() } catch (error) { reject(error); this.fail(socket, error as Error) } },
         reject: (error) => { clearTimeout(timer); reject(error) },
       })
       socket.on('open', () => this.send({ id, method: 'initialize', params: {
@@ -79,7 +84,7 @@ export class AppServerWebSocketClient {
           if (!frame.method && this.pending.has(frame.id)) {
             const request = this.pending.get(frame.id)!
             this.pending.delete(frame.id)
-            if (frame.error) { request.reject(new Error(frame.error.message)); this.fail(socket, new Error('App-server initialization rejected')) }
+            if (frame.error) { request.reject(Object.assign(new Error(frame.error.message), { code: frame.error.code, data: frame.error.data })); this.fail(socket, new Error('App-server initialization rejected')) }
             else request.resolve(frame.result)
           } else this.message(data.toString())
         } catch { this.fail(socket, new Error('Invalid app-server JSON frame')) }

@@ -35,7 +35,7 @@ beforeEach(async () => {
   events = []
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
   scope.__codexRemoteSharedBridge__ = {
-    version: 'external-websocket-v1', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getLastThreadReadSnapshot: () => snapshot, getStreamEvents: () => events, readThreadForTurnPage: () => rpc('thread/read', {}) },
+    version: 'external-websocket-files-v2', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getLastThreadReadSnapshot: () => snapshot, getStreamEvents: () => events, readThreadForTurnPage: () => rpc('thread/read', {}) },
     methodCatalog: {},
   }
 })
@@ -146,7 +146,7 @@ it.each(['normal', 'earlier'])('preserves timestamps, execution metadata, skills
   const turn = response.json.result.thread.turns[0]
   expect(turn).toMatchObject({ submittedAt: '2026-11-05T00:12:00.000Z', completedAt: '2026-11-05T00:12:00.000Z', generationMetadata: { model: 'gpt-5.4', effort: 'high', modelSource: 'execution' } })
   expect(turn.items[0].content).toContainEqual({ type: 'skill', name: 'test-skill', path: '/tmp/test/SKILL.md' })
-  expect(turn.items[0].content[1].url).toMatch(/^\/codex-local-image\?path=/)
+  expect(turn.items[0].content[1].url).toMatch(/^\/codex-app-asset\?id=/)
 })
 
 

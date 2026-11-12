@@ -68,7 +68,7 @@ it('reuses the current runtime across middleware instances and retires legacy wo
   const client = new AppServerClient()
   const dispose = vi.spyOn(client, 'dispose')
   const worker = { dispose: vi.fn(), scheduleThreadQueueDrain: vi.fn(), processThreadQueue: vi.fn(), startQueuedTurn: vi.fn() }
-  const runtime = { version: 'external-websocket-v1', appServer: client, methodCatalog: {} }
+  const runtime = { version: 'external-websocket-files-v2', appServer: client, methodCatalog: {} }
   scope.__codexRemoteSharedBridge__ = runtime
   try {
     const first = createCodexBridgeMiddleware()

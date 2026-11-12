@@ -1,34 +1,51 @@
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { access } from 'node:fs/promises'
+import { ProjectFileService } from './appServerFileSystem'
 import { join } from 'node:path'
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { once } from 'node:events'
 import { expect, it, vi } from 'vitest'
 
-vi.mock('./codexAppServerBridge', () => ({
-  createCodexBridgeMiddleware: () => Object.assign(
-    (_req: unknown, _res: unknown, next: () => void) => next(),
-    { dispose() {}, subscribeNotifications: () => () => {} },
-  ),
-}))
+const remote = vi.hoisted(() => ({ files: new Map<string, Buffer>(), directories: new Set<string>(), calls: [] as string[] }))
+const remoteRpc = async (method: string, params: unknown) => {
+  const { path } = params as { path: string }
+  remote.calls.push(method)
+  if (path.endsWith('/unsupported')) throw Object.assign(new Error('Method not found'), { code: -32601, data: { method } })
+  if (path.endsWith('/offline')) throw new Error('Cannot connect to app-server: no such file or directory')
+  if (path.endsWith('/denied')) throw Object.assign(new Error('Permission denied'), { code: -32600 })
+  if (!remote.files.has(path) && !remote.directories.has(path)) throw new Error('No such file or directory')
+  if (method === 'fs/getMetadata') return { isFile: remote.files.has(path), isDirectory: remote.directories.has(path), isSymlink: false, createdAtMs: 0, modifiedAtMs: 1000 }
+  if (method === 'fs/readFile') return { dataBase64: remote.files.get(path)!.toString('base64') }
+  if (method === 'fs/readDirectory') return { entries: [...remote.directories, ...remote.files.keys()].filter(p => p.startsWith(path + '/') && !p.slice(path.length + 1).includes('/')).map(p => ({ fileName: p.slice(path.length + 1), isDirectory: remote.directories.has(p), isFile: remote.files.has(p) })) }
+  throw new Error('Unexpected RPC ' + method)
+}
 
 import { createServer } from './httpServer'
 import { createLocalFileMiddleware } from './localFileHttp'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 it('preserves file and image access and workspace selection without directory browsing', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'local-file-retirement-'))
+  const root = '/remote-only-project-' + crypto.randomUUID()
+  await expect(access(root)).rejects.toThrow()
+  remote.files.clear()
+  remote.directories.clear()
+  remote.directories.add(root)
+  const writeFile = async (path: string, bytes: string | Buffer) => { remote.files.set(path, Buffer.from(bytes)) }
+  const mkdir = async (path: string) => { remote.directories.add(path) }
+  const readFile = async (path: string, _encoding: string) => remote.files.get(path)!.toString()
   const textPath = join(root, 'example.txt')
   const imagePath = join(root, 'example.svg')
   const text = 'unique-local-file-content'
   const image = '<svg xmlns="http://www.w3.org/2000/svg"/>'
   await mkdir(join(root, 'subdirectory'))
-  await symlink(root, join(root, 'directory-link'))
+  remote.directories.add(join(root, 'directory-link'))
   await writeFile(textPath, text)
   await writeFile(imagePath, image)
   await writeFile(join(root, 'binary.bin'), Buffer.from([0, 1, 2]))
   await writeFile(join(root, '.hidden.txt'), text)
   await writeFile(join(root, 'literal%20name.txt'), text)
+  await writeFile('C:/remote/windows.txt', text)
+  const files = new ProjectFileService({ rpc: remoteRpc })
+  ;(globalThis as any).__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v2', files, appServer: { rpc: remoteRpc, onNotification: () => () => {}, dispose() {} }, methodCatalog: {} }
   const production = createServer()
   // Load the real dev configuration so both route implementations are exercised.
   const { createServer: createViteServer } = await import('vite')
@@ -42,6 +59,7 @@ it('preserves file and image access and workspace selection without directory br
       await once(server, 'listening')
       const address = server.address() as { port: number }
       const base = 'http://127.0.0.1:' + address.port
+      expect(await (await fetch(base + '/codex-local-browse/C:/remote/windows.txt')).text()).toBe(text)
       const browse = '/codex-local-browse' + encodeURI(textPath)
       expect(await (await fetch(base + browse)).text()).toBe(text)
       const listing = await fetch(base + '/codex-local-directories?path=' + encodeURIComponent(root))
@@ -49,7 +67,7 @@ it('preserves file and image access and workspace selection without directory br
       const folders = (await listing.json() as { data: { entries: { name: string; path: string }[] } }).data.entries
       expect(folders).toContainEqual({ name: 'subdirectory', path: join(root, 'subdirectory') })
       expect(folders.some((entry: { name: string }) => entry.name === 'example.txt')).toBe(false)
-      for (const directory of [root, root + '/', join(root, 'subdirectory'), join(root, 'directory-link')]) {
+      for (const directory of [root, join(root, 'subdirectory'), join(root, 'directory-link')]) {
         for (const method of ['GET', 'HEAD']) {
           const response = await fetch(base + '/codex-local-browse' + encodeURI(directory), { method })
           expect(response.status).toBe(404)
@@ -82,6 +100,19 @@ it('preserves file and image access and workspace selection without directory br
       expect((await fetch(base + '/codex-local-browse/%ZZ')).status).toBe(400)
       expect((await fetch(base + '/codex-local-browse' + encodeURI(root) + '/%2e%2e%2fexample.txt')).status).toBe(400)
       expect((await fetch(base + '/codex-local-directories?path=' + encodeURIComponent(textPath))).status).toBe(400)
+      for (const [name, status] of [['unsupported', 502], ['offline', 502], ['denied', 403]] as const) {
+        const response = await fetch(base + '/codex-local-browse' + root + '/' + name)
+        expect(response.status).toBe(status)
+        if (name === 'unsupported') expect(await response.json()).toMatchObject({ code: -32601, data: { method: 'fs/getMetadata' } })
+      }
+      const cached = await fetch(base + browse)
+      const etag = cached.headers.get('etag')!
+      expect((await fetch(base + browse, { headers: { 'If-None-Match': etag } })).status).toBe(304)
+      expect((await fetch(base + browse, { headers: { Range: 'bytes=999-' } })).status).toBe(416)
+      expect(await (await fetch(base + browse, { headers: { Range: 'bytes=-7' } })).text()).toBe(text.slice(-7))
+      const before = remote.calls.length
+      await fetch(base + '/codex-local-directories?path=' + encodeURIComponent(root))
+      expect(remote.calls.slice(before)).toEqual(['fs/getMetadata', 'fs/readDirectory'])
       const head = await fetch(base + browse, { method: 'HEAD' })
       expect(head.status).toBe(200)
       expect(head.headers.get('content-type')).toContain('text/plain')
@@ -104,12 +135,12 @@ it('preserves file and image access and workspace selection without directory br
     }
     await vite.close()
     production.dispose()
-    await rm(root, { recursive: true, force: true })
+
   }
 }, 30000)
 
 it('passes retired editor requests through without touching request or response bodies', () => {
-  const middleware = createLocalFileMiddleware()
+  const middleware = createLocalFileMiddleware(new ProjectFileService({ rpc: vi.fn() }))
   for (const method of ['GET', 'HEAD', 'PUT']) {
     const next = vi.fn()
     middleware({ method, url: '/codex-local-edit/tmp/example.txt' } as IncomingMessage, {} as ServerResponse, next)
