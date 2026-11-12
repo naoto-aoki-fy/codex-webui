@@ -26,6 +26,7 @@ async function run() {
       const frame = JSON.parse(String(raw)); frames.push(frame)
       if (!frame.method || frame.method === 'initialized') return
       const result = frame.method === 'account/read' ? { account: { type: 'apiKey' } }
+        : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
         : frame.method === 'model/list' ? { data: [{ id: 'fixture-model' }] }
         : frame.method === 'thread/list' ? { data: [], nextCursor: null } : {}
       socket.send(JSON.stringify({ id: frame.id, result }))
@@ -67,13 +68,14 @@ async function run() {
           console.log('PASS', dev ? 'pnpm run dev' : 'built CLI', path, 'returns JSON 404')
         }
         const before = connections
-        for (const method of ['account/read', 'model/list', 'thread/list']) {
+        for (const method of ['account/read', 'modelProvider/list', 'model/list', 'thread/list']) {
           const response = await fetch(url + '/codex-api/rpc', {
             method: 'POST', headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ method, params: {} }),
+            body: JSON.stringify({ method, params: method === 'model/list' ? { modelProvider: 'fixture-provider' } : {} }),
           })
           const body = await response.json()
           assert(response.ok && body.result, JSON.stringify(body))
+          if (method === 'modelProvider/list') assert.equal(body.result.data[0].id, 'fixture-provider')
           if (method === 'model/list') assert.equal(body.result.data[0].id, 'fixture-model')
         }
         const metadata = await (await fetch(url + '/codex-api/meta/methods')).json()

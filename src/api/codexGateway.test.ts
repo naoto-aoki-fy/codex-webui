@@ -228,6 +228,7 @@ describe('official Codex model catalog', () => {
       expect(String(url)).toBe('/codex-api/rpc')
       const body = JSON.parse(init.body)
       calls.push(body)
+      if (body.method === 'modelProvider/list') return new Response('Method not found', { status: 400 })
       return new Response(JSON.stringify({ result: body.params?.cursor
         ? { data: [{ id: 'gpt-second' }], nextCursor: null }
         : { data: [{ id: 'gpt-test', supportedReasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'high' }], nextCursor: 'page2' } }))
@@ -235,7 +236,7 @@ describe('official Codex model catalog', () => {
     const catalog = await getAvailableModelIds()
     expect(catalog.ids).toEqual(['gpt-test', 'gpt-second'])
     expect(catalog.models[0].defaultReasoningEffort).toBe('high')
-    expect(calls).toEqual([{ method: 'model/list', params: {} }, { method: 'model/list', params: { cursor: 'page2' } }])
+    expect(calls).toEqual([{ method: 'modelProvider/list', params: {} }, { method: 'model/list', params: {} }, { method: 'model/list', params: { cursor: 'page2' } }])
   })
 })
 
@@ -525,7 +526,7 @@ describe('shared reasoning catalog during gateway resolution', () => {
       collaborationMode: { mode: 'default', settings: { model: 'A', reasoning_effort: effort ?? null, developer_instructions: null } },
     } })
     expect(requests.map((request) => request.method)).toEqual(change === 'catalog-fallback'
-      ? ['config/read', 'model/list', 'turn/start'] : ['config/read', 'turn/start'])
+      ? ['config/read', 'modelProvider/list', 'model/list', 'turn/start'] : ['config/read', 'turn/start'])
     // Fetching a catalog returns data; it does not publish to the shared ref.
     expect(reasoningCatalog.value).toEqual(change === 'clear' ? [] : [{ id: 'A', supportedReasoningEfforts: ['low'], defaultReasoningEffort: 'low' }])
   })
@@ -534,12 +535,13 @@ describe('shared reasoning catalog during gateway resolution', () => {
     const catalog = [{ id: 'A', supportedReasoningEfforts: ['high'] }]
     reasoningCatalog.value = catalog
     const fetchMock = vi.fn().mockRejectedValueOnce(new Error('catalog unavailable'))
+      .mockResolvedValueOnce(new Response('Method not found', { status: 400 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ result: { data: catalog } })))
     vi.stubGlobal('fetch', fetchMock)
     await expect(getAvailableModelIds()).resolves.toEqual({ ids: [], models: [] })
     expect(reasoningCatalog.value).toEqual(catalog)
     await expect(getAvailableModelIds()).resolves.toEqual({ ids: ['A'], models: catalog })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(reasoningCatalog.value).toEqual(catalog)
   })
 })

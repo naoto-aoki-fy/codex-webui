@@ -1,3 +1,4 @@
+import { modelSelectionKey, parseModelSelection } from '../api/modelCapabilities'
 import { markNativeThreadRead } from '../api/codexGateway'
 import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
 import {
@@ -756,9 +757,15 @@ export function useDesktopState() {
   function setSelectedModelIdForThread(threadId: string, modelId: string): void {
     const model = modelId.trim()
     const context = isNewThreadContextId(toThreadContextId(threadId)) ? NEW_THREAD_MODEL_CONTEXT : toThreadContextId(threadId)
-    automaticModelByContext.value = omitStringKeyedRecordKey(omitStringKeyedRecordKey(automaticModelByContext.value, context), NEW_THREAD_MODEL_CONTEXT)
     const next = cloneStringKeyedRecord(selectedModelIdByContext.value)
-    if (model) { next[context] = model; next[NEW_THREAD_MODEL_CONTEXT] = model }
+    const currentProvider = parseModelSelection(readModelIdForThread(threadId)).provider
+    if (!isNewThreadContextId(toThreadContextId(threadId)) && currentProvider !== parseModelSelection(model).provider) {
+      error.value = 'Start a new thread to use a different model provider.'
+      return
+    }
+    ++modelRefreshVersion
+    automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, context)
+    if (model) { next[context] = model; if (isNewThreadContextId(toThreadContextId(threadId))) next[NEW_THREAD_MODEL_CONTEXT] = model }
     else delete next[context]
     selectedModelIdByContext.value = next
     if (threadId.trim() === selectedThreadId.value) selectedModelId.value = readModelIdForThread(threadId)
@@ -771,11 +778,13 @@ export function useDesktopState() {
     setSelectedModelIdForThread(selectedThreadId.value, modelId)
   }
 
-  function setThreadModelId(threadId: string, modelId: string): void {
+  function setThreadModelId(threadId: string, modelId: string, provider?: string): void {
     const normalizedThreadId = threadId.trim()
     if (!normalizedThreadId) return
 
-    const normalizedModelId = modelId.trim()
+    const incoming = parseModelSelection(modelId.trim())
+    const effectiveProvider = provider || incoming.provider || parseModelSelection(readModelIdForThread(threadId)).provider
+    const normalizedModelId = modelSelectionKey(effectiveProvider, incoming.model || parseModelSelection(readModelIdForThread(threadId)).model)
     automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, normalizedThreadId)
     if (normalizedModelId) {
       const nextModelMap = cloneStringKeyedRecord(selectedModelIdByContext.value)
@@ -860,7 +869,8 @@ export function useDesktopState() {
   }
 
   function reasoningPreferenceKey(threadId: string): string {
-    return JSON.stringify(['codex', readModelIdForThread(threadId)])
+    const selection = parseModelSelection(readModelIdForThread(threadId))
+    return JSON.stringify([selection.provider || 'codex', selection.model])
   }
 
   function readReasoningEffortForThread(threadId: string): ReasoningEffort | '' {
@@ -879,13 +889,6 @@ export function useDesktopState() {
     const resolved = resolveReasoningEffort(reasoningModelForThread(threadId), effort)
     if (!resolved) return
     reasoningByModel.value[reasoningPreferenceKey(threadId)] = resolved
-    // An effort selection also makes this model the new-chat default.
-    const contextId = NEW_THREAD_MODEL_CONTEXT
-    automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, contextId)
-    const nextModelMap = cloneStringKeyedRecord(selectedModelIdByContext.value)
-    nextModelMap[contextId] = modelId
-    selectedModelIdByContext.value = nextModelMap
-    saveSelectedModelMap(nextModelMap)
     try {
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(REASONING_BY_MODEL_STORAGE_KEY, JSON.stringify(reasoningByModel.value))
@@ -935,7 +938,8 @@ export function useDesktopState() {
     effort: ReasoningEffort | '',
     collaborationMode: CollaborationModeKind = selectedCollaborationMode.value,
   ): string[] {
-    const modelLabel = modelId.trim() || 'default'
+    const selection = parseModelSelection(modelId)
+    const modelLabel = selection.provider ? `${selection.provider} — ${selection.model}` : selection.model || 'default'
     const effortLabel = effort || 'default'
     const modeLabel = collaborationMode === 'plan' ? 'Plan' : 'Default'
     const speedLabel = selectedSpeedMode.value === 'fast' ? 'Fast' : 'Standard'
@@ -952,22 +956,43 @@ export function useDesktopState() {
     try {
       const config = await getCurrentModelConfig()
       if (generation !== lifecycleGeneration) return
-      const catalog = await getAvailableModelIds()
+      const fetchedCatalog = await getAvailableModelIds()
+      const catalog = { ...fetchedCatalog }
       if (generation !== lifecycleGeneration) return
       if (version !== modelRefreshVersion || threadId !== selectedThreadId.value) return
       const context = isNewThreadContextId(toThreadContextId(threadId)) ? NEW_THREAD_MODEL_CONTEXT : toThreadContextId(threadId)
       automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, context)
-      const saved = readModelIdForThread(threadId)
-      const ids = buildModelCatalogIds(catalog.ids, saved, config.model)
-      const model = resolveModelPreference(ids, saved, config.model)
+      // Older servers return a single unqualified catalog; bind it only to the
+      // server's configured provider, never to a saved unavailable provider.
+      if (config.modelProvider && catalog.models.length && catalog.models.every((entry) => !entry.modelProvider)) {
+        catalog.models = catalog.models.map((entry) => ({ ...entry, modelProvider: config.modelProvider }))
+        catalog.ids = catalog.ids.map((id) => modelSelectionKey(config.modelProvider!, id))
+      }
+      const defaultProvider = config.modelProvider || catalog.defaultProvider || ''
+      const qualify = (value: string) => value && !parseModelSelection(value).provider
+        ? modelSelectionKey(defaultProvider, value) : value
+      const saved = qualify(readModelIdForThread(threadId))
+      const configured = modelSelectionKey(defaultProvider, config.model)
+      const ids = buildModelCatalogIds(catalog.ids, saved, configured)
+      const model = parseModelSelection(saved).provider ? saved : resolveModelPreference(ids, saved, configured)
+      if (model && !ids.includes(model)) ids.push(model)
       availableModelIds.value = ids
       automaticModelByContext.value[context] = model
       if (context !== NEW_THREAD_MODEL_CONTEXT) {
         const savedDefault = normalizeStoredModelId(selectedModelIdByContext.value[NEW_THREAD_MODEL_CONTEXT])
-        automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = resolveModelPreference(ids, savedDefault, config.model)
+        automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = qualify(savedDefault) || resolveModelPreference(ids, '', configured)
       }
       selectedModelId.value = model
       publication.publish(catalog.models)
+      if (defaultProvider) {
+        for (const entry of catalog.models) {
+          if (entry.modelProvider !== defaultProvider) continue
+          const id = entry.id?.trim() || entry.model?.trim() || ''
+          const key = JSON.stringify([defaultProvider, id])
+          const legacy = reasoningByModel.value[JSON.stringify(['codex', id])]
+          if (!(key in reasoningByModel.value) && legacy) reasoningByModel.value[key] = legacy
+        }
+      }
       selectedSpeedMode.value = config.speedMode
     } catch (error) {
       if (generation !== lifecycleGeneration) return
@@ -2639,8 +2664,8 @@ export function useDesktopState() {
             ? !detail.messages.some((message) => message.turnId === currentActiveTurnId)
             : Boolean(pendingTurnRequestByThreadId.value[threadId])))
 
-      if (detail.model) {
-        setThreadModelId(threadId, detail.model)
+      if (detail.model || detail.modelProvider) {
+        setThreadModelId(threadId, detail.model, detail.modelProvider)
       }
       if (resumedThread) {
         resumedThreadById.value = {
@@ -2976,7 +3001,7 @@ export function useDesktopState() {
       if (!nextThreadId) return ''
 
       insertOptimisticThread(nextThreadId, sourceCwd, sourceTitle)
-      setThreadModelId(nextThreadId, forkedThread.model)
+      setThreadModelId(nextThreadId, forkedThread.model, forkedThread.modelProvider)
       resumedThreadById.value = {
         ...resumedThreadById.value,
         [nextThreadId]: true,
@@ -3020,7 +3045,7 @@ export function useDesktopState() {
       const forkedCwd = forked.cwd.trim() || sourceThread?.cwd?.trim() || ''
       const forkedThreadTitle = toForkedThreadTitle(sourceThread?.title || sourceThread?.preview || 'Untitled thread')
       insertOptimisticThread(forkedThreadId, forkedCwd, forkedThreadTitle)
-      setThreadModelId(forkedThreadId, forked.model)
+      setThreadModelId(forkedThreadId, forked.model, forked.modelProvider)
       setPersistedMessagesForThread(forkedThreadId, forked.messages)
       loadedMessagesByThreadId.value = {
         ...loadedMessagesByThreadId.value,
@@ -3206,9 +3231,12 @@ export function useDesktopState() {
     let threadId = ''
 
     try {
-      const startedThread = await startThread(targetCwd, selectedModel || undefined)
+      const selection = parseModelSelection(selectedModel)
+      const startedThread = selection.provider
+        ? await startThread(targetCwd, selection.model || undefined, selection.provider)
+        : await startThread(targetCwd, selection.model || undefined)
       threadId = startedThread.threadId
-      const submissionModel = startedThread.model?.trim() || selectedModel
+      const submissionModel = modelSelectionKey(startedThread.modelProvider || parseModelSelection(selectedModel).provider, startedThread.model?.trim() || parseModelSelection(selectedModel).model)
       const submissionContext = { generation, modelId: submissionModel, reasoningEffort, resumed: true }
       if (generation !== lifecycleGeneration) {
         if (threadId) {
@@ -3324,10 +3352,10 @@ export function useDesktopState() {
       let modelId = context.modelId
       if (!context.resumed && resumedThreadById.value[threadId] !== true) {
         const resumedThread = await resumeThread(threadId)
-        if (resumedThread.model) modelId = resumedThread.model
+        if (resumedThread.model) modelId = modelSelectionKey(resumedThread.modelProvider || parseModelSelection(modelId).provider, resumedThread.model)
         if (generation === lifecycleGeneration) {
-          if (resumedThread.model) {
-            setThreadModelId(threadId, resumedThread.model)
+          if (resumedThread.model || resumedThread.modelProvider) {
+            setThreadModelId(threadId, resumedThread.model, resumedThread.modelProvider)
           }
           resumedThreadById.value = {
             ...resumedThreadById.value,
@@ -3446,7 +3474,7 @@ export function useDesktopState() {
         threadId = forked.threadId.trim()
         if (!threadId || threadId === sourceThreadId) throw new Error('Invalid fork destination')
         insertOptimisticThread(threadId, threadCwd, 'Forked chat')
-        setThreadModelId(threadId, forked.model)
+        setThreadModelId(threadId, forked.model, forked.modelProvider)
         stage = 'Validate fork target'
         await validateThreadRevert(threadId, turnId)
       }

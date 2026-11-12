@@ -163,3 +163,83 @@ it('keeps selected-thread and home automatic fallbacks separate without rewritin
   expect(store.get(modelKey)).toBe(saved)
   expect(store.get(usageKey)).toBe(usage)
 })
+
+it('persists pairs and scopes reasoning independently for duplicate model IDs', async () => {
+  const { modelSelectionKey: key } = await import('../api/modelCapabilities')
+  reasoningCatalog.value = [
+    { id: 'same', modelProvider: 'cloud', supportedReasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' },
+    { id: 'same', modelProvider: 'local', supportedReasoningEfforts: ['medium'], defaultReasoningEffort: 'medium' },
+  ]
+  const state = useDesktopState()
+  state.setSelectedModelIdForThread('', key('cloud', 'same'))
+  state.setSelectedReasoningEffort('high', '')
+  state.setSelectedModelIdForThread('', key('local', 'same'))
+  expect(state.readReasoningEffortForThread('')).toBe('medium')
+  const reopened = useDesktopState()
+  expect(reopened.readModelIdForThread('')).toBe(key('local', 'same'))
+  reopened.setSelectedModelIdForThread('', key('cloud', 'same'))
+  expect(reopened.readReasoningEffortForThread('')).toBe('high')
+})
+
+it('retains unavailable provider preferences and prevents cross-provider changes to restored threads', async () => {
+  const gateway = await import('../api/codexGateway')
+  const { modelSelectionKey: key } = await import('../api/modelCapabilities')
+  const state = useDesktopState()
+  state.setSelectedModelIdForThread('', key('offline', 'same'))
+  await state.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
+  expect(state.readModelIdForThread('')).toBe(key('offline', 'same'))
+  const resume = vi.spyOn(gateway, 'resumeThread').mockResolvedValue({ model: 'same', modelProvider: 'cloud' } as Awaited<ReturnType<typeof gateway.resumeThread>>)
+  const turn = vi.spyOn(gateway, 'startThreadTurn').mockRejectedValue(new Error('stop'))
+  state.primeSelectedThread('existing')
+  await expect(state.sendMessageToSelectedThread('restore')).rejects.toThrow('stop')
+  expect(state.readModelIdForThread('existing')).toBe(key('cloud', 'same'))
+  state.setSelectedModelIdForThread('existing', key('local', 'same'))
+  expect(state.readModelIdForThread('existing')).toBe(key('cloud', 'same'))
+  expect(state.error.value).toContain('Start a new thread')
+  expect(state.readModelIdForThread('')).toBe(key('offline', 'same'))
+  resume.mockRestore(); turn.mockRestore()
+})
+
+it('starts new threads with either selected provider without changing the next draft during restoration', async () => {
+  const gateway = await import('../api/codexGateway')
+  const { modelSelectionKey: key } = await import('../api/modelCapabilities')
+  const start = vi.spyOn(gateway, 'startThread')
+  const turn = vi.spyOn(gateway, 'startThreadTurn').mockResolvedValue('turn')
+  const state = useDesktopState()
+  for (const provider of ['cloud', 'local']) {
+    state.setSelectedModelIdForThread('', key(provider, 'same'))
+    start.mockResolvedValueOnce({ threadId: `${provider}-thread`, model: 'same', modelProvider: provider })
+    await state.sendMessageToNewThread('hello', '/workspace')
+    expect(start).toHaveBeenLastCalledWith('/workspace', 'same', provider)
+    expect(state.readModelIdForThread(`${provider}-thread`)).toBe(key(provider, 'same'))
+  }
+  expect(state.readModelIdForThread('cloud-thread')).toBe(key('cloud', 'same'))
+  expect(state.readModelIdForThread('')).toBe(key('local', 'same'))
+  start.mockRestore(); turn.mockRestore()
+})
+
+it('binds legacy single-provider catalogs to the server configuration and migrates effort in memory', async () => {
+  const gateway = await import('../api/codexGateway')
+  const config = vi.mocked(gateway.getCurrentModelConfig)
+  config.mockResolvedValueOnce({ model: 'A', modelProvider: 'configured', speedMode: 'standard', reasoningEffort: '' })
+  store.set(modelKey, JSON.stringify({ '__new-thread-provider__::codex': 'A' }))
+  store.set(effortKey, JSON.stringify({ '["codex","A"]': 'high' }))
+  const state = useDesktopState()
+  await state.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
+  expect(state.readModelIdForThread('')).toBe('provider-model:["configured","A"]')
+  expect(state.readReasoningEffortForThread('')).toBe('high')
+  expect(JSON.parse(store.get(modelKey)!)).toEqual({ '__new-thread-provider__::codex': 'A' })
+})
+
+it('does not publish a stale refresh over a newer explicit provider selection', async () => {
+  const gateway = await import('../api/codexGateway')
+  let resolve!: (value: Awaited<ReturnType<typeof gateway.getAvailableModelIds>>) => void
+  vi.mocked(gateway.getAvailableModelIds).mockReturnValueOnce(new Promise((yes) => { resolve = yes }))
+  const state = useDesktopState()
+  const refresh = state.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
+  await vi.waitFor(() => expect(resolve).toBeTypeOf('function'))
+  state.setSelectedModelIdForThread('', 'provider-model:["local","same"]')
+  resolve({ ids: ['A'], models: [{ id: 'A' }] })
+  await refresh
+  expect(state.readModelIdForThread('')).toBe('provider-model:["local","same"]')
+})

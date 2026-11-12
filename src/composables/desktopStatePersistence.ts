@@ -22,7 +22,7 @@ export const LEGACY_SELECTED_MODEL_STORAGE_KEY = 'codex-web-local.selected-model
 export const COLLABORATION_MODE_STORAGE_KEY = 'codex-web-local.collaboration-mode-by-context.v1'
 export const LEGACY_COLLABORATION_MODE_STORAGE_KEY = 'codex-web-local.collaboration-mode.v1'
 export const NEW_THREAD_COLLABORATION_MODE_CONTEXT = '__new-thread__'
-// Retain the existing Codex preference key without a provider-selection layer.
+// Retain the context key for migration; values may encode a provider/model pair.
 export const NEW_THREAD_MODEL_CONTEXT = '__new-thread-provider__::codex'
 
 export function normalizeCollaborationMode(value: unknown): CollaborationModeKind {
@@ -65,7 +65,7 @@ export function pruneThreadContextStateMap<T>(
   for (const [contextId, value] of Object.entries(stateMap)) {
     if (
       contextId === NEW_THREAD_COLLABORATION_MODE_CONTEXT
-      || contextId.startsWith('__new-thread-provider__::') // Preserve inert legacy preferences; never select their providers.
+      || contextId.startsWith('__new-thread-provider__::') // Preserve new-thread preferences independently of thread pruning.
       || threadIds.has(contextId)
     ) {
       next[contextId] = value

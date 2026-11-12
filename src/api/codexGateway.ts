@@ -1,3 +1,4 @@
+import { modelSelectionKey, parseModelSelection } from './modelCapabilities'
 import { readGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata'
 import { normalizeSkillsList, type SkillInfo, type SkillsListResponseEntry } from './normalizers/skills'
 export type { SkillInfo } from './normalizers/skills'
@@ -68,6 +69,7 @@ import type {
 import { normalizePathForUi } from '../pathUtils.js'
 
 type CurrentModelConfig = {
+  modelProvider?: string
   model: string
   reasoningEffort: ReasoningEffort | ''
   speedMode: SpeedMode
@@ -439,12 +441,17 @@ export type ForkedThread = {
   threadId: string
   cwd: string
   model: string
+  modelProvider?: string
   messages: UiMessage[]
 }
 
-export async function startThread(cwd?: string, model?: string): Promise<StartedThread> {
+export async function startThread(cwd?: string, model?: string, modelProvider?: string): Promise<StartedThread> {
   try {
+    const selection = parseModelSelection(model || '')
+    model = selection.model
+    modelProvider ||= selection.provider
     const params: Record<string, unknown> = {}
+    if (modelProvider) params.modelProvider = modelProvider
     if (typeof cwd === 'string' && cwd.trim().length > 0) {
       params.cwd = cwd.trim()
     }
@@ -486,6 +493,7 @@ export async function forkThreadFromResponse(threadId: string, turnIndex: number
     threadId: id,
     cwd: normalizeThreadCwdFromPayload(payload),
     model: normalizeThreadModelFromPayload(payload),
+    modelProvider: normalizeThreadModelProviderFromPayload(payload),
     messages: normalizeThreadMessagesV2(payload, start),
     hasMoreOlder: start > 0,
     turnIndexByTurnId: buildTurnIndexByTurnId(payload, start),
@@ -513,6 +521,7 @@ export async function forkThread(
         threadId: forkedThreadId,
         cwd: normalizeThreadCwdFromPayload(payload),
         model: normalizeThreadModelFromPayload(payload),
+        modelProvider: normalizeThreadModelProviderFromPayload(payload),
         messages: normalizeThreadMessagesV2(payload, readThreadTurnStartIndex(payload)),
       }
     } catch (error) {
@@ -532,7 +541,7 @@ export async function forkThread(
       params.cwd = cwd.trim()
     }
     if (typeof model === 'string' && model.trim().length > 0) {
-      params.model = model.trim()
+      params.model = parseModelSelection(model.trim()).model
     }
     const payload = await callRpc<ThreadForkResponse>('thread/fork', params)
     const nextThreadId = normalizeThreadIdFromPayload(payload)
@@ -584,13 +593,13 @@ export async function startThreadTurn(
     const resolvedModel = collaborationMode ? await resolveCollaborationModeModel(collaborationMode, normalizedModel) : normalizedModel
     const reasoningModel = findReasoningModel(resolvedModel)
     const resolvedEffort = resolveReasoningEffort(reasoningModel, effort)
-    if (resolvedModel) params.model = resolvedModel
+    if (resolvedModel) params.model = parseModelSelection(resolvedModel).model
     if (resolvedEffort) params.effort = resolvedEffort
     if (collaborationMode) {
       params.collaborationMode = {
         mode: collaborationMode,
         settings: {
-          model: resolvedModel,
+          model: parseModelSelection(resolvedModel).model,
           reasoning_effort: resolvedEffort || null,
           developer_instructions: null,
         },
@@ -694,30 +703,67 @@ export function findReasoningModel(model: string): ReasoningModel | null {
   return findReasoningModelInCatalog(reasoningCatalog.value, model)
 }
 
-export async function getAvailableModelIds(): Promise<{ ids: string[]; models: ReasoningModel[] }> {
-  const models: ReasoningModel[] = []
-  try {
+type ModelProvider = { id: string; displayName?: string; name?: string; isDefault?: boolean }
+type ModelCatalog = { ids: string[]; models: ReasoningModel[]; defaultProvider?: string; failures?: string[] }
+
+function unsupportedCatalogMethod(error: unknown): boolean {
+  return /-32601|-32602|method.*(not found|unsupported|unknown)|unknown.*method|unsupported.*method|invalid params|unknown field.*modelProvider/i.test(String(error))
+}
+
+async function loadModelCatalog(): Promise<ModelCatalog> {
+  async function pages(provider?: ModelProvider): Promise<ReasoningModel[]> {
+    const models: ReasoningModel[] = []
     let cursor: string | undefined
     const seen = new Set<string>()
     do {
-      const page = await callRpc<ModelListResponse>('model/list', cursor ? { cursor } : {})
-      if (Array.isArray(page?.data)) {
-        for (const model of page.data) {
-          if (model && typeof model === 'object' && (
-            (typeof model.id === 'string' && model.id.trim())
-            || (typeof model.model === 'string' && model.model.trim())
-          )) models.push(model)
-        }
+      const page = await callRpc<ModelListResponse>('model/list', {
+        ...(provider ? { modelProvider: provider.id } : {}), ...(cursor ? { cursor } : {}),
+      })
+      for (const model of Array.isArray(page?.data) ? page.data : []) {
+        if (model && ((typeof model.id === 'string' && model.id.trim()) || (typeof model.model === 'string' && model.model.trim()))) models.push(provider
+          ? { ...model, modelProvider: provider.id, providerDisplayName: provider.displayName || provider.name || provider.id }
+          : model)
       }
       cursor = page?.nextCursor?.trim() || undefined
       if (!cursor || seen.has(cursor)) break
       seen.add(cursor)
     } while (cursor)
-  } catch {
-    models.length = 0
+    return models
   }
+  function catalog(models: ReasoningModel[], extra = {}): ModelCatalog {
+    return { ids: [...new Set(models.map((m) => modelSelectionKey(m.modelProvider || '', m.id?.trim() || m.model?.trim() || '')))], models, ...extra }
+  }
+  async function legacy(): Promise<ModelCatalog> {
+    try { return catalog(await pages()) } catch { return catalog([]) }
+  }
+  let providers: ModelProvider[]
+  let defaultProvider: string | undefined
+  try {
+    const result = await callRpc<{ data?: ModelProvider[]; providers?: ModelProvider[]; defaultProvider?: string; defaultModelProvider?: string; defaultProviderId?: string }>('modelProvider/list', {})
+    providers = [...new Map((result.data ?? result.providers ?? []).filter((p) => typeof p?.id === 'string' && p.id).map((p) => [p.id, p])).values()]
+    defaultProvider = result.defaultProvider || result.defaultProviderId || result.defaultModelProvider || providers.find((p) => p.isDefault)?.id
+  } catch (error) {
+    if (unsupportedCatalogMethod(error)) return legacy()
+    return { ids: [], models: [] }
+  }
+  if (!providers.length) return legacy()
+  const models: ReasoningModel[] = []
+  const failures: string[] = []
+  // Serial provider walks bound fanout to one RPC, including pagination.
+  for (const provider of providers) {
+    try { models.push(...await pages(provider)) }
+    catch (error) {
+      if (unsupportedCatalogMethod(error)) return legacy()
+      failures.push(provider.id)
+    }
+  }
+  return catalog(models, { defaultProvider, failures })
+}
 
-  return { ids: [...new Set(models.map((model) => model.id?.trim() || model.model?.trim() || '').filter(Boolean))], models }
+let pendingModelCatalog: Promise<ModelCatalog> | undefined
+export function getAvailableModelIds(): Promise<ModelCatalog> {
+  if (!pendingModelCatalog) pendingModelCatalog = loadModelCatalog().finally(() => { pendingModelCatalog = undefined })
+  return pendingModelCatalog
 }
 
 export async function getCurrentModelConfig(): Promise<CurrentModelConfig> {
@@ -725,7 +771,7 @@ export async function getCurrentModelConfig(): Promise<CurrentModelConfig> {
   const model = payload.config.model ?? ''
   const reasoningEffort = normalizeReasoningEffort(payload.config.model_reasoning_effort)
   const speedMode = normalizeSpeedMode(payload.config.service_tier)
-  return { model, reasoningEffort, speedMode }
+  return { model, modelProvider: payload.config.model_provider || undefined, reasoningEffort, speedMode }
 }
 
 export async function listDirectoryMcpServers(): Promise<DirectoryMcpServerStatus[]> {

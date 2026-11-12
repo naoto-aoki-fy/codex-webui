@@ -30,3 +30,66 @@
 
 #### Rollback/Cleanup
 - Reset each tested thread back to its original model selection if you changed an existing conversation for the test.
+
+### Provider-aware discovery and selection
+
+Prerequisites: connect to an independently managed App Server configured with at least
+one cloud provider and one local/custom provider. Configure these on that server,
+including when the web application connects remotely. Prefer a shared model ID in
+both catalogs to test identity collisions. No direct local-provider endpoint is used
+by the web application.
+
+Actions:
+1. Open a new thread with a selected workspace. Open the model dropdown in light
+   and dark themes. Search for each provider's display name and model name.
+2. Select a cloud model, send a message, and inspect the `thread/start` RPC.
+   Repeat from the new-thread screen with a local model.
+3. Select different supported reasoning efforts for each provider/model pair.
+   Switch between them on the new-thread screen, then reload the page.
+4. Open each created thread and inspect its effective server metadata. Change
+   its model within the same provider, then try a different provider's model.
+5. Return to the new-thread screen. Confirm existing-thread changes did not
+   replace its saved provider/model selection.
+6. Temporarily stop a local provider or simulate its catalog request failing.
+   Refresh discovery, reload, and then restore the provider and refresh again.
+7. With a paginated catalog, inspect subsequent `model/list` requests. Repeat
+   against an older server that rejects provider listing or provider parameters.
+8. Repeat using legacy bare model and `reasoning-by-provider-model.v1` storage
+   preferences. Verify they are interpreted against the server's configured
+   provider without destroying saved preferences during failures.
+
+Expected results:
+- Options show `Provider display name — Model display name`; identical model IDs
+  under different providers remain separate options and reasoning preferences.
+- Creation sends both `modelProvider` and the raw `model`; turns send the raw
+  model and provider-specific supported effort. The effective thread pair comes
+  from the server's response and remains restored after reload.
+- Existing threads reject cross-provider changes with a message directing the
+  user to start a new thread. Their provider and new-thread preferences stay intact.
+- Unavailable pairs remain saved and selected rather than silently switching to
+  another provider. Working provider catalogs remain visible after partial failure.
+- Pagination retains the provider parameter. Repeated cursors terminate. Older
+  servers fall back to the single-provider catalog. No direct Ollama/LM Studio
+  requests or configuration-file scanning occur.
+
+Cleanup: delete test threads, restore provider availability, original browser
+preferences, reasoning choices, and theme. Do not remove unrelated saved settings.
+
+Verification and performance audit:
+- Automated gateway/state tests cover pair identity, creation, restoration,
+  reasoning, partial failures, pagination, coalescing, and legacy fallback.
+- The controlled browser check at `http://127.0.0.1:4173/#/?cwd=/workspace`
+  (1440×1000) verified the real dropdown in both themes and local-pair persistence
+  after reload. Artifacts: `output/playwright/provider-selector-light.png`,
+  `provider-selector-dark.png`, and `provider-check.json`.
+- Measured discovery traffic: one provider-list plus two provider-model requests
+  per page load for two single-page providers; no duplicates within a load.
+  Provider pagination is serial (maximum one outstanding discovery RPC in the
+  regression test). Overlapping callers share an in-flight catalog request;
+  completed catalogs are not indefinitely cached. Version/lifecycle guards reject
+  stale state publications. Discovery runs asynchronously and introduces no
+  filesystem work or thread-load requests. Payload size grows with catalog size;
+  catalogs remain in memory and the selector uses its existing search component.
+- Live provider latency, authentication, and actual local inference were not
+  measured by the credential-free fixture or browser stubs. Serial discovery can
+  wait for a slow provider RPC before publishing the combined catalog.
