@@ -76,7 +76,7 @@ describe('thread inline media sanitization', () => {
 
     expect(existsSync(localImagePathFromProxyUrl(content[0].url as string))).toBe(true)
     expect(existsSync(localImagePathFromProxyUrl(images[0]))).toBe(true)
-    expect(existsSync(generatedImage.path as string)).toBe(true)
+    expect(existsSync(localImagePathFromProxyUrl(generatedImage.path as string))).toBe(true)
     expect(existsSync(localImagePathFromProxyUrl(toolOutput.result as string))).toBe(true)
   })
 
@@ -400,7 +400,7 @@ describe('inline payload compatibility contracts', () => {
     const item = result.thread.turns[0].items[0]
     const hash = createHash('sha1').update(Buffer.from(pngBase64, 'base64')).digest('hex')
     expect(item.type).toBe('imageView')
-    expect(item.path).toBe(join(tmpdir(), 'codex-web-inline-media', `generated-image-contract-turn-generated-contract-${hash}${ext}`))
+    expect(item.path).toBe(`/codex-app-asset?id=generated-image-contract-turn-generated-contract-${hash}${ext}`)
     expect(item.result).toBe(pngBase64)
   })
 

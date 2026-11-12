@@ -232,7 +232,7 @@ async function sanitizeInlineUserContentBlock(
         return {
           ...record,
           type: 'imageView',
-          path: localUrl,
+          path: toLocalImageProxyUrl(localUrl),
         }
       }
     }
@@ -248,7 +248,7 @@ async function sanitizeInlineUserContentBlock(
     if (localUrl) {
       return {
         type: 'text',
-        text: `File attachment: ${localUrl}`,
+        text: `File attachment: ${toLocalImageProxyUrl(localUrl)}`,
       }
     }
     const target = toAttachmentLinkTarget(record, `inline-file/${context.turnId}/${context.itemId}/${String(context.blockIndex)}`)
