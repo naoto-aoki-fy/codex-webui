@@ -260,12 +260,14 @@
                 </div>
               </div>
 
-              <div class="composer-container">
+              <div class="composer-container" :class="{ 'is-disabled': !newThreadCwd.trim() }"
+                :inert="!newThreadCwd.trim()" :aria-disabled="!newThreadCwd.trim()">
                 <div v-if="codexCliMissingError" class="composer-runtime-error" role="alert">
                   <span>{{ t(codexCliMissingError) }}</span>
                 </div>
                 <ThreadComposer ref="homeThreadComposerRef" :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
+                  :disabled="!newThreadCwd.trim()"
                   :collaboration-modes="availableCollaborationModes"
                   :selected-collaboration-mode="selectedCollaborationMode"
                   :models="availableModelIds" :selected-model="composerSelectedModelId"
@@ -1970,6 +1972,10 @@ async function onLogoutCodex(): Promise<void> {
 
 .composer-container {
   @apply w-full shrink-0 px-2 sm:px-6 flex flex-col gap-2;
+}
+
+.composer-container.is-disabled {
+  opacity: 0.55;
 }
 
 .composer-runtime-error {

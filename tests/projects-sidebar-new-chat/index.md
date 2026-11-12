@@ -10,6 +10,7 @@ Return to the [manual test index](../../tests.md).
 | [Existing workspace and native conversation workflows](native-workspace-workflows.md) |
 | [Existing workspace and native conversation workflows](native-workspace-workflows.md) |
 | --- |
+| [New-thread composer requires a folder](composer-requires-folder.md) |
 | [Explicit folders and removal of legacy Chats](remove-projectless-chats.md) |
 | [Concurrent project state updates and stale responses](concurrent-project-state-updates.md) |
 | [Feature: Empty project new thread action](empty-project-new-thread-action.md) |
