@@ -1983,6 +1983,10 @@ export function useDesktopState() {
         return
       }
     }
+    if (notification.method === 'app-server/reconnected') {
+      void recoverBridgeState(true)
+      return
+    }
     if (notification.method === 'app-server/disconnected') {
       const message = 'App-server disconnected. Reconnect and inspect the thread before resending a turn.'
       pendingServerRequestsByThreadId.value = {}

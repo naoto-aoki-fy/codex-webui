@@ -1,4 +1,5 @@
-import { AppServerWebSocketClient } from './appServerWebSocketClient.js'
+import { randomInt } from 'node:crypto'
+import { AppServerWebSocketClient, positiveEnv } from './appServerWebSocketClient.js'
 import { asRecord, getErrorMessage } from './bridgeHttpUtils.js'
 import { readCodexCredentialStore } from './codexCredentials.js'
 import { refreshChatgptAuthTokensForExternalAuth, type ChatgptAuthTokensRefreshParams, type ChatgptAuthTokensRefreshResponse } from './externalAuthRefresh.js'
@@ -48,6 +49,7 @@ type PendingServerRequest = {
   method: string
   params: unknown
   receivedAtIso: string
+  wireId?: number | string
 }
 
 export const STREAM_EVENT_BUFFER_LIMIT = 400
@@ -77,8 +79,10 @@ export class AppServerClient {
   private readonly threadTurnPageReadCacheByThreadId = new Map<string, { result: unknown; expiresAt: number }>()
   private readonly threadTurnPageReadPromiseByThreadId = new Map<string, Promise<unknown>>()
   private chatgptAuthRefreshPromise: Promise<ChatgptAuthTokensRefreshResponse> | null = null
-  private restoredGeneration = -1
-  private restorePromise: Promise<void> | null = null
+  private disposed = false
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
+  private retryAttempt = 0
+  private nextApprovalId = randomInt(2 ** 40)
   private connectionGeneration = 0
   private reconnectPromise: Promise<void> | null = null
   private readonly subscribedThreads = new Set<string>()
@@ -91,8 +95,19 @@ export class AppServerClient {
     this.lastThreadReadSnapshotByThreadId.clear()
     this.threadTurnPageReadCacheByThreadId.clear()
     this.threadTurnPageReadPromiseByThreadId.clear()
-    this.emitNotification({ method: 'app-server/disconnected', params: null })
+    this.emitNotification({ method: 'app-server/disconnected', params: { approvalRecovery: 'Pending approvals cannot be recovered automatically. Inspect the thread on the App Server host before continuing.' } })
+    this.scheduleReconnect()
   })
+
+  private scheduleReconnect(): void {
+    if (this.disposed || this.retryTimer) return
+    const delay = Math.min(30_000, 500 * 2 ** Math.min(this.retryAttempt++, 6)) * (0.75 + Math.random() * 0.5)
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null
+      void this.reconnect(false).catch(() => this.scheduleReconnect())
+    }, delay)
+    this.retryTimer.unref?.()
+  }
 
   private sendLine(payload: Record<string, unknown>): void { this.transport.send(payload) }
 
@@ -274,7 +289,7 @@ export class AppServerClient {
     }
     this.pendingServerRequests.delete(requestId)
 
-    this.sendServerRequestReply(requestId, reply)
+    this.sendServerRequestReply(pendingRequest.wireId!, reply)
     const requestParams = asRecord(pendingRequest.params)
     const threadId =
       typeof requestParams?.threadId === 'string' && requestParams.threadId.length > 0
@@ -343,12 +358,13 @@ export class AppServerClient {
     }
 
     const pendingRequest: PendingServerRequest = {
-      id: requestId,
+      id: this.nextApprovalId++,
       method,
       params,
       receivedAtIso: new Date().toISOString(),
+      wireId: requestId,
     }
-    this.pendingServerRequests.set(requestId, pendingRequest)
+    this.pendingServerRequests.set(pendingRequest.id, pendingRequest)
 
     this.emitNotification({
       method: 'server/request',
@@ -361,27 +377,42 @@ export class AppServerClient {
     const id = this.nextId++
 
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      // A deadline only releases the caller; it never cancels or retries remote work.
+      const timeout = method === 'command/exec' ? positiveEnv('CODEXUI_APP_SERVER_COMMAND_DEADLINE_MS', 600_000)
+        : positiveEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', 60_000)
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`App-server ${method} deadline exceeded; outcome unknown. Reconcile remote state before retrying.`))
+      }, timeout)
+      timer.unref?.()
+      this.pending.set(id, {
+        resolve: value => { clearTimeout(timer); resolve(value) },
+        reject: error => { clearTimeout(timer); reject(error) },
+      })
 
       try { this.sendLine({
         id,
         method,
         params,
-      } satisfies JsonRpcCall) } catch (error) { this.pending.delete(id); reject(error) }
+      } satisfies JsonRpcCall) } catch (error) { this.pending.get(id)?.reject(error); this.pending.delete(id) }
     })
   }
 
   private async ensureInitialized(): Promise<void> {
     await this.transport.connect()
-    if (this.restoredGeneration === this.connectionGeneration) return
-    if (this.restorePromise) return this.restorePromise
+  }
+
+  private async restoreSubscriptions(): Promise<void> {
     const generation = this.connectionGeneration
-    this.restorePromise = (async () => {
-      for (const threadId of this.subscribedThreads) await this.call('thread/resume', { threadId })
-      if (generation !== this.connectionGeneration) throw new Error('Disconnected while restoring thread subscriptions')
-      this.restoredGeneration = generation
-    })().finally(() => { this.restorePromise = null })
-    return this.restorePromise
+    // Sequential bounded work; restoration cannot gate unrelated RPCs.
+    for (const threadId of [...this.subscribedThreads]) {
+      if (generation !== this.connectionGeneration || this.disposed) return
+      if (!this.subscribedThreads.has(threadId)) continue
+      try { await this.call('thread/resume', { threadId, excludeTurns: true }) }
+      catch (error) {
+        this.emitNotification({ method: 'app-server/subscriptionFailed', params: { threadId, error: getErrorMessage(error, 'Could not restore thread') } })
+      }
+    }
   }
 
   async rpc(method: string, params: unknown): Promise<unknown> {
@@ -474,14 +505,23 @@ export class AppServerClient {
     return Array.from(this.pendingServerRequests.values())
   }
 
-  async reconnect(): Promise<void> {
+  async reconnect(reset = true): Promise<void> {
     if (this.reconnectPromise) return this.reconnectPromise
     this.reconnectPromise = (async () => {
-      await this.transport.reconnect()
-      await this.ensureInitialized()
+      await (reset ? this.transport.reconnect() : this.transport.connect())
+      this.retryAttempt = 0
+      if (this.retryTimer) clearTimeout(this.retryTimer)
+      this.retryTimer = null
+      this.emitNotification({ method: 'app-server/reconnected', params: null })
+      void this.restoreSubscriptions()
     })().finally(() => { this.reconnectPromise = null })
     return this.reconnectPromise
   }
-  dispose(): void { this.transport.dispose() }
+  dispose(): void {
+    this.disposed = true
+    if (this.retryTimer) clearTimeout(this.retryTimer)
+    this.retryTimer = null
+    this.transport.dispose()
+  }
 }
 

@@ -118,3 +118,24 @@ it.skipIf(process.platform === 'win32')('recovers after a missing Unix listener 
   await client.reconnect()
   expect(server.clients.size).toBe(1)
 })
+
+it('detects a silent transport using pong liveness rather than application events', async () => {
+  process.env.CODEXUI_APP_SERVER_PING_MS = '10'
+  process.env.CODEXUI_APP_SERVER_PONG_TIMEOUT_MS = '25'
+  const f = await fixture()
+  let disconnects = 0
+  const client = new AppServerWebSocketClient(() => {}, () => disconnects++, f.url)
+  try {
+    await client.connect()
+    await new Promise(resolve => setTimeout(resolve, 80))
+    expect(disconnects).toBe(0) // Healthy idle socket, no application messages.
+    ;([...f.server.clients][0] as any)._autoPong = false
+    await new Promise(resolve => setTimeout(resolve, 80))
+    expect(disconnects).toBe(1)
+    expect(client.getInitializationMetadata()).toBeNull()
+  } finally {
+    client.dispose()
+    delete process.env.CODEXUI_APP_SERVER_PING_MS
+    delete process.env.CODEXUI_APP_SERVER_PONG_TIMEOUT_MS
+  }
+})

@@ -1,3 +1,7 @@
+export function positiveEnv(name: string, fallback: number): number {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
 import type { InitializeResponse } from './protocol/0.167.2/InitializeResponse.js'
 import WebSocket from 'ws'
 import { createConnection } from 'node:net'
@@ -35,6 +39,9 @@ export class AppServerWebSocketClient {
   private initialization: Readonly<InitializeResponse> | null = null
   getInitializationMetadata(): Readonly<InitializeResponse> | null { return this.initialization }
 
+  private heartbeat: ReturnType<typeof setInterval> | null = null
+  private awaitingPong = false
+  private pingAt = 0
   private socket: WebSocket | null = null
   private ready: Promise<void> | null = null
   private reconnecting: Promise<void> | null = null
@@ -46,6 +53,9 @@ export class AppServerWebSocketClient {
 
   private fail(socket: WebSocket, error: Error): void {
     if (this.socket !== socket) return
+    if (this.heartbeat) clearInterval(this.heartbeat)
+    this.heartbeat = null
+    this.awaitingPong = false
     this.initialization = null
     this.socket = null
     this.ready = null
@@ -73,9 +83,24 @@ export class AppServerWebSocketClient {
         resolve: (value) => { clearTimeout(timer); try { this.initialization = Object.freeze({ ...(value as InitializeResponse) }); this.send({ method: 'initialized' }); resolve() } catch (error) { reject(error); this.fail(socket, error as Error) } },
         reject: (error) => { clearTimeout(timer); reject(error) },
       })
-      socket.on('open', () => this.send({ id, method: 'initialize', params: {
+      socket.on('pong', () => { if (this.socket === socket) this.awaitingPong = false })
+      socket.on('open', () => {
+        const interval = positiveEnv('CODEXUI_APP_SERVER_PING_MS', 15_000)
+        const deadline = positiveEnv('CODEXUI_APP_SERVER_PONG_TIMEOUT_MS', 30_000)
+        this.heartbeat = setInterval(() => {
+          if (this.socket !== socket) return
+          if (this.awaitingPong) {
+            if (Date.now() - this.pingAt >= deadline) this.fail(socket, new Error('App-server connection pong timed out; remote execution may still be running'))
+            return
+          }
+          this.awaitingPong = true
+          this.pingAt = Date.now()
+          socket.ping()
+        }, Math.min(interval, deadline))
+        this.heartbeat.unref?.()
+        this.send({ id, method: 'initialize', params: {
         clientInfo: { name: 'codex-web-local', version: '0.1.0' }, capabilities: { experimentalApi: true },
-      } }))
+      } }) })
       socket.on('message', (data, binary) => {
         if (this.socket !== socket) return
         if (binary) { this.fail(socket, new Error('Expected app-server text frame')); return }
