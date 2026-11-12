@@ -31,7 +31,8 @@ const gatewayMocks = vi.hoisted(() => ({
   replyToServerRequest: vi.fn(),
   resumeThread: vi.fn(),
   revertThreadFileChanges: vi.fn(),
-  rollbackThread: vi.fn(),
+  revertThreadHistory: vi.fn(),
+  validateThreadRevert: vi.fn(),
   setCodexSpeedMode: vi.fn(),
   setWorkspaceRootsState: vi.fn(),
   startThread: vi.fn(),
@@ -1156,6 +1157,42 @@ describe('response fork publication', () => {
     finish({ threadId: 'fork', cwd: '', model: '', messages: [], hasMoreOlder: true, turnIndexByTurnId: {} })
     expect(await pending).toBe('fork')
     expect(state.selectedThreadId.value).toBe('fork')
-    expect(gatewayMocks.rollbackThread).not.toHaveBeenCalled()
+    expect(gatewayMocks.revertThreadHistory).not.toHaveBeenCalled()
+  })
+})
+
+describe('thread revert orchestration', () => {
+  it('rejects incompatible threads before restoring files', async () => {
+    installTestWindow()
+    gatewayMocks.validateThreadRevert.mockRejectedValueOnce(new Error('Persisted paginated thread required'))
+    const state = useDesktopState()
+    state.selectedThreadId.value = 'legacy'
+    await state.rollbackSelectedThread('old-turn')
+    expect(gatewayMocks.revertThreadFileChanges).not.toHaveBeenCalled()
+    expect(gatewayMocks.revertThreadHistory).not.toHaveBeenCalled()
+    expect(state.error.value).toContain('paginated')
+  })
+
+  it('uses the selected turn ID without requiring cached numeric indices', async () => {
+    installTestWindow()
+    gatewayMocks.validateThreadRevert.mockResolvedValueOnce(undefined)
+    gatewayMocks.revertThreadHistory.mockRejectedValueOnce(new Error('RPC unavailable'))
+    const state = useDesktopState()
+    state.selectedThreadId.value = 'persisted'
+    await state.rollbackSelectedThread('older-page-turn')
+    expect(gatewayMocks.revertThreadHistory).toHaveBeenCalledWith('persisted', 'older-page-turn')
+    expect(state.error.value).toContain('RPC unavailable')
+  })
+
+  it('reports a refresh failure without repeating the destructive RPC', async () => {
+    installTestWindow()
+    gatewayMocks.validateThreadRevert.mockResolvedValueOnce(undefined)
+    gatewayMocks.revertThreadHistory.mockResolvedValueOnce(undefined)
+    gatewayMocks.getThreadDetail.mockRejectedValueOnce(new Error('Read unavailable'))
+    const state = useDesktopState()
+    state.selectedThreadId.value = 'persisted'
+    await state.rollbackSelectedThread('first-turn')
+    expect(gatewayMocks.revertThreadHistory).toHaveBeenCalledTimes(1)
+    expect(state.error.value).toContain('History reverted, but refresh failed')
   })
 })

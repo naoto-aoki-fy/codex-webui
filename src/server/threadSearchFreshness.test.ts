@@ -36,7 +36,7 @@ it('constructs lazily, shares concurrent searches and reuses the exact response 
   await s.search('message')
   expect(s.rpc.mock.calls.map(call => call[0])).toEqual(['thread/list', 'thread/read'])
 })
-for (const method of ['thread/start', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/fork', 'thread/rollback', 'turn/start', 'turn/steer']) {
+for (const method of ['thread/start', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/fork', 'thread/revert', 'turn/start', 'turn/steer']) {
   it(`refreshes after successful ${method}`, async () => {
     const s = setup(); await s.search('original')
     s.rows([{ id: 'b', name: 'replacement', preview: '' }])
