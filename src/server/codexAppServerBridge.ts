@@ -14,7 +14,6 @@ export { sanitizeThreadTurnsInlinePayloads } from './threadInlinePayloads.js'
 import appServerMethods from './appServerMethods.json'
 import { AppServerClient as AppServerClientCore, STREAM_EVENT_BUFFER_LIMIT, type StreamEventFrame } from './appServerClient.js'
 import { PersistentThreadIndex } from './persistentThreadIndex.js'
-export { mergeSessionSkillInputsIntoTurns } from './threadSessionEnrichment.js'
 import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
@@ -23,7 +22,6 @@ import { handleAccountRoutes } from './accountRoutes.js'
 import { CodexCredentialError, readCodexCredentialStore, readPublicAuthStatus } from './codexCredentials.js'
 import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
-import { TurnGenerationMetadataStore } from './turnGenerationMetadata.js'
 import type { WorkspaceRootsOperation } from '../types/workspaceRoots.js'
 import { isAbsoluteLikePath } from '../pathUtils.js'
 
@@ -46,7 +44,6 @@ const DEFAULT_API_PERF_BODY_MB_THRESHOLD = 1
 const MB_DIVISOR = 1024 * 1024
 
 const persistentThreadIndex = new PersistentThreadIndex(getCodexHomeDir, () => [])
-const turnGenerationMetadataStore = new TurnGenerationMetadataStore(getCodexHomeDir)
 
 function readEnvValueFromFile(filePath: string, key: string): string | null {
   try {
@@ -443,7 +440,7 @@ function handleFileUpload(req: IncomingMessage, res: ServerResponse, appServer: 
 // Preserve the public zero-argument constructor and bridge-owned store instances.
 export class AppServerClient extends AppServerClientCore {
   constructor() {
-    super({ threadIndex: persistentThreadIndex, metadataStore: turnGenerationMetadataStore })
+    super({ threadIndex: persistentThreadIndex })
   }
 }
 

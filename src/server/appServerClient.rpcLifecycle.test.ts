@@ -33,8 +33,7 @@ const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve()
 it.each(['disconnect', 'replacement'] as const)('isolates stale replies and never replays on %s', async cause => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   const client = new AppServerClient({
-    threadIndex: { call: async (method: string, params: unknown, rpc: (method: string, params: unknown) => Promise<unknown>) => rpc(method, params) },
-    metadataStore: { save: vi.fn() },
+    threadIndex: { call: async (method: string, params: unknown, rpc: (method: string, params: unknown) => Promise<unknown>) => rpc(method, params) }
   } as any)
   const internal = client as any
   try {
@@ -86,7 +85,7 @@ it.each(['disconnect', 'replacement'] as const)('isolates stale replies and neve
 
 
 it('retains connection metadata and structured RPC errors, and clears metadata on disconnect', async () => {
-  const client = new AppServerClient({ threadIndex: { call: (method, params, rpc) => rpc(method, params) }, metadataStore: { save: vi.fn() } })
+  const client = new AppServerClient({ threadIndex: { call: (method, params, rpc) => rpc(method, params) } })
   try {
     const call = client.rpc('fs/readFile', { path: '/remote/file' })
     const rejected = expect(call).rejects.toMatchObject({ message: 'Permission denied', code: -32600, data: { path: '/remote/file' } })
@@ -103,7 +102,7 @@ it('retains connection metadata and structured RPC errors, and clears metadata o
 
 it('expires ordinary calls without replay or cancelling a silent remote command', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) }, metadataStore: { save: vi.fn() } })
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
   try {
     const ordinary = client.rpc('fs/readFile', { path: '/B/file' })
     const expired = expect(ordinary).rejects.toThrow('outcome unknown')
@@ -121,7 +120,7 @@ it('expires ordinary calls without replay or cancelling a silent remote command'
 })
 
 it('a missing restored thread never blocks independent RPCs or healthy subscriptions', async () => {
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) }, metadataStore: { save: vi.fn() } })
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
   try {
     const internal = client as any
     internal.subscribedThreads.add('missing')
@@ -144,7 +143,7 @@ it('a missing restored thread never blocks independent RPCs or healthy subscript
 it('coalesces automatic reconnects and never sends an old approval to a reused wire ID', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) }, metadataStore: { save: vi.fn() } })
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
   try {
     const first = client.rpc('test/read', {})
     await flush()

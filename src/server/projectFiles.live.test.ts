@@ -25,7 +25,7 @@ it.skipIf(process.env.CODEX_PROJECT_FILES_LIVE !== '1' || process.platform === '
   let logs = ''
   child.stderr.on('data', data => { logs += data })
   vi.stubEnv('CODEXUI_APP_SERVER_URL', url)
-  const client = new AppServerClient({ threadIndex: { call: (method, params, rpc) => rpc(method, params) }, metadataStore: { save: async () => {} } })
+  const client = new AppServerClient({ threadIndex: { call: (method, params, rpc) => rpc(method, params) } })
   let http: ReturnType<typeof createServer> | undefined
   try {
     for (let i = 0; ; i++) {

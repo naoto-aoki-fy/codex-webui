@@ -123,8 +123,7 @@ it('uses injected stores for turn metadata without creating or connecting anothe
   const { AppServerClient: ClientCore } = await import('./appServerClient')
   const call = vi.fn().mockResolvedValue({ turn: { id: 'turn' } })
   const threadIndex = { call: vi.fn(async (method, params, rpc) => rpc(method, params)) }
-  const metadataStore = { save: vi.fn().mockResolvedValue(undefined) }
-  const client = new ClientCore({ threadIndex, metadataStore })
+  const client = new ClientCore({ threadIndex })
   const internal = client as any
   internal.ensureInitialized = vi.fn().mockResolvedValue(undefined)
   internal.call = call
@@ -135,9 +134,7 @@ it('uses injected stores for turn metadata without creating or connecting anothe
     const result = await client.rpc('turn/start', params) as any
     expect(threadIndex.call).toHaveBeenCalledOnce()
     expect(call).toHaveBeenCalledExactlyOnceWith('turn/start', params)
-    expect(metadataStore.save).toHaveBeenCalledExactlyOnceWith('thread', 'turn', result.turn.generationMetadata)
     expect(listener).toHaveBeenCalledWith({ method: 'turn/generationMetadata', params: { threadId: 'thread', turnId: 'turn', generationMetadata: result.turn.generationMetadata } })
-    metadataStore.save.mockRejectedValueOnce(new Error('disk unavailable'))
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try { await expect(client.rpc('turn/start', params)).resolves.toHaveProperty('turn.id', 'turn') }
     finally { warn.mockRestore() }
