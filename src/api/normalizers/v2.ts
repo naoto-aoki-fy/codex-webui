@@ -1,3 +1,4 @@
+import { isAppAssetUrl } from '../../appAssetUrl.js'
 import { readMessageTimestamp } from '../../messageTimestamps'
 import type {
   Thread,
@@ -76,7 +77,7 @@ function extractCodexUserRequestText(value: string): string {
 }
 
 function toLocalImageUrl(path: string): string {
-  return `/codex-local-image?path=${encodeURIComponent(path)}`
+  return isAppAssetUrl(path) ? path : `/codex-local-image?path=${encodeURIComponent(path)}`
 }
 
 function toImageGenerationUrl(value: string): string {
@@ -86,7 +87,7 @@ function toImageGenerationUrl(value: string): string {
     trimmed.startsWith('data:') ||
     trimmed.startsWith('http://') ||
     trimmed.startsWith('https://') ||
-    trimmed.startsWith('/codex-local-image?')
+    trimmed.startsWith('/codex-local-image?') || isAppAssetUrl(trimmed)
   ) {
     return trimmed
   }

@@ -1,3 +1,4 @@
+import { isAppAssetUrl } from '../appAssetUrl.js'
 import type { RpcNotification } from '../api/codexGateway'
 import type { UiMessage, UiPlanData, UiPlanStep, UiThreadTokenUsage, UiTokenUsageBreakdown } from '../types/codex'
 import { clamp } from './desktopStatePersistence'
@@ -537,7 +538,7 @@ export function readAgentMessageCompleted(notification: RpcNotification): UiMess
 }
 
 export function toLocalImageUrl(path: string): string {
-  return `/codex-local-image?path=${encodeURIComponent(path)}`
+  return isAppAssetUrl(path) ? path : `/codex-local-image?path=${encodeURIComponent(path)}`
 }
 
 export function toImageGenerationUrl(value: string): string {
@@ -547,7 +548,7 @@ export function toImageGenerationUrl(value: string): string {
     trimmed.startsWith('data:') ||
     trimmed.startsWith('http://') ||
     trimmed.startsWith('https://') ||
-    trimmed.startsWith('/codex-local-image?')
+    trimmed.startsWith('/codex-local-image?') || isAppAssetUrl(trimmed)
   ) {
     return trimmed
   }

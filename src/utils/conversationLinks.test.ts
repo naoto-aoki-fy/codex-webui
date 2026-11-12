@@ -58,3 +58,7 @@ describe('conversation link characterization', () => {
     for (const input of ['', 'blob:abc', 'data:image/png,x', 'javascript:alert(1)', 'relative.png']) expect(toRenderableImageUrl(input)).toBe(input)
   })
 })
+
+it('preserves web-owned asset URLs without routing them to remote filesystem reads', () => {
+  expect(toRenderableImageUrl('/codex-app-asset?id=generated-image.png')).toBe('/codex-app-asset?id=generated-image.png')
+})

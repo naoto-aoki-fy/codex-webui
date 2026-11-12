@@ -1,3 +1,4 @@
+import { isAppAssetUrl } from '../appAssetUrl.js'
 function isFilePath(value: string): boolean {
   if (!value || /[\r\n]/u.test(value)) return false
   if (value.endsWith('/') || value.endsWith('\\')) return false
@@ -234,7 +235,7 @@ export function toRenderableImageUrl(value: string): string {
     normalized.startsWith('blob:') ||
     normalized.startsWith('http://') ||
     normalized.startsWith('https://') ||
-    normalized.startsWith('/codex-local-image?')
+    normalized.startsWith('/codex-local-image?') || isAppAssetUrl(normalized)
   ) {
     return normalized
   }
