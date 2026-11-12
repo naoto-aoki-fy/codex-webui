@@ -165,3 +165,12 @@ it('does not discard remote rollout metadata based on local file absence', async
   await index.recover({ ...thread, path: join(home, 'missing.jsonl'), turns: [{ id: 'old', items: [{ type: 'userMessage', content: params.input }] }] })
   expect((await index.call('thread/list', {}, async () => ({ data: [] }))).data).toHaveLength(1)
 })
+
+it('delegates section membership, order and cursors without injecting indexed rows', async () => {
+  await writeFile(join(home, 'codexapp-thread-index.json'), JSON.stringify({ file: { thread, firstTurnId: 'turn', archived: false, deleted: false } }))
+  const page = { data: [{ ...thread, id: 'native' }], nextCursor: 'native-cursor' }
+  const rpc = vi.fn(async () => page)
+  const sectionParams = { sectionId: 'pinned', sortKey: 'section_position', limit: 10 }
+  expect(await index.call('thread/list', sectionParams, rpc)).toBe(page)
+  expect(rpc).toHaveBeenCalledExactlyOnceWith('thread/list', sectionParams)
+})

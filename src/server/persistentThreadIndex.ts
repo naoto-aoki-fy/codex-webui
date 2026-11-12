@@ -171,6 +171,9 @@ export class PersistentThreadIndex {
     return result
   }
   private async list(params: Row, rpc: Rpc): Promise<any> {
+    // Section membership and ordering belong exclusively to Codex. The sparse
+    // attachment index cannot infer either and must not inject unsectioned rows.
+    if ('sectionId' in params || params.sortKey === 'section_position') return rpc('thread/list', params)
     const entries = await this.reconcile(rpc)
     // Preserve legacy imported-chat visibility through the same filtered pager.
     for (const thread of this.legacy()) {
