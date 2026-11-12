@@ -1,6 +1,9 @@
 import type { ReasoningEffort } from './appServerDtos'
 
 export type ReasoningModel = {
+  modelProvider?: string
+  providerDisplayName?: string
+  displayName?: string
   id?: string
   model?: string
   supportedReasoningEfforts?: Array<string | { reasoningEffort: string; description?: string }>
@@ -31,5 +34,23 @@ export function resolveReasoningEffort(model: ReasoningModel | null, requested?:
 }
 
 export function findReasoningModel(catalog: ReasoningModel[], model: string): ReasoningModel | null {
-  return catalog.find((entry) => entry.id === model || entry.model === model) ?? null
+  const selection = parseModelSelection(model)
+  return catalog.find((entry) => (entry.modelProvider || '') === selection.provider && (entry.id?.trim() === selection.model || entry.model?.trim() === selection.model)) ?? null
+}
+
+// Versioned, unambiguous identity; legacy bare IDs continue to mean the legacy catalog.
+export function modelSelectionKey(provider: string, model: string): string {
+  return provider ? `provider-model:${JSON.stringify([provider, model])}` : model
+}
+
+export function parseModelSelection(value: string): { provider: string; model: string } {
+  if (value.startsWith('provider-model:')) {
+    try {
+      const pair: unknown = JSON.parse(value.slice('provider-model:'.length))
+      if (Array.isArray(pair) && pair.length === 2 && pair.every((part) => typeof part === 'string')) {
+        return { provider: pair[0], model: pair[1] }
+      }
+    } catch { /* Interpret malformed legacy values as bare model IDs. */ }
+  }
+  return { provider: '', model: value }
 }

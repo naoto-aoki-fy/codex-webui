@@ -48,6 +48,7 @@
     "mcpServerStatus/list",
     "mock/experimentalMethod",
     "model/list",
+    "modelProvider/list",
     "newConversation",
     "removeConversationListener",
     "resumeConversation",

@@ -289,6 +289,8 @@
 </template>
 
 <script setup lang="ts">
+import { findReasoningModel, reasoningCatalog } from '../../api/codexGateway'
+import { parseModelSelection } from '../../api/modelCapabilities'
 import { normalizeSkillMarkdownPath } from '../../api/normalizers/skills'
 import { toBrowseUrl } from '../../utils/conversationLinks'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -459,7 +461,12 @@ let lastActiveThreadId = ''
 
 const reasoningOptions = computed(() => props.reasoningEffortOptions ?? [])
 function formatModelLabel(modelId: string): string {
-  return modelId.trim().replace(/^gpt/i, 'GPT')
+  const selection = parseModelSelection(modelId)
+  // Depend on the reactive catalog so labels update after discovery.
+  void reasoningCatalog.value
+  const entry = findReasoningModel(modelId)
+  const label = entry?.displayName || selection.model.trim().replace(/^gpt/i, 'GPT')
+  return selection.provider ? `${entry?.providerDisplayName || selection.provider} — ${label}` : label
 }
 
 const modelOptions = computed(() =>

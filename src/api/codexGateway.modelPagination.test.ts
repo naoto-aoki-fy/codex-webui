@@ -12,6 +12,7 @@ it.each([
   const calls: unknown[] = []
   vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
     const body = JSON.parse(String(init.body))
+    if (body.method === 'modelProvider/list') return new Response('Method not found', { status: 400 })
     expect(body.method).toBe('model/list')
     calls.push(body.params)
     if (calls.length > cursors.length) throw new Error('unexpected extra page')
@@ -28,24 +29,24 @@ it('discards partial results after later-page failure and starts retry from the 
     .mockResolvedValueOnce(response({ data: [{ id: 'partial' }], nextCursor: 'next' }))
     .mockRejectedValueOnce(new Error('page unavailable'))
     .mockResolvedValueOnce(response({ data: [{ id: 'fresh' }] }))
-  vi.stubGlobal('fetch', fetch)
+  vi.stubGlobal('fetch', vi.fn((url, init) => JSON.parse(String(init.body)).method === 'modelProvider/list'
+    ? Promise.resolve(new Response('Method not found', { status: 400 })) : fetch(url, init)))
   await expect(getAvailableModelIds()).resolves.toEqual({ ids: [], models: [] })
   await expect(getAvailableModelIds()).resolves.toEqual({ ids: ['fresh'], models: [{ id: 'fresh' }] })
   expect(fetch.mock.calls.map(([, init]) => JSON.parse(init.body).params)).toEqual([{}, { cursor: 'next' }, {}])
 })
 
-it('keeps overlapping fetches independent when the newer fetch succeeds before the older fails', async () => {
-  let reject!: (error: Error) => void
-  const fetch = vi.fn()
-    .mockImplementationOnce(() => new Promise<Response>((_resolve, no) => { reject = no }))
+it('coalesces overlapping catalog requests and retries after completion', async () => {
+  let resolve!: (response: Response) => void
+  const fetch = vi.fn().mockImplementationOnce(() => new Promise<Response>((yes) => { resolve = yes }))
     .mockResolvedValueOnce(response({ data: [{ id: 'new' }] }))
-    .mockResolvedValueOnce(response({ data: [{ id: 'retry' }] }))
-  vi.stubGlobal('fetch', fetch)
+  vi.stubGlobal('fetch', vi.fn((url, init) => JSON.parse(String(init.body)).method === 'modelProvider/list'
+    ? Promise.resolve(new Response('Method not found', { status: 400 })) : fetch(url, init)))
   const older = getAvailableModelIds()
   const newer = getAvailableModelIds()
-  await expect(newer).resolves.toEqual({ ids: ['new'], models: [{ id: 'new' }] })
-  reject(new Error('older failed'))
-  await expect(older).resolves.toEqual({ ids: [], models: [] })
-  await expect(getAvailableModelIds()).resolves.toEqual({ ids: ['retry'], models: [{ id: 'retry' }] })
-  expect(fetch).toHaveBeenCalledTimes(3)
+  expect(newer).toBe(older)
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+  resolve(response({ data: [{ id: 'shared' }] }))
+  await expect(older).resolves.toEqual({ ids: ['shared'], models: [{ id: 'shared' }] })
+  await expect(getAvailableModelIds()).resolves.toEqual({ ids: ['new'], models: [{ id: 'new' }] })
 })

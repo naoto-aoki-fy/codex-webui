@@ -47,7 +47,7 @@ const thread: UiThread = {
   preview: '', unread: false, inProgress: false, hasWorktree: false,
 }
 const oldDetail: ResumedThread = {
-  model: 'gpt-5.5', modelProvider: 'openai', messages: [oldUser],
+  model: 'gpt-5.5', modelProvider: '', messages: [oldUser],
   inProgress: false, activeTurnId: '', hasMoreOlder: false, turnIndexByTurnId: { 'turn-1': 0 },
 }
 const completedDetail: ResumedThread = {
@@ -1821,7 +1821,8 @@ describe('new-thread preference context across deferred creation', () => {
       const gatewayModel = creationModel.trim() || 'B'
       const model = gatewayModel
       const effort = model === 'D' ? 'high' : 'medium'
-      const result = { threadId: 'new-context-thread', model: creationModel, modelProvider: 'openai' }
+      // Exercise the legacy unqualified catalog; provider-qualified submissions have separate coverage.
+      const result = { threadId: 'new-context-thread', model: creationModel, modelProvider: '' }
       created.resolve(result)
       expect(await sending).toBe(result.threadId)
       await vi.advanceTimersByTimeAsync(0)
