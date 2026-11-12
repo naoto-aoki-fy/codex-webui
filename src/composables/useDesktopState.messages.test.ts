@@ -10,6 +10,8 @@ const gateway = vi.hoisted(() => ({
   archiveThread: vi.fn(),
   getOlderThreadMessages: vi.fn(),
   resumeThread: vi.fn(),
+  invalidateResumeThread: vi.fn(),
+  resumeThreadSubscription: vi.fn(),
   startThreadTurn: vi.fn(),
   interruptThreadTurn: vi.fn(),
   startThread: vi.fn(),
@@ -2014,4 +2016,63 @@ it('keeps a pending history read scoped to its thread across navigation', async 
   expect(state.messages.value).toEqual([])
   state.primeSelectedThread(thread.id)
   expect(state.messages.value).toEqual(completedDetail.messages)
+})
+
+describe('remote backend identity', () => {
+  async function ready(backendInstanceId: string) {
+    notify({ method: 'ready', params: { ok: true, backendInstanceId } })
+    await vi.advanceTimersByTimeAsync(0)
+  }
+
+  it('restores subscriptions on backend replacement, keeps ordinary reconnects read-only, and never replays turns', async () => {
+    const state = await loadState()
+    await ready('backend-A')
+    await state.sendMessageToSelectedThread(nextUser.text)
+    turnStarted()
+    streamReply('partial')
+    const resumes = gateway.resumeThread.mock.calls.length
+    gateway.resumeThread.mockResolvedValue(activeDetail)
+    await ready('backend-B')
+    expect(gateway.invalidateResumeThread).toHaveBeenCalledWith(thread.id)
+    expect(gateway.resumeThread).toHaveBeenCalledTimes(resumes + 1)
+    streamReply(' continues')
+    expect(state.messages.value.some(row => row.text.includes('continues'))).toBe(true)
+    gateway.getThreadDetail.mockResolvedValue(completedDetail)
+    await ready('backend-B')
+    await ready('backend-B')
+    expect(gateway.resumeThread).toHaveBeenCalledTimes(resumes + 1)
+    expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+    expect(state.messages.value).toEqual(completedDetail.messages)
+  })
+
+  it('clears disconnect errors after a successful snapshot while retaining execution failures', async () => {
+    gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [] })
+    const state = await loadState()
+    turnStarted()
+    notify({ method: 'app-server/disconnected', params: null })
+    expect(state.error.value).toContain('disconnected')
+    gateway.getThreadDetail.mockResolvedValue(completedDetail)
+    notify({ method: 'app-server/reconnected', params: null })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.error.value).toBe('')
+    expect(state.selectedLiveOverlay.value?.errorText ?? '').toBe('')
+    notify({ method: 'error', params: { threadId: thread.id, error: { message: 'Execution failed' }, willRetry: false } })
+    await ready('backend-C')
+    expect(JSON.stringify(state.selectedLiveOverlay.value)).toContain('Execution failed')
+  })
+})
+
+
+it('restores running background threads after backend replacement and leaves idle histories lazy', async () => {
+  const state = await loadState()
+  notify({ method: 'ready', params: { backendInstanceId: 'A' } })
+  await vi.advanceTimersByTimeAsync(0)
+  turnStarted()
+  state.primeSelectedThread('idle-selected')
+  gateway.resumeThread.mockClear()
+  notify({ method: 'ready', params: { backendInstanceId: 'B' } })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(gateway.resumeThread.mock.calls.map(call => call[0])).toEqual(['idle-selected'])
+  expect(gateway.resumeThreadSubscription).toHaveBeenCalledExactlyOnceWith(thread.id)
+  expect(gateway.startThreadTurn).not.toHaveBeenCalled()
 })

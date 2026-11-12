@@ -1,3 +1,4 @@
+import { backendInstanceId } from './backendInstance'
 import { EventEmitter } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -50,7 +51,7 @@ it('preserves exact headers, ready, ordered envelopes and no replay without extr
     ['Content-Type', 'text/event-stream; charset=utf-8'], ['Cache-Control', 'no-cache, no-transform'],
     ['Connection', 'keep-alive'], ['X-Accel-Buffering', 'no'],
   ])
-  expect(s.write.mock.calls.map(call => [call[0]])).toEqual([['event: ready\ndata: {"ok":true}\n\n']])
+  expect(s.write.mock.calls.map(call => [call[0]])).toEqual([[`event: ready\ndata: ${JSON.stringify({ ok: true, backendInstanceId })}\n\n`]])
   const values = [{ method: 'first', params: { nested: [1, null], text: 'line\nbreak' } }, { method: 'second', params: null }]
   for (const value of values) emit(value)
   expect(s.write.mock.calls.slice(1).map(call => [call[0]])).toEqual(values.map(value => [`data: ${JSON.stringify({ ...value, atIso: '2026-11-10T00:00:00.000Z' })}\n\n`]))

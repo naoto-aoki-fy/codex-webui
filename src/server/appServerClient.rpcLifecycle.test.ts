@@ -168,3 +168,29 @@ it('coalesces automatic reconnects and never sends an old approval to a reused w
     expect(wire.sockets).toHaveLength(2)
   } finally { client.dispose(); random.mockRestore() }
 })
+
+it.each(['tunnel', 'server restart'])('restores one subscription per thread after %s without replaying in-flight turns', async () => {
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  try {
+    const resume = client.rpc('thread/resume', { threadId: 'running' })
+    await flush()
+    const old = wire.sockets[0]
+    old.reply(old.frames.find((f: any) => f.method === 'thread/resume').id, { thread: { id: 'running' } })
+    await resume
+    const turn = client.rpc('turn/start', { threadId: 'running', input: [] })
+    const rejected = expect(turn).rejects.toThrow('disconnected')
+    await flush()
+    old.terminate()
+    await rejected
+    await Promise.all([client.reconnect(), client.reconnect()])
+    await flush()
+    const fresh = wire.sockets[1]
+    const frames = fresh.frames.filter((f: any) => f.method === 'thread/resume')
+    expect(frames).toHaveLength(1)
+    expect(frames[0].params).toEqual({ threadId: 'running', excludeTurns: true })
+    expect(fresh.frames.some((f: any) => f.method === 'turn/start')).toBe(false)
+    fresh.reply(frames[0].id, { thread: { id: 'running' } })
+    await flush()
+    expect(wire.sockets).toHaveLength(2)
+  } finally { client.dispose() }
+})

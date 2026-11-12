@@ -555,3 +555,15 @@ it('pins before the first native row and unpins without writing local state', as
     ])
   } finally { vi.unstubAllGlobals() }
 })
+
+it('restores a background subscription without asking for turns or normalizing history', async () => {
+  const { resumeThreadSubscription } = await import('./codexGateway')
+  const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ result: { thread: { id: 'background' } } })))
+  vi.stubGlobal('fetch', fetch)
+  try {
+    await expect(resumeThreadSubscription('background')).resolves.toBeUndefined()
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+      method: 'thread/resume', params: { threadId: 'background', excludeTurns: true },
+    })
+  } finally { vi.unstubAllGlobals() }
+})

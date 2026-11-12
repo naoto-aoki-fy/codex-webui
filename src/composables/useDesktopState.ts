@@ -101,6 +101,7 @@ import {
   revertThreadHistory,
   validateThreadRevert,
   invalidateResumeThread,
+  resumeThreadSubscription,
   getThreadGroupsPage,
   getWorkspaceRootsState,
   getWorkspaceRootsStateGeneration,
@@ -461,6 +462,8 @@ export function useDesktopState() {
   const loadedMessagesByThreadId = ref<Record<string, boolean>>({})
   const hasMoreOlderMessagesByThreadId = ref<Record<string, boolean>>({})
   const loadingOlderMessagesByThreadId = ref<Record<string, boolean>>({})
+  let backendInstanceId = ''
+  const connectionErrorMessage = 'App-server disconnected. Reconnect and inspect the thread before resending a turn.'
   const resumedThreadById = ref<Record<string, boolean>>({})
   const turnIndexByTurnIdByThreadId = ref<Record<string, Record<string, number>>>({})
   const turnSummaryByThreadId = ref<Record<string, TurnSummaryState>>({})
@@ -1368,6 +1371,8 @@ export function useDesktopState() {
     }
 
     const transient = options.transient === true
+    // Transport/read failures must not hide an execution failure.
+    if (transient && previous && !previous.transient) return
     if (previous?.message === normalizedMessage && previous.transient === transient) return
 
     turnErrorByThreadId.value = {
@@ -1380,19 +1385,6 @@ export function useDesktopState() {
     if (!threadId) return
     if (!turnErrorByThreadId.value[threadId]?.transient) return
     setTurnErrorForThread(threadId, null)
-  }
-
-  function clearAllTransientTurnErrors(): void {
-    const transientThreadIds = Object.entries(turnErrorByThreadId.value)
-      .filter(([, state]) => state?.transient)
-      .map(([threadId]) => threadId)
-    if (transientThreadIds.length === 0) return
-
-    let nextState = turnErrorByThreadId.value
-    for (const threadId of transientThreadIds) {
-      nextState = omitKey(nextState, threadId)
-    }
-    turnErrorByThreadId.value = nextState
   }
 
   function currentThreadVersion(threadId: string): string {
@@ -1980,12 +1972,12 @@ export function useDesktopState() {
       return
     }
     if (notification.method === 'app-server/disconnected') {
-      const message = 'App-server disconnected. Reconnect and inspect the thread before resending a turn.'
+      const message = connectionErrorMessage
       pendingServerRequestsByThreadId.value = {}
       for (const threadId of Object.keys(inProgressById.value)) {
         setThreadInProgress(threadId, false)
         setTurnActivityForThread(threadId, null)
-        setTurnErrorForThread(threadId, message)
+        setTurnErrorForThread(threadId, message, { transient: true })
         clearPendingTurnRequest(threadId)
       }
       activeTurnIdByThreadId.value = {}
@@ -2617,7 +2609,7 @@ export function useDesktopState() {
           inProgressById.value[threadId] !== true
         )
 
-      if (canReuseLoadedMessages) {
+      if (canReuseLoadedMessages && resumedThreadById.value[threadId] === true) {
         markThreadAsRead(threadId)
         return
       }
@@ -2690,6 +2682,7 @@ export function useDesktopState() {
       }
       lastMessageLoadAtByThreadId.set(threadId, Date.now())
       lastMessageLoadFailureAtByThreadId.delete(threadId)
+      if (error.value === connectionErrorMessage) error.value = ''
       if (!inProgress) reconnectingThreadHistory.delete(threadId)
 
       if (version) {
@@ -3608,13 +3601,32 @@ export function useDesktopState() {
     lastMessageLoadFailureAtByThreadId.clear()
   }
 
-  async function recoverBridgeState(reconnected: boolean): Promise<void> {
+  async function recoverBridgeState(reconnected: boolean, backendReplaced = false): Promise<void> {
     // Approval/sidebar requests must not hold the conversation recovery hostage.
     void loadPendingServerRequestsFromBridge()
     if (reconnected) {
       invalidateDisconnectedReads()
       const threadId = selectedThreadId.value
+      const activeThreadIds = backendReplaced
+        ? Object.keys(inProgressById.value).filter(id => inProgressById.value[id] && id !== threadId)
+        : []
+      const recoveringBackend = backendInstanceId
+      // Restore background delivery sequentially without fetching its histories.
+      const restoreActive = async () => {
+        for (const id of activeThreadIds) {
+          if (recoveringBackend !== backendInstanceId) return
+          try {
+            await resumeThreadSubscription(id)
+            if (recoveringBackend === backendInstanceId) {
+              resumedThreadById.value = { ...resumedThreadById.value, [id]: true }
+            }
+          } catch {
+            // Leave the flag unset so opening this thread can retry the resume.
+          }
+        }
+      }
       await Promise.allSettled([
+        restoreActive(),
         loadThreads({ force: true }),
         ...(threadId ? [loadMessages(threadId, { silent: true, force: true })] : []),
       ])
@@ -3642,10 +3654,20 @@ export function useDesktopState() {
     stopNotificationStream = subscribeCodexNotifications((notification) => {
       if (generation !== lifecycleGeneration) return
       if (notification.method === 'ready') {
-        const reconnected = receivedReady || asRecord(notification.params)?.reconnected === true
+        const instanceId = readString(asRecord(notification.params)?.backendInstanceId)
+        // Hydration can precede the first ready. An unknown instance must also
+        // establish subscriptions, rather than trusting browser-only resume flags.
+        const backendReplaced = Boolean(instanceId && instanceId !== backendInstanceId)
+        if (backendReplaced) {
+          backendInstanceId = instanceId
+          for (const id of new Set([
+            ...Object.keys(resumedThreadById.value), ...loadMessagePromiseByThreadId.keys(), selectedThreadId.value,
+          ])) if (id) invalidateResumeThread(id)
+          resumedThreadById.value = {}
+        }
+        const reconnected = backendReplaced || receivedReady || asRecord(notification.params)?.reconnected === true
         receivedReady = true
-        clearAllTransientTurnErrors()
-        void recoverBridgeState(reconnected)
+        void recoverBridgeState(reconnected, backendReplaced)
         return
       }
       applyRealtimeUpdates(notification)
