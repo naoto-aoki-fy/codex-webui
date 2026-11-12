@@ -9,7 +9,15 @@
       No messages in this thread yet.
     </p>
 
-    <ul v-else ref="conversationListRef" class="conversation-list" @scroll="onConversationScroll">
+    <ul
+      v-else
+      ref="conversationListRef"
+      class="conversation-list"
+      @scroll="onConversationScroll"
+      @wheel.passive="resetMessageNavigation"
+      @pointerdown="resetMessageNavigation"
+      @touchstart.passive="resetMessageNavigation"
+    >
       <li v-if="hasMoreAbove" class="conversation-load-more">
         <button
           type="button"
@@ -24,6 +32,8 @@
       <li
         v-if="!hiddenGroupedCommandIds.has(message.id) && !hiddenFileChangeMessageIds.has(message.id)"
         class="conversation-item"
+        :data-message-id="message.id"
+        :data-navigation-message="(message.role === 'user' || message.role === 'assistant') && !isCommandMessage(message) && message.messageType !== 'fileChange'"
         :data-role="message.role"
         :data-message-type="message.messageType || ''"
       >
@@ -3035,6 +3045,62 @@ function renderMarkdownBlocksAsHtml(text: string): string {
   ).html
 }
 
+// Retain the selected row when the last message cannot align with the viewport top.
+let navigationMessageId: string | null = null
+let navigationScrollTop = -1
+let messageNavigationPending = false
+
+function resetMessageNavigation(): void {
+  navigationMessageId = null
+}
+
+async function navigateMessage(direction: -1 | 1): Promise<void> {
+  const container = conversationListRef.value
+  if (!container || messageNavigationPending) return
+  messageNavigationPending = true
+  const generation = threadGeneration
+  autoFollowOutput.value = false
+  if (bottomLockFrame) cancelAnimationFrame(bottomLockFrame)
+  bottomLockFrame = 0
+  try {
+    const findTarget = (): HTMLElement | undefined => {
+      const rows = Array.from(container.querySelectorAll<HTMLElement>(':scope > li[data-navigation-message="true"]'))
+      const current = Math.abs(container.scrollTop - navigationScrollTop) <= 2
+        ? rows.findIndex((row) => row.dataset.messageId === navigationMessageId)
+        : -1
+      if (current >= 0) return rows[current + direction]
+      const top = container.getBoundingClientRect().top + container.clientTop
+      return direction === -1
+        ? rows.reverse().find((row) => row.getBoundingClientRect().top < top - 2)
+        : rows.find((row) => row.getBoundingClientRect().top > top + 2)
+    }
+    let target = findTarget()
+    if (!target && direction === -1 && hasMoreAbove.value) {
+      await loadMoreAbove()
+      if (!isCurrentThreadGeneration(generation)) return
+      target = findTarget()
+    }
+    if (!target) return
+    navigationMessageId = target.dataset.messageId ?? null
+    container.scrollTop += target.getBoundingClientRect().top
+      - container.getBoundingClientRect().top - container.clientTop
+    navigationScrollTop = container.scrollTop
+  } finally {
+    messageNavigationPending = false
+  }
+}
+
+function onMessageNavigationKeydown(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.isComposing || !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+  if (!conversationListRef.value || props.isLoading) return
+  // Leave modal controls to their own keyboard handlers.
+  const target = event.target
+  if (target instanceof Element && target.closest('[role="dialog"], [aria-modal="true"]')) return
+  event.preventDefault()
+  void navigateMessage(event.key === 'ArrowUp' ? -1 : 1)
+}
+
 function scrollToBottom(): void {
   const container = conversationListRef.value
   const anchor = bottomAnchorRef.value
@@ -3095,6 +3161,7 @@ function scheduleBottomLock(frames = 6): void {
 }
 
 function jumpToLatest(): void {
+  resetMessageNavigation()
   autoFollowOutput.value = true
   enforceBottomState()
   scheduleBottomLock(4)
@@ -3321,6 +3388,7 @@ watch(
   () => props.activeThreadId,
   async () => {
     autoFollowOutput.value = true
+    resetMessageNavigation()
     // Apply immediately for cached threads where isLoading never toggles.
     renderWindowStart.value = Math.max(0, props.messages.length - RENDER_WINDOW_SIZE)
     await scheduleConversationScroll()
@@ -3363,6 +3431,7 @@ function closeImageModal(): void {
 }
 
 onMounted(() => {
+  window.addEventListener('keydown', onMessageNavigationKeydown)
   window.addEventListener('pointerdown', onWindowPointerDownForFileLinkContextMenu)
   window.addEventListener('blur', onWindowBlurForFileLinkContextMenu)
   window.addEventListener('keydown', onWindowKeydownForFileLinkContextMenu)
@@ -3392,6 +3461,7 @@ onBeforeUnmount(() => {
     clearTimeout(copiedPlanResetTimer)
     copiedPlanResetTimer = null
   }
+  window.removeEventListener('keydown', onMessageNavigationKeydown)
   window.removeEventListener('pointerdown', onWindowPointerDownForFileLinkContextMenu)
   window.removeEventListener('blur', onWindowBlurForFileLinkContextMenu)
   window.removeEventListener('keydown', onWindowKeydownForFileLinkContextMenu)
