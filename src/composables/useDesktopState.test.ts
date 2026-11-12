@@ -22,10 +22,8 @@ const gatewayMocks = vi.hoisted(() => ({
   getSkillsList: vi.fn(),
   getThreadDetail: vi.fn(),
   getThreadGroupsPage: vi.fn(),
-  getThreadTitleCache: vi.fn(),
   getWorkspaceRootsState: vi.fn(),
   interruptThreadTurn: vi.fn(),
-  persistThreadTitle: vi.fn(),
   renameThread: vi.fn(),
   replyToServerRequest: vi.fn(),
   resumeThread: vi.fn(),
@@ -80,7 +78,6 @@ function installTestWindow(initialStorage: Record<string, string> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  gatewayMocks.getThreadTitleCache.mockResolvedValue({ titles: {} })
   gatewayMocks.getWorkspaceRootsState.mockRejectedValue(new Error('no workspace roots state'))
 })
 
@@ -428,28 +425,21 @@ describe('startup request deduplication', () => {
     await state.renameThreadById('thread-1', '  Manual title  ')
 
     expect(gatewayMocks.renameThread).toHaveBeenCalledWith('thread-1', 'Manual title')
-    expect(gatewayMocks.persistThreadTitle).toHaveBeenCalledWith('thread-1', 'Manual title')
     expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('Manual title')
   })
 
-  it('reloads cached thread titles on forced thread refresh', async () => {
+  it('uses server names after a forced refresh', async () => {
     installTestWindow()
     gatewayMocks.getThreadGroupsPage.mockResolvedValue({
-      groups: [{ projectName: 'Project', threads: [thread('thread-1', '/tmp/project')] }],
-      nextCursor: null,
+      groups: [{ projectName: 'Project', threads: [thread('thread-1', '/tmp/project')] }], nextCursor: null,
     })
-    gatewayMocks.getThreadTitleCache
-      .mockResolvedValueOnce({ titles: {} })
-      .mockResolvedValueOnce({ titles: { 'thread-1': 'Imported title' } })
-
     const state = useDesktopState()
     await state.refreshAll({ includeSelectedThreadMessages: false })
-    expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('thread-1')
-
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({
+      groups: [{ projectName: 'Project', threads: [{ ...thread('thread-1', '/tmp/project'), title: 'Native name' }] }], nextCursor: null,
+    })
     await state.refreshAll({ includeSelectedThreadMessages: false, forceThreadRefresh: true })
-
-    expect(gatewayMocks.getThreadTitleCache).toHaveBeenCalledTimes(2)
-    expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('Imported title')
+    expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('Native name')
   })
 
   it('reuses a just-loaded thread list during startup refresh bursts', async () => {
@@ -575,7 +565,6 @@ describe('startup request deduplication', () => {
       await Promise.resolve()
 
       expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('Updated title')
-      expect(gatewayMocks.persistThreadTitle).toHaveBeenCalledWith('thread-1', 'Updated title')
       expect(gatewayMocks.getThreadGroupsPage.mock.calls.length).toBeGreaterThan(callsBeforeNotification)
     } finally {
       nowSpy.mockRestore()

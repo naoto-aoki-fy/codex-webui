@@ -1116,31 +1116,7 @@ function getErrorMessageFromPayload(payload: unknown, fallback: string): string 
   return typeof error === 'string' && error.trim().length > 0 ? error : fallback
 }
 
-export type ThreadTitleCache = { titles: Record<string, string>; order: string[] }
 export type ThreadPinnedState = { threadIds: string[] }
-
-export async function getThreadTitleCache(): Promise<ThreadTitleCache> {
-  try {
-    const response = await fetch('/codex-api/thread-titles')
-    if (!response.ok) return { titles: {}, order: [] }
-    const envelope = (await response.json()) as { data?: ThreadTitleCache }
-    return envelope.data ?? { titles: {}, order: [] }
-  } catch {
-    return { titles: {}, order: [] }
-  }
-}
-
-export async function persistThreadTitle(id: string, title: string): Promise<void> {
-  try {
-    await fetch('/codex-api/thread-titles', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, title }),
-    })
-  } catch {
-    // Best-effort persist
-  }
-}
 
 export async function getPinnedThreadState(): Promise<ThreadPinnedState> {
   try {
@@ -1153,16 +1129,11 @@ export async function getPinnedThreadState(): Promise<ThreadPinnedState> {
   }
 }
 
-export async function persistPinnedThreadIds(threadIds: string[]): Promise<void> {
-  try {
-    await fetch('/codex-api/thread-pins', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadIds }),
-    })
-  } catch {
-    // Best-effort persist
-  }
+export async function setThreadPinned(threadId: string, pinned: boolean): Promise<void> {
+  await callRpc('thread/section/move', {
+    threadId,
+    sectionId: pinned ? '01984de2-8f74-7c91-a3b2-5c5e937cf318' : null,
+  })
 }
 
 export async function getSkillsList(cwds?: string[]): Promise<SkillInfo[]> {

@@ -373,15 +373,7 @@ function getCodexHomeDir(): string {
   return codexHome && codexHome.length > 0 ? codexHome : join(homedir(), '.codex')
 }
 
-const {
-  normalizePinnedThreadIds,
-  updateThreadTitleCache,
-  removeFromThreadTitleCache,
-  mutateThreadTitleCache,
-  readPinnedThreadIds,
-  writePinnedThreadIds,
-  readMergedThreadTitleCache,
-} = createThreadPresentationStore(() => null, normalizeStringArray)
+const { readPinnedThreadIds } = createThreadPresentationStore()
 
 function bufferIndexOf(buf: Buffer, needle: Buffer, start = 0): number {
   for (let i = start; i <= buf.length - needle.length; i++) {
@@ -872,38 +864,9 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
-      if (req.method === 'GET' && url.pathname === '/codex-api/thread-titles') {
-        const cache = await readMergedThreadTitleCache()
-        setJson(res, 200, { data: cache })
-        return
-      }
-
       if (req.method === 'GET' && url.pathname === '/codex-api/thread-pins') {
-        const threadIds = await readPinnedThreadIds()
+        const threadIds = await readPinnedThreadIds((method, params) => appServer.rpc(method, params))
         setJson(res, 200, { data: { threadIds } })
-        return
-      }
-
-      if (req.method === 'PUT' && url.pathname === '/codex-api/thread-titles') {
-        const payload = asRecord(await readJsonBody(req))
-        const id = typeof payload?.id === 'string' ? payload.id : ''
-        const title = typeof payload?.title === 'string' ? payload.title : ''
-        if (!id) {
-          setJson(res, 400, { error: 'Missing id' })
-          return
-        }
-        await mutateThreadTitleCache((cache) => title
-          ? updateThreadTitleCache(cache, id, title)
-          : removeFromThreadTitleCache(cache, id))
-        setJson(res, 200, { ok: true })
-        return
-      }
-
-      if (req.method === 'PUT' && url.pathname === '/codex-api/thread-pins') {
-        const payload = asRecord(await readJsonBody(req))
-        const threadIds = normalizePinnedThreadIds(payload?.threadIds)
-        await writePinnedThreadIds(threadIds)
-        setJson(res, 200, { ok: true })
         return
       }
 
