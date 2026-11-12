@@ -26,7 +26,7 @@ async function fixture(initialize = true, transport = 'tcp') {
     connections++
     socket.on('message', data => {
       const frame = JSON.parse(data.toString()); frames.push(frame)
-      if (frame.method === 'initialize' && initialize) socket.send(JSON.stringify({ id: frame.id, result: {} }))
+      if (frame.method === 'initialize' && initialize) socket.send(JSON.stringify({ id: frame.id, result: { userAgent: 'codex/0.167.2', codexHome: '/remote/codex', platformFamily: 'unix', platformOs: 'linux' } }))
       if (frame.method === 'thread/list') socket.send(JSON.stringify({ id: frame.id, result: { data: [] } }))
     })
   })
@@ -44,6 +44,7 @@ it.each(transports)('%s shares initialization, preserves frames, reconnects and 
   const client = new AppServerWebSocketClient(frame => received.push(frame), () => disconnected++, f.url)
   cleanup.push(() => client.dispose())
   await Promise.all([client.connect(), client.connect(), client.connect()])
+  expect(client.getInitializationMetadata()).toMatchObject({ codexHome: '/remote/codex', platformOs: 'linux' })
   client.send({ id: 22, method: 'thread/list', params: {} })
   const socket = [...f.server.clients][0]!
   socket.send(JSON.stringify({ method: 'turn/started', params: {} }))

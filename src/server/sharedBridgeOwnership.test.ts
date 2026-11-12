@@ -10,7 +10,7 @@ const previous = scope.__codexRemoteSharedBridge__
 afterEach(() => { scope.__codexRemoteSharedBridge__ = previous; vi.unstubAllEnvs() })
 function seed() {
   const client = new AppServerClient()
-  const runtime = { version: 'external-websocket-v1', appServer: client, methodCatalog: {} }
+  const runtime = { version: 'external-websocket-files-v2', appServer: client, methodCatalog: {} }
   scope.__codexRemoteSharedBridge__ = runtime
   return { client, runtime, dispose: vi.spyOn(client, 'dispose') }
 }

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, stat, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { inlineMediaDirectory } from './appAssets.js'
+import { join, basename } from 'node:path'
 
 export const THREAD_METHODS_WITH_TURNS = new Set(['thread/read', 'thread/resume', 'thread/fork'])
 
@@ -131,7 +131,7 @@ async function persistInlineDataUrlToLocalFile(dataUrl: string, baseName: string
 
   const hash = createHash('sha1').update(bytes).digest('hex')
   const ext = extensionFromMimeType(mimeType)
-  const mediaDir = join(tmpdir(), 'codex-web-inline-media')
+  const mediaDir = inlineMediaDirectory()
   await mkdir(mediaDir, { recursive: true })
   const fileName = `${baseName}-${hash}${ext}`
   const filePath = join(mediaDir, fileName)
@@ -144,7 +144,7 @@ async function persistInlineDataUrlToLocalFile(dataUrl: string, baseName: string
 }
 
 function toLocalImageProxyUrl(path: string): string {
-  return `/codex-local-image?path=${encodeURIComponent(path)}`
+  return `/codex-app-asset?id=${encodeURIComponent(basename(path))}`
 }
 
 const INLINE_IMAGE_FIELD_NAMES = new Set([

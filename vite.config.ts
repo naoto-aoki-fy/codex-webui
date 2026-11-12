@@ -121,7 +121,7 @@ export default defineConfig({
             attachBrowserNotificationTransport(httpServer, bridge.subscribeNotifications);
           }
         }
-        server.middlewares.use(createLocalFileMiddleware());
+        server.middlewares.use(createLocalFileMiddleware(bridge.files));
         server.middlewares.use(bridge);
         server.httpServer?.once("close", () => {
           bridge.dispose();

@@ -84,3 +84,19 @@ it.each(['disconnect', 'replacement'] as const)('keeps established unanswered ca
   } finally { client.dispose() }
 })
 
+
+it('retains connection metadata and structured RPC errors, and clears metadata on disconnect', async () => {
+  const client = new AppServerClient({ threadIndex: { call: (method, params, rpc) => rpc(method, params) }, metadataStore: { save: vi.fn() } })
+  try {
+    const call = client.rpc('fs/readFile', { path: '/remote/file' })
+    const rejected = expect(call).rejects.toMatchObject({ message: 'Permission denied', code: -32600, data: { path: '/remote/file' } })
+    await flush()
+    const socket = wire.sockets[0]!
+    expect(client.getInitializationMetadata()).toEqual({})
+    const frame = socket.frames.find((f: any) => f.method === 'fs/readFile')
+    socket.emit('message', Buffer.from(JSON.stringify({ id: frame.id, error: { message: 'Permission denied', code: -32600, data: { path: '/remote/file' } } })), false)
+    await rejected
+    socket.terminate()
+    expect(client.getInitializationMetadata()).toBeNull()
+  } finally { client.dispose() }
+})
