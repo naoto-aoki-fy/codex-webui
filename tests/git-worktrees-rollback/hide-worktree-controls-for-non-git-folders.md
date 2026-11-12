@@ -14,13 +14,13 @@ Composer runtime options and project menu worktree actions are hidden when the s
 3. Confirm the first message can still be sent as a normal local-folder chat.
 4. Select a Git-backed folder and confirm the runtime toggle appears again.
 5. Open the project action menu for a non-Git project and confirm `New worktree` is not shown.
-6. Open the project action menu for a Git-backed project and confirm `New worktree` is shown.
+6. Open the project action menu for a Git-backed project and confirm the removed permanent-worktree action is absent.
 7. Switch to dark theme and repeat steps 1, 2, 4, 5, and 6.
 
 #### Expected Results
 - Non-Git folders do not show `Local project` or `New worktree` runtime options.
 - Non-Git project menus do not show `New worktree`.
-- Git-backed folders continue to expose the runtime toggle and worktree action.
+- Git-backed folders continue to expose the runtime toggle for detached worktree creation.
 - The hidden/visible states are consistent and readable in both light and dark themes.
 
 #### Rollback/Cleanup

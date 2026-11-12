@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, rm, stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, isAbsolute, join, resolve } from 'node:path'
 import { runCommand, runCommandCapture } from './bridgeCommands.js'
 import { asRecord, getErrorMessage, setJson } from './bridgeHttpUtils.js'
 
@@ -72,34 +72,9 @@ export function createGitWorkspaceRoutes(context: GitWorkspaceRouteContext) {
     return targetPath
   }
 
-  function isMissingHeadError(error: unknown): boolean {
-    const message = getErrorMessage(error, '').toLowerCase()
-    return (
-      message.includes("not a valid object name: 'head'") ||
-      message.includes('not a valid object name: head') ||
-      message.includes('invalid reference: head')
-    )
-  }
-
   function isNotGitRepositoryError(error: unknown): boolean {
     const message = getErrorMessage(error, '').toLowerCase()
     return message.includes('not a git repository') || message.includes('fatal: not a git repository')
-  }
-
-  async function ensureRepoHasInitialCommit(repoRoot: string): Promise<void> {
-    const agentsPath = join(repoRoot, 'AGENTS.md')
-    try {
-      await stat(agentsPath)
-    } catch {
-      await writeFile(agentsPath, '', 'utf8')
-    }
-
-    await runCommand('git', ['add', 'AGENTS.md'], { cwd: repoRoot })
-    await runCommand(
-      'git',
-      ['-c', 'user.name=Codex', '-c', 'user.email=codex@local', 'commit', '-m', 'Initialize repository for worktree support'],
-      { cwd: repoRoot },
-    )
   }
 
   function normalizeBranchRefName(value: string): string {
@@ -110,49 +85,10 @@ export function createGitWorkspaceRoutes(context: GitWorkspaceRouteContext) {
     return trimmed
   }
 
-  function toPermanentWorktreeBranchNameDraft(worktreeName: string): string {
-    const sanitized = worktreeName
-      .trim()
-      .replace(/[^A-Za-z0-9._-]+/gu, '-')
-      .replace(/\.+/gu, '.')
-      .replace(/-+/gu, '-')
-      .replace(/^[.-]+|[.-]+$/gu, '')
-    return sanitized || 'worktree'
-  }
-
-  async function isValidGitBranchName(gitRoot: string, branchName: string): Promise<boolean> {
-    try {
-      await runCommand('git', ['check-ref-format', '--branch', branchName], { cwd: gitRoot })
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  async function doesLocalGitBranchExist(gitRoot: string, branchName: string): Promise<boolean> {
-    try {
-      await runCommand('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`], { cwd: gitRoot })
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  async function allocatePermanentWorktreeBranchName(gitRoot: string, worktreeName: string): Promise<string> {
-    const base = toPermanentWorktreeBranchNameDraft(worktreeName)
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      const candidate = attempt === 0 ? base : `${base}-${attempt + 1}`
-      if (!await isValidGitBranchName(gitRoot, candidate)) continue
-      if (!await doesLocalGitBranchExist(gitRoot, candidate)) return candidate
-    }
-    throw new Error('Failed to allocate a unique branch name for worktree')
-  }
-
   async function rollbackCreatedWorktree(
     gitRoot: string,
     worktreeCwd: string,
     cleanupDirectory?: string,
-    branchName?: string,
   ): Promise<void> {
     try {
       await runCommand('git', ['worktree', 'remove', '--force', worktreeCwd], { cwd: gitRoot })
@@ -164,9 +100,7 @@ export function createGitWorkspaceRoutes(context: GitWorkspaceRouteContext) {
       await rm(cleanupDirectory, { recursive: true, force: true }).catch(() => undefined)
     }
 
-    if (branchName) {
-      await runCommand('git', ['branch', '-D', branchName], { cwd: gitRoot }).catch(() => undefined)
-    }
+
   }
 
   async function handleWorktreeRoutes(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
@@ -192,14 +126,9 @@ export function createGitWorkspaceRoutes(context: GitWorkspaceRouteContext) {
       }
 
       try {
-        let gitRoot = ''
-        try {
-          gitRoot = await runCommandCapture('git', ['rev-parse', '--show-toplevel'], { cwd: sourceCwd })
-        } catch (error) {
-          if (!isNotGitRepositoryError(error)) throw error
-          await runCommand('git', ['init'], { cwd: sourceCwd })
-          gitRoot = await runCommandCapture('git', ['rev-parse', '--show-toplevel'], { cwd: sourceCwd })
-        }
+        const gitRoot = await runCommandCapture('git', ['rev-parse', '--show-toplevel'], { cwd: sourceCwd })
+        // Validate before allocating any directories. Never initialize or commit for the user.
+        await runCommandCapture('git', ['rev-parse', '--verify', baseBranch || 'HEAD'], { cwd: gitRoot })
         const repoName = basename(gitRoot) || 'repo'
         const worktreesRoot = join(getCodexHomeDir(), 'worktrees')
         await mkdir(worktreesRoot, { recursive: true })
@@ -231,9 +160,8 @@ export function createGitWorkspaceRoutes(context: GitWorkspaceRouteContext) {
         try {
           await runCommand('git', ['worktree', 'add', '--detach', worktreeCwd, startPoint], { cwd: gitRoot })
         } catch (error) {
-          if (!isMissingHeadError(error)) throw error
-          await ensureRepoHasInitialCommit(gitRoot)
-          await runCommand('git', ['worktree', 'add', '--detach', worktreeCwd, startPoint], { cwd: gitRoot })
+          await rm(worktreeParent, { recursive: true, force: true })
+          throw error
         }
         try {
           await persistWorkspaceRoot(worktreeCwd)
@@ -246,81 +174,6 @@ export function createGitWorkspaceRoutes(context: GitWorkspaceRouteContext) {
           data: {
             cwd: worktreeCwd,
             branch: null,
-            gitRoot,
-          },
-        })
-      } catch (error) {
-        setJson(res, 500, { error: getErrorMessage(error, 'Failed to create worktree') })
-      }
-      return true
-    }
-
-    if (req.method === 'POST' && url.pathname === '/codex-api/worktree/create-permanent') {
-      const payload = asRecord(await readJsonBody(req))
-      const rawSourceCwd = typeof payload?.sourceCwd === 'string' ? payload.sourceCwd.trim() : ''
-      const rawWorktreeName = typeof payload?.worktreeName === 'string' ? payload.worktreeName.trim() : ''
-      if (!rawSourceCwd) {
-        setJson(res, 400, { error: 'Missing sourceCwd' })
-        return true
-      }
-      if (!rawWorktreeName) {
-        setJson(res, 400, { error: 'Missing worktreeName' })
-        return true
-      }
-      if (rawWorktreeName.includes('/') || rawWorktreeName.includes('\\') || rawWorktreeName === '.' || rawWorktreeName === '..') {
-        setJson(res, 400, { error: 'Worktree name must be a single folder name' })
-        return true
-      }
-
-      const sourceCwd = isAbsolute(rawSourceCwd) ? rawSourceCwd : resolve(rawSourceCwd)
-      try {
-        const sourceInfo = await stat(sourceCwd)
-        if (!sourceInfo.isDirectory()) {
-          setJson(res, 400, { error: 'sourceCwd is not a directory' })
-          return true
-        }
-      } catch {
-        setJson(res, 404, { error: 'sourceCwd does not exist' })
-        return true
-      }
-
-      try {
-        let gitRoot = ''
-        try {
-          gitRoot = await runCommandCapture('git', ['rev-parse', '--show-toplevel'], { cwd: sourceCwd })
-        } catch (error) {
-          if (!isNotGitRepositoryError(error)) throw error
-          await runCommand('git', ['init'], { cwd: sourceCwd })
-          gitRoot = await runCommandCapture('git', ['rev-parse', '--show-toplevel'], { cwd: sourceCwd })
-        }
-        const worktreeCwd = join(dirname(gitRoot), rawWorktreeName)
-        try {
-          await stat(worktreeCwd)
-          setJson(res, 409, { error: 'Worktree folder already exists' })
-          return true
-        } catch {
-          // Expected for a new worktree path.
-        }
-
-        const branchName = await allocatePermanentWorktreeBranchName(gitRoot, rawWorktreeName)
-        try {
-          await runCommand('git', ['worktree', 'add', '-b', branchName, worktreeCwd, 'HEAD'], { cwd: gitRoot })
-        } catch (error) {
-          if (!isMissingHeadError(error)) throw error
-          await ensureRepoHasInitialCommit(gitRoot)
-          await runCommand('git', ['worktree', 'add', '-b', branchName, worktreeCwd, 'HEAD'], { cwd: gitRoot })
-        }
-        try {
-          await persistWorkspaceRoot(worktreeCwd)
-        } catch (error) {
-          await rollbackCreatedWorktree(gitRoot, worktreeCwd, undefined, branchName)
-          throw error
-        }
-
-        setJson(res, 200, {
-          data: {
-            cwd: worktreeCwd,
-            branch: branchName,
             gitRoot,
           },
         })
