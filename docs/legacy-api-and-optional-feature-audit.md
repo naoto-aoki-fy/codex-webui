@@ -1,3 +1,5 @@
+> Historical audit: Telegram integration has since been removed. References below describe the earlier implementation, not current behavior.
+
 # Legacy API and Optional Feature Audit
 
 This began as a static repository audit; endpoint status below reflects the subsequent authorized fallback, live-state and stream-events retirements. Repository searches do not establish whether independently maintained external clients use an endpoint, and production traffic was not measured.

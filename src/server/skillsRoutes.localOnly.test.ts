@@ -37,7 +37,7 @@ it.each(['file', 'symlink', 'missing'].flatMap((kind) => [false, true].map((auth
   const rpc = vi.fn()
   shared.__codexRemoteSharedBridge__ = {
     version: 'external-websocket-v1', appServer: { rpc },
-    telegramBridge: {},  methodCatalog: {},
+    methodCatalog: {},
   }
   createCodexBridgeMiddleware()
   createCodexBridgeMiddleware()

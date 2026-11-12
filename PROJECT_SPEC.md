@@ -45,16 +45,15 @@ and bundled method metadata do not guarantee UI support or live server capabilit
 | Implemented | Streaming chat, interrupt, immediate steering during active turns, approval requests, plans, token usage, command output and file-change/diff presentation |
 | Implemented | Official Codex model catalog, per-context model/reasoning choices and collaboration modes; effort choices follow model capabilities |
 | Implemented | Project creation/clone, worktrees, file attachments/search, installed skills and composer prompts, MCP status/authentication |
-| Implemented | External account status/quotas, optional web password, optional Telegram completion alerts, responsive light/dark UI |
+| Implemented | External account status/quotas, optional web password, responsive light/dark UI |
 | Removed | OpenRouter/Zen/custom provider proxies, local Codex process management and automatic authentication |
-| Removed | Automation management, deferred prompt queue, built-in tunnels, Open Terminal action, ZIP import/export, external skill catalog/install UI, Telegram conversation control |
+| Removed | Automation management, deferred prompt queue, built-in tunnels, Open Terminal action, ZIP import/export, external skill catalog/install UI, Telegram integration |
 | Not surfaced | Dedicated code-review workflow (`review/start`); generic RPC and protocol definitions remain |
 | Unsupported deployment | Split-host filesystem operation based solely on an external app-server URL |
 
 The Skills route manages already installed skills; installation is external.
 See [installed skills](docs/installed-skills.md). Removed UI does not imply removal
 of compatibility data, generic RPC methods or generated protocol schemas.
-Telegram sends completion notifications only; see [usage](docs/usage.md#telegram-completion-notifications-optional).
 
 ## History, events and persistence
 

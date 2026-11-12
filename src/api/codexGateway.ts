@@ -22,7 +22,6 @@ import {
 export { reasoningOptions, resolveReasoningEffort, type ReasoningModel } from './modelCapabilities'
 import { pickCodexRateLimitSnapshot } from './normalizers/rateLimits'
 export { pickCodexRateLimitSnapshot } from './normalizers/rateLimits'
-import { normalizeTelegramCompletionConfig, type TelegramCompletionConfig } from '../telegramCompletionConfig'
 import { buildTurnInput, type FileAttachmentParam } from './turnInput'
 export type { FileAttachmentParam } from './turnInput'
 import type { WorkspaceRootsOperation } from '../types/workspaceRoots'
@@ -120,18 +119,6 @@ export type GitRepositoryStatus = {
 export type ThreadSearchResult = {
   threadIds: string[]
   indexedThreadCount: number
-}
-
-export type TelegramStatus = {
-  notification?: { lastSuccessAt?: number; lastFailureAt?: number; lastError?: string; lastTestAt?: number; lastTestResult?: 'success' | 'failure'; lastTestError?: string; pendingCount: number; retryingCount: number }
-  configured: boolean
-  active: boolean
-  lastError: string
-}
-
-export type TelegramConfig = {
-  completionNotifications: TelegramCompletionConfig
-  botToken: string
 }
 
 export type LocalDirectoryEntry = {
@@ -1274,75 +1261,6 @@ export async function searchThreads(
     throw new Error(payload.error || 'Failed to search threads')
   }
   return payload.data ?? { threadIds: [], indexedThreadCount: 0 }
-}
-
-export async function configureTelegramBot(
-  botToken: string,
-  completionNotifications?: TelegramCompletionConfig,
-): Promise<void> {
-  const response = await fetch('/codex-api/telegram/configure-bot', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      botToken,
-      completionNotifications,
-    }),
-  })
-  const payload = await response.json()
-  if (!response.ok) {
-    const message = getErrorMessageFromPayload(payload, 'Failed to connect Telegram bot')
-    throw new Error(message)
-  }
-}
-
-export async function getTelegramConfig(): Promise<TelegramConfig> {
-  const response = await fetch('/codex-api/telegram/config')
-  const payload = await response.json()
-  if (!response.ok) {
-    const message = getErrorMessageFromPayload(payload, 'Failed to load Telegram configuration')
-    throw new Error(message)
-  }
-  const record =
-    payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? (payload as Record<string, unknown>)
-      : {}
-  const data =
-    record.data && typeof record.data === 'object' && !Array.isArray(record.data)
-      ? (record.data as Record<string, unknown>)
-      : {}
-  return {
-    botToken: typeof data.botToken === 'string' ? data.botToken : '',
-    completionNotifications: normalizeTelegramCompletionConfig(data.completionNotifications),
-  }
-}
-
-export async function sendTelegramTestNotification(): Promise<void> {
-  const response = await fetch('/codex-api/telegram/test-notification', { method: 'POST' })
-  const payload = await response.json()
-  if (!response.ok) throw new Error(getErrorMessageFromPayload(payload, 'Test notification failed'))
-}
-
-export async function getTelegramStatus(): Promise<TelegramStatus> {
-  const response = await fetch('/codex-api/telegram/status')
-  const payload = await response.json()
-  if (!response.ok) {
-    const message = getErrorMessageFromPayload(payload, 'Failed to load Telegram status')
-    throw new Error(message)
-  }
-  const record =
-    payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? (payload as Record<string, unknown>)
-      : {}
-  const data =
-    record.data && typeof record.data === 'object' && !Array.isArray(record.data)
-      ? (record.data as Record<string, unknown>)
-      : {}
-  return {
-    configured: data.configured === true,
-    active: data.active === true,
-    lastError: typeof data.lastError === 'string' ? data.lastError : '',
-    notification: data.notification && typeof data.notification === 'object' ? data.notification as TelegramStatus['notification'] : undefined,
-  }
 }
 
 function getErrorMessageFromPayload(payload: unknown, fallback: string): string {

@@ -1,3 +1,5 @@
+> Historical audit: Telegram integration has since been removed. References below describe the earlier implementation, not current behavior.
+
 # Phase 9-F: Final integration and correctness audit
 
 ## Scope and repository state

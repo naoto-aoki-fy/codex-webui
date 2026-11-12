@@ -195,7 +195,7 @@ Open two mocked SSE connections across two middleware instances plus a browser
 WebSocket subscription (covered by the focused suite). Expect one shared runtime,
 independent subscriptions, and closure of one connection to leave the others live.
 Dispose the final middleware owner while SSE is active: expect the bridge to
-stop Telegram, dispose the app-server, and delete its own shared registration.
+dispose the app-server, and delete its own shared registration.
 Disposing either owner ends all of its SSE responses, removes request listeners,
 clears heartbeats, and unsubscribes exactly once. Repeat disposal and emit late
 close/abort events: expect no further cleanup. Close or abort one stream normally

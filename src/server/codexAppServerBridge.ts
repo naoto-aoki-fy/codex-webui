@@ -19,7 +19,7 @@ import { createThreadSessionEnrichment } from './threadSessionEnrichment.js'
 export { mergeSessionSkillInputsIntoTurns } from './threadSessionEnrichment.js'
 import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rename, rm, mkdir, stat, lstat } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, mkdir, stat, lstat } from 'node:fs/promises'
 import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
@@ -31,8 +31,6 @@ import { handleAccountRoutes } from './accountRoutes.js'
 import { CodexCredentialError, readCodexCredentialStore, readPublicAuthStatus } from './codexCredentials.js'
 import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
-import { TelegramNotificationService } from './telegramNotificationService.js'
-import { normalizeTelegramCompletionConfig, type TelegramCompletionConfig } from '../telegramCompletionConfig.js'
 import { TurnGenerationMetadataStore } from './turnGenerationMetadata.js'
 import type { WorkspaceRootsOperation } from '../types/workspaceRoots.js'
 import { isAbsoluteLikePath } from '../pathUtils.js'
@@ -821,15 +819,6 @@ function getCodexHomeDir(): string {
   return codexHome && codexHome.length > 0 ? codexHome : join(homedir(), '.codex')
 }
 
-function getTelegramBridgeConfigPath(): string {
-  return join(getCodexHomeDir(), 'telegram-bridge.json')
-}
-
-type TelegramBridgeConfigState = {
-  completionNotifications: TelegramCompletionConfig
-  botToken: string
-}
-
 const {
   normalizePinnedThreadIds,
   updateThreadTitleCache,
@@ -839,53 +828,6 @@ const {
   writePinnedThreadIds,
   readMergedThreadTitleCache,
 } = createThreadPresentationStore(() => join(getCodexHomeDir(), 'session_index.jsonl'), normalizeStringArray)
-
-function normalizeTelegramBridgeConfig(value: unknown): TelegramBridgeConfigState {
-  const record = asRecord(value)
-  if (!record) return { botToken: '', completionNotifications: normalizeTelegramCompletionConfig(undefined) }
-  const botToken = typeof record.botToken === 'string' ? record.botToken.trim() : ''
-  return { botToken, completionNotifications: normalizeTelegramCompletionConfig(record.completionNotifications) }
-}
-
-async function readTelegramBridgeConfig(): Promise<TelegramBridgeConfigState> {
-  const telegramConfigPath = getTelegramBridgeConfigPath()
-  try {
-    const raw = await readFile(telegramConfigPath, 'utf8')
-    const payload = asRecord(JSON.parse(raw)) ?? {}
-    return normalizeTelegramBridgeConfig(payload)
-  } catch {
-    return { botToken: '', completionNotifications: normalizeTelegramCompletionConfig(undefined) }
-  }
-}
-
-async function writeTelegramBridgeConfig(nextState: TelegramBridgeConfigState): Promise<void> {
-  const normalized = normalizeTelegramBridgeConfig(nextState)
-  const telegramConfigPath = getTelegramBridgeConfigPath()
-  await mkdir(dirname(telegramConfigPath), { recursive: true })
-  // Preserve legacy fields on disk; they are no longer read or used by the service.
-  let previous = {}
-  try { previous = JSON.parse(await readFile(telegramConfigPath, 'utf8')) } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
-  await writeFile(`${telegramConfigPath}.tmp`, JSON.stringify({
-    ...previous,
-    botToken: normalized.botToken,
-    completionNotifications: normalized.completionNotifications,
-  }), { encoding: 'utf8', mode: 0o600 })
-  await rename(`${telegramConfigPath}.tmp`, telegramConfigPath)
-}
-
-let telegramBridgeConfigMutation: Promise<void> = Promise.resolve()
-
-function mutateTelegramBridgeConfig(update: (current: TelegramBridgeConfigState) => TelegramBridgeConfigState): Promise<TelegramBridgeConfigState> {
-  const operation = telegramBridgeConfigMutation.catch(() => {}).then(async () => {
-    const next = normalizeTelegramBridgeConfig(update(await readTelegramBridgeConfig()))
-    await writeTelegramBridgeConfig(next)
-    return next
-  })
-  telegramBridgeConfigMutation = operation.then(() => {}, () => {})
-  return operation
-}
 
 function bufferIndexOf(buf: Buffer, needle: Buffer, start = 0): number {
   for (let i = start; i <= buf.length - needle.length; i++) {
@@ -973,7 +915,6 @@ type SharedBridgeState = {
   version: string
   appServer: AppServerClient
   methodCatalog: MethodCatalog
-  telegramBridge: TelegramNotificationService
 }
 
 const SHARED_BRIDGE_KEY = '__codexRemoteSharedBridge__'
@@ -982,11 +923,7 @@ const SHARED_BRIDGE_VERSION = 'external-websocket-v1'
 function disposeSharedBridgeState(state: SharedBridgeState): void {
   if (state.retired) return
   state.retired = true
-  try {
-    state.telegramBridge.stop()
-  } finally {
-    state.appServer.dispose()
-  }
+  state.appServer.dispose()
 }
 
 function getSharedBridgeState(): SharedBridgeState {
@@ -1019,9 +956,6 @@ function getSharedBridgeState(): SharedBridgeState {
     version: SHARED_BRIDGE_VERSION,
     appServer,
     methodCatalog: new MethodCatalog(),
-    telegramBridge: new TelegramNotificationService(appServer, {
-      outboxPath: join(getCodexHomeDir(), 'telegram-notification-outbox.json'),
-    }),
   }
   globalScope[SHARED_BRIDGE_KEY] = created
   return created
@@ -1112,7 +1046,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   sharedState.owners = (sharedState.owners ?? 0) + 1
   let released = false
   const activeSse = new Set<() => void>()
-  const { appServer, methodCatalog, telegramBridge } = sharedState
+  const { appServer, methodCatalog } = sharedState
   const gitWorkspaceRoutes = createGitWorkspaceRoutes({ readJsonBody, getCodexHomeDir, persistWorkspaceRoot, ensureRealDirectory })
   let threadSearchIndex: ThreadSearchIndex | null = null
   let threadSearchIndexPromise: Promise<ThreadSearchIndex> | null = null
@@ -1175,15 +1109,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
     }
     return threadSearchIndexPromise
   }
-  void readTelegramBridgeConfig()
-    .then((config) => {
-      if (released || sharedState.retired || !config.botToken) return
-      telegramBridge.configureToken(config.botToken)
-      telegramBridge.configureCompletionNotifications(config.completionNotifications)
-      telegramBridge.start()
-    })
-    .catch(() => {})
-
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const requestStartNs = process.hrtime.bigint()
     const rawUrl = req.url ?? ''
@@ -1444,7 +1369,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       // Retired API: terminate here so SPA middleware cannot serve HTML.
-      if (url.pathname === '/codex-api/worktree/create-permanent' || url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
+      if (url.pathname.startsWith('/codex-api/telegram/') || url.pathname === '/codex-api/worktree/create-permanent' || url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
         setJson(res, 404, { error: 'Not found' })
         return
       }
@@ -1790,55 +1715,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         const threadIds = normalizePinnedThreadIds(payload?.threadIds)
         await writePinnedThreadIds(threadIds)
         setJson(res, 200, { ok: true })
-        return
-      }
-
-      if (req.method === 'POST' && url.pathname === '/codex-api/telegram/configure-bot') {
-        const payload = asRecord(await readJsonBody(req))
-        const botToken = typeof payload?.botToken === 'string' ? payload.botToken.trim() : ''
-        const completion = normalizeTelegramCompletionConfig(payload?.completionNotifications)
-        if (completion.enabled && (!botToken || !completion.chatIds.length)) {
-          setJson(res, 400, { error: 'Enabled notifications require a bot token and destination chat ID' })
-          return
-        }
-        const saved = await mutateTelegramBridgeConfig((current) => ({
-          ...current,
-          botToken,
-          completionNotifications: payload?.completionNotifications === undefined
-            ? current.completionNotifications
-            : normalizeTelegramCompletionConfig(payload.completionNotifications),
-        }))
-        telegramBridge.stop()
-        telegramBridge.configureToken(saved.botToken)
-        telegramBridge.configureCompletionNotifications(saved.completionNotifications)
-        telegramBridge.start()
-        setJson(res, 200, { ok: true })
-        return
-      }
-
-      if (req.method === 'GET' && url.pathname === '/codex-api/telegram/config') {
-        const config = await readTelegramBridgeConfig()
-        setJson(res, 200, {
-          data: {
-            botToken: config.botToken,
-            completionNotifications: config.completionNotifications,
-          },
-        })
-        return
-      }
-
-      if (req.method === 'POST' && url.pathname === '/codex-api/telegram/test-notification') {
-        try {
-          await telegramBridge.sendTestNotification()
-          setJson(res, 200, { ok: true })
-        } catch (error) {
-          setJson(res, 400, { error: error instanceof Error ? error.message : 'Test notification failed' })
-        }
-        return
-      }
-
-      if (req.method === 'GET' && url.pathname === '/codex-api/telegram/status') {
-        setJson(res, 200, { data: await telegramBridge.getStatus() })
         return
       }
 

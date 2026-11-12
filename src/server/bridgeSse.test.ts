@@ -11,7 +11,6 @@ let previous: unknown
 let listeners: Set<(value: Notification) => void>
 let release: ReturnType<typeof vi.fn<() => void>>
 let appServer: { onNotification: ReturnType<typeof vi.fn<(fn: (value: Notification) => void) => () => void>>; dispose: ReturnType<typeof vi.fn<() => void>> }
-let stop: ReturnType<typeof vi.fn<() => void>>
 beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-11-10T00:00:00.000Z'))
@@ -25,8 +24,7 @@ beforeEach(() => {
     }),
     dispose: vi.fn(() => listeners.clear()),
   }
-  stop = vi.fn()
-  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-v1', appServer, telegramBridge: { stop }, methodCatalog: {} }
+  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-v1', appServer, methodCatalog: {} }
 })
 afterEach(() => {
   scope.__codexRemoteSharedBridge__ = previous
@@ -162,7 +160,6 @@ it('closes active SSE on middleware disposal, including late close and repeated 
   await middleware(...s.args)
   middleware.dispose(); middleware.dispose()
   expect(appServer.dispose).toHaveBeenCalledOnce()
-  expect(stop).toHaveBeenCalledOnce()
   expect(scope.__codexRemoteSharedBridge__).toBeUndefined()
   expect(s.end).toHaveBeenCalledOnce()
   expect(release).toHaveBeenCalledOnce()
@@ -307,8 +304,7 @@ it('stale owner closes only its SSE after runtime replacement', async () => {
   const oldDispose = appServer.dispose
   const replacementListeners = new Set<(value: Notification) => void>()
   const replacement = {
-    version: 'external-websocket-v1', methodCatalog: {}, telegramBridge: { stop: vi.fn() },
-    appServer: { dispose: vi.fn(), onNotification: vi.fn((fn: (value: Notification) => void) => {
+    version: 'external-websocket-v1', methodCatalog: {}, appServer: { dispose: vi.fn(), onNotification: vi.fn((fn: (value: Notification) => void) => {
       replacementListeners.add(fn)
       return () => replacementListeners.delete(fn)
     }) },

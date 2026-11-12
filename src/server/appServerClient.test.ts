@@ -67,9 +67,8 @@ it('reuses the current runtime across middleware instances and retires legacy wo
   const previous = scope.__codexRemoteSharedBridge__
   const client = new AppServerClient()
   const dispose = vi.spyOn(client, 'dispose')
-  const stop = vi.fn()
   const worker = { dispose: vi.fn(), scheduleThreadQueueDrain: vi.fn(), processThreadQueue: vi.fn(), startQueuedTurn: vi.fn() }
-  const runtime = { version: 'external-websocket-v1', appServer: client, telegramBridge: { stop }, methodCatalog: {} }
+  const runtime = { version: 'external-websocket-v1', appServer: client, methodCatalog: {} }
   scope.__codexRemoteSharedBridge__ = runtime
   try {
     const first = createCodexBridgeMiddleware()
@@ -82,7 +81,6 @@ it('reuses the current runtime across middleware instances and retires legacy wo
     release()
     first.dispose()
     expect(dispose).not.toHaveBeenCalled()
-    expect(stop).not.toHaveBeenCalled()
     expect(scope.__codexRemoteSharedBridge__).toBe(runtime)
     Object.assign(runtime, { version: 'legacy', backendQueueProcessor: worker })
     const replacement = createCodexBridgeMiddleware()
@@ -92,10 +90,8 @@ it('reuses the current runtime across middleware instances and retires legacy wo
     expect(scope.__codexRemoteSharedBridge__.appServer).not.toBe(client)
     const replacementRuntime = scope.__codexRemoteSharedBridge__
     expect(dispose).toHaveBeenCalledOnce()
-    expect(stop).toHaveBeenCalledOnce()
     second.dispose(); second.dispose(); first.dispose()
     expect(dispose).toHaveBeenCalledOnce()
-    expect(stop).toHaveBeenCalledOnce()
     expect(scope.__codexRemoteSharedBridge__).toBe(replacementRuntime)
     replacement.dispose()
   } finally {

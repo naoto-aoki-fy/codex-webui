@@ -17,7 +17,7 @@ function setup() {
     if (method === 'thread/read') return { thread: { turns: [{ items: [{ type: 'userMessage', content: [{ type: 'text', text }] }] }] } }
     return {}
   })
-  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-v1', appServer: client, telegramBridge: { stop() {} }, methodCatalog: {} }
+  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-v1', appServer: client, methodCatalog: {} }
   middleware = createCodexBridgeMiddleware()
   const emit = (method: string) => (client as any).emitNotification({ method, params: { threadId: 'a' } })
   async function request(path: string, payload: unknown, owner = middleware) {
