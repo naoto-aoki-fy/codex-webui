@@ -92,18 +92,7 @@ const DEFAULT_COLLABORATION_MODE_OPTIONS: CollaborationModeOption[] = [
   { value: 'plan', label: 'Plan' },
 ]
 
-export type WorktreeCreateResult = {
-  cwd: string
-  branch: string | null
-  gitRoot: string
-}
 
-export type WorktreeBranchOption = {
-  value: string
-  label: string
-  isCurrent?: boolean
-  isRemote?: boolean
-}
 
 export type GitRepositoryStatus = {
   isGitRepo: boolean
@@ -871,54 +860,6 @@ function queueWorkspaceRootsMutation<T>(
   })
   workspaceRootsMutation = run.catch(() => undefined)
   return run
-}
-
-export async function createWorktree(sourceCwd: string, baseBranch?: string): Promise<WorktreeCreateResult> {
-  const normalizedBaseBranch = (baseBranch ?? '').trim()
-  const response = await fetch('/codex-api/worktree/create', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sourceCwd,
-      baseBranch: normalizedBaseBranch || undefined,
-    }),
-  })
-  const payload = (await response.json()) as { data?: WorktreeCreateResult; error?: string }
-  if (!response.ok || !payload.data) {
-    throw new Error(payload.error || 'Failed to create worktree')
-  }
-  return {
-    ...payload.data,
-    cwd: normalizePathForUi(payload.data.cwd),
-    gitRoot: normalizePathForUi(payload.data.gitRoot),
-  }
-}
-
-export async function getWorktreeBranchOptions(sourceCwd: string): Promise<WorktreeBranchOption[]> {
-  const normalizedSourceCwd = sourceCwd.trim()
-  if (!normalizedSourceCwd) return []
-  const query = new URLSearchParams({ sourceCwd: normalizedSourceCwd })
-  const response = await fetch(`/codex-api/worktree/branches?${query.toString()}`)
-  const payload = (await response.json()) as { data?: unknown; error?: string }
-  if (!response.ok) {
-    throw new Error(payload.error || 'Failed to load branches')
-  }
-  const rawList = Array.isArray(payload.data) ? payload.data : []
-  const options: WorktreeBranchOption[] = []
-  const seen = new Set<string>()
-  for (const item of rawList) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
-    const record = item as Record<string, unknown>
-    const value = typeof record.value === 'string' ? record.value.trim() : ''
-    const label = typeof record.label === 'string' ? record.label.trim() : ''
-    if (!value || seen.has(value)) continue
-    seen.add(value)
-    options.push({
-      value,
-      label: label || value,
-    })
-  }
-  return options
 }
 
 export async function getGitRepositoryStatus(cwd: string): Promise<GitRepositoryStatus> {

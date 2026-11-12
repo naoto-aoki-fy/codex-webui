@@ -517,7 +517,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   const activeSse = new Set<() => void>()
   const { appServer, methodCatalog } = sharedState
   const files = sharedState.files ?? new ProjectFileService(appServer)
-  const gitWorkspaceRoutes = createGitWorkspaceRoutes({ readJsonBody, getCodexHomeDir, persistWorkspaceRoot, appServer })
+  const gitWorkspaceRoutes = createGitWorkspaceRoutes({ appServer })
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const requestStartNs = process.hrtime.bigint()
     const rawUrl = req.url ?? ''
@@ -743,7 +743,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       // Retired API: terminate here so SPA middleware cannot serve HTML.
-      if (['/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion'].includes(url.pathname) || url.pathname.startsWith('/codex-api/telegram/') || url.pathname === '/codex-api/worktree/create-permanent' || url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
+      if (['/codex-api/prompts', '/codex-api/thread-titles', '/codex-api/worktree/create', '/codex-api/worktree/branches', '/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion'].includes(url.pathname) || url.pathname.startsWith('/codex-api/telegram/') || url.pathname === '/codex-api/worktree/create-permanent' || url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
         setJson(res, 404, { error: 'Not found' })
         return
       }
