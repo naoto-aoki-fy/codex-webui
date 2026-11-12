@@ -101,7 +101,12 @@ it('persists backoff after a temporary API failure and retries successfully', as
   const outbox = worker(path, send)
   await outbox.add([job()])
   outbox.start()
-  await waitFor(async () => (await state(path)).pending[0]?.attempts === 1)
+  await waitFor(async () => {
+    const pending = (await state(path)).pending[0]
+    return pending?.attempts === 1
+      && typeof pending.lastAttemptAt === 'number'
+      && pending.nextAttempt > pending.lastAttemptAt
+  })
   const pending = (await state(path)).pending[0]
   expect(pending.nextAttempt - pending.lastAttemptAt).toBeGreaterThanOrEqual(1000)
   await waitFor(async () => (await state(path)).settled.length === 1)
