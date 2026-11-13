@@ -470,6 +470,7 @@ export function useDesktopState() {
   const connectionErrorMessage = 'App-server disconnected. Reconnect and inspect the thread before resending a turn.'
   const transportState = ref('connected')
   const recoveryByThreadId = ref<Record<string, string>>({})
+  const recoveryDismissTimerByThreadId = new Map<string, ReturnType<typeof setTimeout>>()
   const unknownOutcomeByThreadId = ref<Record<string, boolean>>({})
   const lostApprovalByThreadId = ref<Record<string, boolean>>({})
   const selectedRecoveryState = computed(() => recoveryByThreadId.value[selectedThreadId.value] ?? '')
@@ -2101,7 +2102,19 @@ export function useDesktopState() {
       const threadId = readString(params?.threadId)
       if (!threadId) return
       const state = readString(params?.state) || 'failed'
+      const pendingDismissal = recoveryDismissTimerByThreadId.get(threadId)
+      if (pendingDismissal !== undefined) clearTimeout(pendingDismissal)
+      recoveryDismissTimerByThreadId.delete(threadId)
       recoveryByThreadId.value = { ...recoveryByThreadId.value, [threadId]: state }
+      if (state === 'recovered') {
+        const timer = setTimeout(() => {
+          // A late callback must not dismiss a newer recovery notification.
+          if (recoveryDismissTimerByThreadId.get(threadId) !== timer) return
+          recoveryDismissTimerByThreadId.delete(threadId)
+          recoveryByThreadId.value = omitKey(recoveryByThreadId.value, threadId)
+        }, 3000)
+        recoveryDismissTimerByThreadId.set(threadId, timer)
+      }
       invalidateResumeThread(threadId)
       resumedThreadById.value = { ...resumedThreadById.value, [threadId]: state === 'recovered' }
       loadedMessagesByThreadId.value = omitKey(loadedMessagesByThreadId.value, threadId)
@@ -3906,6 +3919,8 @@ export function useDesktopState() {
   }
 
   function stopPolling(): void {
+    for (const timer of recoveryDismissTimerByThreadId.values()) clearTimeout(timer)
+    recoveryDismissTimerByThreadId.clear()
     ++lifecycleGeneration
     ++eventSyncGeneration
     ++threadListLoadGeneration
