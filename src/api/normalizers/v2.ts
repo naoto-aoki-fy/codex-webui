@@ -535,7 +535,15 @@ function readMessageMilliseconds(value: unknown): string | undefined {
 
 export function normalizeThreadMessagesV2(payload: ThreadReadResponse, baseTurnIndex = 0): UiMessage[] {
   const turns = Array.isArray(payload.thread.turns) ? payload.thread.turns : []
-  const messages: UiMessage[] = []
+  const imported = payload as ThreadReadResponse & { importedTranscript?: Array<{ role: 'user' | 'assistant'; text: string; source: string }>; importStage?: string; importFailure?: string }
+  const messages: UiMessage[] = (imported.importedTranscript || []).map((message, index) => ({
+    id: `imported-${payload.thread.id}-${index}`, role: message.role, turnIndex: -index - 1,
+    text: `[Imported context from ${message.source}]\n\n${message.text}`,
+  }))
+  if (imported.importStage && imported.importStage !== 'ready') messages.push({
+    id: `import-status-${payload.thread.id}`, role: 'system',
+    text: `Incomplete history import (${imported.importStage}). Continuation is blocked. ${imported.importFailure || 'Do not replay injection.'}`,
+  })
   for (let turnOffset = 0; turnOffset < turns.length; turnOffset++) {
     const turnIndex = baseTurnIndex + turnOffset
     const turn = turns[turnOffset]

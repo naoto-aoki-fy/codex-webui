@@ -15,6 +15,7 @@ const gatewayMocks = vi.hoisted(() => ({
   archiveThread: vi.fn(),
   forkThread: vi.fn(),
   forkThreadFromResponse: vi.fn(),
+  createConversationTransfer: vi.fn(),
   getAccountRateLimits: vi.fn(),
   getAvailableCollaborationModes: vi.fn(),
   getAvailableModelIds: vi.fn(),
@@ -1092,18 +1093,18 @@ describe('locally created threads awaiting sidebar indexing', () => {
 })
 
 describe('response fork publication', () => {
-  it('waits for server truncation and never rolls back using the browser cache', async () => {
+  it('waits for confirmed import and never rolls back using the browser cache', async () => {
     installTestWindow()
     gatewayMocks.resumeThread.mockResolvedValue({ messages: [], turnIndexByTurnId: {} })
     gatewayMocks.getThreadDetail.mockResolvedValue({ messages: [], turnIndexByTurnId: {} })
     gatewayMocks.getThreadGroupsPage.mockResolvedValue({ groups: [], nextCursor: null })
     let finish!: (value: unknown) => void
-    gatewayMocks.forkThreadFromResponse.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    gatewayMocks.createConversationTransfer.mockImplementation(() => new Promise(resolve => { finish = resolve }))
     const state = useDesktopState()
-    const pending = state.forkThreadFromTurn('source', 2)
-    await vi.waitFor(() => expect(gatewayMocks.forkThreadFromResponse).toHaveBeenCalledWith('source', 2))
+    const pending = state.forkThreadFromTurn('source', 2, 'snapshot', 'selected-model')
+    await vi.waitFor(() => expect(gatewayMocks.createConversationTransfer).toHaveBeenCalledWith('snapshot', 'selected-model'))
     expect(state.selectedThreadId.value).not.toBe('fork')
-    finish({ threadId: 'fork', cwd: '', model: '', messages: [], hasMoreOlder: true, turnIndexByTurnId: {} })
+    finish({ threadId: 'fork', cwd: '', model: '', warnings: [], messages: [], hasMoreOlder: true, turnIndexByTurnId: {} })
     expect(await pending).toBe('fork')
     expect(state.selectedThreadId.value).toBe('fork')
     expect(gatewayMocks.revertThreadHistory).not.toHaveBeenCalled()
