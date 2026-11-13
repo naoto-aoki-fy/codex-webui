@@ -3378,6 +3378,8 @@ export function useDesktopState() {
       collaborationMode,
     })
 
+    let submissionAttempted = false
+    let submissionAccepted = false
     try {
       let modelId = context.modelId
       if (!context.resumed && resumedThreadById.value[threadId] !== true) {
@@ -3397,6 +3399,7 @@ export function useDesktopState() {
 
       // Submit exactly once even if disposal occurred while resuming the server thread.
       if (generation === lifecycleGeneration) recordModelUsage(modelId)
+      submissionAttempted = true
       const startedTurnId = await startThreadTurn(
         threadId,
         nextText,
@@ -3412,6 +3415,7 @@ export function useDesktopState() {
         },
       )
 
+      submissionAccepted = true
       if (generation !== lifecycleGeneration) return
       if (startedTurnId) {
         if (optimisticMessageId) {
@@ -3431,7 +3435,9 @@ export function useDesktopState() {
       await syncFromNotifications()
       if (generation === lifecycleGeneration) scheduleDelayedTurnSync(threadId)
     } catch (unknownError) {
-      if (unknownError instanceof Error && /disconnected|outcome unknown/i.test(unknownError.message)) {
+      const ambiguous = unknownError instanceof Error && /disconnected|outcome unknown/i.test(unknownError.message)
+        || unknownError instanceof CodexApiError && (['network_error', 'invalid_response'].includes(unknownError.code) || (unknownError.status ?? 0) >= 500)
+      if (submissionAttempted && !submissionAccepted && ambiguous) {
         unknownOutcomeByThreadId.value = { ...unknownOutcomeByThreadId.value, [threadId]: true }
       }
       throw unknownError

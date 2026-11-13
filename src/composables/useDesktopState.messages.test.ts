@@ -2121,3 +2121,15 @@ it('invalidates failed resume flags, exposes manual recovery, and retains uncert
   expect(state.selectedUnknownOutcome.value).toBe(true)
   expect(gateway.startThreadTurn).not.toHaveBeenCalled()
 })
+
+it('keeps a lost submission response uncertain without replaying the turn', async () => {
+  const { CodexApiError } = await import('../api/codexErrors')
+  const state = await loadState()
+  gateway.startThreadTurn.mockRejectedValue(new CodexApiError('Failed to fetch', { code: 'network_error', method: 'turn/start' }))
+  await expect(state.sendMessageToSelectedThread('ambiguous fixture')).rejects.toThrow('Failed to fetch')
+  expect(state.selectedUnknownOutcome.value).toBe(true)
+  gateway.getThreadDetail.mockResolvedValue(completedDetail)
+  await state.reconcileSelectedHistory()
+  expect(state.selectedUnknownOutcome.value).toBe(true)
+  expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+})
