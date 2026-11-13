@@ -2038,6 +2038,7 @@ export function useDesktopState() {
       resumedThreadById.value = {}
       pendingServerRequestsByThreadId.value = {}
       for (const threadId of Object.keys(inProgressById.value)) {
+        if (inProgressById.value[threadId] !== true) continue
         unknownOutcomeByThreadId.value = { ...unknownOutcomeByThreadId.value, [threadId]: true }
         setThreadInProgress(threadId, false)
         setTurnActivityForThread(threadId, null)
