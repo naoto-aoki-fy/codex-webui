@@ -1,3 +1,4 @@
+import { profileStorageKey } from '../utils/browserConnectionProfile'
 import type { CollaborationModeKind, UiThreadTokenUsage } from '../types/codex'
 
 export const THREAD_TOKEN_USAGE_STORAGE_KEY = 'codex-web-local.thread-token-usage.v1'
@@ -89,7 +90,7 @@ export function loadSelectedModelMap(): Record<string, string> {
   if (typeof window === 'undefined') return createStringKeyedRecord<string>()
 
   try {
-    const raw = window.localStorage.getItem(SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY)
+    const raw = window.localStorage.getItem(profileStorageKey(SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY))
     if (raw) {
       const parsed = JSON.parse(raw) as unknown
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return createStringKeyedRecord<string>()
@@ -108,7 +109,7 @@ export function loadSelectedModelMap(): Record<string, string> {
     // Fall back to the legacy global preference below.
   }
 
-  const legacyModelId = normalizeStoredModelId(window.localStorage.getItem(LEGACY_SELECTED_MODEL_STORAGE_KEY))
+  const legacyModelId = normalizeStoredModelId(window.localStorage.getItem(profileStorageKey(LEGACY_SELECTED_MODEL_STORAGE_KEY)))
   const next = createStringKeyedRecord<string>()
   if (legacyModelId) {
     next[NEW_THREAD_COLLABORATION_MODE_CONTEXT] = legacyModelId
@@ -130,11 +131,11 @@ export function saveSelectedModelMap(state: Record<string, string>): void {
   if (typeof window === 'undefined') return
   try {
     if (Object.keys(state).length === 0) {
-      window.localStorage.removeItem(SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY)
+      window.localStorage.removeItem(profileStorageKey(SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY))
     } else {
-      window.localStorage.setItem(SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY, JSON.stringify(state))
+      window.localStorage.setItem(profileStorageKey(SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY), JSON.stringify(state))
     }
-    window.localStorage.removeItem(LEGACY_SELECTED_MODEL_STORAGE_KEY)
+    window.localStorage.removeItem(profileStorageKey(LEGACY_SELECTED_MODEL_STORAGE_KEY))
   } catch {
     // Keep in-memory selection working even if localStorage writes fail.
   }
@@ -160,7 +161,7 @@ export function loadSelectedCollaborationModeMap(): Record<string, Collaboration
   if (typeof window === 'undefined') return createStringKeyedRecord<CollaborationModeKind>()
 
   try {
-    const raw = window.localStorage.getItem(COLLABORATION_MODE_STORAGE_KEY)
+    const raw = window.localStorage.getItem(profileStorageKey(COLLABORATION_MODE_STORAGE_KEY))
     if (raw) {
       const parsed = JSON.parse(raw) as unknown
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -213,11 +214,11 @@ export function saveSelectedCollaborationModeMap(state: Record<string, Collabora
   if (typeof window === 'undefined') return
   try {
     if (Object.keys(state).length === 0) {
-      window.localStorage.removeItem(COLLABORATION_MODE_STORAGE_KEY)
+      window.localStorage.removeItem(profileStorageKey(COLLABORATION_MODE_STORAGE_KEY))
     } else {
-      window.localStorage.setItem(COLLABORATION_MODE_STORAGE_KEY, JSON.stringify(state))
+      window.localStorage.setItem(profileStorageKey(COLLABORATION_MODE_STORAGE_KEY), JSON.stringify(state))
     }
-    window.localStorage.removeItem(LEGACY_COLLABORATION_MODE_STORAGE_KEY)
+    window.localStorage.removeItem(profileStorageKey(LEGACY_COLLABORATION_MODE_STORAGE_KEY))
   } catch {
     // Keep in-memory mode selection working even if localStorage writes fail.
   }
@@ -286,7 +287,7 @@ export function loadThreadTokenUsageMap(): Record<string, UiThreadTokenUsage> {
   if (typeof window === 'undefined') return {}
 
   try {
-    const raw = window.localStorage.getItem(THREAD_TOKEN_USAGE_STORAGE_KEY)
+    const raw = window.localStorage.getItem(profileStorageKey(THREAD_TOKEN_USAGE_STORAGE_KEY))
     if (!raw) return {}
 
     const parsed = JSON.parse(raw) as unknown
@@ -308,21 +309,21 @@ export function loadThreadTokenUsageMap(): Record<string, UiThreadTokenUsage> {
 
 export function saveThreadTokenUsageMap(state: Record<string, UiThreadTokenUsage>): void {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(THREAD_TOKEN_USAGE_STORAGE_KEY, JSON.stringify(state))
+  window.localStorage.setItem(profileStorageKey(THREAD_TOKEN_USAGE_STORAGE_KEY), JSON.stringify(state))
 }
 
 export function loadSelectedThreadId(): string {
   if (typeof window === 'undefined') return ''
-  const raw = window.localStorage.getItem(SELECTED_THREAD_STORAGE_KEY)
+  const raw = window.localStorage.getItem(profileStorageKey(SELECTED_THREAD_STORAGE_KEY))
   return raw ?? ''
 }
 
 export function saveSelectedThreadId(threadId: string): void {
   if (typeof window === 'undefined') return
   if (!threadId) {
-    window.localStorage.removeItem(SELECTED_THREAD_STORAGE_KEY)
+    window.localStorage.removeItem(profileStorageKey(SELECTED_THREAD_STORAGE_KEY))
     return
   }
-  window.localStorage.setItem(SELECTED_THREAD_STORAGE_KEY, threadId)
+  window.localStorage.setItem(profileStorageKey(SELECTED_THREAD_STORAGE_KEY), threadId)
 }
 

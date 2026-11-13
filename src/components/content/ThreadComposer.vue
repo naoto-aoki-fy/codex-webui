@@ -289,6 +289,7 @@
 </template>
 
 <script setup lang="ts">
+import { profileStorageKey } from '../../utils/browserConnectionProfile'
 import { findReasoningModel, reasoningCatalog } from '../../api/codexGateway'
 import { parseModelSelection } from '../../api/modelCapabilities'
 import { normalizeSkillMarkdownPath } from '../../api/normalizers/skills'
@@ -629,7 +630,7 @@ function clearDraftState(): void {
 }
 
 function getDraftStorageKey(threadId: string): string {
-  return `${DRAFT_STORAGE_PREFIX}${threadId}`
+  return profileStorageKey(`${DRAFT_STORAGE_PREFIX}${threadId}`)
 }
 
 function loadPersistedDraftForThread(threadId: string): ComposerDraftPayload | null {

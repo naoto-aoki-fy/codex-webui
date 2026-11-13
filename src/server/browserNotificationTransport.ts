@@ -1,3 +1,4 @@
+import { getConnectionProfileId } from './connectionProfile.js'
 import { backendInstanceId } from './backendInstance.js'
 import type { IncomingMessage } from 'node:http'
 import type { EventEmitter } from 'node:events'
@@ -9,7 +10,7 @@ type Subscribe = (listener: (notification: Notification) => void) => () => void
 
 /** One bridge subscription per browser, retired once on error, close or disposal. */
 export function connectBrowserNotifications(ws: WebSocket, subscribe: Subscribe): () => void {
-  ws.send(JSON.stringify({ method: 'ready', params: { ok: true, backendInstanceId }, atIso: new Date().toISOString() }))
+  ws.send(JSON.stringify({ method: 'ready', params: { ok: true, backendInstanceId, connectionProfile: getConnectionProfileId() }, atIso: new Date().toISOString() }))
   let unsubscribe: (() => void) | undefined = subscribe((notification) => {
     if (ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify(notification))
