@@ -249,7 +249,7 @@ function isArchivedThreadReadResult(threadReadResult: unknown): boolean {
 }
 
 export async function forkThreadAtCutoff(appServer: RpcExecutor, params: Record<string, unknown>): Promise<unknown> {
-  const { forkFromTurnIndex, ...forkParams } = params
+  const { forkFromTurnIndex, expectedTurnId, ...forkParams } = params
   if (!Number.isSafeInteger(forkFromTurnIndex) || (forkFromTurnIndex as number) < 0) {
     throw new Error('Invalid fork response cutoff')
   }
@@ -263,6 +263,7 @@ export async function forkThreadAtCutoff(appServer: RpcExecutor, params: Record<
   if (ids.length !== cutoff + 1 || ids.some(id => !id)) {
     throw new Error('Fork response cutoff is outside the source history')
   }
+  if (expectedTurnId && expectedTurnId !== ids[cutoff]) throw new Error('Source history changed at the selected response. Refresh the thread.')
   const cutoffParams = { ...forkParams, lastTurnId: ids[cutoff] }
   const result = appServer.forkWithMetadataSource
     ? await appServer.forkWithMetadataSource(cutoffParams, prefix)

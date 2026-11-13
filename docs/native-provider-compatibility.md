@@ -1,6 +1,7 @@
 > Historical native-fork investigation. The ordinary “Fork conversation” and
-> “Fork from this response” actions now use [portable conversation transfer](cross-provider-forks.md).
-> The native adapter described below is not used by those actions.
+> “Fork from this response” actions now offer [Native Fork and Portable Transfer](cross-provider-forks.md).
+> Native Fork preserves the source provider. The cross-provider adapter described
+> below is not used by either method.
 
 # Native cross-provider request compatibility
 
