@@ -320,10 +320,10 @@ and environment, and close fixture sockets/listeners. No persistent data changes
 
 - Setup: connect to an external app-server and open a thread with enough turns for multiple earlier-history pages. For deterministic races, run `pnpm exec vitest run src/server/appServerClient.test.ts src/server/threadLiveStateRetirement.test.ts` (deferred RPC responses; no credentials required).
 - Actions: request earlier history; deliver a thread notification or store a fresh thread snapshot before the read completes; request earlier history again. Repeat with different page cursors, a second thread, repeated invalidations, and a disconnect/reconnect while a read is pending.
-- Expected: the original caller receives its response (or the existing disconnect error); stale completion never repopulates the cache or removes a replacement promise. Reads after invalidation issue a fresh RPC, concurrent valid reads share one RPC, and other threads remain independent. Different page cursors share the full per-thread read; ordering and envelopes remain unchanged. Cached results expire exactly 30 seconds after completion. Settled promises leave no pagination epoch records.
+- Expected: the original caller receives its response for same-generation invalidation, or a retired/disconnect error after generation change; stale completion never repopulates the cache or removes a replacement promise. Reads after invalidation issue a fresh RPC, concurrent valid reads share one RPC, and other threads remain independent. Native page cursors fetch only requested turn items; legacy fallback cursors share the full per-thread read; ordering and envelopes remain unchanged. Legacy full-read cached results expire 30 seconds after completion and are bounded by 16 entries / 32 MiB. Native paginated indexes use a separate 2-second cache. Settled promises leave no pagination epoch records.
 - Cleanup: close the test thread; restore normal app-server connectivity. Unit tests restore their mocks and dispose clients.
 
-The pagination cache and in-flight map are keyed only by thread ID. Notifications carrying a thread ID and `storeThreadReadSnapshot` invalidate that thread; TTL expiry removes only a completed cache entry. Transport disconnect clears both maps and increments the connection generation. An in-flight promise's identity serves as its invalidation epoch: removing it detaches the old read without cancelling the original caller. Completion may cache only while that identity and connection generation remain current; cleanup may remove only its own registration. No counter map, timer, retry, or subscription is added.
+The legacy pagination cache and in-flight map are keyed by thread ID inside the active process/profile and connection generation. Notifications carrying a thread ID and `storeThreadReadSnapshot` invalidate that thread; TTL expiry removes only a completed cache entry. Transport disconnect clears both maps and increments the connection generation. An in-flight promise's identity serves as its invalidation epoch: removing it detaches the old read without cancelling the original caller. Completion may cache only while that identity and connection generation remain current; cleanup may remove only its own registration. No counter map, timer, retry, or subscription is added.
 
 Performance audit: deferred tests confirm one RPC for concurrent valid reads and exactly one fresh RPC after invalidation, including different cursors/limits. The changed path adds constant-time map operations and a connection-generation comparison; it adds no blocking work, payload copies, network fanout, timers, or subscriptions. Removed promises remain only with their existing awaiting callers until settlement; no per-thread epoch map is retained. Existing cache TTL eviction remains lazy. Browser latency and heap profiling were not measured; no performance improvement is claimed.
 
@@ -344,9 +344,10 @@ local access or separate browser tunnel.
    with no placeholder created on A. Repeat with an opposite-platform path if
    available; the picker must retain B's drive/separator semantics.
 2. Put different sentinel content at the same lexical file path on A and B.
-   Browse/read through codexapp, query Git/branches, create a detached worktree,
+   Browse/read through codexapp, query `/codex-api/git/repository-status`,
    and search for a file existing only on B. Expect B's content/results and no
-   changed sentinel, repository or worktree on A. Repeat with command/exec
+   changed sentinel or repository on A. Verify retired worktree-create and branch
+   endpoints return JSON 404; dedicated branch/worktree features are unavailable. Repeat with command/exec
    disabled on B: expect a specific operation error, never local execution.
 3. Upload a text file and a PNG. Compare checksums of original bytes and staged
    files on B. Expect successful preview and remote paths in turn input. Deny
@@ -381,8 +382,19 @@ local access or separate browser tunnel.
     repositories to survive. Confirm loopback HTTP is inaccessible via A's LAN
     address; separately verify intentional --host 0.0.0.0 and optional password.
 
+11. Restart A with `--connection-profile machine-c`, then point the same local
+    forwarding URL at a disposable second remote environment. Register a different
+    root and draft a message. Switch back to `machine-b` and verify its roots and
+    draft survive, with no conversation/image content from the other profile.
+    Check compatibility again: previous capability evidence must not survive.
+12. Inspect managed uploads in account compatibility diagnostics and
+    `GET /codex-api/uploads`. Verify shared tracked-byte reservations, protected
+    unknown/legacy records and an empty cleanup preview. Test a deliberately low
+    capacity only with disposable uploads and restore the capacity afterward.
+    No cleanup action should delete an existing attachment.
+
 Cleanup/rollback: stop only smoke-test processes and the user-managed tunnel.
-Remove disposable B threads, worktrees and repositories deliberately. Remove
+Remove disposable B threads and repositories deliberately. Remove
 tracked uploads only after deleting all histories that reference them. Preserve
 A's pre-existing UI state and credentials; restore test permissions/firewall
 rules. Record mocked, same-host and real two-host results separately; an unrun
