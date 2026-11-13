@@ -20,6 +20,7 @@ type Entry = { generation: number; expires: number; promise: Promise<Index>; pen
 
 export class RemoteHistoryPager {
   private readonly entries = new Map<string, Entry>()
+  private readonly pendingPages = new Map<string, { threadId: string; promise: Promise<{ result: unknown; startTurnIndex: number; hasMoreOlder: boolean }> }>()
   private unsupportedGeneration: number | null = null
   constructor(private readonly client: Client) {}
 
@@ -30,6 +31,9 @@ export class RemoteHistoryPager {
   invalidate(threadId?: string): void {
     if (threadId) this.entries.delete(threadId)
     else this.entries.clear()
+    for (const [key, page] of this.pendingPages) {
+      if (!threadId || page.threadId === threadId) this.pendingPages.delete(key)
+    }
   }
 
   private async list(threadId: string, params: RecordValue): Promise<{ data: unknown[]; nextCursor: string | null }> {
@@ -100,6 +104,18 @@ export class RemoteHistoryPager {
   }
 
   async read(threadId: string, beforeTurnId = '', limit = 10): Promise<{ result: unknown; startTurnIndex: number; hasMoreOlder: boolean }> {
+    const key = JSON.stringify([this.client.getConnectionGeneration(), threadId, beforeTurnId, limit])
+    const existing = this.pendingPages.get(key)
+    if (existing) return existing.promise
+    if (this.pendingPages.size >= 16) throw new Error('History reads are busy (16 concurrent indexes/pages). Retry shortly.')
+    const promise = this.readUncached(threadId, beforeTurnId, limit).finally(() => {
+      if (this.pendingPages.get(key)?.promise === promise) this.pendingPages.delete(key)
+    })
+    this.pendingPages.set(key, { threadId, promise })
+    return promise
+  }
+
+  private async readUncached(threadId: string, beforeTurnId: string, limit: number): Promise<{ result: unknown; startTurnIndex: number; hasMoreOlder: boolean }> {
     limit = Math.max(1, Math.min(50, Math.floor(limit) || 10))
     const generation = this.client.getConnectionGeneration()
     if (this.unsupportedGeneration !== generation) {
@@ -113,7 +129,9 @@ export class RemoteHistoryPager {
         if (beforeTurnId && !cursor && end < index.ids.length) {
           let skip = index.ids.length - end
           const seen = new Set<string>()
+          let seekPages = 0
           while (skip > 0) {
+            if (++seekPages > HISTORY_MAX_INDEX_PAGES) throw new Error('History boundary seek exceeds the 100-page safety budget. Refresh the thread or use the upstream client.')
             if (generation !== this.client.getConnectionGeneration() || this.entries.get(threadId) !== index.entry) throw new Error('History changed while loading. Refresh the thread.')
             const count = Math.min(skip, 1000)
             const page = await this.list(threadId, { itemsView: 'notLoaded', sortDirection: 'desc', limit: count, ...(cursor ? { cursor } : {}) })
@@ -138,7 +156,7 @@ export class RemoteHistoryPager {
         // Only an explicit missing-method reply proves lack of support.
         if ((error as { code?: number }).code !== -32601) throw error
         this.unsupportedGeneration = generation
-        this.invalidate()
+        this.entries.clear()
       }
     }
     const value = record(await this.client.readThreadForTurnPage(threadId))

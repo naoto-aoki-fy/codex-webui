@@ -285,6 +285,7 @@ export class AppServerClient {
       threadId,
       includeTurns: true,
     }).then((result) => {
+      if (generation !== this.connectionGeneration) throw new Error('Retired app-server history read')
       if (generation === this.connectionGeneration && this.threadTurnPageReadPromiseByThreadId.get(threadId) === promise) {
         const bytes = Buffer.byteLength(JSON.stringify(result))
         for (const [id, entry] of this.threadTurnPageReadCacheByThreadId) {
