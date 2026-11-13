@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { computed } from 'vue'
 import {
   findReasoningModel,
+  modelSelectionKey,
+  parseModelSelection,
   normalizeReasoningEffort,
   reasoningOptions,
   resolveReasoningEffort,
@@ -111,4 +113,19 @@ describe('gateway capability compatibility', () => {
     expect(gateway.resolveReasoningEffort(selected.value)).toBe('')
     expect(gateway.reasoningCatalog).toBe(catalogRef)
   })
+})
+
+it('does not borrow capabilities from another provider or an ambiguous mixed catalog', () => {
+  const key = 'provider-model:["openai","same"]'
+  expect(findReasoningModel([{ id: 'same', modelProvider: 'local' }], key)).toBeNull()
+  expect(findReasoningModel([{ id: 'same' }, { id: 'same', modelProvider: 'local' }], key)).toBeNull()
+  expect(findReasoningModel([{ id: 'same' }, { model: 'same' }], key)).toBeNull()
+})
+
+
+it('normalizes provider and model whitespace without folding distinct provider IDs', () => {
+  expect(modelSelectionKey(' openai ', ' a ')).toBe('provider-model:["openai","a"]')
+  expect(parseModelSelection('provider-model:[" openai "," a "]')).toEqual({ provider: 'openai', model: 'a' })
+  expect(parseModelSelection(' a ')).toEqual({ provider: '', model: 'a' })
+  expect(modelSelectionKey('OpenAI', 'a')).not.toBe(modelSelectionKey('openai', 'a'))
 })

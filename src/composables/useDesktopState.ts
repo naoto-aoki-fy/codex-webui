@@ -722,11 +722,26 @@ export function useDesktopState() {
     return ''
   }
 
-  // Explicit composer choices are distinct from backend defaults for this session.
-  const explicitModelContexts = new Set<string>()
+  // Explicit composer choices survive backend defaults, including after reload.
+  const explicitModelStorageKey = 'codex-web-local.explicit-model-contexts.v1'
+  const explicitModelContexts = new Set<string>((() => {
+    try {
+      const stored: unknown = JSON.parse(window.localStorage.getItem(explicitModelStorageKey) || '[]')
+      return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string' && !!selectedModelIdByContext.value[id]) : []
+    } catch { return [] }
+  })())
+  function persistExplicitModelContexts(): void {
+    try { window.localStorage.setItem(explicitModelStorageKey, JSON.stringify([...explicitModelContexts])) } catch { /* Storage is optional. */ }
+  }
+  // A legacy catalog belongs to the server's configured provider. When older
+  // config/read omits that identity, effective thread metadata is the evidence.
+  let legacyCatalogIds = new Set<string>()
+  let legacyCatalogProvider = ''
+  const effectiveThreadProviders = new Map<string, string>()
   const configuringForks = new Set<string>()
   const replacementThreadIds = new Map<string, string>()
   const blockedProviderContext = ref('')
+  const blockedProviderNotice = ref('')
   const supersededForkDrafts = new Map<string, string>()
   const freshForkStorageKey = 'codex-web-local.fresh-forks.v1'
   const freshForks = ref<Record<string, string>>((() => {
@@ -747,7 +762,7 @@ export function useDesktopState() {
 
   const modelSelectionNotice = computed(() => {
     if (blockedProviderContext.value === selectedThreadId.value && blockedProviderContext.value) {
-      return 'Fork this conversation to use a different model provider.'
+      return blockedProviderNotice.value
     }
     return Object.prototype.hasOwnProperty.call(freshForks.value, selectedThreadId.value)
       ? 'Fresh fork: choose a provider and model before sending. After the first message, changing providers requires another fork. The app-server must support the selected provider.'
@@ -757,13 +772,14 @@ export function useDesktopState() {
     return replacementThreadIds.get(threadId) || threadId
   }
 
-  function resolveSelectionProvider(model: string): string {
+  function resolveSelectionProvider(model: string, threadProvider = ''): string {
     const selection = parseModelSelection(model)
     if (selection.provider) return selection.provider
-    const providers = new Set(reasoningCatalog.value
-      .filter(entry => (entry.id || entry.model) === selection.model && entry.modelProvider)
-      .map(entry => entry.modelProvider!))
-    return providers.size === 1 ? [...providers][0]! : ''
+    const matches = reasoningCatalog.value.filter(entry => entry.id?.trim() === selection.model || entry.model?.trim() === selection.model)
+    const providers = new Set(matches.map(entry => entry.modelProvider?.trim() || ''))
+    if (providers.size === 1 && !providers.has('')) return [...providers][0]!
+    if (providers.size > 1) return ''
+    return legacyCatalogIds.has(selection.model) ? legacyCatalogProvider || threadProvider : ''
   }
 
   function readModelIdForThread(threadId: string): string {
@@ -800,6 +816,7 @@ export function useDesktopState() {
     if (options.persist !== false) {
       saveSelectedThreadId(nextThreadId)
     }
+    ensureAvailableModelIds(readModelIdForThread(nextThreadId))
     selectedModelId.value = readAvailableSelectedModel(readModelIdForThread(nextThreadId))
     selectedCollaborationMode.value = readSelectedCollaborationMode(
       selectedCollaborationModeByContext.value,
@@ -810,16 +827,22 @@ export function useDesktopState() {
 
   function setSelectedModelIdForThread(threadId: string, modelId: string): void {
     const requested = modelId.trim()
-    const model = modelSelectionKey(resolveSelectionProvider(requested), parseModelSelection(requested).model)
+    const currentProvider = effectiveThreadProviders.get(threadId) || resolveSelectionProvider(readModelIdForThread(threadId))
+    const requestedProvider = resolveSelectionProvider(requested, currentProvider)
+    const model = modelSelectionKey(requestedProvider, parseModelSelection(requested).model)
     const context = isNewThreadContextId(toThreadContextId(threadId)) ? NEW_THREAD_MODEL_CONTEXT : toThreadContextId(threadId)
     const next = cloneStringKeyedRecord(selectedModelIdByContext.value)
-    const currentProvider = resolveSelectionProvider(readModelIdForThread(threadId))
-    if (!isNewThreadContextId(toThreadContextId(threadId)) && !Object.prototype.hasOwnProperty.call(freshForks.value, threadId) && currentProvider !== resolveSelectionProvider(model)) {
+    if (!isNewThreadContextId(toThreadContextId(threadId)) && !Object.prototype.hasOwnProperty.call(freshForks.value, threadId) && (!currentProvider || !requestedProvider || currentProvider !== requestedProvider)) {
       blockedProviderContext.value = threadId
-      error.value = 'Fork this conversation to use a different model provider.'
+      error.value = currentProvider && requestedProvider
+        ? 'Fork this conversation to use a different model provider.'
+        : 'Model provider could not be confirmed. Refresh the model list before changing models.'
+      blockedProviderNotice.value = error.value
       return
     }
+    if (error.value === blockedProviderNotice.value) error.value = ''
     blockedProviderContext.value = ''
+    blockedProviderNotice.value = ''
     explicitModelContexts.add(context)
     ++modelRefreshVersion
     automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, context)
@@ -829,6 +852,7 @@ export function useDesktopState() {
     if (threadId.trim() === selectedThreadId.value) selectedModelId.value = readModelIdForThread(threadId)
     ensureAvailableModelIds(model)
     saveSelectedModelMap(next)
+    persistExplicitModelContexts()
     recordModelUsage(model)
   }
 
@@ -840,9 +864,11 @@ export function useDesktopState() {
     const normalizedThreadId = threadId.trim()
     if (!normalizedThreadId) return
 
+    const confirmedProvider = provider?.trim() || parseModelSelection(modelId).provider
+    if (confirmedProvider) effectiveThreadProviders.set(normalizedThreadId, confirmedProvider)
     if (explicitModelContexts.has(normalizedThreadId)) return
     const incoming = parseModelSelection(modelId.trim())
-    const effectiveProvider = provider || resolveSelectionProvider(modelId) || resolveSelectionProvider(readModelIdForThread(threadId))
+    const effectiveProvider = confirmedProvider || resolveSelectionProvider(modelId) || resolveSelectionProvider(readModelIdForThread(threadId))
     const normalizedModelId = modelSelectionKey(effectiveProvider, incoming.model || parseModelSelection(readModelIdForThread(threadId)).model)
     automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, normalizedThreadId)
     if (normalizedModelId) {
@@ -1021,6 +1047,9 @@ export function useDesktopState() {
       if (version !== modelRefreshVersion || threadId !== selectedThreadId.value) return
       const context = isNewThreadContextId(toThreadContextId(threadId)) ? NEW_THREAD_MODEL_CONTEXT : toThreadContextId(threadId)
       automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, context)
+      legacyCatalogIds = new Set(catalog.models.every(entry => !entry.modelProvider?.trim())
+        ? catalog.ids.filter(id => !parseModelSelection(id).provider) : [])
+      legacyCatalogProvider = config.modelProvider?.trim() || catalog.defaultProvider?.trim() || ''
       // Older servers return a single unqualified catalog; bind it only to the
       // server's configured provider, never to a saved unavailable provider.
       if (config.modelProvider && catalog.models.length && catalog.models.every((entry) => !entry.modelProvider)) {
@@ -1230,6 +1259,13 @@ export function useDesktopState() {
       selectedModelIdByContext.value = nextSelectedModelMap
       selectedModelId.value = readAvailableSelectedModel(readModelIdForThread(selectedThreadId.value))
       saveSelectedModelMap(nextSelectedModelMap)
+      for (const context of explicitModelContexts) {
+        if (!nextSelectedModelMap[context]) explicitModelContexts.delete(context)
+      }
+      persistExplicitModelContexts()
+      for (const id of effectiveThreadProviders.keys()) {
+        if (!activeThreadIds.has(id)) effectiveThreadProviders.delete(id)
+      }
     }
     const nextSelectedCollaborationModeMap = pruneThreadContextStateMap(
       selectedCollaborationModeByContext.value,
@@ -3435,7 +3471,6 @@ export function useDesktopState() {
   ): Promise<void> {
     const generation = context.generation
     if (generation === lifecycleGeneration) realtimeRevisionByThreadId.set(threadId, (realtimeRevisionByThreadId.get(threadId) ?? 0) + 1)
-    const reasoningEffort = context.reasoningEffort
     const collaborationMode = collaborationModeOverride === 'plan' ? 'plan' : collaborationModeOverride === 'default'
       ? 'default'
       : selectedCollaborationMode.value
@@ -3458,7 +3493,7 @@ export function useDesktopState() {
       imageUrls: [...normalizedImageUrls],
       skills: normalizedSkills,
       fileAttachments: normalizedFileAttachments,
-      effort: reasoningEffort,
+      effort: context.reasoningEffort,
       collaborationMode,
     })
 
@@ -3480,6 +3515,7 @@ export function useDesktopState() {
         }
       }
       if (generation === lifecycleGeneration) modelId = readModelIdForThread(threadId)
+      const reasoningEffort = modelId === context.modelId ? context.reasoningEffort : readReasoningEffortForThread(threadId)
 
       // Submit exactly once even if disposal occurred while resuming the server thread.
       if (generation === lifecycleGeneration) recordModelUsage(modelId)

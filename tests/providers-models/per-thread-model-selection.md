@@ -177,3 +177,35 @@ Screenshots: `output/playwright/model-provider-blocked-light.png`,
 `model-provider-fresh-fork-dark.png`. Request evidence is in
 `output/playwright/model-provider-check.json`. This UI fixture does not establish
 live cross-provider continuation; the real-server limitation above still applies.
+
+### Existing conversation switching with legacy metadata and delayed restoration
+
+Prerequisites: two models A/B from one provider; a second provider for rejection
+checks. Also test an older server without `modelProvider/list` support. Start a
+conversation and complete its first turn. Record its original model.
+
+Actions:
+1. Switch A → B → A, sending a message after each selection. Inspect each
+   `turn/start`: `model` must be the raw selected ID and effort must be supported
+   by that model. Repeat with the legacy catalog and effective `openai` thread.
+2. Delay `thread/read` or `thread/resume`, select B while the request is pending,
+   then let the response return the old model A. Send another message.
+3. Switch to another thread and back, then reload and send again, including when
+   server restoration still reports A. B must remain selected and submitted.
+4. Try another provider, including an identical raw model ID. The existing thread
+   must reject it and keep its selection. Confirm a fresh fork can still choose
+   a different provider before its first turn.
+5. Temporarily make discovery unavailable. Qualified saved choices must survive.
+   An ambiguous bare ID or a thread with no confirmed provider must be blocked
+   with an unresolved-provider error, rather than silently switching providers.
+
+Expected: only confirmed same-provider changes succeed in an existing thread;
+legacy single-provider catalog IDs inherit the configured provider, or effective
+thread identity when older configuration metadata omits the provider. No extra
+model discovery or thread RPC is issued by selecting a model. Restoration cannot
+overwrite an explicit choice, even after reload. Server-side provider rejection
+still surfaces when the external server cannot run that thread's provider.
+
+Cleanup: restore original models, remove test forks, restore discovery/network
+conditions. To reset explicit local choices, clear the application's site storage
+(this also removes other local preferences).
