@@ -105,3 +105,14 @@ it('caps simultaneous index scans and discards invalidated work before requestin
   expect(results.every(value => value instanceof Error && value.message.includes('History changed'))).toBe(true)
   expect(rpc.mock.calls.every(([method]) => method === 'thread/read')).toBe(true)
 })
+
+it('coalesces concurrent identical native pages while preserving different boundaries', async () => {
+  const f = fixture(50)
+  const pager = new RemoteHistoryPager(f.client)
+  const [first, second] = await Promise.all([pager.read('thread'), pager.read('thread')])
+  expect(first).toBe(second)
+  expect(f.rpc.mock.calls.filter(([, p]) => (p as any).itemsView === 'full')).toHaveLength(1)
+  const [older, duplicate] = await Promise.all([pager.read('thread', 'turn-40'), pager.read('thread', 'turn-40')])
+  expect(older).toBe(duplicate)
+  expect(f.rpc.mock.calls.filter(([, p]) => (p as any).itemsView === 'full')).toHaveLength(2)
+})
