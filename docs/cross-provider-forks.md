@@ -1,9 +1,14 @@
 # Conversation transfer
 
-Both “Fork conversation” and “Fork from this response” open the same picker.
-Choose **Portable Transfer** (the default) or **Native Fork** before confirming.
-Cancel creates no thread. Duplicate confirmations are blocked while either
-method is pending. Switching methods does not automatically create anything.
+Both “Fork conversation” and “Fork from this response” use the same split-button
+pattern as Revert. The main **Fork** button immediately runs **Native Fork**.
+Its arrow opens **Native Fork** / **Portable Fork** options without reading
+history or creating a thread. Choosing Native Fork from the menu has the same
+behavior as the main button. Choosing Portable Fork opens only the existing
+provider/model picker; there is no method selector in that dialog.
+
+Canceling the portable picker creates no thread. Duplicate operations are
+blocked while either creation path is pending.
 
 - **Native Fork** uses the original provider and server-managed native thread
   state. There is no destination provider/model selection, injection, or automatic
@@ -11,7 +16,7 @@ method is pending. Switching methods does not automatically create anything.
   existing native inclusive `lastTurnId` mechanism and verify the retained turn
   IDs against durable history. The selected response identity is checked before
   forking, so a stale cutoff fails instead of selecting a different response.
-- **Portable Transfer** creates a new conversation from normalized readable
+- **Portable Fork** uses Portable Transfer to create a new conversation from normalized readable
   history and lets you select a destination provider/model first. It is available
   for same-provider transfers as well as cross-provider transfers.
 
@@ -22,8 +27,9 @@ replayed automatically. Inspect the thread list before deliberately retrying.
 Native forks have no local imported-transcript decoration or import guards,
 including after reload. Their presentation is owned by the app-server.
 
-Imported-only responses have no native turn ID. Their Native Fork option shows
-an explanation and cannot be confirmed; use Portable Transfer for that cutoff.
+Imported-only responses have no native turn ID. The main native action and
+Native Fork menu option are disabled with an explanatory tooltip. The arrow
+remains usable so Portable Fork is still available for that cutoff.
 A whole native fork of an imported thread relies on the app-server's stored
 context and presentation. Use Portable Transfer to retain the app's visible,
 persisted imported transcript and its internal attribution in the new conversation.
@@ -103,17 +109,18 @@ clicks and the next explicit submission. These are mocked protocol tests, not
 live provider validation. A fresh destination runtime may still generate an
 unsupported request independently of imported history.
 
-The picker prepares one portable snapshot by default and reuses it across method
-changes. Native creation is independent of that pending preparation and its
-limits. Cancel or successful native creation discards the unused snapshot;
-late preparation results are also cleaned up, without creating a thread.
-Method changes do not reread or recalculate history. This preserves stable
-portable cutoffs but means choosing Native Fork can still incur the default
-portable snapshot read/conversion. There is no new startup work, per-message
-RPC fanout, or native cache invalidation mechanism. Native full creation uses
-one fork RPC plus normal list/resume hydration; native response creation adds
-the existing source read and durable cutoff verification read. Live remote
-latency and large-history rendering were not measured for this follow-up.
+Opening the arrow performs no API work. Native Fork no longer prepares, converts,
+or stores an unused portable snapshot. Portable history is read only after
+choosing Portable Fork, before destination confirmation; canceled preparation
+results are still cleaned up safely. Native full creation uses one fork RPC plus
+normal list/resume hydration; native response creation adds the existing source
+read and durable cutoff verification read. The shared split button uses the
+same ComposerDropdown as Revert. Dropdown options are computed per rendered
+button and the existing conversation render window is unchanged. There is no
+new startup work, per-message request fanout, blocking filesystem operation,
+large request payload, or new cache invalidation mechanism. Browser mocks check
+that opening the arrow and choosing native produce zero portable preparation
+requests. Live remote latency and large-history rendering were not measured.
 
 The transfer path uses one full source read, one start and one injection; it
 performs no RPC per message and no automatic retry or tool execution. Conversion
@@ -126,7 +133,8 @@ against the deployed server/providers.
 
 The mocked browser matrix can be rerun against the current worktree's dev server
 at `http://127.0.0.1:4173` with `node scripts/test-fork-methods.cjs`. It covers both
-entry points and methods, cancel/draft preservation, double confirmation,
+entry points, main native actions and menu options, cancel/draft preservation,
+double confirmation,
 light/dark themes, native versus imported reload presentation, one explicit
 continuation, native operation after portable preparation failure, and explicit
 portable selection after a native capability error. The portable service call

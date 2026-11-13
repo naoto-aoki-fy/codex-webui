@@ -281,9 +281,8 @@
         >
           Copy chat
         </button>
-        <button class="thread-menu-item" type="button" @click="onForkThread(openThreadMenuThread.id)">
-          Create chat fork
-        </button>
+        <ForkSplitButton label="Fork conversation" variant="sidebar" :disabled="isForkDisabled"
+          @fork="onForkThread(openThreadMenuThread.id, $event)" />
         <button class="thread-menu-item" type="button" @click="onTogglePinFromMenu(openThreadMenuThread.id)">
           {{ isPinned(openThreadMenuThread.id) ? 'Unpin thread' : 'Pin thread' }}
         </button>
@@ -339,6 +338,8 @@
 </template>
 
 <script setup lang="ts">
+import ForkSplitButton from '../content/ForkSplitButton.vue'
+import type { ForkMethod } from '../../types/codex'
 import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
@@ -365,6 +366,7 @@ import { compareThreads, sortThreadGroups, type ThreadSortMode } from './threadS
 const router = useRouter()
 
 const props = defineProps<{
+  isForkDisabled?: boolean
   groups: UiProjectGroup[]
   projectDisplayNameById: Record<string, string>
   projectGitRepoByName: Record<string, boolean>
@@ -386,7 +388,7 @@ const emit = defineEmits<{
   'rename-thread': [payload: { threadId: string; title: string }]
   'remove-project': [projectName: string]
   'copy-thread-chat': [threadId: string]
-  'fork-thread': [threadId: string]
+  'fork-thread': [payload: { threadId: string; method: ForkMethod }]
 }>()
 
 type MenuDirection = 'up' | 'down'
@@ -754,8 +756,9 @@ function onCopyThreadChat(threadId: string): void {
   closeThreadMenu()
 }
 
-function onForkThread(threadId: string): void {
-  emit('fork-thread', threadId)
+function onForkThread(threadId: string, method: ForkMethod): void {
+  if (props.isForkDisabled) return
+  emit('fork-thread', { threadId, method })
   closeThreadMenu()
 }
 

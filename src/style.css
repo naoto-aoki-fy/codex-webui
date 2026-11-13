@@ -1401,3 +1401,9 @@
 .transfer-picker { width: min(560px, 100%); max-height: 85vh; overflow: auto; background: #fff; color: #202124; border: 1px solid #ccc; border-radius: 12px; padding: 24px; }
 .transfer-picker button { margin: 12px 12px 0 0; }
 :root.dark .transfer-picker { background: #202124; color: #eee; border-color: #555; }
+
+:root.dark .fork-split-main { color: #a1a1aa; }
+:root.dark .fork-split-main:hover:not(:disabled) { color: #f4f4f5; }
+:root.dark .fork-split-sidebar .fork-split-main { color: #d4d4d8; }
+:root.dark .fork-split-sidebar .fork-split-main:hover:not(:disabled) { background: #27272a; }
+.composer-dropdown-option:disabled { cursor: not-allowed; opacity: 0.5; }

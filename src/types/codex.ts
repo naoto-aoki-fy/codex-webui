@@ -1,3 +1,5 @@
+export type ForkMethod = 'native' | 'portable'
+
 export type RpcEnvelope<T> = {
   result: T
 }
