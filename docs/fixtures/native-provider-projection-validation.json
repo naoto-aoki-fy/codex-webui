@@ -1,0 +1,139 @@
+{
+  "scope": "Real inference through native Codex 0.168.0 forks and a thread-scoped adapter executing the compiled Rust projection. The installed app-server and global configuration were not changed.",
+  "upstream": {
+    "tag": "rust-v0.168.0",
+    "revision": "9480ec100c3edee9fc69172e8e80a4730444094d",
+    "sourceFiles": {
+      "codex-rs/core/src/client.rs": "ddeb4c09eda763c3c6d979649036b0a2ad2f56e4904e1d4e4d4b4afd715750da",
+      "codex-rs/core/src/lib.rs": "35eedb9bc6a6c100fdd1cc02a75616b87cdaf8ee7a131a61c7da117512c03137"
+    }
+  },
+  "runtimeVersion": "0.168.0",
+  "rejectionBoundary": {
+    "trace": "ff6d7a8e-37f3-4d1c-bda3-f22efdbc0282",
+    "item": {
+      "index": 3,
+      "type": "reasoning",
+      "fields": [
+        "content",
+        "encrypted_content",
+        "id",
+        "internal_chat_message_metadata_passthrough",
+        "summary",
+        "type"
+      ],
+      "content": {
+        "length": 1,
+        "types": [
+          "reasoning_text"
+        ]
+      }
+    },
+    "upstreamError": {
+      "type": "invalid_request_error",
+      "code": "array_above_max_length",
+      "param": "input[3].content",
+      "status": 400
+    },
+    "correlation": "Transparent WebSocket forwarding let prewarm complete. The exact rejected delta input[3] was captured unchanged; no content text or credentials logged."
+  },
+  "requestProjection": {
+    "helperSha256": "f253b1e60dda2f3a3e2027e0a48f50ae43e4c2c96e36fde438d1221c584d8345",
+    "nativeCoreTypecheck": "passed on patched rust-v0.168.0 source",
+    "standaloneRustTests": 11,
+    "currentToolsBefore": 23,
+    "currentToolsAfter": 23,
+    "exampleDeclarationStats": {
+      "obsolete_declarations": 5,
+      "reasoning_items": 0,
+      "retained_declarations": 6
+    },
+    "sourceRolloutsRewritten": false,
+    "foreignPlaintextReasoning": "Labeled request-only assistant text; valid native reasoning unchanged"
+  },
+  "realProviderCases": [
+    {
+      "label": "OpenAI to custom",
+      "cutoff": false,
+      "prefixTurns": 2,
+      "destinationConfirmed": true,
+      "completedTurns": 3,
+      "toolRoundTrip": true,
+      "sourceHash": "8416cbda64a3cba3223a10c8c126b0c2c364d26b18d97f0593f39b74f8d79cb4",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "Custom to OpenAI",
+      "cutoff": false,
+      "prefixTurns": 3,
+      "destinationConfirmed": true,
+      "completedTurns": 3,
+      "toolRoundTrip": true,
+      "sourceHash": "454b45e4c4cd808fa698a4218256839aadc4594f0d7b2375955f7018d1cfecef",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "OpenAI to custom",
+      "cutoff": true,
+      "prefixTurns": 1,
+      "destinationConfirmed": true,
+      "completedTurns": 3,
+      "toolRoundTrip": true,
+      "sourceHash": "8416cbda64a3cba3223a10c8c126b0c2c364d26b18d97f0593f39b74f8d79cb4",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "Custom to OpenAI",
+      "cutoff": true,
+      "prefixTurns": 1,
+      "destinationConfirmed": true,
+      "completedTurns": 3,
+      "toolRoundTrip": true,
+      "sourceHash": "454b45e4c4cd808fa698a4218256839aadc4594f0d7b2375955f7018d1cfecef",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "OpenAI same-provider control",
+      "cutoff": false,
+      "prefixTurns": 2,
+      "destinationConfirmed": true,
+      "completedTurns": 3,
+      "toolRoundTrip": null,
+      "sourceHash": "8416cbda64a3cba3223a10c8c126b0c2c364d26b18d97f0593f39b74f8d79cb4",
+      "sourceUnchanged": true
+    },
+    {
+      "label": "Custom same-provider control",
+      "cutoff": false,
+      "prefixTurns": 3,
+      "destinationConfirmed": true,
+      "completedTurns": 3,
+      "toolRoundTrip": null,
+      "sourceHash": "454b45e4c4cd808fa698a4218256839aadc4594f0d7b2375955f7018d1cfecef",
+      "sourceUnchanged": true
+    }
+  ],
+  "unsupported": {
+    "syntheticFixture": true,
+    "rejected": true,
+    "sourceUnchanged": true,
+    "kind": "Synthetic negative fixture appended only to a disposable child through thread/inject_items",
+    "trace": "f2b79718-e81d-4c08-bfcb-08530ac22def",
+    "forwardedUpstream": false
+  },
+  "cleanup": {
+    "createdThreads": 9,
+    "confirmedArchived": 9,
+    "unknownOutcomes": [],
+    "globalProviderConfigurationUnchanged": true
+  },
+  "performance": {
+    "messages": 2000,
+    "requestBytes": 460281,
+    "iterations": 25,
+    "medianMs": 12.74,
+    "p95Ms": 15.22,
+    "mode": "release Rust binary plus JSON IPC, synthetic data, no API requests"
+  },
+  "deployment": "Matching source patch and standalone normalizer built/typechecked and tested. The independently managed server was not replaced; ordinary unmodified routes still need deployment."
+}
