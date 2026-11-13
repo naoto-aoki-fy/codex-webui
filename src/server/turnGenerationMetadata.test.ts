@@ -17,6 +17,7 @@ function client(endpoint = 'ws://127.0.0.1:4500', remoteHome = '/remote/codex') 
   const rpc = vi.fn()
   const instance = new AppServerClient({ threadIndex: { call: (m, p) => rpc(m, p) } })
   vi.spyOn(instance as any, 'ensureInitialized').mockResolvedValue(undefined)
+  vi.spyOn(instance as any, 'call').mockImplementation((...args: unknown[]) => rpc(args[0] as string, args[1] as Record<string, unknown>))
   vi.spyOn(instance, 'getInitializationMetadata').mockReturnValue({ codexHome: remoteHome } as any)
   return { instance, rpc }
 }
