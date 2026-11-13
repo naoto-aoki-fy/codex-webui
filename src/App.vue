@@ -283,8 +283,9 @@
                   :request-count="selectedThreadServerRequests.length"
                   @respond-server-request="onRespondServerRequest"
                 />
+                <p v-if="modelSelectionNotice" class="composer-model-notice" role="status">{{ t(modelSelectionNotice) }}</p>
                 <ThreadComposer
-                  v-else
+                  v-if="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
                   :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
@@ -423,6 +424,7 @@ const {
   transportState, selectedRecoveryState, selectedUnknownOutcome, selectedLostApproval,
   retrySelectedSubscription, reconcileSelectedHistory,
   error: desktopError,
+  modelSelectionNotice, resolveThreadReplacement,
   refreshAll,
   refreshWorkspaceRoots,
   refreshSkills,
@@ -1179,7 +1181,9 @@ function onSubmitThreadMessage(payload: { text: string; imageUrls: string[]; fil
     void submitFirstMessageForNewThread(text, payload.imageUrls, payload.skills, payload.fileAttachments)
     return
   }
-  void sendMessageToSelectedThread(text, payload.imageUrls, payload.skills, payload.fileAttachments)
+  void sendMessageToSelectedThread(text, payload.imageUrls, payload.skills, payload.fileAttachments).catch(() => {
+    // Submission errors are displayed by the conversation state.
+  })
 }
 
 function scheduleMobileConversationJumpToLatest(): void {
@@ -1518,6 +1522,12 @@ async function syncThreadSelectionWithRoute(): Promise<void> {
       if (route.name === 'thread') {
         const threadId = routeThreadId.value
         if (!threadId) continue
+        const replacement = resolveThreadReplacement(threadId)
+        if (replacement !== threadId) {
+          await router.replace({ name: 'thread', params: { threadId: replacement } })
+          hasPendingRouteSync = true
+          continue
+        }
 
         if (selectedThreadId.value !== threadId) {
           const result = await selectThread(threadId)
@@ -1659,6 +1669,10 @@ async function onLogoutCodex(): Promise<void> {
 
 .sidebar-scrollable {
   @apply flex-1 min-h-0 overflow-y-auto py-4 px-2 flex flex-col gap-2;
+}
+
+.composer-model-notice {
+  @apply mx-auto mb-2 max-w-3xl px-4 text-xs text-zinc-600;
 }
 
 .content-root {

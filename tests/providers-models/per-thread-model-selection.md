@@ -65,7 +65,7 @@ Expected results:
   model and provider-specific supported effort. The effective thread pair comes
   from the server's response and remains restored after reload.
 - Existing threads reject cross-provider changes with a message directing the
-  user to start a new thread. Their provider and new-thread preferences stay intact.
+  user to fork the conversation. Their provider and new-thread preferences stay intact.
 - Unavailable pairs remain saved and selected rather than silently switching to
   another provider. Working provider catalogs remain visible after partial failure.
 - Pagination retains the provider parameter. Repeated cursors terminate. Older
@@ -93,3 +93,87 @@ Verification and performance audit:
 - Live provider latency, authentication, and actual local inference were not
   measured by the credential-free fixture or browser stubs. Serial discovery can
   wait for a slow provider RPC before publishing the combined catalog.
+
+### Same-provider continuation and fresh-fork provider selection
+
+Prerequisites/setup: install dependencies and configure providers P (models A/B)
+and Q (models C/D) on an independently managed app-server. Keep the source
+conversation idle. Use a server that supports provider-specific fork execution
+for the successful Q continuation checks; see the limitation below for 0.167.2.
+
+Actions:
+1. Send three messages in one conversation, selecting P/A, P/B, then P/A.
+   Inspect each `turn/start.model` and the provider endpoint receiving inference.
+2. Delay `thread/resume`, select P/B before its response arrives, release the
+   response containing P/A, then send. Repeat while `thread/read` is delayed.
+3. Repeat with a legacy bare model ID and omitted provider metadata, with a
+   catalog that unambiguously associates A/B with P.
+4. Attempt to choose Q/C in the original conversation. Expect a visible message:
+   "Fork this conversation to use a different model provider."
+5. Fork from an earlier response and repeat with a full-history sidebar fork.
+   Confirm inherited P/A defaults and history, select Q/C, and send.
+6. Confirm `thread/fork` sends `modelProvider: Q` and `model: C` against the
+   fresh fork's ID. The confirmed configured fork receives the new message;
+   its history contains exactly the inherited prefix plus the continuation.
+7. Reopen the original: provider, model selection, and history must be unchanged.
+   Reload the continued fork: Q/C restores. Select Q/D and send; selecting P/A
+   now requires another fork. Reload an unsent fork and verify it stays editable.
+8. Return an unconfirmed provider/model or a provider-mismatch error from the
+   backend. Expect an error, no successful continuation, and the original draft
+   retained. A definitively rejected first turn leaves the fork editable.
+9. Check the picker and error text in both light and dark themes.
+
+Cleanup/rollback: archive only the conversations created for these checks;
+restore the original theme and any test-only backend configuration.
+
+Backend limitation (verified with Codex 0.167.2): `thread/fork` accepts overrides
+and confirms Q/C, but `turn/start` rejects the loaded Q fork while the app-server
+uses P as its configured default. The exact JSON-RPC error is `-32600`, with
+`data: {type: "modelProviderMismatch", modelProvider: "Q",
+currentModelProvider: "P"}`. No Q inference request occurs. `turn/start` exposes
+`model` but no `modelProvider` override. The UI reports this failure; it does not
+change global server configuration or replay a rejected message through P.
+Reopening under the same incompatible server remains subject to its provider
+check. A confirmed fork response alone does not prove successful continuation.
+
+Smallest required backend change: execute a loaded fork using the configured
+provider retained by its accepted `thread/fork.modelProvider` override, rather
+than requiring equality with the process default. Resume must likewise restore
+that saved provider when it is configured and allowed. Preserve policy checks
+and reject incompatible history explicitly. No new frontend protocol field is
+needed; both provider selection and model overrides already exist on fork.
+A backend that lacks those fork overrides must add them and return the effective
+provider/model. Starting provider-specific server processes is outside this
+application's external-server lifecycle contract.
+
+Validation/performance audit: state and gateway regressions cover pending reads,
+A/B/A submissions, legacy catalog identity, both fork entry points, confirmation,
+source isolation, reopening, and provider locking. An isolated real 0.167.2
+app-server with temporary CODEX_HOME and local mock Responses endpoints received
+exactly three inference requests: P/A, P/B, P/A. Forking at the first response
+preserved one turn, confirmed Q/C, then rejected its first new turn before any Q
+request. Reading the source afterward confirmed all three source turns unchanged.
+These mock inference endpoints test protocol routing, not real provider auth or
+model quality.
+
+Code-path performance audit: ordinary sends add no RPCs; explicit choices use a
+per-state Set and legacy provider resolution scans the in-memory catalog. History
+refresh keeps its existing request count and coalescing. Changing a fresh fork's
+provider adds one `thread/fork` before sending and, only after acceptance, one
+best-effort archive of the intermediate draft. Backend fork metadata inheritance
+also reads one source snapshot, rather than one request per message. Full fork
+responses/history scale with conversation length; no new per-turn fanout or
+unbounded request loop is introduced. Failed or ambiguous turns are never
+replayed automatically. Real provider latency and large-history payload sizes
+were not measured.
+
+Controlled UI verification: `http://127.0.0.1:4173/#/thread/model-source`,
+1440x1000, using Playwright RPC interception for deterministic provider catalogs
+and inherited history. The changed composer notice was checked in both themes:
+ordinary Q selection retained P/A and displayed the fork requirement; a fresh
+fork with inherited messages allowed Q/C and displayed its first-message rule.
+Screenshots: `output/playwright/model-provider-blocked-light.png`,
+`model-provider-blocked-dark.png`, `model-provider-fresh-fork-light.png`, and
+`model-provider-fresh-fork-dark.png`. Request evidence is in
+`output/playwright/model-provider-check.json`. This UI fixture does not establish
+live cross-provider continuation; the real-server limitation above still applies.

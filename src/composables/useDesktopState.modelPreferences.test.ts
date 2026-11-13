@@ -195,7 +195,7 @@ it('retains unavailable provider preferences and prevents cross-provider changes
   expect(state.readModelIdForThread('existing')).toBe(key('cloud', 'same'))
   state.setSelectedModelIdForThread('existing', key('local', 'same'))
   expect(state.readModelIdForThread('existing')).toBe(key('cloud', 'same'))
-  expect(state.error.value).toContain('Start a new thread')
+  expect(state.error.value).toContain('Fork this conversation')
   expect(state.readModelIdForThread('')).toBe(key('offline', 'same'))
   resume.mockRestore(); turn.mockRestore()
 })

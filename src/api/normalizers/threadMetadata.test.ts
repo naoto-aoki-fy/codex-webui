@@ -39,7 +39,7 @@ describe('thread response metadata', () => {
     expect(normalizeThreadModelProviderFromPayload(payload)).toBe('')
   })
 
-  it('prefers nonblank top-level provider, then nested provider; ignores aliases/source', () => {
+  it('prefers nonblank top-level provider, then nested provider, with legacy snake-case fallback; ignores source', () => {
     expect(normalizeThreadModelProviderFromPayload({
       modelProvider: ' top ', thread: { modelProvider: ' nested ' }, source: 'source',
     })).toBe('top')
@@ -48,7 +48,10 @@ describe('thread response metadata', () => {
         modelProvider, thread: { modelProvider: ' nested ' },
       })).toBe('nested')
     }
-    expect(normalizeThreadModelProviderFromPayload({ source: 'source', model_provider: 'alias' })).toBe('')
+    expect(normalizeThreadModelProviderFromPayload({ source: 'source', model_provider: ' alias ' })).toBe('alias')
+    expect(normalizeThreadModelProviderFromPayload({ thread: { model_provider: ' legacy ' } })).toBe('legacy')
+    expect(normalizeThreadModelProviderFromPayload({ model_provider: 'alias', thread: { modelProvider: 'canonical' } })).toBe('canonical')
+    expect(normalizeThreadModelProviderFromPayload({ source: 'source' })).toBe('')
     expect(normalizeThreadModelProviderFromPayload({ thread: { modelProvider: '  ' } })).toBe('')
   })
 
