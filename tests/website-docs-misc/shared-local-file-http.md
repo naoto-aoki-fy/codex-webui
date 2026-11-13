@@ -89,3 +89,10 @@ started for these checks and restore the previous app-server URL. Upload behavio
 is deferred and is not evidence of remote file-access compatibility.
 
 See [the architecture and verification limits](../../docs/project-file-access.md).
+
+## Remote Windows directory roots and nested skills
+
+- Setup: use a disposable remote fixture exposing `//server/share`, `\\server\share`, `C:/remote`, and `C:\remote`; A may run Linux. Include `skills/sample/SKILL.md`, a nested skill, and `skills/sample-other/SKILL.md`.
+- Actions: browse each share/drive root with and without a trailing separator, enter a child, navigate to its parent, then open installed Skills.
+- Expected: UNC paths retain server and share; drive roots remain absolute; sample's nested skill groups under sample while sample-other remains separate. POSIX browsing/grouping remains unchanged.
+- Cleanup: remove only disposable fixture data; no production uploads or remote files are modified by these read-only checks.
