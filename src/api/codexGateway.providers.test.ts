@@ -56,3 +56,15 @@ it.each(['cloud', 'local'])('sends provider %s on thread creation and only the r
   expect(calls[1].params).toMatchObject({ model: 'same', effort: 'low', collaborationMode: { settings: { model: 'same' } } })
   expect(calls[1].params).not.toHaveProperty('modelProvider')
 })
+
+it('submits raw model IDs and supported effort from a legacy providerless catalog', async () => {
+  const calls: any[] = []
+  reasoningCatalog.value = [{ id: 'b', supportedReasoningEfforts: ['low'], defaultReasoningEffort: 'low' }]
+  vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+    calls.push(JSON.parse(init.body))
+    return response({ turn: { id: 'next' } })
+  }))
+  await startThreadTurn('existing', 'hello', [], key('openai', 'b'), 'high', undefined, [], 'default')
+  expect(calls).toHaveLength(1)
+  expect(calls[0].params).toMatchObject({ threadId: 'existing', model: 'b', effort: 'low', collaborationMode: { settings: { model: 'b', reasoning_effort: 'low' } } })
+})

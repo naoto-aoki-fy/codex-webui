@@ -35,11 +35,25 @@ export function resolveReasoningEffort(model: ReasoningModel | null, requested?:
 
 export function findReasoningModel(catalog: ReasoningModel[], model: string): ReasoningModel | null {
   const selection = parseModelSelection(model)
-  return catalog.find((entry) => (entry.modelProvider || '') === selection.provider && (entry.id?.trim() === selection.model || entry.model?.trim() === selection.model)) ?? null
+  const matchesId = (entry: ReasoningModel) => entry.id?.trim() === selection.model || entry.model?.trim() === selection.model
+  const exact = catalog.find(entry => (entry.modelProvider?.trim() || '') === selection.provider && matchesId(entry))
+  if (exact) return exact
+  // Legacy single-provider catalogs have no qualified capability keys. This
+  // fallback resolves capabilities only; it does not authorize provider changes.
+  if (catalog.some(entry => entry.modelProvider?.trim())) return null
+  let legacy: ReasoningModel | null = null
+  for (const entry of catalog) {
+    if (!matchesId(entry)) continue
+    if (legacy) return null
+    legacy = entry
+  }
+  return legacy
 }
 
 // Versioned, unambiguous identity; legacy bare IDs continue to mean the legacy catalog.
 export function modelSelectionKey(provider: string, model: string): string {
+  provider = provider.trim()
+  model = model.trim()
   return provider ? `provider-model:${JSON.stringify([provider, model])}` : model
 }
 
@@ -48,9 +62,9 @@ export function parseModelSelection(value: string): { provider: string; model: s
     try {
       const pair: unknown = JSON.parse(value.slice('provider-model:'.length))
       if (Array.isArray(pair) && pair.length === 2 && pair.every((part) => typeof part === 'string')) {
-        return { provider: pair[0], model: pair[1] }
+        return { provider: pair[0].trim(), model: pair[1].trim() }
       }
     } catch { /* Interpret malformed legacy values as bare model IDs. */ }
   }
-  return { provider: '', model: value }
+  return { provider: '', model: value.trim() }
 }

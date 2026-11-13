@@ -1731,7 +1731,9 @@ describe('shared catalog ownership and deferred submission characterization', ()
         return submitted.promise
       }))
       gateway.resumeThread.mockReturnValueOnce(resumed.promise)
-      reasoningCatalog.value = [...a, ...b]
+      const key = (model: string) => `provider-model:${JSON.stringify(['openai', model])}`
+      reasoningCatalog.value = [...a, ...b].map(model => ({ ...model, modelProvider: 'openai' }))
+      window.localStorage.setItem('codex-web-local.selected-model-by-context.v1', JSON.stringify({ [thread.id]: key('A') }))
       const state = createState()
       state.setSelectedModelIdForThread(thread.id, 'A')
       state.setSelectedReasoningEffort('high', thread.id)
@@ -1744,17 +1746,17 @@ describe('shared catalog ownership and deferred submission characterization', ()
         state.setSelectedModelIdForThread(thread.id, 'B')
         state.setSelectedReasoningEffort('medium', thread.id)
       }
-      if (change === 'replace') reasoningCatalog.value = [{ ...a[0]!, supportedReasoningEfforts: ['low'] }]
+      if (change === 'replace') reasoningCatalog.value = [{ ...a[0]!, modelProvider: 'openai', supportedReasoningEfforts: ['low'] }]
       if (change === 'clear') reasoningCatalog.value = []
       if (change === 'unknown') state.setSelectedModelIdForThread(thread.id, 'unknown')
       if (change === 'dispose') state.stopPolling()
       resumed.resolve({ ...oldDetail, model: change === 'selection-no-resume-model' || change === 'unknown' ? '' : change === 'resume-B' ? 'B' : 'A' })
       await vi.advanceTimersByTimeAsync(0)
-      const model = change === 'selection-no-resume-model' || change === 'selection' ? 'B' : change === 'unknown' ? 'unknown' : 'A'
+      const model = change === 'selection-no-resume-model' || change === 'selection' ? 'B' : 'A'
       const effort = change === 'selection-no-resume-model' || change === 'selection' ? 'medium' : change === 'replace' ? 'low'
-        : ['clear', 'unknown', 'dispose'].includes(change) ? undefined : 'high'
-      // Effort is captured before resume; explicit model choices survive stale defaults.
-      expect(gateway.startThreadTurn.mock.calls[0]?.slice(3, 5)).toEqual([model, 'high'])
+        : ['clear', 'dispose'].includes(change) ? undefined : 'high'
+      // A choice during resume updates both the model and its supported effort; unknown IDs are rejected.
+      expect(gateway.startThreadTurn.mock.calls[0]?.slice(3, 5)).toEqual([key(model), model === 'B' ? 'medium' : 'high'])
       expect(requests).toEqual([{
         method: 'turn/start', params: {
           threadId: thread.id, input: [{ type: 'text', text: 'race marker' }], model,
@@ -1803,6 +1805,7 @@ describe('new-thread preference context across deferred creation', () => {
         if (request.method === 'config/read') return Promise.resolve(new Response(JSON.stringify({ result: { config: { model: 'A' } } })))
         return submitted.promise
       }))
+      window.localStorage.setItem('codex-web-local.selected-model-by-context.v1', JSON.stringify({ [thread.id]: 'A' }))
       const state = createState()
       state.setSelectedModelIdForThread(thread.id, 'A')
       state.setSelectedReasoningEffort('high', thread.id)

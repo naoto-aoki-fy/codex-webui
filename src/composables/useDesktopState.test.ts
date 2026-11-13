@@ -7,6 +7,7 @@ import {
   useDesktopState,
 } from './useDesktopState'
 import type { UiProjectGroup } from '../types/codex'
+import type { ReasoningModel } from '../api/modelCapabilities'
 import type { WorkspaceRootsState } from '../api/codexGateway'
 
 const gatewayMocks = vi.hoisted(() => ({
@@ -842,6 +843,15 @@ describe('Codex model selection', () => {
       'system:Worked for <1s',
       'assistant:Hi.',
     ])
+    const discoveryCalls = gatewayMocks.getAvailableModelIds.mock.calls.length
+    state.setSelectedModelId('gpt-5.5')
+    expect(gatewayMocks.getAvailableModelIds).toHaveBeenCalledTimes(discoveryCalls)
+    expect(state.selectedModelId.value).toBe('provider-model:["openai","gpt-5.5"]')
+    await state.sendMessageToSelectedThread('second')
+    expect(gatewayMocks.startThreadTurn.mock.calls.at(-1)?.[3]).toBe('provider-model:["openai","gpt-5.5"]')
+    state.setSelectedModelId('gpt-5.4-mini')
+    expect(state.selectedModelId.value).toBe('provider-model:["openai","gpt-5.4-mini"]')
+
   })
 
   it('surfaces selected thread load failures and still refreshes models', async () => {
@@ -1274,5 +1284,88 @@ describe('native read receipts', () => {
     expect(gatewayMocks.markNativeThreadRead).not.toHaveBeenCalled()
     expect(row().unread).toBe(true)
     state.stopPolling()
+  })
+})
+
+describe('existing conversation model identity', () => {
+  const key = (provider: string, model: string) => `provider-model:${JSON.stringify([provider, model])}`
+  async function setup(models: Array<ReasoningModel & { id: string }>, provider?: string) {
+    installTestWindow()
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({ groups: [{ projectName: 'project', threads: [thread('existing', '/tmp/project')] }], nextCursor: null })
+    gatewayMocks.getCurrentModelConfig.mockResolvedValue({ model: 'a', modelProvider: provider, speedMode: 'standard' })
+    gatewayMocks.getAvailableModelIds.mockResolvedValue({ ids: models.map(m => m.modelProvider ? key(m.modelProvider, m.id) : m.id), models })
+    gatewayMocks.getAvailableCollaborationModes.mockResolvedValue([])
+    gatewayMocks.getSkillsList.mockResolvedValue([])
+    gatewayMocks.resumeThread.mockResolvedValue({ model: 'a', modelProvider: provider, messages: [], turnIndexByTurnId: {} })
+    gatewayMocks.getThreadDetail.mockResolvedValue({ model: 'a', modelProvider: provider, messages: [], turnIndexByTurnId: {} })
+    gatewayMocks.startThreadTurn.mockResolvedValue('turn-next')
+    const state = useDesktopState()
+    await state.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
+    await state.selectThread('existing')
+    return state
+  }
+
+  it('preserves provider-qualified choices across turns, thread switching and reload with stale server defaults', async () => {
+    const models = [{ id: 'a', modelProvider: 'openai' }, { id: 'b', modelProvider: 'openai' }, { id: 'b', modelProvider: 'local' }]
+    const state = await setup(models, 'openai')
+    state.setSelectedModelId(key('openai', 'b'))
+    await state.sendMessageToSelectedThread('another message')
+    expect(gatewayMocks.startThreadTurn.mock.calls.at(-1)?.[3]).toBe(key('openai', 'b'))
+    state.setSelectedModelId(key('local', 'b'))
+    expect(state.error.value).toContain('Fork')
+    expect(state.selectedModelId.value).toBe(key('openai', 'b'))
+    await state.selectThread('')
+    await state.selectThread('existing')
+    expect(state.selectedModelId.value).toBe(key('openai', 'b'))
+    const restored = useDesktopState()
+    await restored.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
+    await restored.selectThread('existing')
+    expect(restored.selectedModelId.value).toBe(key('openai', 'b'))
+    gatewayMocks.getAvailableModelIds.mockResolvedValueOnce({ ids: [], models: [] })
+    await restored.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
+    expect(restored.selectedModelId.value).toBe(key('openai', 'b'))
+    await restored.sendMessageToSelectedThread('after reload')
+    expect(gatewayMocks.startThreadTurn.mock.calls.at(-1)?.[3]).toBe(key('openai', 'b'))
+    restored.setSelectedModelId(key('openai', 'a'))
+    expect(restored.selectedModelId.value).toBe(key('openai', 'a'))
+  })
+
+  it.each(['resume', 'read'])('keeps a choice made during pending thread/%s and submits its supported effort', async operation => {
+    const state = await setup([{ id: 'a', modelProvider: 'openai' }, { id: 'b', modelProvider: 'openai', supportedReasoningEfforts: ['low'] }], 'openai')
+    let finish!: (value: unknown) => void
+    const pending = new Promise(resolve => { finish = resolve })
+    if (operation === 'resume') {
+      // A new state has no resumed subscription, but retains the stored pair.
+      gatewayMocks.resumeThread.mockReturnValueOnce(pending)
+    } else {
+      gatewayMocks.getThreadDetail.mockReturnValueOnce(pending)
+    }
+    const target = operation === 'resume' ? useDesktopState() : state
+    const loading = operation === 'resume' ? target.selectThread('existing') : target.loadMessages('existing', { force: true })
+    await vi.waitFor(() => expect(operation === 'resume' ? gatewayMocks.resumeThread : gatewayMocks.getThreadDetail).toHaveBeenCalled())
+    target.setSelectedModelIdForThread('existing', key('openai', 'b'))
+    finish({ model: 'a', modelProvider: 'openai', messages: [], turnIndexByTurnId: {} })
+    await loading
+    expect(target.readModelIdForThread('existing')).toBe(key('openai', 'b'))
+    await target.sendMessageToSelectedThread('after pending operation')
+    expect(gatewayMocks.startThreadTurn.mock.calls.at(-1)?.slice(3, 5)).toEqual([key('openai', 'b'), 'low'])
+  })
+
+  it('rejects ambiguous bare IDs and unknown providers without inferring a mismatch', async () => {
+    const state = await setup([{ id: 'a', modelProvider: 'openai' }, { id: 'same', modelProvider: 'openai' }, { id: 'same', modelProvider: 'local' }], 'openai')
+    state.setSelectedModelId('same')
+    expect(state.selectedModelId.value).toBe(key('openai', 'a'))
+    expect(state.error.value).toContain('could not be confirmed')
+    state.setSelectedModelId('unavailable')
+    expect(state.selectedModelId.value).toBe(key('openai', 'a'))
+    state.setSelectedModelId(key('openai', 'same'))
+    expect(state.selectedModelId.value).toBe(key('openai', 'same'))
+  })
+
+  it('does not authorize a switch when neither thread nor catalog confirms a provider', async () => {
+    const state = await setup([{ id: 'a' }, { id: 'b' }])
+    state.setSelectedModelId('b')
+    expect(state.selectedModelId.value).toBe('a')
+    expect(state.error.value).toContain('could not be confirmed')
   })
 })

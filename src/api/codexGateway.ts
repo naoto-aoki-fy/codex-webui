@@ -745,7 +745,7 @@ async function loadModelCatalog(): Promise<ModelCatalog> {
       for (const model of Array.isArray(page?.data) ? page.data : []) {
         if (model && ((typeof model.id === 'string' && model.id.trim()) || (typeof model.model === 'string' && model.model.trim()))) models.push(provider
           ? { ...model, modelProvider: provider.id, providerDisplayName: provider.displayName || provider.name || provider.id }
-          : model)
+          : { ...model, modelProvider: (model as ReasoningModel).modelProvider?.trim() || undefined })
       }
       cursor = page?.nextCursor?.trim() || undefined
       if (!cursor || seen.has(cursor)) break
@@ -763,8 +763,9 @@ async function loadModelCatalog(): Promise<ModelCatalog> {
   let defaultProvider: string | undefined
   try {
     const result = await callRpc<{ data?: ModelProvider[]; providers?: ModelProvider[]; defaultProvider?: string; defaultModelProvider?: string; defaultProviderId?: string }>('modelProvider/list', {})
-    providers = [...new Map((result.data ?? result.providers ?? []).filter((p) => typeof p?.id === 'string' && p.id).map((p) => [p.id, p])).values()]
+    providers = [...new Map((result.data ?? result.providers ?? []).filter((p) => typeof p?.id === 'string' && p.id.trim()).map((p) => [p.id.trim(), { ...p, id: p.id.trim() }])).values()]
     defaultProvider = result.defaultProvider || result.defaultProviderId || result.defaultModelProvider || providers.find((p) => p.isDefault)?.id
+    defaultProvider = defaultProvider?.trim() || undefined
   } catch (error) {
     if (unsupportedCatalogMethod(error)) return legacy()
     return { ids: [], models: [] }
@@ -794,7 +795,7 @@ export async function getCurrentModelConfig(): Promise<CurrentModelConfig> {
   const model = payload.config.model ?? ''
   const reasoningEffort = normalizeReasoningEffort(payload.config.model_reasoning_effort)
   const speedMode = normalizeSpeedMode(payload.config.service_tier)
-  return { model, modelProvider: payload.config.model_provider || undefined, reasoningEffort, speedMode }
+  return { model, modelProvider: payload.config.model_provider?.trim() || undefined, reasoningEffort, speedMode }
 }
 
 export async function listDirectoryMcpServers(): Promise<DirectoryMcpServerStatus[]> {

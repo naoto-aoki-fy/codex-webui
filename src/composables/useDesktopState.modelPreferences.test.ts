@@ -69,6 +69,7 @@ describe('persistent composer model preferences', () => {
   })
 
   it('resolves home reasoning against its own model while another thread is selected', () => {
+    store.set(modelKey, JSON.stringify({ 'existing-thread': 'A' }))
     const state = useDesktopState()
     state.setSelectedModelIdForThread('existing-thread', 'A')
     state.primeSelectedThread('existing-thread')
@@ -108,17 +109,25 @@ it('updates the displayed model when the Codex catalog arrives after the compose
 const usageKey = 'codex-web-local.model-usage-order.v1'
 
 it('orders explicit selections across contexts and persists without changing selection or efforts', async () => {
+  const key = (model: string) => `provider-model:${JSON.stringify(['openai', model])}`
+  reasoningCatalog.value = reasoningCatalog.value.map(model => ({ ...model, modelProvider: 'openai' }))
+  store.set(modelKey, JSON.stringify({ existing: key('A') }))
+  const { getAvailableModelIds } = await import('../api/codexGateway')
+  for (let refresh = 0; refresh < 3; refresh++) {
+    vi.mocked(getAvailableModelIds).mockResolvedValueOnce({ ids: [key('A'), key('B')], models: reasoningCatalog.value })
+  }
   const state = useDesktopState()
+  state.primeSelectedThread('existing')
   await state.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
-  state.setSelectedModelIdForThread('', 'B')
+  state.setSelectedModelIdForThread('', key('B'))
   state.setSelectedReasoningEffort('high', '')
   state.setSelectedModelIdForThread('existing', 'A')
-  expect(state.availableModelIds.value).toEqual(['A', 'B'])
+  expect(state.availableModelIds.value).toEqual([key('A'), key('B')])
   state.setSelectedModelIdForThread('existing', 'B')
-  expect(state.availableModelIds.value).toEqual(['B', 'A'])
+  expect(state.availableModelIds.value).toEqual([key('B'), key('A')])
   const reopened = useDesktopState()
   await reopened.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
-  expect(reopened.availableModelIds.value).toEqual(['B', 'A'])
+  expect(reopened.availableModelIds.value).toEqual([key('B'), key('A')])
   expect(reopened.readReasoningEffortForThread('')).toBe('high')
   const stored = store.get(usageKey)
   reopened.primeSelectedThread('existing')
