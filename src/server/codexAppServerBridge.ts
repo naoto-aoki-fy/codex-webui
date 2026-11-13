@@ -1,3 +1,4 @@
+import { createConversationTransfers } from './conversationTransfer.js'
 import { readProviderModelCatalog } from './providerModelCatalog.js'
 import { profileStateDirectory, getConnectionProfileId } from './connectionProfile.js'
 import { WORKFLOW_CAPABILITIES, classifyCapabilityError } from './remoteCapabilities.js'
@@ -521,6 +522,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   let released = false
   const activeSse = new Set<() => void>()
   const { appServer, methodCatalog } = sharedState
+  const transfers = createConversationTransfers((method, params) => appServer.rpc(method, params))
   const files = sharedState.files ?? new ProjectFileService(appServer)
   const gitWorkspaceRoutes = createGitWorkspaceRoutes({ appServer })
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
@@ -658,6 +660,22 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           return
         }
 
+        if (body.method.startsWith('conversation-transfer/')) {
+          const params = asRecord(body.params) ?? {}
+          const result = body.method === 'conversation-transfer/prepare'
+            ? await transfers.prepare(readNonEmptyString(params.threadId), params.turnIndex as number | undefined, readNonEmptyString(params.turnId))
+            : body.method === 'conversation-transfer/status'
+              ? await transfers.status(readNonEmptyString(params.id))
+            : body.method === 'conversation-transfer/cancel'
+              ? await transfers.cancel(readNonEmptyString(params.id))
+              : body.method === 'conversation-transfer/create'
+                ? await transfers.create(readNonEmptyString(params.id), readNonEmptyString(params.model), readNonEmptyString(params.modelProvider))
+                : null
+          setJson(res, 200, { result })
+          return
+        }
+        if (body.method === 'turn/start') await transfers.assertReady(readNonEmptyString(asRecord(body.params)?.threadId))
+
         if (body.method === 'thread/start') {
           const cwd = readNonEmptyString(asRecord(body.params)?.cwd)
           if (!cwd) {
@@ -728,7 +746,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           ? mergeStreamTurnErrorsIntoThreadResult(appServer, trimmedResult)
           : trimmedResult
         const sanitizedResult = await sanitizeThreadTurnsInlinePayloads(body.method, errorMergedResult)
-        const result = sanitizedResult
+        const result = await transfers.decorate(sanitizedResult)
 
 	        if (THREAD_METHODS_WITH_THREAD_SNAPSHOT.has(body.method) && !asRecord(body.params)?.excludeTurns && snapshotEpoch === appServer.getSnapshotEpoch()) {
 	          const rpcRecord = asRecord(result)
@@ -757,7 +775,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           if (typeof appServer.readThreadPage === 'function') {
             const page = await appServer.readThreadPage(threadId, beforeTurnId, limit)
             const result = await sanitizeThreadTurnsInlinePayloads('thread/read', mergeStreamTurnErrorsIntoThreadResult(appServer, page.result))
-            setJson(res, 200, { ...page, result })
+            setJson(res, 200, { ...page, result: await transfers.decorate(result) })
             return
           }
           const threadReadResult = mergeStreamTurnErrorsIntoThreadResult(appServer, await appServer.readThreadForTurnPage(threadId))

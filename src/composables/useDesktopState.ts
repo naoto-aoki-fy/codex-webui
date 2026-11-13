@@ -81,10 +81,10 @@ import { computed, ref, watch } from 'vue'
 import { formatTurnDuration, parseIsoTimestamp } from '../utils/turnTiming'
 import {
 
+  createConversationTransfer,
   archiveThread,
   forkThread,
   configureFreshFork,
-  forkThreadFromResponse,
   getAvailableCollaborationModes,
   getAccountRateLimits,
   renameThread,
@@ -2856,7 +2856,7 @@ export function useDesktopState() {
 
       const { messages: nextMessages, inProgress, activeTurnId, turnIndexByTurnId } = detail
       const previousPersisted = persistedMessagesByThreadId.value[threadId] ?? []
-      const firstFreshIndex = nextMessages.reduce((first, message) => Math.min(first, message.turnIndex ?? Infinity), Infinity)
+      const firstFreshIndex = nextMessages.reduce((first, message) => Math.min(first, message.turnId ? message.turnIndex ?? Infinity : Infinity), Infinity)
       // A capped detail snapshot cannot invalidate history preceding its range.
       // Empty snapshots still retain their existing replacement semantics.
       const earlierMessages = Number.isFinite(firstFreshIndex)
@@ -3165,103 +3165,32 @@ export function useDesktopState() {
     }
   }
 
-  async function forkThreadById(threadId: string): Promise<string> {
-    const sourceThreadId = threadId.trim()
-    if (!sourceThreadId) return ''
-
-    const sourceThread = flattenThreads(sourceGroups.value).find((row) => row.id === sourceThreadId)
-    const sourceCwd = sourceThread?.cwd?.trim() ?? ''
-    const sourceTitle = sourceThread?.title?.trim() ?? 'Forked chat'
-    const selectedModel = readModelIdForThread(sourceThreadId)
-    error.value = ''
-
-    try {
-      const forkedThread = await forkThread(sourceThreadId, sourceCwd || undefined, selectedModel || undefined)
-      const nextThreadId = forkedThread.threadId.trim()
-      if (!nextThreadId) return ''
-
-      insertOptimisticThread(nextThreadId, sourceCwd, sourceTitle)
-      setThreadModelId(nextThreadId, forkedThread.model || selectedModel, forkedThread.modelProvider)
-      markFreshFork(nextThreadId, readModelIdForThread(nextThreadId))
-      resumedThreadById.value = {
-        ...resumedThreadById.value,
-        [nextThreadId]: true,
-      }
-      setSelectedThreadId(nextThreadId)
-      await loadThreads()
-      await loadMessages(nextThreadId)
-      return nextThreadId
-    } catch (unknownError) {
-      error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-      return ''
-    }
-  }
-
-  async function forkThreadFromTurn(threadId: string, turnIndex: number): Promise<string> {
-    const normalizedThreadId = threadId.trim()
-    if (!normalizedThreadId || !Number.isInteger(turnIndex) || turnIndex < 0) return ''
-
-    if (inProgressById.value[normalizedThreadId] === true) {
-      error.value = 'Finish the current turn before forking from a response.'
-      return ''
-    }
-
-    if (loadedMessagesByThreadId.value[normalizedThreadId] !== true) {
-      try {
-        await loadMessages(normalizedThreadId)
-      } catch (unknownError) {
-        error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-        return ''
-      }
-    }
-
-    const sourceThread = flattenThreads(sourceGroups.value).find((row) => row.id === normalizedThreadId) ?? null
-
+  const pendingConversationTransfers = new Set<string>()
+  async function completeConversationTransfer(threadId: string, transferId: string, modelId: string): Promise<string> {
+    if (!transferId || !modelId || pendingConversationTransfers.has(transferId)) return ''
+    pendingConversationTransfers.add(transferId)
     try {
       error.value = ''
-      const forked = await forkThreadFromResponse(normalizedThreadId, turnIndex)
-      const forkedThreadId = forked.threadId.trim()
-      if (!forkedThreadId) return ''
-
-      const forkedCwd = forked.cwd.trim() || sourceThread?.cwd?.trim() || ''
-      const forkedThreadTitle = toForkedThreadTitle(sourceThread?.title || sourceThread?.preview || 'Untitled thread')
-      insertOptimisticThread(forkedThreadId, forkedCwd, forkedThreadTitle)
-      setThreadModelId(forkedThreadId, forked.model || readModelIdForThread(normalizedThreadId), forked.modelProvider)
-      markFreshFork(forkedThreadId, readModelIdForThread(forkedThreadId))
-      setPersistedMessagesForThread(forkedThreadId, forked.messages)
-      loadedMessagesByThreadId.value = {
-        ...loadedMessagesByThreadId.value,
-        [forkedThreadId]: true,
-      }
-      resumedThreadById.value = {
-        ...resumedThreadById.value,
-        [forkedThreadId]: true,
-      }
-      clearLivePlansForThread(forkedThreadId)
-      setLiveAgentMessagesForThread(forkedThreadId, [])
-      clearLiveReasoningForThread(forkedThreadId)
-      if (liveCommandsByThreadId.value[forkedThreadId]) {
-        liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, forkedThreadId)
-      }
-      setTurnSummaryForThread(forkedThreadId, null)
-      setTurnActivityForThread(forkedThreadId, null)
-      setTurnErrorForThread(forkedThreadId, null)
-      setThreadInProgress(forkedThreadId, false)
-
-      hasMoreOlderMessagesByThreadId.value = {
-        ...hasMoreOlderMessagesByThreadId.value,
-        [forkedThreadId]: forked.hasMoreOlder,
-      }
-      replaceTurnIndexLookupForThread(forkedThreadId, forked.turnIndexByTurnId)
-
-      await renameThreadById(forkedThreadId, forkedThreadTitle)
-      setSelectedThreadId(forkedThreadId)
-      void loadThreads().catch(() => {})
-      return forkedThreadId
-    } catch (unknownError) {
-      error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
+      const result = await createConversationTransfer(transferId, modelId)
+      const source = flattenThreads(sourceGroups.value).find(row => row.id === threadId)
+      insertOptimisticThread(result.threadId, source?.cwd || '', toForkedThreadTitle(source?.title || 'Imported conversation'))
+      setThreadModelId(result.threadId, result.model, result.modelProvider)
+      // This is a new, configured thread, never a native fresh fork.
+      setSelectedThreadId(result.threadId)
+      await loadThreads()
+      await loadMessages(result.threadId)
+      if (result.warnings.length) error.value = result.warnings.join(' ')
+      return result.threadId
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : String(cause)
       return ''
-    }
+    } finally { pendingConversationTransfers.delete(transferId) }
+  }
+  async function forkThreadById(threadId: string, transferId = '', modelId = ''): Promise<string> {
+    return completeConversationTransfer(threadId, transferId, modelId)
+  }
+  async function forkThreadFromTurn(threadId: string, _turnIndex: number, transferId = '', modelId = ''): Promise<string> {
+    return completeConversationTransfer(threadId, transferId, modelId)
   }
 
   async function maybeReplyToPendingUserInputRequest(
@@ -3307,6 +3236,9 @@ export function useDesktopState() {
 
     let threadId = selectedThreadId.value
     const nextText = text.trim()
+    if (persistedMessagesByThreadId.value[threadId]?.some(message => message.id === `import-status-${threadId}`)) {
+      throw new Error('This conversation import is incomplete. Inspect the destination; do not replay injection.')
+    }
     if (archivingForkPrefixes.has(threadId)) {
       error.value = 'This unused fork prefix is being archived. Continue in its completed child instead.'
       setTurnErrorForThread(threadId, error.value)

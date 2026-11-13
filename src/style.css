@@ -1396,3 +1396,8 @@
 :root.dark .composer-model-notice {
   @apply text-zinc-400;
 }
+
+.transfer-picker-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: #0008; padding: 24px; }
+.transfer-picker { width: min(560px, 100%); max-height: 85vh; overflow: auto; background: #fff; color: #202124; border: 1px solid #ccc; border-radius: 12px; padding: 24px; }
+.transfer-picker button { margin: 12px 12px 0 0; }
+:root.dark .transfer-picker { background: #202124; color: #eee; border-color: #555; }

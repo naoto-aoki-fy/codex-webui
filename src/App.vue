@@ -287,6 +287,7 @@
                 <ThreadComposer
                   v-if="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
+                  :disabled="isSelectedThreadImportIncomplete"
                   :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
                   :collaboration-modes="availableCollaborationModes"
@@ -315,9 +316,25 @@
       </section>
     </template>
   </DesktopLayout>
+  <div v-if="transferPicker" class="transfer-picker-backdrop" role="presentation">
+    <section class="transfer-picker" role="dialog" aria-modal="true" aria-label="Transfer conversation">
+      <h2>Fork conversation</h2>
+      <p v-if="transferPicker.loading">Reading the complete source history…</p>
+      <template v-else>
+        <p>Select the destination provider and model before creating the conversation.</p>
+        <ComposerDropdown v-model="transferModel" :options="transferModelOptions" placeholder="Provider / model" enable-search open-direction="down" :disabled="transferPicker.pending" />
+        <p v-for="warning in transferPicker.warnings" :key="warning">{{ warning }}</p>
+        <p v-if="transferPicker.failure" role="alert">{{ transferPicker.failure }}</p>
+        <button type="button" :disabled="transferPicker.pending" @click="cancelTransferPicker">Cancel</button>
+        <button type="button" :disabled="transferPicker.pending || !transferPicker.id || !transferModel || !!transferPicker.failure" @click="confirmTransferPicker">{{ transferPicker.pending ? 'Importing history…' : 'Create conversation' }}</button>
+      </template>
+    </section>
+  </div>
 </template>
 
 <script setup lang="ts">
+import { prepareConversationTransfer, cancelConversationTransfer } from './api/codexGateway'
+import { parseModelSelection } from './api/modelCapabilities'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNewThreadCwdRoute } from './composables/useNewThreadCwdRoute'
@@ -956,15 +973,47 @@ function onArchiveThread(threadId: string): void {
   void archiveThreadById(threadId)
 }
 
-async function onForkThread(threadId: string): Promise<void> {
-  const nextThreadId = await forkThreadById(threadId)
-  if (!nextThreadId) return
-  if (!isHomeRoute.value) {
-    await router.push({ name: 'thread', params: { threadId: nextThreadId } })
-  } else {
-    await router.replace({ name: 'thread', params: { threadId: nextThreadId } })
-  }
+const transferPicker = ref<null | { sourceId: string; turnIndex?: number; id: string; warnings: string[]; loading: boolean; pending: boolean; failure: string }>(null)
+const transferModel = ref('')
+const isSelectedThreadImportIncomplete = computed(() => messages.value.some(message => message.id === `import-status-${selectedThreadId.value}`))
+const transferModelOptions = computed(() => availableModelIds.value.filter(id => !!parseModelSelection(id).provider).map(id => {
+  const selection = parseModelSelection(id)
+  return { value: id, label: `${selection.provider} — ${selection.model}` }
+}))
+async function openTransferPicker(sourceId: string, turnIndex?: number): Promise<void> {
+  if (transferPicker.value) return
+  const picker = { sourceId, turnIndex, id: '', warnings: [] as string[], loading: true, pending: false, failure: '' }
+  transferPicker.value = picker
+  transferModel.value = ''
+  try {
+    const turnId = selectedThreadId.value === sourceId ? messages.value.find(message => message.role === 'assistant' && message.turnIndex === turnIndex)?.turnId : undefined
+    const prepared = await prepareConversationTransfer(sourceId, turnIndex, turnId)
+    Object.assign(transferPicker.value!, prepared)
+  } catch (cause) {
+    transferPicker.value!.failure = cause instanceof Error ? cause.message : String(cause)
+  } finally { transferPicker.value!.loading = false }
+}
+async function cancelTransferPicker(): Promise<void> {
+  const picker = transferPicker.value
+  if (!picker || picker.pending) return
+  if (picker.id) await cancelConversationTransfer(picker.id)
+  transferPicker.value = null
+}
+async function confirmTransferPicker(): Promise<void> {
+  const picker = transferPicker.value
+  if (!picker || picker.pending || !picker.id || !transferModelOptions.value.some(option => option.value === transferModel.value)) return
+  picker.pending = true
+  const nextId = picker.turnIndex === undefined
+    ? await forkThreadById(picker.sourceId, picker.id, transferModel.value)
+    : await forkThreadFromTurn(picker.sourceId, picker.turnIndex, picker.id, transferModel.value)
+  picker.pending = false
+  if (!nextId) { picker.failure = desktopError.value || 'Import did not complete. Do not retry injection.'; return }
+  transferPicker.value = null
+  await router.push({ name: 'thread', params: { threadId: nextId } })
   if (isMobile.value) setSidebarCollapsed(true)
+}
+async function onForkThread(threadId: string): Promise<void> {
+  await openTransferPicker(threadId)
 }
 
 function isWorktreePath(cwdRaw: string): boolean {
@@ -1079,13 +1128,7 @@ async function handleServerRequestResponse(payload: UiServerRequestReply): Promi
 }
 
 async function onForkThreadFromMessage(payload: { threadId: string; turnIndex: number }): Promise<void> {
-  const forkedThreadId = await forkThreadFromTurn(payload.threadId, payload.turnIndex)
-  if (!forkedThreadId) return
-  await router.push({ name: 'thread', params: { threadId: forkedThreadId } })
-  if (selectedThreadId.value !== forkedThreadId) {
-    await selectThread(forkedThreadId)
-  }
-  if (isMobile.value) setSidebarCollapsed(true)
+  await openTransferPicker(payload.threadId, payload.turnIndex)
 }
 
 function setSidebarCollapsed(nextValue: boolean): void {
