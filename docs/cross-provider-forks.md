@@ -1,5 +1,11 @@
 # Cross-provider forks and recovery
 
+Native request compatibility now has an [implemented projection, matching Codex
+0.168.0 patch and real-provider validation](native-provider-compatibility.md).
+The baseline findings below describe the unmodified routes. The running server
+was not replaced: ordinary UI forks require deployment of that external patch,
+or explicit thread-scoped adapter routing, to use the fix.
+
 ## Current boundary
 
 The web application connects to an independently managed Codex app-server over
@@ -66,9 +72,12 @@ after checking completion. The app does not automatically resend stored prompts.
 
 ## What is established, and what is not
 
-The reported `input[3].content` error alone does **not** establish the item's type.
-Nonempty `reasoning.content` is present in the redirected runtime capture, but
-the rejected production item at index 3 was not captured. The incompatible-history fixtures drive
+The error alone did not establish the item's type in the baseline audit. A
+subsequent transparent forwarding trace now correlates the actual upstream
+`input[3].content` rejection with a `reasoning` item containing one
+`reasoning_text` element. Completing the WebSocket prewarm is essential: the
+rejected request is a delta, not the earlier full capture. The implemented
+projection and its Rust tests are described in the linked guide. The incompatible-history fixtures drive
 **notification recovery tests using error strings**. Their input arrays are not
 processed by an adapter or provider; they do not test request normalization,
 reasoning compatibility, tool declaration preservation, or successful inference. Clearing all arrays or removing
@@ -120,8 +129,10 @@ Disposable live audits established:
   `reasoning_text`. However its raw `input[3]` is a user message with two content
   elements, while reasoning is at index 5. This is **not** a capture at the
   production rejection boundary: redirected configuration/context and downstream
-  indexing may differ. The rejected native `input[3]` type remains unverified.
-  No transformation was selected on the assumption that it must be reasoning.
+  indexing differed. That baseline capture did not identify the rejected item.
+  The transparent forwarding probe described above subsequently completed prewarm
+  and correlated the actual rejected delta item as reasoning. No transformation
+  was selected solely from the earlier index mismatch.
 
 [Redacted runtime evidence](fixtures/cross-provider-runtime-audit.json) records
 only structural metadata and audit markers. Capture endpoints intentionally
@@ -129,8 +140,10 @@ returned an audit error; those turns are not provider inference validations.
 No stored inference history, process-wide defaults, or provider credentials were
 changed. All ten disposable audit threads were confirmed archived after validation; both
 capture listeners were closed and process-wide model/provider settings rechecked.
-Both original HTTP 400s remain reproducible and unresolved. The fixture input
-arrays still validate notification recovery only, not normalization.
+Both HTTP 400s still reproduce on unmodified routes. They are resolved in the
+scoped real-provider projection matrix linked above. The earlier fixture input
+arrays still validate notification recovery only; the new Rust tests process
+actual input arrays, and the live matrix validates inference/tool continuation.
 
 The official [App Server documentation](https://learn.chatgpt.com/docs/app-server)
 describes forks as copying stored history; it does not guarantee arbitrary
@@ -150,18 +163,15 @@ new Lite prefix is after `input.splice(0..0, prefix)` in
 A LiteLLM adapter receiving the complete HTTP request is another valid boundary.
 The frontend JSON-RPC bridge sees neither complete representation.
 
-The runtime and route are now identified, but the deployed components' editable
-implementation is not available: the Codex runtime is an installed standalone
-binary outside this workspace; `/tmp/codex-search-reference` at `c0cc9fc` is an
-unmatched reference checkout, not a confirmed source revision for that binary.
-The hosted LiteLLM/vLLM service's source, versions and model-group mapping are not
-exposed here. No guessed patch was applied to an unrelated checkout or binary.
-To implement and deploy the fix, access is needed to the matching Codex 0.168.0
-source/build or the deployed LiteLLM Responses adapter, its Hosted-vLLM route
-configuration/capability policy, and the exact production rejection-boundary
-request trace mapping `input[3]`. Local serialized captures narrow the boundary
-but do not establish that downstream mapping. The existing gateway can be used
-for subsequent verification once an external patch is prepared.
+Matching public source is now available at `rust-v0.168.0`, commit
+`9480ec100c3edee9fc69172e8e80a4730444094d`. A concrete patch at that boundary,
+a compiled standalone projection and an explicit forwarding adapter are supplied.
+The patched core library typecheck and real-provider matrix passed. The older
+`c0cc9fc` checkout remains only a baseline reference. Deployment of the built
+server, or explicit adapter routing, is still required; the installed server and
+credentials were not changed. No LiteLLM/vLLM source modification is needed for
+the validated cases. The [implementation guide](native-provider-compatibility.md)
+records policies, unsupported cases and exact deployment commands.
 
 Required contract:
 
@@ -194,7 +204,7 @@ Disabling Responses Lite in a **destination's** model capabilities may address
 newly generated declarations on affected Codex versions. It does not establish
 that inherited declarations or reasoning are safe. Do not change process-wide
 provider defaults or patch rollout files as a workaround. Native cross-provider
-compatibility remains dependent on the external implementation above.
+compatibility remains dependent on deploying the supplied external projection.
 
 ## Recovery without native compatibility
 
