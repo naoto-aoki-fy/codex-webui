@@ -538,7 +538,8 @@ export function normalizeThreadMessagesV2(payload: ThreadReadResponse, baseTurnI
   const imported = payload as ThreadReadResponse & { importedTranscript?: Array<{ role: 'user' | 'assistant'; text: string; source: string }>; importStage?: string; importFailure?: string }
   const messages: UiMessage[] = (imported.importedTranscript || []).map((message, index) => ({
     id: `imported-${payload.thread.id}-${index}`, role: message.role, turnIndex: -index - 1,
-    text: `[Imported context from ${message.source}]\n\n${message.text}`,
+    text: message.text,
+    importMetadata: { source: message.source },
   }))
   if (imported.importStage && imported.importStage !== 'ready') messages.push({
     id: `import-status-${payload.thread.id}`, role: 'system',

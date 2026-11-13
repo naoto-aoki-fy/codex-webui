@@ -18,6 +18,7 @@ it.each(['full', 'response'])('uses only the native %s API without provider over
     : await forkThreadFromResponse('source', 0, 'turn-0')
   expect(forked).toMatchObject({ threadId: 'native', model: 'source-model', modelProvider: 'source-provider' })
   expect(forked.messages.map(message => message.text)).toEqual(['question', 'answer'])
+  expect(forked.messages.every(message => message.importMetadata === undefined)).toBe(true)
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
     method: entry === 'full' ? 'thread/fork' : 'thread/fork-at-response',

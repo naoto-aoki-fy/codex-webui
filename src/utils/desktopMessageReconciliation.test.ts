@@ -29,6 +29,7 @@ describe('desktop message reconciliation', () => {
 
   it.each([
     { submittedAt: 'submitted' }, { completedAt: 'completed' },
+    { importMetadata: { source: 'source-thread (provider / model)' } },
     { generationMetadata: { model: 'new-model' } },
     { generationMetadata: { effort: 'high' } },
     { generationMetadata: { modelSource: 'execution' } },

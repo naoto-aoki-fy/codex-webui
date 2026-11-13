@@ -64,6 +64,8 @@ export type UiPlanData = {
 }
 
 export type UiMessage = {
+  // Import provenance is internal metadata, never part of the displayed text.
+  importMetadata?: { source: string }
   submittedAt?: string
   completedAt?: string
   generationMetadata?: import('../turnGenerationMetadata').TurnGenerationMetadata

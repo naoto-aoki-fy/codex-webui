@@ -26,7 +26,7 @@ Imported-only responses have no native turn ID. Their Native Fork option shows
 an explanation and cannot be confirmed; use Portable Transfer for that cutoff.
 A whole native fork of an imported thread relies on the app-server's stored
 context and presentation. Use Portable Transfer to retain the app's visible,
-attributed imported transcript in the new conversation.
+persisted imported transcript and its internal attribution in the new conversation.
 
 ## Portable transfer lifecycle
 
@@ -66,7 +66,9 @@ Profile-scoped Codex global state stores the snapshot, source attribution,
 destination ID and import stage atomically. Injected model context is persisted
 by the connected app-server; the local imported transcript is independently
 included in read/resume/page responses for presentation after reload. Imported
-assistant messages are labeled with their source, not credited to the new model.
+messages display their original text without repeated import labels. Source
+attribution remains in the stored transcript and normalized `importMetadata`,
+separate from the displayed message text.
 Subsequent transfers include this prefix once. Imported response cutoffs use
 negative transcript positions; native turn indices remain unchanged.
 
@@ -130,3 +132,11 @@ continuation, native operation after portable preparation failure, and explicit
 portable selection after a native capability error. The portable service call
 is mocked at the browser boundary; server unit tests verify start/inject order.
 Screenshots and the request report are saved under `output/playwright/`.
+
+Message presentation uses the original transcript text directly; it does not
+change the stored transcript, injected items or transfer lifecycle. Normalization
+still takes one linear pass and preserves stable message IDs/cutoffs. Internal
+source metadata participates in message reconciliation, so unchanged messages
+can reuse cached objects. This presentation change adds no API requests,
+synchronous filesystem work, fanout, or cache invalidation. Live provider latency
+was not measured for this presentation refinement.
