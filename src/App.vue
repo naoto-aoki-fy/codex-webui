@@ -1174,15 +1174,17 @@ function scheduleWorkspaceRootsResume(): void {
   }, 100)
 }
 
-function onSubmitThreadMessage(payload: { text: string; imageUrls: string[]; fileAttachments: Array<{ label: string; path: string; fsPath: string }>; skills: Array<{ name: string; path: string }> }): void {
-  const text = payload.text
+function onSubmitThreadMessage(
+  payload: { text: string; imageUrls: string[]; fileAttachments: Array<{ label: string; path: string; fsPath: string }>; skills: Array<{ name: string; path: string }> },
+  settle: (accepted: boolean) => void,
+): void {
   scheduleMobileConversationJumpToLatest()
-  if (isHomeRoute.value) {
-    void submitFirstMessageForNewThread(text, payload.imageUrls, payload.skills, payload.fileAttachments)
-    return
-  }
-  void sendMessageToSelectedThread(text, payload.imageUrls, payload.skills, payload.fileAttachments).catch(() => {
-    // Submission errors are displayed by the conversation state.
+  const submission = isHomeRoute.value
+    ? submitFirstMessageForNewThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments)
+    : sendMessageToSelectedThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments).then(() => true)
+  void submission.then(accepted => settle(accepted), failure => {
+    desktopError.value = failure instanceof Error ? failure.message : String(failure)
+    settle(false)
   })
 }
 
@@ -1609,19 +1611,21 @@ async function submitFirstMessageForNewThread(
   imageUrls: string[] = [],
   skills: Array<{ name: string; path: string }> = [],
   fileAttachments: Array<{ label: string; path: string; fsPath: string }> = [],
-): Promise<void> {
+): Promise<boolean> {
   try {
     let targetCwd = newThreadCwd.value
     if (!targetCwd.trim()) {
       desktopError.value = 'Select an existing workspace before starting a conversation.'
-      return
+      return false
     }
     const threadId = await sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments)
-    if (!threadId) return
+    if (!threadId) return false
     await router.replace({ name: 'thread', params: { threadId } })
     scheduleMobileConversationJumpToLatest()
+    return true
   } catch {
     // Error is already reflected in state.
+    return false
   }
 }
 
