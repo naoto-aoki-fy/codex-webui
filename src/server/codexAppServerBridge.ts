@@ -1,4 +1,6 @@
-import { stageRemoteUpload } from './remoteUploads.js'
+import { profileStateDirectory, getConnectionProfileId } from './connectionProfile.js'
+import { WORKFLOW_CAPABILITIES, classifyCapabilityError } from './remoteCapabilities.js'
+import { stageRemoteUpload, inspectRemoteUploads } from './remoteUploads.js'
 import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
 export { refreshChatgptAuthTokensForExternalAuth } from './externalAuthRefresh.js'
@@ -44,7 +46,7 @@ const DEFAULT_API_PERF_MS_THRESHOLD = 300
 const DEFAULT_API_PERF_BODY_MB_THRESHOLD = 1
 const MB_DIVISOR = 1024 * 1024
 
-const persistentThreadIndex = new PersistentThreadIndex(getCodexHomeDir, () => [])
+const persistentThreadIndex = new PersistentThreadIndex(() => profileStateDirectory(getCodexHomeDir()), () => [])
 
 function readEnvValueFromFile(filePath: string, key: string): string | null {
   try {
@@ -584,8 +586,41 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
+      if (req.method === 'GET' && url.pathname === '/codex-api/uploads') {
+        setJson(res, 200, await inspectRemoteUploads(getCodexHomeDir()))
+        return
+      }
+
       if (req.method === 'POST' && url.pathname === '/codex-api/upload-file') {
         handleFileUpload(req, res, appServer)
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/connection-diagnostics') {
+        const state = await readWorkspaceRootsState()
+        const directory = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state.active[0] || state.order[0] || null
+        const generation = appServer.getConnectionGeneration()
+        const diagnostics = appServer.capabilities
+        let git: { available: boolean | null; detail: string } = { available: null, detail: 'Not checked. command/exec support does not establish Git availability.' }
+        if (url.searchParams.get('probe') === '1' && directory && projectPath(directory).isAbsolute(directory)) {
+          // Only read-only operations. Never probe writes or enumerate/read arbitrary files.
+          const probeResults = await diagnostics.coalesceProbe(directory, () => Promise.allSettled([
+            files.getMetadata(directory), files.readDirectory(directory),
+            appServer.rpc('fuzzyFileSearch', { query: '__codexapp_capability_probe_no_match__', roots: [directory], cancellationToken: null }),
+            appServer.rpc('command/exec', { command: ['git', '--version'], cwd: directory, timeoutMs: 3000, outputBytesCap: 4096 }),
+          ]))
+          const gitResult = probeResults[3]
+          if (gitResult?.status === 'fulfilled') {
+            const row = asRecord(gitResult.value)
+            git = typeof row?.exitCode === 'number' ? { available: row.exitCode === 0, detail: String(row.stdout || row.stderr || `Exit ${row.exitCode}`).slice(0, 4096) }
+              : { available: null, detail: 'Incompatible command/exec response' }
+          } else if (gitResult?.status === 'rejected') git = { available: null, detail: getErrorMessage(gitResult.reason, 'Git availability unknown') }
+        }
+        if (generation !== appServer.getConnectionGeneration()) {
+          setJson(res, 409, { error: 'Connection changed during diagnosis. Check compatibility again.' })
+          return
+        }
+        setJson(res, 200, { data: { profile: getConnectionProfileId(), generation, directory, workflows: WORKFLOW_CAPABILITIES, capabilities: diagnostics.snapshot(), git } })
         return
       }
 
@@ -614,8 +649,21 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
         if (body.method === 'thread/start') {
           const cwd = readNonEmptyString(asRecord(body.params)?.cwd)
-          if (!cwd || !(await files.getMetadata(cwd)).isDirectory) {
-            setJson(res, 400, { error: 'Select an existing workspace before starting a conversation.' })
+          if (!cwd) {
+            setJson(res, 400, { error: 'Select an existing workspace on the App Server host before starting a conversation.' })
+            return
+          }
+          try {
+            if (!(await files.getMetadata(cwd)).isDirectory) {
+              setJson(res, 400, { error: 'The remote workspace path is not a directory.' })
+              return
+            }
+          } catch (error) {
+            const evidence = classifyCapabilityError(error)
+            const guidance = evidence.support === 'unsupported'
+              ? 'The connected server lacks fs/getMetadata, required for workspace validation. Upgrade the remote Codex app-server; check remote compatibility in account settings.'
+              : `Remote workspace validation failed (${evidence.diagnosis}). Check the directory, permissions and connection on the App Server host before retrying.`
+            setJson(res, 502, { error: `${guidance} ${evidence.detail}`, capability: 'fs/getMetadata', diagnosis: evidence.diagnosis })
             return
           }
         }

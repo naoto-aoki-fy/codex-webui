@@ -1,3 +1,4 @@
+import { RemoteCapabilities } from './remoteCapabilities.js'
 import { profileStateDirectory } from './connectionProfile.js'
 import { SubscriptionRecovery } from './subscriptionRecovery.js'
 import { homedir } from 'node:os'
@@ -65,6 +66,7 @@ export type StreamEventFrame = {
 }
 
 export class AppServerClient {
+  readonly capabilities = new RemoteCapabilities()
   constructor(private readonly dependencies: AppServerClientDependencies) {}
 
   getInitializationMetadata() { return this.transport.getInitializationMetadata() }
@@ -103,6 +105,7 @@ export class AppServerClient {
   private readonly subscribedThreads = new Set<string>()
   private transport = new AppServerWebSocketClient((frame) => this.handleLine(frame), () => {
     this.connectionGeneration++
+    this.capabilities.reset()
     this.recovery.cancel()
     for (const request of this.pending.values()) request.reject(new Error('App-server disconnected. Retry to reconnect; inspect the thread before resending a turn.'))
     this.pending.clear()
@@ -377,6 +380,18 @@ export class AppServerClient {
   }
 
   private async call(method: string, params: unknown, deadlineMs?: number): Promise<unknown> {
+    const generation = this.connectionGeneration
+    try {
+      const result = await this.callObserved(method, params, deadlineMs)
+      if (generation === this.connectionGeneration) this.capabilities.observe(method, result)
+      return result
+    } catch (error) {
+      if (generation === this.connectionGeneration) this.capabilities.observe(method, undefined, error)
+      throw error
+    }
+  }
+
+  private async callObserved(method: string, params: unknown, deadlineMs?: number): Promise<unknown> {
     await this.transport.connect()
     const id = this.nextId++
 
