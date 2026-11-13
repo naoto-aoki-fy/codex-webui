@@ -125,14 +125,6 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   await selectMethod(method)
   if (method === 'portable') await selectProvider()
   if (entry === 'response') conversation.turns.push(sourceTurn(3))
-  for (const theme of ['light', 'dark']) {
-    await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme)
-    await page.waitForTimeout(2200)
-    const path = resolve(output, `fork-methods-${entry}-${method}-${theme}.png`)
-    await page.screenshot({ path })
-    const background = await page.locator('.transfer-picker').evaluate(el => getComputedStyle(el).backgroundColor)
-    assert.equal(background, theme === 'dark' ? 'rgb(32, 33, 36)' : 'rgb(255, 255, 255)')
-  }
   await page.getByRole('button', { name: method === 'native' ? 'Create native fork' : 'Create conversation', exact: true }).dblclick()
   let effectiveMethod = method
   if (nativeFails) {
@@ -146,10 +138,27 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   const destinationId = effectiveMethod === 'native' ? 'native' : 'imported'
   await page.waitForURL(`**/#/thread/${destinationId}`)
   if (pendingPreparation) await releasePreparation()
-  await page.getByText('Original answer 0', { exact: effectiveMethod === 'native' }).waitFor()
+  await page.getByText('Original answer 0', { exact: true }).waitFor()
+  assert.equal((await page.locator('body').innerText()).includes('[Imported context from'), false)
+  const resumedResponse = page.waitForResponse(response => {
+    const body = response.request().postDataJSON()
+    return body?.method === 'thread/resume' && body.params.threadId === destinationId
+  })
   await page.reload()
-  await page.getByText('Original answer 0', { exact: effectiveMethod === 'native' }).waitFor()
-  assert.equal((await page.locator('body').innerText()).includes('[Imported context from'), effectiveMethod === 'portable')
+  const resumed = (await (await resumedResponse).json()).result
+  assert.equal(!!resumed.importedTranscript, effectiveMethod === 'portable')
+  if (effectiveMethod === 'portable') {
+    assert.equal(resumed.importStage, 'ready')
+    assert.equal(resumed.importedTranscript[1].source, 'source (P / A)')
+    assert.equal(resumed.importedTranscript[1].text, 'Original answer 0')
+  }
+  await page.getByText('Original answer 0', { exact: true }).waitFor()
+  assert.equal((await page.locator('body').innerText()).includes('[Imported context from'), false)
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme)
+    await page.waitForTimeout(2200)
+    await page.screenshot({ path: resolve(output, `fork-messages-${entry}-${effectiveMethod}-${theme}.png`) })
+  }
   assert.equal((await page.locator('body').innerText()).includes('Original answer 2'), entry === 'full')
   assert.equal((await page.locator('body').innerText()).includes('Original answer 3'), false)
   const creationCalls = calls.filter(call => mutations.has(call.method))
@@ -164,7 +173,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   assert.equal(calls.filter(call => ['thread/start', 'thread/inject_items'].includes(call.method)).length, 0, 'portable creation is mocked at the backend service boundary')
   assert.deepEqual(errors, [])
   const report = { entry, method, prepareFails, nativeFails, pendingPreparation, url: page.url(), viewport: { width: 1280, height: 900 },
-    creationCalls, explicitSends: sends.length, importedAfterReload: effectiveMethod === 'portable', assertions: 'passed' }
+    creationCalls, explicitSends: sends.length, importMetadataAfterReload: !!resumed.importedTranscript, displayPrefixes: false, assertions: 'passed' }
   await context.close()
   return report
 }

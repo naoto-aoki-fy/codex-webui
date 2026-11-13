@@ -26,6 +26,29 @@ function threadReadResponseWithContent(content: ThreadReadResponse['thread']['tu
 }
 
 describe('normalizeThreadMessagesV2', () => {
+  it('preserves imported text, roles, order and internal provenance without display prefixes', () => {
+    const transcript = [
+      { role: 'user' as const, text: '  Hello\n\nExplain `value`.  ', source: 'source-thread (P / A)' },
+      { role: 'assistant' as const, text: 'Hi!\n\n```ts\nconst value = 1\n```\n', source: 'source-thread (P / A)' },
+      { role: 'user' as const, text: 'Imported: this is original user-authored text.', source: 'another-source (Q / B)' },
+    ]
+    const payload = {
+      ...threadReadResponseWithContent([{ type: 'agentMessage', id: 'new-answer', text: 'New native answer' }]),
+      importedTranscript: transcript,
+      importStage: 'ready',
+    }
+    const original = JSON.stringify(payload)
+    const normalized = normalizeThreadMessagesV2(payload)
+    expect(normalized.map(message => message.text)).toEqual([...transcript.map(message => message.text), 'New native answer'])
+    expect(normalized.map(message => message.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(normalized.slice(0, 3).map(message => message.importMetadata)).toEqual(transcript.map(message => ({ source: message.source })))
+    expect(normalized.slice(0, 3).map(message => message.turnIndex)).toEqual([-1, -2, -3])
+    expect(normalized[3]?.importMetadata).toBeUndefined()
+    expect(JSON.stringify(payload)).toBe(original)
+    // Rehydrating the durable response must not restore generated labels.
+    expect(normalizeThreadMessagesV2(JSON.parse(original))).toEqual(normalized)
+  })
+
   it('preserves selected skill inputs on the rendered user message', () => {
     const messages = normalizeThreadMessagesV2(threadReadResponseWithContent([{
       type: 'userMessage',

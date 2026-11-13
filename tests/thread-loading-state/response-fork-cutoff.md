@@ -11,7 +11,8 @@ least 25 turns, text, a tool observation and an image. Stop any active turn.
    `turn/start`. Check all ordinary messages, including unloaded older turns.
 3. Fork a middle response. While the picker is open, append a source turn in
    another client. Confirm; expect only the captured prefix through the selected
-   response. Imported text must match the source and show source attribution.
+   response. Transferred text must match the source without repeated import labels.
+   Source attribution must remain in the internal transcript metadata.
 4. Verify omission warnings, attachment placeholders and labeled tool observations.
    Expect no executable historical tools, reasoning, or privileged instructions.
 5. Reload/reopen the destination. Verify visible imported history remains and no
@@ -58,9 +59,10 @@ and run `node scripts/test-fork-methods.cjs` with an installed Playwright browse
    Portable Transfer instruction, never an automatic re-fork. Explicitly submit
    one new message; expect exactly one turn on the source provider.
 5. Repeat Portable Transfer for both entry points with provider Q and with the
-   original provider P. Expect the existing start/inject lifecycle, attributed
-   imported history after reload, and no native fork request. The original
-   transfer cases above, including omissions and uncertain injection, still apply.
+   original provider P. Expect the existing start/inject lifecycle, natural
+   message presentation and preserved internal attribution after reload, and no
+   native fork request. The original transfer cases above, including omissions
+   and uncertain injection, still apply.
 6. Simulate an unsupported native fork. Expect an actionable Native Fork error,
    no silent transfer fallback, and the source/draft intact. Explicitly switch
    to Portable Transfer and confirm; expect it to work independently. Reverse
@@ -74,3 +76,25 @@ and run `node scripts/test-fork-methods.cjs` with an installed Playwright browse
 
 Cleanup: explicitly archive test forks/imports, including incomplete destinations.
 No workspace rollback occurs; never replay an injection with an uncertain outcome.
+
+## Portable transcript presentation
+
+Setup: use the source above with user/assistant text, Markdown, code blocks and
+line breaks. Also include user-authored text beginning with “Imported:” to
+verify original text is never stripped. Run the mocked browser matrix with
+`node scripts/test-fork-methods.cjs` for credential-free UI coverage.
+
+1. Create a Portable Transfer and inspect the resulting conversation. Expect
+   original message roles, order, text and formatting, without any generated
+   “Imported” prefixes or repeated source labels on user or assistant messages.
+2. Reload and reopen the destination. Expect the same natural display and
+   original user-authored “Imported:” text. Read/resume responses should still
+   contain `importedTranscript` source attribution and a ready import stage.
+   Expect no reinjection or regenerated historical response.
+3. Transfer that conversation again. Expect the imported prefix exactly once;
+   internal attribution, omission warnings and duplicate-injection guards remain.
+4. Repeat Native Fork and verify its text, provider and API workflow are unchanged.
+   Inspect the actual destination conversation in light and dark themes.
+
+Cleanup: archive the disposable destinations. No transcript migration or source
+history rewrite is required; this change only affects message presentation.

@@ -41,6 +41,7 @@ export function areMessageFieldsEqual(first: UiMessage, second: UiMessage): bool
     first.id === second.id &&
     first.role === second.role &&
     first.text === second.text &&
+    first.importMetadata?.source === second.importMetadata?.source &&
     first.submittedAt === second.submittedAt &&
     first.completedAt === second.completedAt &&
     areStringArraysEqual(first.images, second.images) &&
