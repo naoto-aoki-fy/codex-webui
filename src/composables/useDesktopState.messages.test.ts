@@ -1,3 +1,4 @@
+import incompatibleHistory from './fixtures/incompatibleForkHistory.json'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDesktopState } from './useDesktopState'
 import { reasoningCatalog } from '../api/codexGateway'
@@ -2397,4 +2398,111 @@ describe('conversation model and fresh fork provider selection', () => {
     expect(gateway.startThreadTurn).not.toHaveBeenCalled()
     expect(state.selectedThreadId.value).toBe('draft')
   })
+  it.each(['response', 'full'].flatMap(entry => incompatibleHistory.map(history => ({ entry, history }))))('retains the $entry fork prefix after ack and $history.name rejection', async ({ entry, history }) => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    gateway.forkThreadFromResponse.mockResolvedValue({ ...oldDetail, threadId: 'draft', cwd: '', model: 'A', modelProvider: 'P' })
+    gateway.forkThread.mockResolvedValue({ threadId: 'draft', model: 'A', modelProvider: 'P' })
+    gateway.getThreadDetail.mockResolvedValue({ ...oldDetail, model: 'A', modelProvider: 'P' })
+    if (entry === 'response') await state.forkThreadFromTurn(thread.id, 0)
+    else await state.forkThreadById(thread.id)
+    state.startPolling()
+    state.setSelectedModelId(key('Q', 'C'))
+    gateway.configureFreshFork.mockResolvedValue({ threadId: 'continued', model: 'C', modelProvider: 'Q' })
+    await state.sendMessageToSelectedThread('recover this prompt')
+    expect(gateway.archiveThread).not.toHaveBeenCalled()
+    await expect(state.sendMessageToSelectedThread('duplicate')).rejects.toThrow('first fork turn outcome')
+    expect(JSON.parse(window.localStorage.getItem('codex-web-local.thread-fork-recovery.v1.draft')!)).toMatchObject({ text: 'recover this prompt' })
+    // A historical completion cannot finalize the new first turn.
+    notify({ method: 'turn/completed', params: { threadId: 'continued', turn: { id: 'turn-1', status: 'completed' } } })
+    expect(gateway.archiveThread).not.toHaveBeenCalled()
+    notify({ method: 'error', params: { threadId: 'continued', turnId: 'turn-2', willRetry: false,
+      error: { message: history.error } } })
+    notify({ method: 'turn/completed', params: { threadId: 'continued', turn: { id: 'turn-2', status: 'failed',
+      error: { message: history.error } } } })
+    expect(gateway.archiveThread).not.toHaveBeenCalled()
+    expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+    expect(state.selectedLiveOverlay.value?.errorText).toContain('original fork draft is preserved')
+    expect(state.resolveThreadReplacement('draft')).toBe('draft')
+    expect(JSON.parse(window.localStorage.getItem('codex-web-local.thread-draft.v1.draft')!)).toMatchObject({ text: 'recover this prompt' })
+    state.primeSelectedThread('draft')
+    state.setSelectedModelId(key('P', 'A'))
+    expect(state.selectedModelId.value).toBe(key('P', 'A'))
+    expect(state.readModelIdForThread(thread.id)).toBe(key('P', 'A'))
+  })
+
+  it('archives only the prefix draft after matching successful completion, even with another thread selected', async () => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    gateway.forkThreadFromResponse.mockResolvedValue({ ...oldDetail, threadId: 'draft', cwd: '', model: 'A', modelProvider: 'P' })
+    await state.forkThreadFromTurn(thread.id, 0)
+    state.startPolling()
+    state.setSelectedModelId(key('Q', 'C'))
+    gateway.configureFreshFork.mockResolvedValue({ threadId: 'continued', model: 'C', modelProvider: 'Q' })
+    await state.sendMessageToSelectedThread('continue')
+    expect(gateway.archiveThread).not.toHaveBeenCalled()
+    state.primeSelectedThread(thread.id)
+    notify({ method: 'turn/completed', params: { threadId: 'continued', turn: { id: 'turn-2', status: 'completed' } } })
+    await Promise.resolve()
+    expect(gateway.archiveThread).toHaveBeenCalledExactlyOnceWith('draft')
+    expect(state.selectedThreadId.value).toBe(thread.id)
+    expect(window.localStorage.getItem('codex-web-local.thread-fork-recovery.v1.draft')).toBeNull()
+    expect(JSON.parse(window.localStorage.getItem('codex-web-local.fresh-forks.v1') || '{}')).not.toHaveProperty('draft')
+  })
+
+  it('retains the prefix after an ambiguous transport failure without automatic replay', async () => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    gateway.forkThreadFromResponse.mockResolvedValue({ ...oldDetail, threadId: 'draft', cwd: '', model: 'A', modelProvider: 'P' })
+    await state.forkThreadFromTurn(thread.id, 0)
+    state.setSelectedModelId(key('Q', 'C'))
+    gateway.configureFreshFork.mockResolvedValue({ threadId: 'continued', model: 'C', modelProvider: 'Q' })
+    gateway.startThreadTurn.mockRejectedValueOnce(new Error('Disconnected; outcome unknown'))
+    await expect(state.sendMessageToSelectedThread('continue')).rejects.toThrow('outcome unknown')
+    expect(gateway.archiveThread).not.toHaveBeenCalled()
+    expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+    expect(state.selectedUnknownOutcome.value).toBe(true)
+  })
+
+  it.each(['completed', 'failed'])('correlates early first-turn %s before the start acknowledgment', async status => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    gateway.forkThreadFromResponse.mockResolvedValue({ ...oldDetail, threadId: 'draft', cwd: '', model: 'A', modelProvider: 'P' })
+    await state.forkThreadFromTurn(thread.id, 0)
+    state.startPolling()
+    state.setSelectedModelId(key('Q', 'C'))
+    gateway.configureFreshFork.mockResolvedValue({ threadId: 'continued', model: 'C', modelProvider: 'Q' })
+    gateway.startThreadTurn.mockImplementationOnce(async () => {
+      notify({ method: 'turn/completed', params: { threadId: 'continued', turn: { id: 'turn-2', status,
+        ...(status === 'failed' ? { error: { message: 'Invalid input schema' } } : {}) } } })
+      expect(gateway.archiveThread).not.toHaveBeenCalled()
+      return 'turn-2'
+    })
+    await state.sendMessageToSelectedThread('continue')
+    if (status === 'completed') expect(gateway.archiveThread).toHaveBeenCalledExactlyOnceWith('draft')
+    else {
+      expect(gateway.archiveThread).not.toHaveBeenCalled()
+      expect(state.selectedLiveOverlay.value?.errorText).toContain('original fork draft is preserved')
+    }
+    expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+  })
+
+  it('cleans recovery storage after a same-provider turn from a recovered prefix succeeds', async () => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    state.startPolling()
+    const storageKey = `codex-web-local.thread-fork-recovery.v1.${thread.id}`
+    window.localStorage.setItem(storageKey, JSON.stringify({ text: 'recover' }))
+    await state.sendMessageToSelectedThread('recover')
+    expect(window.localStorage.getItem(storageKey)).not.toBeNull()
+    turnCompleted()
+    expect(window.localStorage.getItem(storageKey)).toBeNull()
+    expect(gateway.archiveThread).not.toHaveBeenCalled()
+  })
+
 })

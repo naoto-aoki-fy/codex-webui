@@ -1,0 +1,24 @@
+[
+  {
+    "name": "nonempty reasoning content",
+    "input": [
+      { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "inspect project" }] },
+      { "type": "function_call", "call_id": "call-1", "name": "shell", "arguments": "{}" },
+      { "type": "function_call_output", "call_id": "call-1", "output": "project files" },
+      { "type": "reasoning", "summary": [], "content": [{ "type": "reasoning_text", "text": "inspect next" }] }
+    ],
+    "error": "Invalid 'input[3].content': array too long. Expected an array with maximum length 0, but got an array with length 1 instead."
+  },
+  {
+    "name": "additional tool declarations",
+    "input": [
+      { "type": "additional_tools", "role": "developer", "tools": [
+        { "type": "function", "name": "shell", "parameters": { "type": "object", "properties": {} } },
+        { "type": "namespace", "name": "workspace", "tools": [{ "type": "custom", "name": "patch", "format": { "type": "text" } }] }
+      ] },
+      { "type": "function_call", "call_id": "call-1", "name": "shell", "arguments": "{}" },
+      { "type": "function_call_output", "call_id": "call-1", "output": "project files" }
+    ],
+    "error": "Unsupported input item type: additional_tools (parameter=input)"
+  }
+]
