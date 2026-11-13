@@ -2133,3 +2133,16 @@ it('keeps a lost submission response uncertain without replaying the turn', asyn
   expect(state.selectedUnknownOutcome.value).toBe(true)
   expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
 })
+
+it('does not mark an idle conversation uncertain and reconciles recovery without duplicate items', async () => {
+  const state = await loadState()
+  notify({ method: 'app-server/disconnected', params: null })
+  expect(state.selectedUnknownOutcome.value).toBe(false)
+  gateway.getThreadDetail.mockResolvedValue(completedDetail)
+  notify({ method: 'app-server/subscriptionRecovery', params: { threadId: thread.id, state: 'recovered', attempt: 2 } })
+  await vi.advanceTimersByTimeAsync(0)
+  notify({ method: 'app-server/subscriptionRecovery', params: { threadId: thread.id, state: 'recovered', attempt: 2 } })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(state.messages.value).toEqual(completedDetail.messages)
+  expect(new Set(state.messages.value.map(item => item.id)).size).toBe(state.messages.value.length)
+})

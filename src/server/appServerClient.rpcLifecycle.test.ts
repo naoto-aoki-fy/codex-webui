@@ -224,3 +224,47 @@ it('bounds silent resume attempts while healthy threads and unrelated calls reco
     expect(vi.getTimerCount()).toBe(1) // sole transport reconnect timer
   } finally { client.dispose() }
 })
+
+it.each([false, true])('recovers a failed restored subscription (persistent=%s) and delivers notifications', async persistent => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const events: Array<{ method: string; params: any }> = []
+  client.onNotification(event => events.push(event))
+  try {
+    const initial = client.rpc('thread/resume', { threadId: 'recover-me', excludeTurns: true })
+    await flush()
+    const old = wire.sockets[0]
+    old.reply(old.frames.find((f: any) => f.method === 'thread/resume').id, { thread: { id: 'recover-me' } })
+    await initial
+    old.terminate()
+    await client.reconnect()
+    await flush()
+    const fresh = wire.sockets[1]
+    const failLatest = () => {
+      const frame = fresh.frames.filter((f: any) => f.method === 'thread/resume').at(-1)
+      fresh.emit('message', Buffer.from(JSON.stringify({ id: frame.id, error: { code: -1, message: 'disposable resume failure' } })), false)
+    }
+    failLatest()
+    await flush()
+    await vi.advanceTimersByTimeAsync(500)
+    if (persistent) {
+      failLatest(); await flush()
+      await vi.advanceTimersByTimeAsync(1000)
+      failLatest(); await flush()
+      await vi.advanceTimersByTimeAsync(2000)
+      failLatest(); await flush()
+      expect(events).toContainEqual(expect.objectContaining({ method: 'app-server/subscriptionRecovery', params: expect.objectContaining({ threadId: 'recover-me', state: 'failed', attempt: 4 }) }))
+    }
+    const manual = persistent ? client.rpc('thread/resume', { threadId: 'recover-me', excludeTurns: true }) : null
+    await flush()
+    const last = fresh.frames.filter((f: any) => f.method === 'thread/resume').at(-1)
+    fresh.reply(last.id, { thread: { id: 'recover-me' } })
+    if (manual) await manual
+    await flush()
+    fresh.emit('message', Buffer.from(JSON.stringify({ method: 'item/agentMessage/delta', params: { threadId: 'recover-me', itemId: 'after-recovery', delta: 'delivered' } })), false)
+    expect(events).toContainEqual(expect.objectContaining({ method: 'app-server/subscriptionRecovery', params: expect.objectContaining({ threadId: 'recover-me', state: 'recovered' }) }))
+    expect(events).toContainEqual({ method: 'item/agentMessage/delta', params: { threadId: 'recover-me', itemId: 'after-recovery', delta: 'delivered' } })
+    expect(fresh.frames.filter((f: any) => f.method === 'thread/resume')).toHaveLength(persistent ? 5 : 2)
+    expect(fresh.frames.some((f: any) => f.method === 'turn/start')).toBe(false)
+  } finally { client.dispose() }
+})
