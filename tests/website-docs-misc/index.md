@@ -14,3 +14,5 @@ Return to the [manual test index](../../tests.md).
 | [Browser access and retirement of offline caching](cache-first-hashed-assets.md) |
 | [External app-server connection](external-app-server.md) |
 | [Shared local file HTTP operations](shared-local-file-http.md) |
+
+- [Connection profiles and upload accounting](connection-profiles-uploads.md)
