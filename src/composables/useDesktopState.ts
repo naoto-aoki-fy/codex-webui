@@ -3682,7 +3682,7 @@ export function useDesktopState() {
       // registration only; the same scheduler handles those manual requests.
       if (backendReplaced) {
         for (const id of Object.keys(inProgressById.value)) {
-          if (id !== threadId && inProgressById.value[id]) void resumeThreadSubscription(id).catch(() => {})
+          if (id !== threadId && inProgressById.value[id]) void Promise.resolve(resumeThreadSubscription(id)).catch(() => {})
         }
       }
       await Promise.allSettled([
