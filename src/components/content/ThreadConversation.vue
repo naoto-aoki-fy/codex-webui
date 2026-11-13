@@ -706,17 +706,10 @@
                   <IconTablerCopy class="icon-svg message-copy-icon" />
                   <span class="message-copy-label">{{ copiedUserMessageId === message.id ? 'Copied' : 'Copy' }}</span>
                 </button>
-                <button
-                  v-if="showForkResponseButton(message)"
-                  type="button"
-                  class="message-fork-button"
-                  aria-label="Fork thread from this response"
-                  title="Fork thread from this response"
-                  @click="forkResponse(message.id)"
-                >
-                  <IconTablerGitFork class="icon-svg message-fork-icon" />
-                  <span class="message-fork-label">Fork</span>
-                </button>
+                <ForkSplitButton v-if="showForkResponseButton(message)" :key="`${activeThreadId}:${message.id}`"
+                  aria-label="Fork thread from this response" :disabled="isForkDisabled"
+                  :native-available="forkableTurnIndexByAnchorId[message.id] >= 0"
+                  @fork="forkResponse(message.id, $event)" />
                 <button
                   v-if="showCopyResponseButton(message)"
                   type="button"
@@ -835,7 +828,8 @@ import ThreadDiffViewer from './ThreadDiffViewer.vue'
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
 import IconTablerCopy from '../icons/IconTablerCopy.vue'
-import IconTablerGitFork from '../icons/IconTablerGitFork.vue'
+import ForkSplitButton from './ForkSplitButton.vue'
+import type { ForkMethod } from '../../types/codex'
 import IconTablerX from '../icons/IconTablerX.vue'
 
 type HighlightJsModule = (typeof import('highlight.js/lib/common'))['default']
@@ -1094,6 +1088,7 @@ const props = defineProps<{
   messages: UiMessage[]
   pendingRequests: UiServerRequest[]
   liveOverlay: UiLiveOverlay | null
+  isForkDisabled?: boolean
   isRevertDisabled?: boolean
   isLoading: boolean
   activeThreadId: string
@@ -1104,7 +1099,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  forkThread: [payload: { threadId: string; turnIndex: number }]
+  forkThread: [payload: { threadId: string; turnIndex: number; method: ForkMethod }]
   rollback: [payload: { threadId: string; turnId: string; operation: 'revert' | 'fork-and-revert' }]
   implementPlan: [payload: { turnId: string }]
 }>()
@@ -1590,11 +1585,12 @@ async function copyResponse(anchorMessageId: string): Promise<void> {
   }, 1800)
 }
 
-function forkResponse(anchorMessageId: string): void {
+function forkResponse(anchorMessageId: string, method: ForkMethod = 'native'): void {
   const turnIndex = forkableTurnIndexByAnchorId.value[anchorMessageId]
-  if (typeof turnIndex !== 'number') return
+  if (props.isForkDisabled || typeof turnIndex !== 'number' || (method === 'native' && turnIndex < 0)) return
   if (!props.activeThreadId) return
   emit('forkThread', {
+    method,
     threadId: props.activeThreadId,
     turnIndex,
   })
@@ -3478,10 +3474,6 @@ onBeforeUnmount(() => {
   @apply inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white/90 px-1.25 py-0.5 text-[9px] font-medium leading-none text-slate-500 transition hover:border-slate-300 hover:bg-white hover:text-slate-900;
 }
 
-.message-fork-button {
-  @apply inline-flex items-center gap-0.5 px-0.5 py-0 text-[9px] font-medium leading-none text-slate-500 transition hover:text-slate-900;
-}
-
 .message-copy-button[data-copied='true'] {
   @apply border-emerald-200 bg-emerald-50 text-emerald-700;
 }
@@ -3490,13 +3482,11 @@ onBeforeUnmount(() => {
   @apply inline-flex items-center gap-0.5 px-0.5 py-0 text-[9px] font-medium leading-none text-amber-600/70 transition hover:text-amber-700;
 }
 
-.message-fork-icon,
 .message-copy-icon,
 .message-edit-icon {
   @apply text-[10px];
 }
 
-.message-fork-label,
 .message-copy-label,
 .message-edit-label {
   @apply leading-none;

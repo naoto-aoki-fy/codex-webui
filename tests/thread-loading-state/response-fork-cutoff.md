@@ -4,9 +4,10 @@ Prerequisites: connect an independently managed app-server supporting
 `thread/inject_items`; configure two providers/models. Create a source with at
 least 25 turns, text, a tool observation and an image. Stop any active turn.
 
-1. Invoke Fork conversation. Verify Portable Transfer is selected by default. Cancel the picker. Verify no new
-   thread was created and the source draft remains unchanged.
-2. Reopen the picker, keep Portable Transfer selected, select a destination and confirm. Double-click confirmation.
+1. Open the Fork arrow, choose Portable Fork and cancel its provider/model
+   picker. Verify no new thread was created and the source draft is unchanged.
+2. Choose Portable Fork again, select a destination and confirm. Double-click
+   confirmation.
    Expect one `thread/start`, then one `thread/inject_items`, no native fork or
    `turn/start`. Check all ordinary messages, including unloaded older turns.
 3. Fork a middle response. While the picker is open, append a source turn in
@@ -42,37 +43,37 @@ For credential-free browser checks, start the current dev server on port 4173
 and run `node scripts/test-fork-methods.cjs` with an installed Playwright browser.
 
 1. Open both the sidebar whole-conversation action and an assistant response's
-   Fork action. In each picker verify both method options exist, Portable
-   Transfer is the default, and switching to Native Fork hides provider/model
-   selection and explains that the provider remains the same.
-2. Cancel each method from both entry points. Expect no destination or turn
-   creation and no change to the source's unsent draft. Repeat cancellation
-   while portable preparation is still pending; expect no stale dialog/error.
-3. Confirm Native Fork with a double click. Expect one native fork API request,
-   no `thread/start`, `thread/inject_items`, or automatic generation. For a response
-   expect exactly the inclusive response prefix, even after later source turns.
-   If the selected source turn was removed/replaced while the picker was open,
-   expect an explicit stale-cutoff error and no fork.
+   Fork toolbar. Check that the main Fork action and adjacent arrow match the
+   Revert split-button pattern. Click the arrow; expect Native Fork and Portable
+   Fork options, without history preparation, thread creation or generation.
+2. Click the main Fork button, then repeat with the Native Fork menu option.
+   Expect immediate native creation without a method or provider dialog. Double
+   clicks must create once. Expect no portable preparation, `thread/start`,
+   `thread/inject_items`, automatic generation, or provider switching.
+3. For a response fork expect exactly the inclusive response prefix, even after
+   later source turns. If the selected source turn was removed/replaced before
+   creation, expect an explicit stale-cutoff error and no fork.
 4. Reload/reopen each native destination. Expect server-rendered history without
    imported-context labels or import-incomplete guards. The source provider
    remains selected. Try choosing another provider in the composer; expect a
    Portable Transfer instruction, never an automatic re-fork. Explicitly submit
    one new message; expect exactly one turn on the source provider.
-5. Repeat Portable Transfer for both entry points with provider Q and with the
-   original provider P. Expect the existing start/inject lifecycle, natural
-   message presentation and preserved internal attribution after reload, and no
-   native fork request. The original transfer cases above, including omissions
-   and uncertain injection, still apply.
-6. Simulate an unsupported native fork. Expect an actionable Native Fork error,
-   no silent transfer fallback, and the source/draft intact. Explicitly switch
-   to Portable Transfer and confirm; expect it to work independently. Reverse
-   the test with a portable preparation error (for example the 8 MiB limit);
-   expect Native Fork to remain available without a destination model selection.
-7. Open Fork on an imported-only response. Expect Portable Transfer to retain
-   that prefix exactly once. Native Fork explains the missing native turn boundary
-   and cannot be confirmed for that response.
-8. Check the actual picker in light and dark themes and verify method selection,
-   cancel, and confirmation are disabled while creation is pending.
+5. Choose Portable Fork from each dropdown. Expect only a provider/model picker,
+   with no Native/Portable method selector. Cancel (also during preparation);
+   expect no thread or turn and an unchanged source draft. Repeat with provider
+   Q and the original provider P. Expect the existing start/inject lifecycle,
+   natural message presentation, internal attribution and persistence after
+   reload, no native fork request, and no duplicate injection on double clicks.
+6. Simulate unsupported native forking. Expect an actionable error with no silent
+   fallback. Explicitly choose Portable Fork and confirm; expect it to work
+   independently. Reverse the test with portable preparation failure (for example
+   the 8 MiB limit); cancel and click the main native action without a model picker.
+7. On an imported-only response, expect the main native button and Native Fork
+   option to be disabled with a clear missing-turn-boundary explanation. The
+   dropdown arrow and Portable Fork remain accessible and retain the prefix once.
+8. Check the actual split buttons and open menus in light and dark themes.
+   Confirm that both main/arrow controls are disabled while a fork is pending,
+   and portable cancel/confirmation are disabled while injection is pending.
 
 Cleanup: explicitly archive test forks/imports, including incomplete destinations.
 No workspace rollback occurs; never replay an injection with an uncertain outcome.

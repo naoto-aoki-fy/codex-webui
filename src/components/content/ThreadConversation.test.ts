@@ -28,7 +28,7 @@ function setup(initial: Record<string, unknown> = {}) {
   vi.stubGlobal('window', { removeEventListener() {} })
   const parseCalls = vi.fn()
   const instrumentedSource = source.replace('function parseMessageBlocks(text: string): MessageBlock[] {', 'function parseMessageBlocks(text: string): MessageBlock[] { recordParse();')
-  const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, loadMoreAbove, conversationListRef, renderWindowStart, isLoadingMore, scheduleConversationScroll, editMessage, bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput, messageBlockCache, inlineSegmentCache, markdownHtmlCache, highlightHtmlCache };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+  const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, loadMoreAbove, conversationListRef, renderWindowStart, isLoadingMore, scheduleConversationScroll, editMessage, forkResponse, bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput, messageBlockCache, inlineSegmentCache, markdownHtmlCache, highlightHtmlCache };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const state = scope.run(() => new Function('exports', 'require', 'defineProps', 'defineEmits', 'defineExpose', 'recordParse', code)({}, (path: string) => {
     if (path === 'highlight.js/lib/common') return { default: hljs }
     if (path === 'vue') return { ...vue, onMounted() {}, onBeforeUnmount: (fn: () => void) => unmount.push(fn) }
@@ -136,6 +136,24 @@ describe('conversation thread state isolation', () => {
     oldLoad()
     expect(frames.size).toBe(before)
     expect(listeners).toHaveLength(4)
+  })
+  it('defaults response forks to native and preserves portable cutoffs and disabled boundaries', () => {
+    const { props, state: s, emit } = setup({ messages: [
+      { id: 'answer', role: 'assistant', text: 'answer', turnId: 'turn', turnIndex: 3 },
+      { id: 'imported', role: 'assistant', text: 'imported answer', turnIndex: -2 },
+    ] })
+    s.forkResponse('answer')
+    expect(emit).toHaveBeenLastCalledWith('forkThread', { threadId: 'A', turnIndex: 3, method: 'native' })
+    s.forkResponse('answer', 'portable')
+    expect(emit).toHaveBeenLastCalledWith('forkThread', { threadId: 'A', turnIndex: 3, method: 'portable' })
+    s.forkResponse('imported', 'native')
+    expect(emit).toHaveBeenCalledTimes(2)
+    s.forkResponse('imported', 'portable')
+    expect(emit).toHaveBeenLastCalledWith('forkThread', { threadId: 'A', turnIndex: -2, method: 'portable' })
+    Object.assign(props, { isForkDisabled: true })
+    s.forkResponse('answer')
+    s.forkResponse('answer', 'portable')
+    expect(emit).toHaveBeenCalledTimes(3)
   })
   it('preserves same-thread streaming UI choices and parent-owned rollback', async () => {
     const { props, state: s, emit } = setup()

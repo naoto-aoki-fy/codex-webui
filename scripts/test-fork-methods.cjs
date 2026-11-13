@@ -17,13 +17,15 @@ const source = { id: 'source', name: 'Fork methods source', preview: 'Fork metho
 }
 const mutations = new Set(['conversation-transfer/create', 'thread/fork', 'thread/fork-at-response', 'thread/start', 'thread/inject_items', 'turn/start'])
 
-async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false } = {}) {
+async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false, importedOnly = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   const calls = []
   const conversation = structuredClone(source)
+  if (importedOnly) conversation.turns = []
+  const importedPrefix = sourceTurn(0).items.map(item => ({ role: item.type === 'userMessage' ? 'user' : 'assistant', text: item.text || item.content[0].text, source: 'source (P / A)' }))
   const preparations = []
   const snapshots = new Map()
   const destinations = new Map()
@@ -38,7 +40,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (rpc) calls.push({ method: rpc, params })
     let result = {}
     if (rpc === 'thread/list') result = { data: [conversation, ...[...destinations.values()].map(row => row.thread)], nextCursor: null }
-    if (rpc === 'thread/read' || rpc === 'thread/resume') result = destinations.get(params.threadId) || { thread: conversation, model: 'A', modelProvider: 'P' }
+    if (rpc === 'thread/read' || rpc === 'thread/resume') result = destinations.get(params.threadId) || { thread: conversation, model: 'A', modelProvider: 'P', ...(importedOnly ? { importedTranscript: importedPrefix, importStage: 'ready' } : {}) }
     if (rpc === 'modelProvider/list') result = { data: [{ id: 'P', displayName: 'Source', isDefault: true }, { id: 'Q', displayName: 'Destination' }] }
     if (rpc === 'model/providerCatalog' || rpc === 'model/list') result = { data: [{ id: params.provider === 'Q' ? 'C' : 'A', displayName: params.provider === 'Q' ? 'C' : 'A' }] }
     if (rpc === 'account/read') result = { account: { type: 'apiKey' } }
@@ -46,7 +48,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (rpc === 'threadSection/list') result = { data: [] }
     if (rpc === 'conversation-transfer/prepare') {
       if (prepareFails) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'History exceeds the 8 MiB transfer request limit. No thread was created.' }) })
-      const turns = structuredClone(params.turnIndex === undefined ? conversation.turns : conversation.turns.slice(0, params.turnIndex + 1))
+      const turns = structuredClone(importedOnly ? [sourceTurn(0)] : params.turnIndex === undefined ? conversation.turns : conversation.turns.slice(0, params.turnIndex + 1))
       const id = `snapshot-${++snapshotNumber}`
       snapshots.set(id, turns)
       if (pendingPreparation) await new Promise(resolve => preparations.push({ id, resolve }))
@@ -81,31 +83,47 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (mutations.has(rpc)) await new Promise(resolve => setTimeout(resolve, 150))
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ result }) })
   })
-  async function releasePreparation() {
+  async function releasePreparation(cancelled = false) {
     assert.equal(preparations.length, 1)
     const preparation = preparations.shift()
-    const cancelled = page.waitForRequest(request => {
+    const cancellation = cancelled ? page.waitForRequest(request => {
       const body = request.postDataJSON()
       return body?.method === 'conversation-transfer/cancel' && body.params.id === preparation.id
-    })
+    }) : Promise.resolve()
     preparation.resolve()
-    await cancelled
+    await cancellation
   }
-  async function openPicker() {
-    if (entry === 'response') await page.getByRole('button', { name: 'Fork thread from this response', exact: true }).first().click()
-    else {
+  async function splitButton() {
+    if (entry === 'full') {
       const row = page.locator('.thread-row').filter({ hasText: 'Fork methods source' }).first()
-      await row.hover()
-      await row.getByTitle('thread_menu', { exact: true }).click()
-      await page.getByRole('button', { name: 'Create chat fork', exact: true }).click()
+      if (!await page.locator('.thread-menu-panel').count()) {
+        await row.hover()
+        await row.getByTitle('thread_menu', { exact: true }).click()
+      }
+      return page.locator('.thread-menu-panel .fork-split-button')
     }
-    await page.getByRole('dialog', { name: 'Transfer conversation' }).waitFor()
-    assert.equal(await page.locator('.transfer-picker').getByRole('button', { name: 'Portable Transfer', exact: true }).count(), 1)
+    const split = page.locator('.message-toolbar .fork-split-button').first()
+    await split.hover()
+    return split
   }
-  async function selectMethod(value) {
-    const dialog = page.locator('.transfer-picker')
-    await dialog.locator('.composer-dropdown-trigger').first().click()
-    await dialog.getByRole('listbox').getByRole('button', { name: value === 'native' ? 'Native Fork' : 'Portable Transfer', exact: true }).click()
+  async function openOptions() {
+    const split = await splitButton()
+    const before = calls.length
+    await split.getByRole('button', { name: 'Fork options', exact: true }).click()
+    await split.getByRole('listbox').waitFor()
+    assert.equal(calls.slice(before).filter(call => mutations.has(call.method) || call.method === 'conversation-transfer/prepare').length, 0, 'opening the arrow must do no work')
+    assert.equal(await split.getByRole('button', { name: 'Native Fork', exact: true }).count(), 1)
+    assert.equal(await split.getByRole('button', { name: 'Portable Fork', exact: true }).count(), 1)
+    return split
+  }
+  async function choosePortable() {
+    const split = await openOptions()
+    await split.getByRole('button', { name: 'Portable Fork', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Transfer conversation' }).waitFor()
+    assert.equal(await page.locator('.transfer-picker').getByText('Native Fork', { exact: true }).count(), 0)
+    if (!pendingPreparation && !prepareFails) await page.getByRole('button', { name: 'Provider / model', exact: true }).waitFor()
+    if (prepareFails) await page.getByRole('alert').filter({ hasText: '8 MiB' }).waitFor()
+    assert.equal(await page.locator('.transfer-picker .composer-dropdown').count(), pendingPreparation ? 0 : 1)
   }
   async function selectProvider() {
     await page.getByRole('button', { name: 'Provider / model', exact: true }).click()
@@ -114,30 +132,66 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   await page.goto(`${baseUrl}/#/thread/source`)
   await page.getByText('Original answer 0', { exact: true }).waitFor()
   await page.locator('textarea').fill('Unsent source draft')
-  await openPicker()
-  await selectMethod(method)
-  if (method === 'native') assert.equal(await page.getByRole('button', { name: 'Provider / model', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-  assert.equal(calls.filter(call => mutations.has(call.method)).length, 0, 'cancel must not create or generate')
-  assert.equal(await page.locator('textarea').inputValue(), 'Unsent source draft')
-  if (pendingPreparation) await releasePreparation()
-  await openPicker()
-  await selectMethod(method)
-  if (method === 'portable') await selectProvider()
-  if (entry === 'response') conversation.turns.push(sourceTurn(3))
-  await page.getByRole('button', { name: method === 'native' ? 'Create native fork' : 'Create conversation', exact: true }).dblclick()
-  let effectiveMethod = method
-  if (nativeFails) {
-    await page.getByRole('alert').filter({ hasText: 'Native Fork failed' }).waitFor()
-    assert.equal(calls.filter(call => call.method === 'conversation-transfer/create').length, 0, 'no silent fallback')
-    await selectMethod('portable')
-    await selectProvider()
-    await page.getByRole('button', { name: 'Create conversation', exact: true }).click()
-    effectiveMethod = 'portable'
+  // Verify menu styling and shared Revert dropdown wiring on the actual source UI.
+  const options = await openOptions()
+  if (importedOnly) {
+    assert.equal(await options.locator('.fork-split-main').isDisabled(), true)
+    assert.match(await options.locator('.fork-split-main').getAttribute('title'), /no native turn boundary/)
+    assert.equal(await options.getByRole('button', { name: 'Native Fork', exact: true }).isDisabled(), true)
+  }
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme)
+    await page.waitForTimeout(2200)
+    await page.screenshot({ path: resolve(output, `fork-split-${entry}-${importedOnly ? 'imported' : 'source'}-${theme}.png`) })
+    const menuBackground = await options.locator('.composer-dropdown-menu').evaluate(el => getComputedStyle(el).backgroundColor)
+    assert.notEqual(menuBackground, 'rgba(0, 0, 0, 0)')
+    if (theme === 'dark') assert.notEqual(menuBackground, 'rgb(255, 255, 255)')
+  }
+  await page.keyboard.press('Escape')
+  if (entry === 'full') await page.keyboard.press('Escape')
+  assert.equal(calls.filter(call => mutations.has(call.method)).length, 0)
+  let effectiveMethod = method === 'native-menu' ? 'native' : method
+  if (method === 'portable') {
+    await choosePortable()
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    if (pendingPreparation) await releasePreparation(true)
+    assert.equal(calls.filter(call => mutations.has(call.method)).length, 0, 'cancel must not create or generate')
+    assert.equal(await page.locator('textarea').inputValue(), 'Unsent source draft')
+    await choosePortable()
+    if (pendingPreparation) await releasePreparation()
+    if (prepareFails) {
+      await page.getByRole('alert').filter({ hasText: '8 MiB' }).waitFor()
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+      const split = await splitButton()
+      await split.locator('.fork-split-main').dblclick()
+      effectiveMethod = 'native'
+    } else {
+      await selectProvider()
+      if (entry === 'response') conversation.turns.push(sourceTurn(3))
+      await page.getByRole('button', { name: 'Create conversation', exact: true }).dblclick()
+    }
+  } else {
+    assert.equal(calls.filter(call => call.method === 'conversation-transfer/prepare').length, 0, 'native must never prepare portable history')
+    if (entry === 'response') conversation.turns.push(sourceTurn(3))
+    if (method === 'native-menu') {
+      const split = await openOptions()
+      await split.getByRole('button', { name: 'Native Fork', exact: true }).click()
+    } else {
+      const split = await splitButton()
+      await split.locator('.fork-split-main').dblclick()
+    }
+    assert.equal(await page.getByRole('dialog', { name: 'Transfer conversation' }).count(), 0, 'native main action must not open the picker')
+    if (nativeFails) {
+      await page.getByText('Native Fork failed:', { exact: false }).first().waitFor()
+      assert.equal(calls.filter(call => call.method === 'conversation-transfer/create').length, 0, 'no silent fallback')
+      await choosePortable()
+      await selectProvider()
+      await page.getByRole('button', { name: 'Create conversation', exact: true }).click()
+      effectiveMethod = 'portable'
+    }
   }
   const destinationId = effectiveMethod === 'native' ? 'native' : 'imported'
   await page.waitForURL(`**/#/thread/${destinationId}`)
-  if (pendingPreparation) await releasePreparation()
   await page.getByText('Original answer 0', { exact: true }).waitFor()
   assert.equal((await page.locator('body').innerText()).includes('[Imported context from'), false)
   const resumedResponse = page.waitForResponse(response => {
@@ -172,7 +226,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   assert.equal(sends[0].params.model, effectiveMethod === 'native' ? 'A' : 'C')
   assert.equal(calls.filter(call => ['thread/start', 'thread/inject_items'].includes(call.method)).length, 0, 'portable creation is mocked at the backend service boundary')
   assert.deepEqual(errors, [])
-  const report = { entry, method, prepareFails, nativeFails, pendingPreparation, url: page.url(), viewport: { width: 1280, height: 900 },
+  const report = { entry, method, prepareFails, nativeFails, pendingPreparation, importedOnly, url: page.url(), viewport: { width: 1280, height: 900 },
     creationCalls, explicitSends: sends.length, importMetadataAfterReload: !!resumed.importedTranscript, displayPrefixes: false, assertions: 'passed' }
   await context.close()
   return report
@@ -182,11 +236,19 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   const browser = await chromium.launch({ headless: true })
   try {
     const reports = []
-    for (const entry of ['full', 'response']) for (const method of ['portable', 'native']) reports.push(await check(browser, entry, method))
-    reports.push(await check(browser, 'response', 'native', { prepareFails: true }))
-    reports.push(await check(browser, 'full', 'native', { nativeFails: true }))
-    reports.push(await check(browser, 'response', 'native', { pendingPreparation: true }))
-    writeFileSync(resolve(output, 'fork-methods-results.json'), JSON.stringify(reports, null, 2))
+    const cases = []
+    for (const entry of ['full', 'response']) for (const method of ['portable', 'native', 'native-menu']) cases.push([entry, method])
+    cases.push(['response', 'portable', { prepareFails: true }], ['full', 'native', { nativeFails: true }],
+      ['response', 'portable', { pendingPreparation: true }], ['response', 'portable', { importedOnly: true }])
+    const selected = process.env.FORK_TEST_CASES?.split(',').map(Number)
+    for (const [index, args] of cases.entries()) {
+      if (selected && !selected.includes(index)) continue
+      const result = await check(browser, ...args)
+      reports.push(result)
+      console.log('PASS', index, result.entry, result.method, JSON.stringify(args[2] || {}))
+    }
+    const suffix = selected ? `-${selected.join('-')}` : ''
+    writeFileSync(resolve(output, `fork-methods-results${suffix}.json`), JSON.stringify(reports, null, 2))
     console.log(JSON.stringify(reports, null, 2))
   } finally { await browser.close() }
 })().catch(error => { console.error(error); process.exitCode = 1 })
