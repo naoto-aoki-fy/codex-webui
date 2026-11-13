@@ -35,3 +35,46 @@ it('does not return a usable attachment on remote-write failure or oversized inp
     expect(rpc).not.toHaveBeenCalled()
   } finally { await rm(state, { recursive: true }) }
 })
+
+it('accounts for ambiguous, legacy and cross-profile uploads conservatively and enforces shared capacity', async () => {
+  const { inspectRemoteUploads } = await import('./remoteUploads')
+  const state = await mkdtemp(join(tmpdir(), 'remote-capacity-'))
+  const rpc = vi.fn(async (_method: string, _params?: unknown) => ({}))
+  const client = { rpc, getInitializationMetadata: () => ({ codexHome: '/B' }) as any }
+  try {
+    await writeFile(join(state, 'codexapp-uploads.jsonl'), JSON.stringify({ path: '/B/codexapp-uploads/legacy', at: '2020-01-01' }) + '\n')
+    vi.stubEnv('CODEXUI_UPLOAD_CAPACITY_BYTES', '4')
+    vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'one')
+    await stageRemoteUpload(client, 'a', Buffer.from('abc'), state)
+    vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'two')
+    await expect(stageRemoteUpload(client, 'b', Buffer.from('xy'), state)).rejects.toThrow('capacity reached')
+    const inventory = await inspectRemoteUploads(state)
+    expect(inventory.trackedBytes).toBe(3)
+    expect(inventory.unknownSizeCount).toBe(1)
+    expect(inventory.uploads).toHaveLength(2)
+    expect(inventory.uploads.every(record => record.protected)).toBe(true)
+    expect(inventory.cleanup.eligiblePaths).toEqual([])
+    expect(inventory.cleanup.supported).toBe(false)
+    expect(rpc.mock.calls.filter(([method]) => method === 'fs/writeFile')).toHaveLength(1)
+    expect(rpc.mock.calls.some(([method]) => method === 'fs/remove')).toBe(false)
+  } finally { await rm(state, { recursive: true, force: true }) }
+})
+it('serializes capacity reservations and retains an ambiguous write as protected', async () => {
+  const { inspectRemoteUploads } = await import('./remoteUploads')
+  const state = await mkdtemp(join(tmpdir(), 'remote-race-'))
+  vi.stubEnv('CODEXUI_UPLOAD_CAPACITY_BYTES', '4')
+  const rpc = vi.fn(async (method: string) => { if (method === 'fs/writeFile') throw new Error('Disconnected after send'); return {} })
+  const client = { rpc, getInitializationMetadata: () => ({ codexHome: '/B' }) as any }
+  try {
+    const results = await Promise.allSettled([
+      stageRemoteUpload(client, 'a', Buffer.from('abc'), state),
+      stageRemoteUpload(client, 'b', Buffer.from('abc'), state),
+    ])
+    expect(results.every(result => result.status === 'rejected')).toBe(true)
+    expect(rpc.mock.calls.filter(([method]) => method === 'fs/writeFile')).toHaveLength(1)
+    const inventory = await inspectRemoteUploads(state)
+    expect(inventory.trackedBytes).toBe(3)
+    expect(inventory.uploads[0]).toMatchObject({ status: 'unknown', protected: true })
+    expect(inventory.cleanup.eligiblePaths).toEqual([])
+  } finally { await rm(state, { recursive: true, force: true }) }
+})
