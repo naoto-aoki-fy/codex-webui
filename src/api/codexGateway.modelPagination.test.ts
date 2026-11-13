@@ -12,7 +12,7 @@ it.each([
   const calls: unknown[] = []
   vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
     const body = JSON.parse(String(init.body))
-    if (body.method === 'modelProvider/list') return new Response('Method not found', { status: 400 })
+    if (body.method === 'modelProvider/list' || body.method === 'config/read') return new Response('Method not found', { status: 400 })
     expect(body.method).toBe('model/list')
     calls.push(body.params)
     if (calls.length > cursors.length) throw new Error('unexpected extra page')
@@ -29,7 +29,7 @@ it('discards partial results after later-page failure and starts retry from the 
     .mockResolvedValueOnce(response({ data: [{ id: 'partial' }], nextCursor: 'next' }))
     .mockRejectedValueOnce(new Error('page unavailable'))
     .mockResolvedValueOnce(response({ data: [{ id: 'fresh' }] }))
-  vi.stubGlobal('fetch', vi.fn((url, init) => JSON.parse(String(init.body)).method === 'modelProvider/list'
+  vi.stubGlobal('fetch', vi.fn((url, init) => ['modelProvider/list', 'config/read'].includes(JSON.parse(String(init.body)).method)
     ? Promise.resolve(new Response('Method not found', { status: 400 })) : fetch(url, init)))
   await expect(getAvailableModelIds()).resolves.toEqual({ ids: [], models: [] })
   await expect(getAvailableModelIds()).resolves.toEqual({ ids: ['fresh'], models: [{ id: 'fresh' }] })
@@ -40,7 +40,7 @@ it('coalesces overlapping catalog requests and retries after completion', async 
   let resolve!: (response: Response) => void
   const fetch = vi.fn().mockImplementationOnce(() => new Promise<Response>((yes) => { resolve = yes }))
     .mockResolvedValueOnce(response({ data: [{ id: 'new' }] }))
-  vi.stubGlobal('fetch', vi.fn((url, init) => JSON.parse(String(init.body)).method === 'modelProvider/list'
+  vi.stubGlobal('fetch', vi.fn((url, init) => ['modelProvider/list', 'config/read'].includes(JSON.parse(String(init.body)).method)
     ? Promise.resolve(new Response('Method not found', { status: 400 })) : fetch(url, init)))
   const older = getAvailableModelIds()
   const newer = getAvailableModelIds()
