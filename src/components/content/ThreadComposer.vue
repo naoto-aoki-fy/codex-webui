@@ -367,7 +367,7 @@ export type ThreadComposerExposed = {
 }
 
 const emit = defineEmits<{
-  submit: [payload: SubmitPayload]
+  submit: [payload: SubmitPayload, settle: (accepted: boolean) => void]
   interrupt: []
   'edit-goal': []
   'update:selected-collaboration-mode': [mode: CollaborationModeKind]
@@ -496,7 +496,9 @@ const skillDropdownOptions = computed(() =>
   ],
 )
 
+const isSubmitting = ref(false)
 const canSubmit = computed(() => {
+  if (isSubmitting.value) return false
   if (props.disabled) return false
   if (props.isUpdatingSpeedMode) return false
   if (!props.activeThreadId) return false
@@ -580,22 +582,26 @@ function onSubmit(): void {
     clearDraftState()
     return
   }
-  emit('submit', {
-    text,
-    imageUrls: selectedImages.value.map((image) => image.url),
-    fileAttachments: [...fileAttachments.value],
-    skills: selectedSkills.value.map((s) => ({ name: s.name, path: s.path })),
+  const threadId = props.activeThreadId
+  const payload = getCurrentDraftPayload()
+  const snapshot = JSON.stringify(payload)
+  isSubmitting.value = true
+  let settled = false
+  emit('submit', { ...payload, text }, (accepted) => {
+    if (settled) return
+    settled = true
+    isSubmitting.value = false
+    if (!accepted) return
+    // Acceptance may arrive after a thread switch or after the user edits again.
+    if (props.activeThreadId !== threadId || JSON.stringify(getCurrentDraftPayload()) !== snapshot) return
+    clearPersistedDraftForThread(threadId)
+    clearDraftState()
+    isComposerExpanded.value = false
+    isAttachMenuOpen.value = false
+    closeFileMention()
+    if (isAndroid || isMobile.value) inputRef.value?.blur()
+    else nextTick(() => inputRef.value?.focus())
   })
-  clearPersistedDraftForThread(props.activeThreadId)
-  clearDraftState()
-  isComposerExpanded.value = false
-  isAttachMenuOpen.value = false
-  closeFileMention()
-  if (isAndroid || isMobile.value) {
-    inputRef.value?.blur()
-    return
-  }
-  nextTick(() => inputRef.value?.focus())
 }
 
 function replaceDraftState(payload: ComposerDraftPayload): void {
