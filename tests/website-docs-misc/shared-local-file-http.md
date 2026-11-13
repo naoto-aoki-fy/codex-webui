@@ -96,3 +96,10 @@ See [the architecture and verification limits](../../docs/project-file-access.md
 - Actions: browse each share/drive root with and without a trailing separator, enter a child, navigate to its parent, then open installed Skills.
 - Expected: UNC paths retain server and share; drive roots remain absolute; sample's nested skill groups under sample while sample-other remains separate. POSIX browsing/grouping remains unchanged.
 - Cleanup: remove only disposable fixture data; no production uploads or remote files are modified by these read-only checks.
+
+## File transfer reuse and native history pagination
+
+- Setup: use the credential-free fixtures (`pnpm exec vitest run src/server/appServerFileSystem.test.ts src/server/httpServer.localFiles.test.ts src/server/remoteHistoryPager.test.ts`) or disposable remote files and a long thread on an authenticated server. Record fixture/live evidence separately.
+- Actions: concurrently fetch one file; repeat with HEAD, If-None-Match, If-Modified-Since and valid/invalid ranges. Edit the file, repeat, then reconnect. Open the long thread and load three older pages. Repeat with a fixture returning method-not-found and one returning permission failure for thread/turns/list.
+- Expected: simultaneous reads coalesce; warm HEAD/validator/Range requests avoid another Base64 payload; edits and reconnect invalidate. Headers, 206/304/416 and content lengths stay correct. Native history transfers item bodies only for requested pages while preserving absolute indices. Only method-not-found selects full-history fallback; permission and transport errors remain visible. Run the documented benchmark in `docs/remote-transfer-performance.md` for exact request/byte/cache measurements.
+- Cleanup: remove only disposable fixtures and restore any test environment variables; no existing uploads are touched. For live tests, delete only the explicitly created disposable project files using the operator's normal remote tools.

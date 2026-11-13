@@ -1,3 +1,4 @@
+import { RemoteHistoryPager } from './remoteHistoryPager.js'
 import { RemoteCapabilities } from './remoteCapabilities.js'
 import { profileStateDirectory } from './connectionProfile.js'
 import { SubscriptionRecovery } from './subscriptionRecovery.js'
@@ -92,8 +93,14 @@ export class AppServerClient {
   getConnectionGeneration(): number { return this.connectionGeneration }
   getSnapshotEpoch(): object { return this.snapshotEpoch }
 
+  private readonly historyPager = new RemoteHistoryPager(this)
+  readThreadPage(threadId: string, beforeTurnId = '', limit = 10) {
+    return this.historyPager.read(threadId, beforeTurnId, limit)
+  }
+
   private readonly lastThreadReadSnapshotByThreadId = new Map<string, unknown>()
-  private readonly threadTurnPageReadCacheByThreadId = new Map<string, { result: unknown; expiresAt: number }>()
+  private readonly snapshotBytesByThreadId = new Map<string, number>()
+  private readonly threadTurnPageReadCacheByThreadId = new Map<string, { result: unknown; expiresAt: number; bytes: number }>()
   private readonly threadTurnPageReadPromiseByThreadId = new Map<string, Promise<unknown>>()
   private chatgptAuthRefreshPromise: Promise<ChatgptAuthTokensRefreshResponse> | null = null
   private disposed = false
@@ -105,6 +112,7 @@ export class AppServerClient {
   private readonly subscribedThreads = new Set<string>()
   private transport = new AppServerWebSocketClient((frame) => this.handleLine(frame), () => {
     this.connectionGeneration++
+    this.historyPager.invalidate()
     this.capabilities.reset()
     this.recovery.cancel()
     for (const request of this.pending.values()) request.reject(new Error('App-server disconnected. Retry to reconnect; inspect the thread before resending a turn.'))
@@ -112,6 +120,7 @@ export class AppServerClient {
     this.pendingServerRequests.clear()
     this.streamEventsByThreadId.clear()
     this.lastThreadReadSnapshotByThreadId.clear()
+    this.snapshotBytesByThreadId.clear()
     this.threadTurnPageReadCacheByThreadId.clear()
     this.threadTurnPageReadPromiseByThreadId.clear()
     this.emitNotification({ method: 'app-server/disconnected', params: { approvalRecovery: 'Pending approvals cannot be recovered automatically. Inspect the thread on the App Server host before continuing.' } })
@@ -170,6 +179,7 @@ export class AppServerClient {
     this.recordStreamEvent(notification)
     const nThreadId = this.extractThreadIdFromParams(notification.params)
     if (nThreadId) {
+      this.historyPager.invalidate(nThreadId)
       this.invalidateThreadTurnPageRead(nThreadId)
       if (notification.method === 'thread/reverted') {
         this.snapshotEpoch = {}
@@ -229,7 +239,24 @@ export class AppServerClient {
   }
 
   storeThreadReadSnapshot(threadId: string, snapshot: unknown): void {
-    this.lastThreadReadSnapshotByThreadId.set(threadId, snapshot)
+    // Bound aggregate retained fallback snapshots to 16 threads / 32 MiB.
+    this.lastThreadReadSnapshotByThreadId.delete(threadId)
+    for (const id of this.snapshotBytesByThreadId.keys()) {
+      if (!this.lastThreadReadSnapshotByThreadId.has(id)) this.snapshotBytesByThreadId.delete(id)
+    }
+    const bytes = Buffer.byteLength(JSON.stringify(snapshot))
+    if (bytes <= 32 * 1024 * 1024) {
+      let total = [...this.snapshotBytesByThreadId.values()].reduce((sum, size) => sum + size, bytes)
+      while (this.lastThreadReadSnapshotByThreadId.size >= 16 || total > 32 * 1024 * 1024) {
+        const first = this.lastThreadReadSnapshotByThreadId.keys().next().value
+        if (first === undefined) break
+        total -= this.snapshotBytesByThreadId.get(first) ?? 0
+        this.snapshotBytesByThreadId.delete(first)
+        this.lastThreadReadSnapshotByThreadId.delete(first)
+      }
+      this.lastThreadReadSnapshotByThreadId.set(threadId, snapshot)
+      this.snapshotBytesByThreadId.set(threadId, bytes)
+    }
     this.invalidateThreadTurnPageRead(threadId)
   }
 
@@ -252,13 +279,24 @@ export class AppServerClient {
     const pending = this.threadTurnPageReadPromiseByThreadId.get(threadId)
     if (pending) return pending
 
+    if (this.threadTurnPageReadPromiseByThreadId.size >= 16) throw new Error('History reads are busy (16 concurrent reads). Retry shortly.')
     const generation = this.connectionGeneration
     const promise = this.rpc('thread/read', {
       threadId,
       includeTurns: true,
     }).then((result) => {
       if (generation === this.connectionGeneration && this.threadTurnPageReadPromiseByThreadId.get(threadId) === promise) {
-        this.threadTurnPageReadCacheByThreadId.set(threadId, {
+        const bytes = Buffer.byteLength(JSON.stringify(result))
+        for (const [id, entry] of this.threadTurnPageReadCacheByThreadId) {
+          if (entry.expiresAt <= Date.now()) this.threadTurnPageReadCacheByThreadId.delete(id)
+        }
+        while (this.threadTurnPageReadCacheByThreadId.size >= 16 || [...this.threadTurnPageReadCacheByThreadId.values()].reduce((sum, entry) => sum + (entry.bytes ?? 0), bytes) > 32 * 1024 * 1024) {
+          const first = this.threadTurnPageReadCacheByThreadId.keys().next().value
+          if (first === undefined) break
+          this.threadTurnPageReadCacheByThreadId.delete(first)
+        }
+        if (bytes <= 32 * 1024 * 1024) this.threadTurnPageReadCacheByThreadId.set(threadId, {
+          bytes,
           result,
           expiresAt: Date.now() + THREAD_TURN_PAGE_READ_CACHE_TTL_MS,
         })
@@ -452,6 +490,9 @@ export class AppServerClient {
         : await this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, (m, p) => this.call(m, p))
       if (joiningBackgroundRecovery) result = await this.call('thread/read', { threadId: resumeId, includeTurns: true })
       const record = asRecord(result)
+      if (method === 'thread/turns/list' && Array.isArray(record?.data)) {
+        result = { ...record, data: await this.metadataStore().enrich(readNonEmptyString(asRecord(params)?.threadId), record.data) }
+      }
       const thread = asRecord(record?.thread)
       const store = this.metadataStore()
       if (thread && typeof thread.id === 'string' && Array.isArray(thread.turns)) {
@@ -476,6 +517,7 @@ export class AppServerClient {
         this.lastThreadReadSnapshotByThreadId.delete(id)
         this.streamEventsByThreadId.delete(id)
         this.invalidateThreadTurnPageRead(id)
+        this.historyPager.invalidate(id)
       }
       if (['thread/start', 'thread/resume', 'thread/fork'].includes(method)) {
         const id = readNonEmptyString(asRecord(asRecord(result)?.thread)?.id)

@@ -677,7 +677,9 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           const params = asRecord(body.params)
           rpcResult = responseFork || (body.method === 'thread/fork' && params && Object.prototype.hasOwnProperty.call(params, 'forkFromTurnIndex'))
             ? await forkThreadAtCutoff(appServer, params ?? {})
-            : await callRpcWithArchiveRecovery(appServer, body.method, body.params ?? null)
+            : body.method === 'thread/read' && params?.includeTurns === true && typeof appServer.readThreadPage === 'function'
+              ? (await appServer.readThreadPage(readNonEmptyString(params.threadId), '', THREAD_RESPONSE_TURN_LIMIT)).result
+              : await callRpcWithArchiveRecovery(appServer, body.method, body.params ?? null)
         } catch (error) {
 	          if (body.method === 'account/rateLimits/read' && isUnauthenticatedRateLimitError(error)) {
 	            setJson(res, 200, { result: null })
@@ -741,6 +743,12 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
             return
           }
 
+          if (typeof appServer.readThreadPage === 'function') {
+            const page = await appServer.readThreadPage(threadId, beforeTurnId, limit)
+            const result = await sanitizeThreadTurnsInlinePayloads('thread/read', mergeStreamTurnErrorsIntoThreadResult(appServer, page.result))
+            setJson(res, 200, { ...page, result })
+            return
+          }
           const threadReadResult = mergeStreamTurnErrorsIntoThreadResult(appServer, await appServer.readThreadForTurnPage(threadId))
           const record = asRecord(threadReadResult)
           const thread = asRecord(record?.thread)

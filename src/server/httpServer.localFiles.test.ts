@@ -178,3 +178,44 @@ it('proxies encoded drive and UNC links to the remote filesystem independent of 
     await new Promise<void>(resolve => server.close(() => resolve()))
   }
 })
+
+it('avoids redundant transfers for concurrent GET, warm HEAD, validators and browser ranges', async () => {
+  let version = 1
+  let body = Buffer.alloc(1024 * 1024, 'x')
+  const rpc = vi.fn(async (method: string) => method === 'fs/getMetadata'
+    ? { isFile: true, isDirectory: false, isSymlink: false, createdAtMs: 1, modifiedAtMs: version * 1000 }
+    : { dataBase64: body.toString('base64') })
+  const files = new ProjectFileService({ rpc })
+  const handler = createLocalFileMiddleware(files)
+  const server = createHttpServer((req, res) => handler(req, res, () => res.end()))
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  try {
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/codex-local-browse/remote/file.txt`
+    const coldConditional = await fetch(url, { headers: { 'If-Modified-Since': new Date(1000).toUTCString() } })
+    expect(coldConditional.status).toBe(304)
+    expect(rpc.mock.calls.filter(([method]) => method === 'fs/readFile')).toHaveLength(0)
+    const responses = await Promise.all([fetch(url), fetch(url), fetch(url)])
+    await Promise.all(responses.map(response => response.arrayBuffer()))
+    expect(rpc.mock.calls.filter(([method]) => method === 'fs/readFile')).toHaveLength(1)
+    const etag = responses[0]!.headers.get('etag')!
+    const head = await fetch(url, { method: 'HEAD' })
+    expect(head.headers.get('content-length')).toBe(String(body.length))
+    expect((await fetch(url, { headers: { 'If-None-Match': etag } })).status).toBe(304)
+    expect((await fetch(url, { headers: { Range: `bytes=${body.length}-` } })).status).toBe(416)
+    const range = await fetch(url, { headers: { Range: 'bytes=0-4', 'If-Range': etag } })
+    expect(range.status).toBe(206)
+    expect(range.headers.get('content-length')).toBe('5')
+    expect(await range.text()).toBe('xxxxx')
+    expect(rpc.mock.calls.filter(([method]) => method === 'fs/readFile')).toHaveLength(1)
+    version++
+    body = Buffer.from('edited')
+    const edited = await fetch(url, { headers: { 'If-None-Match': etag } })
+    expect(edited.status).toBe(200)
+    expect(await edited.text()).toBe('edited')
+    expect(rpc.mock.calls.filter(([method]) => method === 'fs/readFile')).toHaveLength(2)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
+})

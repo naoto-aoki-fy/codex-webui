@@ -72,17 +72,30 @@ export function createLocalFileMiddleware(files: ProjectFileService) {
         const showHidden = ['1', 'true', 'yes', 'on'].includes((query.get('showHidden') ?? '').toLowerCase())
         json(200, { data: await getLocalDirectoryListing(localPath, files, { showHidden }) })
       } else {
-        res.setHeader('Cache-Control', kind === 'image' ? 'private, max-age=300' : 'private, no-store')
+        res.setHeader('Cache-Control', kind === 'image' ? 'private, no-cache' : 'private, no-store')
         // File links never expose directory contents, including symlink targets.
         if (!info.isFile) throw new RequestError(404, kind === 'image' ? 'Image file not found.' : 'File not found.')
         if (kind === 'image') res.setHeader('Content-Type', imageTypes[extname(localPath).toLowerCase()]!)
-        const bytes = await files.readFile(localPath)
+        const modified = info.modifiedAtMs > 0 ? new Date(info.modifiedAtMs).toUTCString() : null
+        if (modified) res.setHeader('Last-Modified', modified)
+        if (req.headers['if-none-match'] === '*') {
+          res.statusCode = 304
+          res.end()
+          return
+        }
+        // Metadata can satisfy IMS without transferring Base64 bytes. Metadata
+        // carries no size, so a cold HEAD still needs a full upstream read.
+        if (!req.headers['if-none-match'] && modified && req.headers['if-modified-since'] &&
+          Date.parse(req.headers['if-modified-since']) >= Date.parse(modified)) {
+          res.statusCode = 304
+          res.end()
+          return
+        }
+        const bytes = await files.readFile(localPath, info)
         const etag = `"${createHash('sha256').update(bytes).digest('hex')}"`
         res.setHeader('ETag', etag)
         res.setHeader('Accept-Ranges', 'bytes')
         res.setHeader('Content-Type', kind === 'image' ? imageTypes[extname(localPath).toLowerCase()]! : mime.contentType(extname(localPath)) || 'application/octet-stream')
-        const modified = info.modifiedAtMs > 0 ? new Date(info.modifiedAtMs).toUTCString() : null
-        if (modified) res.setHeader('Last-Modified', modified)
         const match = req.headers['if-none-match']
         if (match === '*' || (typeof match === 'string' && match.split(',').some(value => value.trim().replace(/^W\//u, '') === etag)) ||
           (!match && modified && req.headers['if-modified-since'] && Date.parse(req.headers['if-modified-since']) >= Date.parse(modified))) {
