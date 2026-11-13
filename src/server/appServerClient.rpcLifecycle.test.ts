@@ -194,3 +194,33 @@ it.each(['tunnel', 'server restart'])('restores one subscription per thread afte
     expect(wire.sockets).toHaveLength(2)
   } finally { client.dispose() }
 })
+
+it('bounds silent resume attempts while healthy threads and unrelated calls recover', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  try {
+    const internal = client as any
+    for (const id of ['silent', 'b', 'c']) internal.subscribedThreads.add(id)
+    await client.reconnect()
+    await flush()
+    const socket = wire.sockets[0]
+    for (const id of ['b', 'c']) socket.reply(socket.frames.find((f: any) => f.params?.threadId === id).id, { thread: { id } })
+    const read = client.rpc('model/list', {})
+    await flush()
+    socket.reply(socket.frames.find((f: any) => f.method === 'model/list').id, 'models')
+    expect(await read).toBe('models')
+    await vi.advanceTimersByTimeAsync(5001)
+    expect(internal.pending.size).toBe(0)
+    socket.terminate()
+    await client.reconnect()
+    await flush()
+    expect(internal.recovery.jobs.size).toBe(3)
+    expect(internal.pending.size).toBe(3)
+    const fresh = wire.sockets[1]
+    fresh.terminate()
+    await flush()
+    expect(internal.recovery.jobs.size).toBe(0)
+    expect(internal.pending.size).toBe(0)
+    expect(vi.getTimerCount()).toBe(1) // sole transport reconnect timer
+  } finally { client.dispose() }
+})

@@ -465,6 +465,13 @@ export function useDesktopState() {
   const loadingOlderMessagesByThreadId = ref<Record<string, boolean>>({})
   let backendInstanceId = ''
   const connectionErrorMessage = 'App-server disconnected. Reconnect and inspect the thread before resending a turn.'
+  const transportState = ref('connected')
+  const recoveryByThreadId = ref<Record<string, string>>({})
+  const unknownOutcomeByThreadId = ref<Record<string, boolean>>({})
+  const lostApprovalByThreadId = ref<Record<string, boolean>>({})
+  const selectedRecoveryState = computed(() => recoveryByThreadId.value[selectedThreadId.value] ?? '')
+  const selectedUnknownOutcome = computed(() => unknownOutcomeByThreadId.value[selectedThreadId.value] === true)
+  const selectedLostApproval = computed(() => lostApprovalByThreadId.value[selectedThreadId.value] === true)
   const resumedThreadById = ref<Record<string, boolean>>({})
   const turnIndexByTurnIdByThreadId = ref<Record<string, Record<string, number>>>({})
   const turnSummaryByThreadId = ref<Record<string, TurnSummaryState>>({})
@@ -2001,14 +2008,37 @@ export function useDesktopState() {
         return
       }
     }
+    if (notification.method === 'app-server/subscriptionRecovery' || notification.method === 'app-server/subscriptionFailed') {
+      const params = asRecord(notification.params)
+      const threadId = readString(params?.threadId)
+      if (!threadId) return
+      const state = readString(params?.state) || 'failed'
+      recoveryByThreadId.value = { ...recoveryByThreadId.value, [threadId]: state }
+      invalidateResumeThread(threadId)
+      resumedThreadById.value = { ...resumedThreadById.value, [threadId]: state === 'recovered' }
+      loadedMessagesByThreadId.value = omitKey(loadedMessagesByThreadId.value, threadId)
+      loadedVersionByThreadId.value = omitKey(loadedVersionByThreadId.value, threadId)
+      if (state === 'recovered' && selectedThreadId.value === threadId) {
+        void loadMessages(threadId, { silent: true, force: true }).catch(() => {})
+      }
+      return
+    }
     if (notification.method === 'app-server/reconnected') {
+      transportState.value = 'connected'
       void recoverBridgeState(true)
       return
     }
     if (notification.method === 'app-server/disconnected') {
       const message = connectionErrorMessage
+      transportState.value = 'disconnected'
+      for (const threadId of Object.keys(pendingServerRequestsByThreadId.value)) {
+        lostApprovalByThreadId.value = { ...lostApprovalByThreadId.value, [threadId]: true }
+      }
+      for (const threadId of Object.keys(resumedThreadById.value)) invalidateResumeThread(threadId)
+      resumedThreadById.value = {}
       pendingServerRequestsByThreadId.value = {}
       for (const threadId of Object.keys(inProgressById.value)) {
+        unknownOutcomeByThreadId.value = { ...unknownOutcomeByThreadId.value, [threadId]: true }
         setThreadInProgress(threadId, false)
         setTurnActivityForThread(threadId, null)
         setTurnErrorForThread(threadId, message, { transient: true })
@@ -3401,6 +3431,9 @@ export function useDesktopState() {
       await syncFromNotifications()
       if (generation === lifecycleGeneration) scheduleDelayedTurnSync(threadId)
     } catch (unknownError) {
+      if (unknownError instanceof Error && /disconnected|outcome unknown/i.test(unknownError.message)) {
+        unknownOutcomeByThreadId.value = { ...unknownOutcomeByThreadId.value, [threadId]: true }
+      }
       throw unknownError
     }
   }
@@ -3645,26 +3678,14 @@ export function useDesktopState() {
     if (reconnected) {
       invalidateDisconnectedReads()
       const threadId = selectedThreadId.value
-      const activeThreadIds = backendReplaced
-        ? Object.keys(inProgressById.value).filter(id => inProgressById.value[id] && id !== threadId)
-        : []
-      const recoveringBackend = backendInstanceId
-      // Restore background delivery sequentially without fetching its histories.
-      const restoreActive = async () => {
-        for (const id of activeThreadIds) {
-          if (recoveringBackend !== backendInstanceId) return
-          try {
-            await resumeThreadSubscription(id)
-            if (recoveringBackend === backendInstanceId) {
-              resumedThreadById.value = { ...resumedThreadById.value, [id]: true }
-            }
-          } catch {
-            // Leave the flag unset so opening this thread can retry the resume.
-          }
+      // Backend owns retry timing and concurrency. A replacement backend needs
+      // registration only; the same scheduler handles those manual requests.
+      if (backendReplaced) {
+        for (const id of Object.keys(inProgressById.value)) {
+          if (id !== threadId && inProgressById.value[id]) void resumeThreadSubscription(id).catch(() => {})
         }
       }
       await Promise.allSettled([
-        restoreActive(),
         loadThreads({ force: true }),
         ...(threadId ? [loadMessages(threadId, { silent: true, force: true })] : []),
       ])
@@ -3825,7 +3846,23 @@ export function useDesktopState() {
     setSelectedThreadId(threadId, options)
   }
 
+  async function retrySelectedSubscription(): Promise<void> {
+    const id = selectedThreadId.value
+    if (!id) return
+    invalidateResumeThread(id)
+    try { await resumeThreadSubscription(id); await loadMessages(id, { force: true }) }
+    catch (failure) { error.value = failure instanceof Error ? failure.message : String(failure) }
+  }
+  async function reconcileSelectedHistory(): Promise<void> {
+    const id = selectedThreadId.value
+    if (!id) return
+    // A snapshot alone cannot prove an ambiguously accepted submission failed.
+    await loadMessages(id, { force: true })
+  }
+
   return {
+    transportState, selectedRecoveryState, selectedUnknownOutcome, selectedLostApproval,
+    retrySelectedSubscription, reconcileSelectedHistory,
     projectGroups,
     projectDisplayNameById,
     selectedThread,

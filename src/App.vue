@@ -172,6 +172,14 @@
           </template>
         </ContentHeader>
 
+        <div v-if="transportState === 'disconnected' || selectedRecoveryState || selectedUnknownOutcome || selectedLostApproval" class="connection-recovery-status" role="status">
+          <span v-if="transportState === 'disconnected'">{{ t('App-server disconnected. Reconnecting…') }}</span>
+          <span v-if="selectedRecoveryState">{{ t('Thread subscription') }}: {{ t(selectedRecoveryState) }}</span>
+          <button v-if="selectedRecoveryState === 'failed'" type="button" @click="retrySelectedSubscription">{{ t('Retry subscription') }}</button>
+          <span v-if="selectedLostApproval">{{ t('The previous approval expired with the connection. Inspect the thread on the server host; only newly delivered approvals can be answered.') }}</span>
+          <span v-if="selectedUnknownOutcome">{{ t('Submission outcome unknown. Inspect refreshed history before resending; missing history does not prove failure.') }}</span>
+          <button v-if="selectedUnknownOutcome || selectedLostApproval" type="button" @click="reconcileSelectedHistory">{{ t('Refresh history') }}</button>
+        </div>
         <section class="content-body">
           <template v-if="isSkillsRoute">
             <DirectoryHub
@@ -412,6 +420,8 @@ const {
   isInterruptingTurn,
   isSelectedThreadInterruptPending,
   isUpdatingSpeedMode,
+  transportState, selectedRecoveryState, selectedUnknownOutcome, selectedLostApproval,
+  retrySelectedSubscription, reconcileSelectedHistory,
   error: desktopError,
   refreshAll,
   refreshWorkspaceRoots,

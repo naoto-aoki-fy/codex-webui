@@ -1,3 +1,5 @@
+import { profileStateDirectory } from './connectionProfile.js'
+import { SubscriptionRecovery } from './subscriptionRecovery.js'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { TurnGenerationMetadataStore } from './turnGenerationMetadata.js'
@@ -70,7 +72,7 @@ export class AppServerClient {
   private readonly metadataEndpoint = resolveAppServerUrl()
   private metadataStore(): TurnGenerationMetadataStore {
     const remoteHome = this.getInitializationMetadata()?.codexHome ?? ''
-    return new TurnGenerationMetadataStore(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex'),
+    return new TurnGenerationMetadataStore(profileStateDirectory(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex')),
       JSON.stringify([this.metadataEndpoint, remoteHome]),
       Boolean(remoteHome) && process.env.CODEXUI_LEGACY_METADATA_SERVER_URL === this.metadataEndpoint
         && process.env.CODEXUI_LEGACY_METADATA_CODEX_HOME === remoteHome)
@@ -85,6 +87,7 @@ export class AppServerClient {
   private readonly pendingServerRequests = new Map<number | string, PendingServerRequest>()
   private readonly streamEventsByThreadId = new Map<string, StreamEventFrame[]>()
   private snapshotEpoch = {}
+  getConnectionGeneration(): number { return this.connectionGeneration }
   getSnapshotEpoch(): object { return this.snapshotEpoch }
 
   private readonly lastThreadReadSnapshotByThreadId = new Map<string, unknown>()
@@ -100,6 +103,7 @@ export class AppServerClient {
   private readonly subscribedThreads = new Set<string>()
   private transport = new AppServerWebSocketClient((frame) => this.handleLine(frame), () => {
     this.connectionGeneration++
+    this.recovery.cancel()
     for (const request of this.pending.values()) request.reject(new Error('App-server disconnected. Retry to reconnect; inspect the thread before resending a turn.'))
     this.pending.clear()
     this.pendingServerRequests.clear()
@@ -372,14 +376,14 @@ export class AppServerClient {
     })
   }
 
-  private async call(method: string, params: unknown): Promise<unknown> {
+  private async call(method: string, params: unknown, deadlineMs?: number): Promise<unknown> {
     await this.transport.connect()
     const id = this.nextId++
 
     return new Promise((resolve, reject) => {
       // A deadline only releases the caller; it never cancels or retries remote work.
-      const timeout = method === 'command/exec' ? positiveEnv('CODEXUI_APP_SERVER_COMMAND_DEADLINE_MS', 600_000)
-        : positiveEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', 60_000)
+      const timeout = deadlineMs ?? (method === 'command/exec' ? positiveEnv('CODEXUI_APP_SERVER_COMMAND_DEADLINE_MS', 600_000)
+        : positiveEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', 60_000))
       const timer = setTimeout(() => {
         this.pending.delete(id)
         reject(new Error(`App-server ${method} deadline exceeded; outcome unknown. Reconcile remote state before retrying.`))
@@ -402,16 +406,18 @@ export class AppServerClient {
     await this.transport.connect()
   }
 
-  private async restoreSubscriptions(): Promise<void> {
-    const generation = this.connectionGeneration
-    // Sequential bounded work; restoration cannot gate unrelated RPCs.
-    for (const threadId of [...this.subscribedThreads]) {
-      if (generation !== this.connectionGeneration || this.disposed) return
-      if (!this.subscribedThreads.has(threadId)) continue
-      try { await this.call('thread/resume', { threadId, excludeTurns: true }) }
-      catch (error) {
-        this.emitNotification({ method: 'app-server/subscriptionFailed', params: { threadId, error: getErrorMessage(error, 'Could not restore thread') } })
-      }
+  private readonly recovery = new SubscriptionRecovery(
+    (params, deadline) => this.call('thread/resume', params, deadline),
+    (threadId, state, attempt, error) => {
+      this.lastThreadReadSnapshotByThreadId.delete(threadId)
+      this.invalidateThreadTurnPageRead(threadId)
+      this.emitNotification({ method: 'app-server/subscriptionRecovery', params: { threadId, state, attempt, error } })
+    },
+  )
+
+  private restoreSubscriptions(): void {
+    for (const threadId of this.subscribedThreads) {
+      void this.recovery.request(threadId, { threadId, excludeTurns: true }).catch(() => {})
     }
   }
 
@@ -422,8 +428,14 @@ export class AppServerClient {
   async rpc(method: string, params: unknown, forkSourceTurns?: unknown[]): Promise<unknown> {
     await this.ensureInitialized()
     if (method !== 'turn/start') {
-      let result = method === 'thread/list' ? await this.call(method, params)
+      const resumeId = readNonEmptyString(asRecord(params)?.threadId)
+      const joiningBackgroundRecovery = method === 'thread/resume' && asRecord(params)?.excludeTurns !== true
+        && asRecord(this.recovery.parameters(resumeId))?.excludeTurns === true
+      let result = method === 'thread/resume'
+        ? await this.recovery.request(readNonEmptyString(asRecord(params)?.threadId), params)
+        : method === 'thread/list' ? await this.call(method, params)
         : await this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, (m, p) => this.call(m, p))
+      if (joiningBackgroundRecovery) result = await this.call('thread/read', { threadId: resumeId, includeTurns: true })
       const record = asRecord(result)
       const thread = asRecord(record?.thread)
       const store = this.metadataStore()
@@ -531,6 +543,7 @@ export class AppServerClient {
   }
   dispose(): void {
     this.disposed = true
+    this.recovery.cancel()
     if (this.retryTimer) clearTimeout(this.retryTimer)
     this.retryTimer = null
     this.transport.dispose()
