@@ -209,3 +209,41 @@ still surfaces when the external server cannot run that thread's provider.
 Cleanup: restore original models, remove test forks, restore discovery/network
 conditions. To reset explicit local choices, clear the application's site storage
 (this also removes other local preferences).
+
+### Cross-provider first-turn outcome and recovery
+
+Setup: use an independently managed server with two configured providers. Record
+its actual Codex version (not the development dependency), LiteLLM/vLLM versions,
+and destination capabilities. Create a source with several turns, a tool
+call/result pair, and reasoning. Back up browser drafts. See
+[the boundary and external requirements](../../docs/cross-provider-forks.md).
+
+Actions and expected results:
+1. Fork the entire source, then repeat from an earlier response. Change provider
+   and model before sending. Inspect the explicit fork destination; the response
+   fork must exclude later source turns in durable history. Source stays intact.
+2. Acknowledge `turn/start` but delay completion. The prefix draft is not archived;
+   a second send is blocked while the first outcome is pending.
+3. Reject with `Invalid 'input[3].content': array too long` or unsupported
+   `additional_tools`, once via `error` and once via failed `turn/completed`.
+   Capture the actual outgoing item type before deciding on normalization.
+   The prefix remains, the error names its route, and opening it restores the
+   submitted prompt unless a newer draft exists. Choose another destination
+   explicitly. Nothing is automatically sent. Refresh and reopen the prefix to
+   confirm it remains editable and the recovery prompt persists.
+4. Deliver a stale completion from another turn; it must not archive the prefix.
+   Complete the matching first turn successfully with another thread selected;
+   only that fork's prefix is archived, and selection remains unchanged.
+5. Disconnect after acceptance, or fail after assistant output/tool execution.
+   Inspect effects before retrying; no automatic replay or archive occurs.
+6. Complete a real response, a tool-call/result round trip and a subsequent turn
+   on the destination. Repeat same-provider continuation. Provider confirmation
+   and credential-free fixture success alone do not satisfy this live check.
+7. If unsupported, transfer the readable prefix to a new chat, explicitly labeled
+   `Transferred conversation context`. Explain loss of structured reasoning and
+   tool state. Verify a fresh-thread tool format is supported too.
+
+Cleanup: archive test children and retained prefixes only after inspecting unknown
+outcomes; restore browser drafts and provider settings. Do not edit source rollout
+history or change process-wide provider defaults. Check the existing error surface
+in both light and dark themes; no new theme-specific controls were introduced.

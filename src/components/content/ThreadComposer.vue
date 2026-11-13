@@ -639,6 +639,7 @@ function loadPersistedDraftForThread(threadId: string): ComposerDraftPayload | n
   if (!normalizedThreadId) return null
   try {
     const raw = window.localStorage.getItem(getDraftStorageKey(normalizedThreadId))
+      || window.localStorage.getItem(profileStorageKey(`codex-web-local.thread-fork-recovery.v1.${normalizedThreadId}`))
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<ComposerDraftPayload> | string
     if (typeof parsed === 'string') {
