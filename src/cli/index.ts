@@ -1,3 +1,4 @@
+import { getConnectionProfileId } from '../server/connectionProfile.js'
 import { createCodexBridgeMiddleware } from '../server/codexAppServerBridge.js'
 import { isAbsoluteLikePath } from '../pathUtils.js'
 import { resolveAppServerUrl } from '../server/appServerWebSocketClient.js'
@@ -123,6 +124,7 @@ async function addProjectOnly(projectPath: string): Promise<void> {
 }
 
 async function startServer(options: {
+  connectionProfile?: string
   appServerUrl?: string
   host: string
   port: string
@@ -130,6 +132,8 @@ async function startServer(options: {
   open: boolean
   projectPath?: string
 }) {
+  if (options.connectionProfile) process.env.CODEXUI_CONNECTION_PROFILE = options.connectionProfile
+  getConnectionProfileId()
   process.env.CODEXUI_APP_SERVER_URL = resolveAppServerUrl(options.appServerUrl)
   const version = await readCliVersion()
   const password = typeof options.password === 'string' ? options.password : undefined
@@ -202,10 +206,12 @@ program
   .option('--no-password', 'disable password protection (default)')
   .option('--open', 'open browser on startup', true)
   .option('--no-open', 'do not open browser on startup')
+  .option('--connection-profile <id>', 'stable remote machine identity (env CODEXUI_CONNECTION_PROFILE; default legacy)')
   .option('--app-server-url <url>', 'external Codex app-server URL (ws://, wss://, unix:///path.sock)')
   .action(async (
     projectPath: string | undefined,
     opts: {
+      connectionProfile?: string
       appServerUrl?: string
       host: string
       port: string
@@ -214,6 +220,8 @@ program
       openProject?: string
     },
   ) => {
+    if (opts.connectionProfile) process.env.CODEXUI_CONNECTION_PROFILE = opts.connectionProfile
+    getConnectionProfileId()
     const rawArgv = process.argv.slice(2)
     const openProjectFlagIndex = rawArgv.findIndex((arg) => arg === '--open-project' || arg.startsWith('--open-project='))
 

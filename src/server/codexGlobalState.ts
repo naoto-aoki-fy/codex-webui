@@ -1,3 +1,4 @@
+import { profileStateDirectory } from './connectionProfile.js'
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, open, readFile, readlink, realpath, rename, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -16,7 +17,7 @@ const lockOptions = {
 }
 
 export function getCodexGlobalStatePath(): string {
-  return join(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex'), '.codex-global-state.json')
+  return join(profileStateDirectory(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex')), '.codex-global-state.json')
 }
 
 function isMissing(error: unknown): boolean {
