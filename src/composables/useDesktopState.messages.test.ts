@@ -15,6 +15,10 @@ const gateway = vi.hoisted(() => ({
   startThreadTurn: vi.fn(),
   interruptThreadTurn: vi.fn(),
   startThread: vi.fn(),
+  forkThreadFromResponse: vi.fn(),
+  forkThread: vi.fn(),
+  configureFreshFork: vi.fn(),
+  renameThread: vi.fn(),
   subscribeCodexNotifications: vi.fn(),
   getPendingServerRequests: vi.fn(),
   replyToServerRequest: vi.fn(),
@@ -127,6 +131,7 @@ beforeEach(() => {
   gateway.getPendingServerRequests.mockResolvedValue([])
   gateway.resumeThread.mockResolvedValue(oldDetail)
   gateway.getThreadDetail.mockResolvedValue(activeDetail)
+  gateway.archiveThread.mockResolvedValue(undefined)
   gateway.startThreadTurn.mockResolvedValue('turn-2')
   gateway.startThread.mockResolvedValue({ threadId: thread.id, model: 'gpt-5.5', modelProvider: 'openai' })
   gateway.subscribeCodexNotifications.mockImplementation((handler) => { notificationHandler = handler; return vi.fn() })
@@ -1745,10 +1750,10 @@ describe('shared catalog ownership and deferred submission characterization', ()
       if (change === 'dispose') state.stopPolling()
       resumed.resolve({ ...oldDetail, model: change === 'selection-no-resume-model' || change === 'unknown' ? '' : change === 'resume-B' ? 'B' : 'A' })
       await vi.advanceTimersByTimeAsync(0)
-      const model = change === 'selection-no-resume-model' || change === 'resume-B' ? 'B' : change === 'unknown' ? 'unknown' : 'A'
-      const effort = change === 'selection-no-resume-model' || change === 'resume-B' ? 'medium' : change === 'replace' ? 'low'
+      const model = change === 'selection-no-resume-model' || change === 'selection' ? 'B' : change === 'unknown' ? 'unknown' : 'A'
+      const effort = change === 'selection-no-resume-model' || change === 'selection' ? 'medium' : change === 'replace' ? 'low'
         : ['clear', 'unknown', 'dispose'].includes(change) ? undefined : 'high'
-      // Effort is captured before resume. A nonempty resume model overwrites a pending selection change.
+      // Effort is captured before resume; explicit model choices survive stale defaults.
       expect(gateway.startThreadTurn.mock.calls[0]?.slice(3, 5)).toEqual([model, 'high'])
       expect(requests).toEqual([{
         method: 'turn/start', params: {
@@ -2145,4 +2150,156 @@ it('does not mark an idle conversation uncertain and reconciles recovery without
   await vi.advanceTimersByTimeAsync(0)
   expect(state.messages.value).toEqual(completedDetail.messages)
   expect(new Set(state.messages.value.map(item => item.id)).size).toBe(state.messages.value.length)
+})
+
+
+describe('conversation model and fresh fork provider selection', () => {
+  const key = (provider: string, model: string) => `provider-model:${JSON.stringify([provider, model])}`
+  const setupCatalog = () => {
+    reasoningCatalog.value = [
+      { id: 'A', modelProvider: 'P' }, { id: 'B', modelProvider: 'P' },
+      { id: 'C', modelProvider: 'Q' }, { id: 'D', modelProvider: 'Q' },
+    ]
+    gateway.resumeThread.mockResolvedValue({ ...oldDetail, model: 'A', modelProvider: 'P' })
+  }
+
+  it('submits P/A, P/B, P/A and explains why ordinary provider changes require a fork', async () => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    state.startPolling()
+    for (const model of ['A', 'B', 'A']) {
+      state.setSelectedModelId(key('P', model))
+      await state.sendMessageToSelectedThread(model)
+      turnCompleted()
+    }
+    expect(gateway.startThreadTurn.mock.calls.map(call => call[3])).toEqual(['A', 'B', 'A'].map(model => key('P', model)))
+    state.setSelectedModelId(key('Q', 'C'))
+    expect(state.readModelIdForThread(thread.id)).toBe(key('P', 'A'))
+    expect(state.error.value).toContain('Fork this conversation')
+    expect(state.modelSelectionNotice.value).toContain('Fork this conversation')
+  })
+
+  it.each(['resume', 'read'])('preserves a selection made during pending thread/%s and submits it', async (method) => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    const pending = deferred<ResumedThread>()
+    if (method === 'resume') {
+      // A new state has no server subscription yet but restores the saved pair.
+      const fresh = createState()
+      gateway.resumeThread.mockReturnValueOnce(pending.promise)
+      const loading = fresh.loadMessages(thread.id)
+      fresh.setSelectedModelId(key('P', 'B'))
+      pending.resolve({ ...oldDetail, model: 'A', modelProvider: 'P' })
+      await loading
+      await fresh.sendMessageToSelectedThread('pending resume')
+      expect(fresh.selectedModelId.value).toBe(key('P', 'B'))
+    } else {
+      gateway.getThreadDetail.mockReturnValueOnce(pending.promise)
+      const loading = state.loadMessages(thread.id, { force: true })
+      state.setSelectedModelId(key('P', 'B'))
+      pending.resolve({ ...oldDetail, model: 'A', modelProvider: 'P' })
+      await loading
+      await state.sendMessageToSelectedThread('pending history')
+      expect(state.selectedModelId.value).toBe(key('P', 'B'))
+    }
+    expect(gateway.startThreadTurn.mock.calls[gateway.startThreadTurn.mock.calls.length - 1]?.[3]).toBe(key('P', 'B'))
+  })
+
+  it.each(['', 'P'])('normalizes unambiguous legacy model metadata with provider %s', async (provider) => {
+    setupCatalog()
+    gateway.resumeThread.mockResolvedValue({ ...oldDetail, model: 'A', modelProvider: provider })
+    const state = createState()
+    await state.loadMessages(thread.id)
+    state.setSelectedModelId('B')
+    expect(state.readModelIdForThread(thread.id)).toBe(key('P', 'B'))
+    await state.sendMessageToSelectedThread('legacy')
+    expect(gateway.startThreadTurn.mock.calls[0]?.[3]).toBe(key('P', 'B'))
+  })
+
+  it('configures a fresh response fork with Q, preserves the source, reopens Q, and locks only the provider', async () => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    const originalMessages = [...state.messages.value]
+    gateway.forkThreadFromResponse.mockResolvedValue({
+      ...oldDetail, threadId: 'draft', cwd: thread.cwd, model: 'A', modelProvider: 'P', messages: [oldUser],
+    })
+    expect(await state.forkThreadFromTurn(thread.id, 0)).toBe('draft')
+    expect(state.readModelIdForThread('draft')).toBe(key('P', 'A'))
+    expect(state.modelSelectionNotice.value).toContain('Fresh fork:')
+    expect(state.messages.value).toEqual(originalMessages)
+    state.setSelectedModelId(key('Q', 'C'))
+    gateway.configureFreshFork.mockResolvedValue({ threadId: 'continued', model: 'C', modelProvider: 'Q' })
+    gateway.getThreadDetail.mockResolvedValue({ ...oldDetail, model: 'C', modelProvider: 'Q', messages: [oldUser, { ...nextUser, text: 'fork continuation' }] })
+    await state.sendMessageToSelectedThread('fork continuation')
+    expect(gateway.configureFreshFork).toHaveBeenCalledExactlyOnceWith('draft', key('Q', 'C'))
+    expect(gateway.startThreadTurn.mock.calls[gateway.startThreadTurn.mock.calls.length - 1]?.slice(0, 4)).toEqual(['continued', 'fork continuation', [], key('Q', 'C')])
+    expect(state.messages.value.map(message => message.text)).toEqual([oldUser.text, 'fork continuation'])
+    expect(state.resolveThreadReplacement('draft')).toBe('continued')
+    expect(state.modelSelectionNotice.value).toBe('')
+    expect(state.readModelIdForThread(thread.id)).toBe(key('P', 'A'))
+    state.primeSelectedThread(thread.id)
+    expect(state.messages.value).toEqual(originalMessages)
+    // A newly mounted state restores the confirmed server configuration.
+    const reopened = createState()
+    reopened.primeSelectedThread('continued')
+    gateway.resumeThread.mockResolvedValueOnce({ ...oldDetail, model: 'C', modelProvider: 'Q', messages: [oldUser, nextUser] })
+    await reopened.loadMessages('continued')
+    expect(reopened.selectedModelId.value).toBe(key('Q', 'C'))
+    reopened.setSelectedModelId(key('Q', 'D'))
+    await reopened.sendMessageToSelectedThread('Q/D')
+    expect(gateway.startThreadTurn.mock.calls[gateway.startThreadTurn.mock.calls.length - 1]?.[3]).toBe(key('Q', 'D'))
+    reopened.setSelectedModelId(key('P', 'A'))
+    expect(reopened.selectedModelId.value).toBe(key('Q', 'D'))
+    expect(reopened.error.value).toContain('Fork this conversation')
+  })
+
+  it('keeps a rejected provider fork editable and preserves its recoverable draft', async () => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    gateway.forkThreadFromResponse.mockResolvedValue({ ...oldDetail, threadId: 'draft', cwd: '', model: 'A', modelProvider: 'P' })
+    await state.forkThreadFromTurn(thread.id, 0)
+    state.setSelectedModelId(key('Q', 'C'))
+    gateway.configureFreshFork.mockResolvedValue({ threadId: 'rejected', model: 'C', modelProvider: 'Q' })
+    gateway.startThreadTurn.mockRejectedValueOnce(new Error('This chat uses Q, but your current provider is P. Switch to Q to continue.'))
+    await expect(state.sendMessageToSelectedThread('rejected')).rejects.toThrow('current provider is P')
+    expect(gateway.archiveThread).not.toHaveBeenCalled()
+    expect(state.error.value).toContain('current provider is P')
+    state.setSelectedModelId(key('P', 'A'))
+    expect(state.selectedModelId.value).toBe(key('P', 'A'))
+    expect(state.readModelIdForThread(thread.id)).toBe(key('P', 'A'))
+  })
+
+  it('allows provider selection in a full-history fork with inherited messages and a server ID', async () => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    gateway.getThreadDetail.mockResolvedValue({ ...oldDetail, model: 'A', modelProvider: 'P' })
+    gateway.forkThread.mockResolvedValue({ threadId: 'full-fork', model: 'A', modelProvider: 'P' })
+    expect(await state.forkThreadById(thread.id)).toBe('full-fork')
+    expect(state.messages.value).toEqual([oldUser])
+    state.setSelectedModelId(key('Q', 'C'))
+    expect(state.selectedModelId.value).toBe(key('Q', 'C'))
+    // Reloading before continuation keeps the draft eligible for a provider change.
+    const reopened = createState()
+    reopened.primeSelectedThread('full-fork')
+    reopened.setSelectedModelId(key('Q', 'D'))
+    expect(reopened.selectedModelId.value).toBe(key('Q', 'D'))
+  })
+
+  it('does not submit when the backend cannot confirm a fork provider switch', async () => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    gateway.forkThreadFromResponse.mockResolvedValue({ ...oldDetail, threadId: 'draft', cwd: '', model: 'A', modelProvider: 'P' })
+    await state.forkThreadFromTurn(thread.id, 0)
+    state.setSelectedModelId(key('Q', 'C'))
+    gateway.configureFreshFork.mockRejectedValue(new Error('App-server did not confirm'))
+    await expect(state.sendMessageToSelectedThread('blocked')).rejects.toThrow('did not confirm')
+    expect(gateway.startThreadTurn).not.toHaveBeenCalled()
+    expect(state.selectedThreadId.value).toBe('draft')
+  })
 })

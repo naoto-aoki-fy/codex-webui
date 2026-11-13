@@ -82,12 +82,14 @@ import {
 
   archiveThread,
   forkThread,
+  configureFreshFork,
   forkThreadFromResponse,
   getAvailableCollaborationModes,
   getAccountRateLimits,
   renameThread,
   getAvailableModelIds,
   acquireReasoningCatalog,
+  reasoningCatalog,
   reasoningOptions,
   resolveReasoningEffort,
   findReasoningModel,
@@ -720,6 +722,50 @@ export function useDesktopState() {
     return ''
   }
 
+  // Explicit composer choices are distinct from backend defaults for this session.
+  const explicitModelContexts = new Set<string>()
+  const configuringForks = new Set<string>()
+  const replacementThreadIds = new Map<string, string>()
+  const blockedProviderContext = ref('')
+  const supersededForkDrafts = new Map<string, string>()
+  const freshForkStorageKey = 'codex-web-local.fresh-forks.v1'
+  const freshForks = ref<Record<string, string>>((() => {
+    try {
+      const value = JSON.parse(window.localStorage.getItem(freshForkStorageKey) || '{}')
+      return value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.fromEntries(Object.entries(value).filter(([, model]) => typeof model === 'string')) as Record<string, string> : {}
+    } catch { return {} }
+  })())
+  function markFreshFork(threadId: string, model: string | null): void {
+    if (model === null && !Object.prototype.hasOwnProperty.call(freshForks.value, threadId)) return
+    const next = { ...freshForks.value }
+    if (model === null) delete next[threadId]
+    else next[threadId] = model
+    freshForks.value = next
+    try { window.localStorage.setItem(freshForkStorageKey, JSON.stringify(next)) } catch { /* Storage is optional. */ }
+  }
+
+  const modelSelectionNotice = computed(() => {
+    if (blockedProviderContext.value === selectedThreadId.value && blockedProviderContext.value) {
+      return 'Fork this conversation to use a different model provider.'
+    }
+    return Object.prototype.hasOwnProperty.call(freshForks.value, selectedThreadId.value)
+      ? 'Fresh fork: choose a provider and model before sending. After the first message, changing providers requires another fork. The app-server must support the selected provider.'
+      : ''
+  })
+  function resolveThreadReplacement(threadId: string): string {
+    return replacementThreadIds.get(threadId) || threadId
+  }
+
+  function resolveSelectionProvider(model: string): string {
+    const selection = parseModelSelection(model)
+    if (selection.provider) return selection.provider
+    const providers = new Set(reasoningCatalog.value
+      .filter(entry => (entry.id || entry.model) === selection.model && entry.modelProvider)
+      .map(entry => entry.modelProvider!))
+    return providers.size === 1 ? [...providers][0]! : ''
+  }
+
   function readModelIdForThread(threadId: string): string {
     const contextId = isNewThreadContextId(toThreadContextId(threadId)) ? NEW_THREAD_MODEL_CONTEXT : toThreadContextId(threadId)
     const automatic = automaticModelByContext.value[contextId]
@@ -763,14 +809,18 @@ export function useDesktopState() {
   }
 
   function setSelectedModelIdForThread(threadId: string, modelId: string): void {
-    const model = modelId.trim()
+    const requested = modelId.trim()
+    const model = modelSelectionKey(resolveSelectionProvider(requested), parseModelSelection(requested).model)
     const context = isNewThreadContextId(toThreadContextId(threadId)) ? NEW_THREAD_MODEL_CONTEXT : toThreadContextId(threadId)
     const next = cloneStringKeyedRecord(selectedModelIdByContext.value)
-    const currentProvider = parseModelSelection(readModelIdForThread(threadId)).provider
-    if (!isNewThreadContextId(toThreadContextId(threadId)) && currentProvider !== parseModelSelection(model).provider) {
-      error.value = 'Start a new thread to use a different model provider.'
+    const currentProvider = resolveSelectionProvider(readModelIdForThread(threadId))
+    if (!isNewThreadContextId(toThreadContextId(threadId)) && !Object.prototype.hasOwnProperty.call(freshForks.value, threadId) && currentProvider !== resolveSelectionProvider(model)) {
+      blockedProviderContext.value = threadId
+      error.value = 'Fork this conversation to use a different model provider.'
       return
     }
+    blockedProviderContext.value = ''
+    explicitModelContexts.add(context)
     ++modelRefreshVersion
     automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, context)
     if (model) { next[context] = model; if (isNewThreadContextId(toThreadContextId(threadId))) next[NEW_THREAD_MODEL_CONTEXT] = model }
@@ -790,8 +840,9 @@ export function useDesktopState() {
     const normalizedThreadId = threadId.trim()
     if (!normalizedThreadId) return
 
+    if (explicitModelContexts.has(normalizedThreadId)) return
     const incoming = parseModelSelection(modelId.trim())
-    const effectiveProvider = provider || incoming.provider || parseModelSelection(readModelIdForThread(threadId)).provider
+    const effectiveProvider = provider || resolveSelectionProvider(modelId) || resolveSelectionProvider(readModelIdForThread(threadId))
     const normalizedModelId = modelSelectionKey(effectiveProvider, incoming.model || parseModelSelection(readModelIdForThread(threadId)).model)
     automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, normalizedThreadId)
     if (normalizedModelId) {
@@ -3033,7 +3084,8 @@ export function useDesktopState() {
       if (!nextThreadId) return ''
 
       insertOptimisticThread(nextThreadId, sourceCwd, sourceTitle)
-      setThreadModelId(nextThreadId, forkedThread.model, forkedThread.modelProvider)
+      setThreadModelId(nextThreadId, forkedThread.model || selectedModel, forkedThread.modelProvider)
+      markFreshFork(nextThreadId, readModelIdForThread(nextThreadId))
       resumedThreadById.value = {
         ...resumedThreadById.value,
         [nextThreadId]: true,
@@ -3077,7 +3129,8 @@ export function useDesktopState() {
       const forkedCwd = forked.cwd.trim() || sourceThread?.cwd?.trim() || ''
       const forkedThreadTitle = toForkedThreadTitle(sourceThread?.title || sourceThread?.preview || 'Untitled thread')
       insertOptimisticThread(forkedThreadId, forkedCwd, forkedThreadTitle)
-      setThreadModelId(forkedThreadId, forked.model, forked.modelProvider)
+      setThreadModelId(forkedThreadId, forked.model || readModelIdForThread(normalizedThreadId), forked.modelProvider)
+      markFreshFork(forkedThreadId, readModelIdForThread(forkedThreadId))
       setPersistedMessagesForThread(forkedThreadId, forked.messages)
       loadedMessagesByThreadId.value = {
         ...loadedMessagesByThreadId.value,
@@ -3155,9 +3208,38 @@ export function useDesktopState() {
     const submissionContext = { generation, modelId: readModelIdForThread(selectedThreadId.value), reasoningEffort: selectedReasoningEffort.value }
     if (isUpdatingSpeedMode.value) return
 
-    const threadId = selectedThreadId.value
+    let threadId = selectedThreadId.value
     const nextText = text.trim()
     if (!threadId || (!nextText && imageUrls.length === 0 && fileAttachments.length === 0)) return
+
+    if (Object.prototype.hasOwnProperty.call(freshForks.value, threadId)
+      && resolveSelectionProvider(freshForks.value[threadId]!) !== resolveSelectionProvider(submissionContext.modelId)) {
+      const draftId = threadId
+      if (configuringForks.has(draftId)) throw new Error('The fork is being configured. Wait before sending again.')
+      configuringForks.add(draftId)
+      try {
+        const configured = await configureFreshFork(draftId, submissionContext.modelId)
+        if (generation !== lifecycleGeneration) throw new Error('Conversation changed while configuring fork; send again.')
+        const draft = flattenThreads(sourceGroups.value).find(row => row.id === draftId)
+        threadId = configured.threadId
+        replacementThreadIds.set(draftId, threadId)
+        insertOptimisticThread(threadId, draft?.cwd || '', draft?.title || 'Forked chat')
+        setPersistedMessagesForThread(threadId, persistedMessagesByThreadId.value[draftId] || [])
+        setThreadModelId(threadId, configured.model, configured.modelProvider)
+        explicitModelContexts.add(threadId)
+        markFreshFork(threadId, submissionContext.modelId)
+        resumedThreadById.value = { ...resumedThreadById.value, [threadId]: true }
+        if (selectedThreadId.value === draftId) setSelectedThreadId(threadId)
+        // Keep the draft recoverable until a new turn is actually accepted.
+        supersededForkDrafts.set(threadId, draftId)
+      } catch (failure) {
+        error.value = failure instanceof Error ? failure.message : String(failure)
+        setTurnErrorForThread(draftId, error.value)
+        throw failure
+      } finally {
+        configuringForks.delete(draftId)
+      }
+    }
 
     const submittedMode = collaborationModeOverride ?? selectedCollaborationMode.value
     if (await maybeReplyToPendingUserInputRequest(threadId, nextText, imageUrls, skills, fileAttachments)) {
@@ -3380,13 +3462,13 @@ export function useDesktopState() {
       collaborationMode,
     })
 
+    const freshForkDefault = freshForks.value[threadId]
     let submissionAttempted = false
     let submissionAccepted = false
     try {
       let modelId = context.modelId
       if (!context.resumed && resumedThreadById.value[threadId] !== true) {
         const resumedThread = await resumeThread(threadId)
-        if (resumedThread.model) modelId = modelSelectionKey(resumedThread.modelProvider || parseModelSelection(modelId).provider, resumedThread.model)
         if (generation === lifecycleGeneration) {
           if (resumedThread.model || resumedThread.modelProvider) {
             setThreadModelId(threadId, resumedThread.model, resumedThread.modelProvider)
@@ -3402,6 +3484,7 @@ export function useDesktopState() {
       // Submit exactly once even if disposal occurred while resuming the server thread.
       if (generation === lifecycleGeneration) recordModelUsage(modelId)
       submissionAttempted = true
+      markFreshFork(threadId, null)
       const startedTurnId = await startThreadTurn(
         threadId,
         nextText,
@@ -3418,6 +3501,14 @@ export function useDesktopState() {
       )
 
       submissionAccepted = true
+      const supersededDraft = supersededForkDrafts.get(threadId)
+      if (supersededDraft) {
+        supersededForkDrafts.delete(threadId)
+        markFreshFork(supersededDraft, null)
+        void archiveThread(supersededDraft).then(() => {
+          if (generation === lifecycleGeneration) removeArchivedThreadFromLoadedLists(supersededDraft)
+        }).catch(() => { /* Retain a recoverable draft if archive fails. */ })
+      }
       if (generation !== lifecycleGeneration) return
       if (startedTurnId) {
         if (optimisticMessageId) {
@@ -3439,6 +3530,9 @@ export function useDesktopState() {
     } catch (unknownError) {
       const ambiguous = unknownError instanceof Error && /disconnected|outcome unknown/i.test(unknownError.message)
         || unknownError instanceof CodexApiError && (['network_error', 'invalid_response'].includes(unknownError.code) || (unknownError.status ?? 0) >= 500)
+      if (!submissionAccepted && !ambiguous && freshForkDefault !== undefined) {
+        markFreshFork(threadId, freshForkDefault)
+      }
       if (submissionAttempted && !submissionAccepted && ambiguous) {
         unknownOutcomeByThreadId.value = { ...unknownOutcomeByThreadId.value, [threadId]: true }
       }
@@ -3516,6 +3610,7 @@ export function useDesktopState() {
         if (!threadId || threadId === sourceThreadId) throw new Error('Invalid fork destination')
         insertOptimisticThread(threadId, threadCwd, 'Forked chat')
         setThreadModelId(threadId, forked.model, forked.modelProvider)
+        markFreshFork(threadId, readModelIdForThread(threadId))
         stage = 'Validate fork target'
         await validateThreadRevert(threadId, turnId)
       }
@@ -3870,6 +3965,7 @@ export function useDesktopState() {
   }
 
   return {
+    modelSelectionNotice, resolveThreadReplacement,
     transportState, selectedRecoveryState, selectedUnknownOutcome, selectedLostApproval,
     retrySelectedSubscription, reconcileSelectedHistory,
     projectGroups,

@@ -75,6 +75,9 @@ export function normalizeThreadModelProviderFromPayload(payload: unknown): strin
   const modelProvider = readString(record.modelProvider)?.trim() ?? ''
   if (modelProvider) return modelProvider
   const thread = asRecord(record.thread)
-  return readString(thread?.modelProvider)?.trim() ?? ''
+  return readString(thread?.modelProvider)?.trim()
+    || readString(record.model_provider)?.trim()
+    || readString(thread?.model_provider)?.trim()
+    || ''
 }
 

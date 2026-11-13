@@ -500,6 +500,23 @@ export async function forkThreadFromResponse(threadId: string, turnIndex: number
   }
 }
 
+// A loaded thread cannot reliably be reconfigured by thread/resume. Fork its
+// exact persisted prefix with supported overrides instead, before any new turn.
+export async function configureFreshFork(threadId: string, modelId: string): Promise<StartedThread> {
+  const selection = parseModelSelection(modelId)
+  if (!selection.provider || !selection.model) throw new Error('Select a configured provider and model for the fork.')
+  const payload = await callRpc<ThreadForkResponse>('thread/fork', {
+    threadId, model: selection.model, modelProvider: selection.provider, persistExtendedHistory: true,
+  })
+  const id = normalizeThreadIdFromPayload(payload)
+  const model = normalizeThreadModelFromPayload(payload)
+  const modelProvider = normalizeThreadModelProviderFromPayload(payload)
+  if (!id || id === threadId || model !== selection.model || modelProvider !== selection.provider) {
+    throw new Error('App-server did not confirm the selected fork provider and model. No message was sent; update the app-server to support thread/fork modelProvider overrides.')
+  }
+  return { threadId: id, model, modelProvider }
+}
+
 export async function forkThread(threadId: string): Promise<ForkedThread>
 export async function forkThread(threadId: string, cwd: string | undefined, model: string | undefined): Promise<StartedThread>
 export async function forkThread(
@@ -542,6 +559,8 @@ export async function forkThread(
     }
     if (typeof model === 'string' && model.trim().length > 0) {
       params.model = parseModelSelection(model.trim()).model
+      const provider = parseModelSelection(model.trim()).provider
+      if (provider) params.modelProvider = provider
     }
     const payload = await callRpc<ThreadForkResponse>('thread/fork', params)
     const nextThreadId = normalizeThreadIdFromPayload(payload)
@@ -611,7 +630,11 @@ export async function startThreadTurn(
     if (turnId) onAccepted?.(turnId, readGenerationMetadata((payload.turn as Turn & { generationMetadata?: unknown }).generationMetadata))
     return turnId
   } catch (error) {
-    throw normalizeCodexApiError(error, `Failed to start turn for thread ${threadId}`, 'turn/start')
+    const normalized = normalizeCodexApiError(error, `Failed to start turn for thread ${threadId}`, 'turn/start')
+    if (/modelProviderMismatch|This chat uses .+current provider/is.test(normalized.message)) {
+      throw new Error(`The app-server rejected this thread's provider. No message was accepted. This server must support running a fork with its selected provider independently of the server default. ${normalized.message}`)
+    }
+    throw normalized
   }
 }
 

@@ -1392,3 +1392,7 @@
 }
 .connection-recovery-status button { text-decoration: underline; cursor: pointer; }
 :root.dark .connection-recovery-status { color: #fde68a; background: #422006; }
+
+:root.dark .composer-model-notice {
+  @apply text-zinc-400;
+}
