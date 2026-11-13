@@ -422,3 +422,31 @@ project on B. Use the deployment guide's SSH tunnel. Test light and dark themes.
 Cleanup: stop only test backends/tunnels, remove test registrations/threads and
 uploaded fixtures when no longer referenced. Restore original B config after
 OAuth testing. Never stop an independently managed non-test server.
+
+### Subscription recovery and uncertain outcomes
+
+Prerequisites: use disposable threads on an independently authenticated server. For
+fault injection use the transport fixture, never terminate a production tunnel.
+
+1. Subscribe to three threads, then reconnect. Make the first resume silent and
+   let the other two succeed. Expect the healthy threads and an unrelated
+   `model/list` request to complete independently. A resume attempt has a 5 second
+   deadline; four attempts, 500/1000/2000 ms backoff, three workers and a 30 second
+   elapsed budget bound automatic recovery. Backoff does not occupy a worker.
+2. Fail one resume once, then succeed. Expect recovering then recovered status,
+   refreshed selected history, preserved composer draft and no duplicate items.
+3. Fail every resume. Expect the affected thread to show failed and Retry
+   subscription. Retry after fixing the fixture; expect a fresh bounded sequence.
+4. Disconnect again during backoff or an unanswered resume. Expect old jobs and
+   timers to be invalidated, late replies ignored, and no mutation replay.
+5. Disconnect during an approval wait or immediately after `turn/start`. Expect
+   distinct transport, expired approval and unknown outcome notices. Old approval
+   IDs must be rejected. Refresh history explicitly; missing history must not
+   clear uncertainty or automatically resend. Only newly delivered upstream
+   approval requests are actionable. Check the status banner in light and dark
+   themes.
+
+Cleanup: remove only fixture/disposable threads and restore fault injection.
+Two-host streaming, live approval redelivery and ambiguous submission behavior
+still require the independent-server checklist above; mock transport results do
+not establish those upstream behaviors.
