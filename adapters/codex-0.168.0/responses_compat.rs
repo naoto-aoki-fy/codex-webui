@@ -1,0 +1,517 @@
+//! Request-copy projection between the Responses Lite and standard dialects.
+//! Never reads or writes rollout files. Errors contain schema metadata only.
+use serde_json::{Value, json};
+use std::collections::BTreeMap;
+
+#[derive(Clone, Copy)]
+pub struct Destination {
+    pub additional_tools: bool,
+    pub reasoning_content: bool,
+    pub namespaces: bool,
+}
+
+pub struct Projection {
+    pub input: Vec<Value>,
+    pub reasoning_items: usize,
+    pub obsolete_declarations: usize,
+    pub retained_declarations: usize,
+}
+
+fn inventory(
+    tools: &[Value],
+    prefix: &str,
+    out: &mut BTreeMap<String, String>,
+) -> Result<(), String> {
+    for tool in tools {
+        let kind = tool
+            .get("type")
+            .and_then(Value::as_str)
+            .ok_or("Tool declaration has no type")?;
+        let name = tool.get("name").and_then(Value::as_str).unwrap_or("");
+        if name.contains('.') {
+            return Err(
+                "Ambiguous dotted declaration name; no namespace flattening was attempted".into(),
+            );
+        }
+        let qualified = if prefix.is_empty() {
+            name.to_owned()
+        } else {
+            format!("{prefix}.{name}")
+        };
+        match kind {
+            "namespace" => {
+                if name.is_empty() {
+                    return Err("Namespace declaration has no name".into());
+                }
+                let children = tool
+                    .get("tools")
+                    .and_then(Value::as_array)
+                    .ok_or("Namespace tools must be an array")?;
+                inventory(children, &qualified, out)?;
+            }
+            "function" | "custom" => {
+                if name.is_empty() {
+                    return Err("Callable declaration has no name".into());
+                }
+                // Inventory updates are chronological: later declarations supersede earlier ones.
+                out.insert(qualified, kind.to_owned());
+            }
+            // Built-ins remain owned by the current registry. No invented function wrappers.
+            "web_search"
+            | "web_search_preview"
+            | "file_search"
+            | "computer_use_preview"
+            | "image_generation"
+            | "code_interpreter"
+            | "mcp"
+            | "tool_search" => {
+                out.insert(format!("@builtin:{kind}"), kind.to_owned());
+            }
+            _ => return Err(format!("Unsupported tool declaration type: {kind}")),
+        }
+    }
+    Ok(())
+}
+
+fn call_name(item: &Value) -> String {
+    let name = item.get("name").and_then(Value::as_str).unwrap_or("");
+    match item.get("namespace").and_then(Value::as_str) {
+        Some(namespace) if !namespace.is_empty() => format!("{namespace}.{name}"),
+        _ => name.to_owned(),
+    }
+}
+
+pub fn project(
+    input: &[Value],
+    current_tools: &[Value],
+    destination: Destination,
+) -> Result<Projection, String> {
+    let converting_tools = !destination.additional_tools
+        && input.iter().any(|item| item["type"] == "additional_tools");
+    let mut active = BTreeMap::new();
+    let mut inherited = BTreeMap::new();
+    if converting_tools {
+        inventory(current_tools, "", &mut active)?;
+        for item in input
+            .iter()
+            .filter(|item| item["type"] == "additional_tools")
+        {
+            let tools = item
+                .get("tools")
+                .and_then(Value::as_array)
+                .ok_or("additional_tools.tools must be an array")?;
+            inventory(tools, "", &mut inherited)?;
+        }
+        if !inherited.is_empty() && active.is_empty() {
+            return Err("Cannot project inherited tools without the destination's authoritative active tool inventory".into());
+        }
+        let mut pending_calls = BTreeMap::new();
+        for item in input {
+            let kind = item["type"].as_str().unwrap_or("");
+            if matches!(kind, "function_call" | "custom_tool_call") {
+                let name = call_name(item);
+                if !destination.namespaces
+                    && item
+                        .get("namespace")
+                        .and_then(Value::as_str)
+                        .is_some_and(|s| !s.is_empty())
+                {
+                    return Err("Destination cannot represent historical namespaced tool calls; no name flattening was attempted".into());
+                }
+                if kind == "custom_tool_call"
+                    && active.get(&name).map(String::as_str) != Some("custom")
+                {
+                    return Err("Destination has no compatible registration for a historical custom tool call; custom-to-function conversion is unsupported".into());
+                }
+                let id = item
+                    .get("call_id")
+                    .and_then(Value::as_str)
+                    .ok_or("Historical tool call has no call_id")?;
+                if pending_calls.insert(id, kind).is_some() {
+                    return Err("Duplicate historical tool call_id".into());
+                }
+            }
+            if matches!(kind, "function_call_output" | "custom_tool_call_output") {
+                let id = item
+                    .get("call_id")
+                    .and_then(Value::as_str)
+                    .ok_or("Historical tool output has no call_id")?;
+                if pending_calls.remove(id) != Some(kind.strip_suffix("_output").unwrap()) {
+                    return Err("Historical tool calls and outputs are not paired; request projection refused".into());
+                }
+            }
+            if matches!(
+                kind,
+                "web_search_call" | "tool_search_call" | "tool_search_output" | "local_shell_call"
+            ) {
+                return Err("Historical hosted/search/local-shell tool state has no registered cross-dialect conversion".into());
+            }
+            if matches!(kind, "compaction" | "context_compaction")
+                && item.get("encrypted_content").is_some()
+            {
+                return Err(
+                    "Encrypted compaction state has no supported cross-dialect projection".into(),
+                );
+            }
+        }
+        if !pending_calls.is_empty() {
+            return Err(
+                "Historical tool calls and outputs are not paired; request projection refused"
+                    .into(),
+            );
+        }
+    }
+    let retained = inherited
+        .iter()
+        .filter(|(name, kind)| active.get(*name) == Some(*kind))
+        .count();
+    let mut projection = Projection {
+        input: Vec::with_capacity(input.len()),
+        reasoning_items: 0,
+        obsolete_declarations: inherited.len() - retained,
+        retained_declarations: retained,
+    };
+    for original in input {
+        if converting_tools && original["type"] == "additional_tools" {
+            continue;
+        }
+        let mut item = original.clone();
+        if !destination.reasoning_content && item["type"] == "reasoning" {
+            if let Some(content) = item
+                .get("content")
+                .and_then(Value::as_array)
+                .filter(|v| !v.is_empty())
+            {
+                if item
+                    .get("encrypted_content")
+                    .is_some_and(|value| !value.is_null())
+                {
+                    return Err("Nonempty reasoning content with opaque encrypted state cannot be safely projected across providers".into());
+                }
+                let summary = match item.get("summary") {
+                    Some(Value::Array(summary)) => summary.clone(),
+                    None => Vec::new(),
+                    _ => return Err("Reasoning summary must be an array".into()),
+                };
+                let mut text = String::from(
+                    "[Prior-provider reasoning: request-only text representation, not native hidden state]\n",
+                );
+                for part in &summary {
+                    if part["type"] != "summary_text"
+                        || !part["text"].is_string()
+                        || part
+                            .as_object()
+                            .is_none_or(|obj| obj.keys().any(|key| key != "type" && key != "text"))
+                    {
+                        return Err(
+                            "Unsupported reasoning summary structure; no content was discarded"
+                                .into(),
+                        );
+                    }
+                    text.push_str("Summary: ");
+                    text.push_str(part["text"].as_str().unwrap());
+                    text.push('\n');
+                }
+                for part in content {
+                    if part["type"] != "reasoning_text"
+                        || !part["text"].is_string()
+                        || part
+                            .as_object()
+                            .is_none_or(|obj| obj.keys().any(|key| key != "type" && key != "text"))
+                    {
+                        return Err(
+                            "Unsupported reasoning content structure; no content was discarded"
+                                .into(),
+                        );
+                    }
+                    text.push_str("Reasoning: ");
+                    text.push_str(part["text"].as_str().unwrap());
+                    text.push('\n');
+                }
+                // A summary-only foreign Reasoning item passes immediate validation,
+                // but OpenAI cannot replay its unverified hidden state by response ID.
+                // Preserve its text as a labeled assistant item, retaining native
+                // reasoning only when it was already valid for the destination.
+                item = json!({"type":"message","role":"assistant","content":[{"type":"output_text","text":text}]});
+                projection.reasoning_items += 1;
+            }
+        }
+        projection.input.push(item);
+    }
+    Ok(projection)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn standard() -> Destination {
+        Destination {
+            additional_tools: false,
+            reasoning_content: true,
+            namespaces: true,
+        }
+    }
+    #[test]
+    fn preserves_current_registry_and_call_relationships_and_retires_obsolete_declarations() {
+        let tools = vec![json!({"type":"function","name":"shell","parameters":{"type":"object"}})];
+        let input = vec![
+            json!({"type":"additional_tools","tools":[{"type":"function","name":"shell","parameters":{"old":true}},{"type":"custom","name":"old_exec"}]}),
+            json!({"type":"additional_tools","tools":[{"type":"function","name":"shell","parameters":{"new":true}}]}),
+            json!({"type":"message","role":"user","content":[{"type":"input_text","text":"fixture"}]}),
+            json!({"type":"function_call","call_id":"c1","name":"shell","arguments":"{}"}),
+            json!({"type":"function_call_output","call_id":"c1","output":"fixture result"}),
+        ];
+        let original = input.clone();
+        let registry = tools.clone();
+        let result = project(&input, &tools, standard()).unwrap();
+        assert_eq!(result.input, input[2..]);
+        assert_eq!(result.retained_declarations, 1);
+        assert_eq!(result.obsolete_declarations, 1);
+        assert_eq!(input, original);
+        assert_eq!(tools, registry);
+    }
+    #[test]
+    fn projects_only_foreign_plain_reasoning_without_erasing_text_or_other_items() {
+        let input = vec![
+            json!({"type":"reasoning","id":"rs_fixture","encrypted_content":null,"summary":[{"type":"summary_text","text":"summary"}],"content":[{"type":"reasoning_text","text":"reason"}]}),
+            json!({"type":"message","role":"assistant","content":[{"type":"output_text","text":"answer"}]}),
+        ];
+        let original = input.clone();
+        let dest = Destination {
+            reasoning_content: false,
+            ..standard()
+        };
+        let p = project(&input, &[], dest).unwrap();
+        assert_eq!(p.input[0]["type"], "message");
+        let text = p.input[0]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("not native hidden state"));
+        assert!(text.contains("summary"));
+        assert!(text.contains("reason"));
+        assert_eq!(p.input[1], input[1]);
+        assert_eq!(input, original);
+        assert_eq!(project(&p.input, &[], dest).unwrap().input, p.input);
+        let opaque =
+            [json!({"type":"reasoning","encrypted_content":"opaque","summary":[],"content":[]})];
+        assert_eq!(project(&opaque, &[], dest).unwrap().input, opaque);
+        let incompatible = [
+            json!({"type":"reasoning","encrypted_content":"opaque","summary":[],"content":[{"type":"reasoning_text","text":"fixture"}]}),
+        ];
+        assert!(
+            project(&incompatible, &[], dest)
+                .err()
+                .unwrap()
+                .contains("opaque")
+        );
+    }
+    #[test]
+    fn compatible_and_lite_requests_are_noops() {
+        let input = vec![
+            json!({"type":"additional_tools","tools":[{"type":"custom","name":"exec"}]}),
+            json!({"type":"reasoning","content":[{"type":"reasoning_text","text":"fixture"}],"summary":[]}),
+        ];
+        assert_eq!(
+            project(
+                &input,
+                &[],
+                Destination {
+                    additional_tools: true,
+                    reasoning_content: true,
+                    namespaces: true
+                }
+            )
+            .unwrap()
+            .input,
+            input
+        );
+        let compatible = vec![
+            json!({"type":"reasoning","summary":[],"content":[]}),
+            json!({"type":"message","content":[{"type":"input_text","text":"fixture"}]}),
+        ];
+        assert_eq!(
+            project(
+                &compatible,
+                &[],
+                Destination {
+                    reasoning_content: false,
+                    ..standard()
+                }
+            )
+            .unwrap()
+            .input,
+            compatible
+        );
+    }
+    #[test]
+    fn rejects_unsupported_custom_calls_and_orphan_outputs() {
+        let decl = json!({"type":"additional_tools","tools":[{"type":"custom","name":"exec"}]});
+        let tools = [json!({"type":"function","name":"shell"})];
+        assert!(
+            project(
+                &[
+                    decl.clone(),
+                    json!({"type":"custom_tool_call","name":"exec","call_id":"c"}),
+                    json!({"type":"custom_tool_call_output","call_id":"c","output":"fixture"})
+                ],
+                &tools,
+                standard()
+            )
+            .err()
+            .unwrap()
+            .contains("custom-to-function")
+        );
+        assert!(
+            project(
+                &[
+                    decl,
+                    json!({"type":"function_call_output","call_id":"orphan","output":"fixture"})
+                ],
+                &tools,
+                standard()
+            )
+            .err()
+            .unwrap()
+            .contains("not paired")
+        );
+    }
+    #[test]
+    fn namespace_leaf_collisions_are_distinct_and_unsupported_flattening_is_rejected() {
+        let tools = vec![
+            json!({"type":"namespace","name":"a","tools":[{"type":"function","name":"run"}]}),
+            json!({"type":"namespace","name":"b","tools":[{"type":"function","name":"run"}]}),
+        ];
+        let input = vec![
+            json!({"type":"additional_tools","tools":tools}),
+            json!({"type":"function_call","namespace":"a","name":"run","call_id":"c","arguments":"{}"}),
+            json!({"type":"function_call_output","call_id":"c","output":"fixture"}),
+        ];
+        let p = project(&input, &tools, standard()).unwrap();
+        assert_eq!(p.retained_declarations, 2);
+        assert_eq!(p.input, input[1..]);
+        assert!(
+            project(
+                &input,
+                &tools,
+                Destination {
+                    namespaces: false,
+                    ..standard()
+                }
+            )
+            .err()
+            .unwrap()
+            .contains("flattening")
+        );
+    }
+    #[test]
+    fn refuses_unknown_reasoning_fields_without_losing_source_data() {
+        let input = [
+            json!({"type":"reasoning","content":[{"type":"reasoning_text","text":"fixture","unknown":true}]}),
+        ];
+        assert!(
+            project(
+                &input,
+                &[],
+                Destination {
+                    reasoning_content: false,
+                    ..standard()
+                }
+            )
+            .is_err()
+        );
+    }
+    #[test]
+    fn supported_custom_calls_remain_byte_for_byte_equivalent() {
+        let tools = vec![
+            json!({"type":"namespace","name":"registered","tools":[{"type":"custom","name":"patch"}]}),
+        ];
+        let input = vec![
+            json!({"type":"additional_tools","tools":tools}),
+            json!({"type":"custom_tool_call","namespace":"registered","name":"patch","call_id":"c","input":"fixture payload"}),
+            json!({"type":"custom_tool_call_output","call_id":"c","output":"fixture output"}),
+        ];
+        assert_eq!(
+            project(&input, &tools, standard()).unwrap().input,
+            input[1..]
+        );
+    }
+    #[test]
+    fn mismatched_output_kinds_and_missing_registries_are_rejected() {
+        let decl = json!({"type":"additional_tools","tools":[{"type":"function","name":"shell"}]});
+        assert!(
+            project(&[decl.clone()], &[], standard())
+                .err()
+                .unwrap()
+                .contains("active tool inventory")
+        );
+        let input = vec![
+            decl,
+            json!({"type":"function_call","name":"shell","call_id":"c","arguments":"{}"}),
+            json!({"type":"custom_tool_call_output","call_id":"c","output":"fixture"}),
+        ];
+        assert!(
+            project(
+                &input,
+                &[json!({"type":"function","name":"shell"})],
+                standard()
+            )
+            .err()
+            .unwrap()
+            .contains("not paired")
+        );
+    }
+    #[test]
+    fn obsolete_hosted_tool_history_is_not_silently_discarded() {
+        let tools = vec![
+            json!({"type":"function","name":"shell"}),
+            json!({"type":"web_search"}),
+        ];
+        let input = vec![
+            json!({"type":"additional_tools","tools":tools}),
+            json!({"type":"web_search_call","id":"ws_fixture"}),
+        ];
+        assert!(
+            project(&input, &tools, standard())
+                .err()
+                .unwrap()
+                .contains("hosted/search/local-shell")
+        );
+    }
+    #[test]
+    fn ambiguous_dotted_names_are_not_flattened() {
+        let input = [json!({"type":"additional_tools","tools":[{"type":"function","name":"a.b"}]})];
+        assert!(
+            project(
+                &input,
+                &[json!({"type":"function","name":"shell"})],
+                standard()
+            )
+            .err()
+            .unwrap()
+            .contains("dotted")
+        );
+    }
+    #[test]
+    fn completed_call_ids_may_be_reused_but_pending_duplicates_are_ambiguous() {
+        let tools = vec![json!({"type":"function","name":"shell"})];
+        let decl = json!({"type":"additional_tools","tools":tools});
+        let call =
+            json!({"type":"function_call","call_id":"reused","name":"shell","arguments":"{}"});
+        let output = json!({"type":"function_call_output","call_id":"reused","output":"fixture"});
+        let input = vec![
+            decl.clone(),
+            call.clone(),
+            output.clone(),
+            call.clone(),
+            output,
+        ];
+        assert_eq!(
+            project(&input, &tools, standard()).unwrap().input,
+            input[1..]
+        );
+        assert!(
+            project(&[decl, call.clone(), call], &tools, standard())
+                .err()
+                .unwrap()
+                .contains("Duplicate")
+        );
+    }
+}

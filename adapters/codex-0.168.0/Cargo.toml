@@ -1,0 +1,15 @@
+[package]
+name = "codex-responses-compat-probe"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "responses_compat.rs"
+
+[[bin]]
+name = "responses-compat-probe"
+path = "main.rs"
+
+[dependencies]
+serde_json = "1"
