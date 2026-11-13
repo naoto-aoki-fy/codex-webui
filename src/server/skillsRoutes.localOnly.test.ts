@@ -105,3 +105,16 @@ it('preserves legacy hub response fields for HTTP consumers', async () => {
     publishedAt: 0, avatarUrl: '', url: '', installed: true, path, enabled: true,
   }] })
 })
+
+it.each(['/remote', 'C:/remote', 'C:\\remote', '//server/share', '\\\\server\\share'])('groups nested remote skills under %s without grouping siblings', async root => {
+  const { projectPath } = await import('./appServerFileSystem')
+  const rules = projectPath(root)
+  const paths = [rules.join(root, 'skills', 'sample', 'SKILL.md'), rules.join(root, 'skills', 'sample', 'nested', 'SKILL.md'), rules.join(root, 'skills', 'sample-other', 'SKILL.md')]
+  const end = vi.fn()
+  const res = { setHeader: vi.fn(), end } as unknown as ServerResponse
+  await handleSkillsRoutes({ method: 'GET' } as IncomingMessage, res, new URL('http://localhost/codex-api/skills-hub'), {
+    appServer: { rpc: async () => ({ data: [{ skills: paths.map((path, i) => ({ path, name: ['sample', 'nested', 'sample-other'][i] })) }] }) },
+    readJsonBody: async () => ({}),
+  })
+  expect(JSON.parse(end.mock.calls[0]![0]).installed.map((entry: { path: string }) => entry.path)).toEqual([paths[0], paths[2]])
+})

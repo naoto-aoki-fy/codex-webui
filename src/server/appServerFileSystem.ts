@@ -8,7 +8,7 @@ export const PROJECT_FILE_CODEX_VERSION = '0.167.2'
 
 // Choose lexical path rules from the remote path, never the Web host OS.
 export function projectPath(path: string) {
-  return /^[a-z]:[\\/]/iu.test(path) || path.startsWith('\\\\') ? win32 : posix
+  return /^[a-z]:[\\/]/iu.test(path) || path.startsWith('\\\\') || /^\/\/[^/]+\/[^/]+/u.test(path) ? win32 : posix
 }
 
 /** Read-only project access through the existing connection. No local fallback,

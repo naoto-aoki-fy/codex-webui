@@ -38,3 +38,15 @@ it('normalizes remote file URLs without Web-host path resolution', () => {
   expect(normalizeLocalPath('file:///C:/remote/a%20b')).toBe('C:/remote/a b')
   expect(normalizeLocalPath('file://server/share/a%20b')).toBe('\\\\server\\share\\a b')
 })
+
+it.each(['//server/share', '\\\\server\\share', 'C:/', 'C:\\', '/remote/'])('preserves remote roots and trailing separators browsing %s', async root => {
+  const files = new ProjectFileService({ rpc: vi.fn().mockResolvedValue({ entries: [{ fileName: 'child', isDirectory: true }] }) })
+  const listing = await getLocalDirectoryListing(root, files)
+  const rules = projectPath(root)
+  expect(listing.entries[0]!.path).toBe(rules.join(root, 'child'))
+  expect(listing.parentPath).toBe(rules.dirname(root))
+  if (root.startsWith('//') || root.startsWith('\\\\')) {
+    expect(listing.entries[0]!.path).toBe('\\\\server\\share\\child')
+    expect(rules.normalize(listing.parentPath)).toBe('\\\\server\\share\\')
+  }
+})
