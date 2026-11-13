@@ -11,3 +11,4 @@ Return to the [manual test index](../../tests.md).
 | [Feature: Per-thread model selection](per-thread-model-selection.md) |
 | [Model List Search / Filter](model-list-search-filter.md) |
 | [Official Codex models and authentication](codex-only-models-and-auth.md) |
+| [Remote provider model discovery](remote-provider-catalog.md) |

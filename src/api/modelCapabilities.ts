@@ -3,6 +3,10 @@ import type { ReasoningEffort } from './appServerDtos'
 export type ReasoningModel = {
   modelProvider?: string
   providerDisplayName?: string
+  description?: string
+  visibility?: string
+  hidden?: boolean
+  priority?: number
   displayName?: string
   id?: string
   model?: string

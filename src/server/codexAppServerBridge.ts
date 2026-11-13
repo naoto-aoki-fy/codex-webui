@@ -1,3 +1,4 @@
+import { readProviderModelCatalog } from './providerModelCatalog.js'
 import { profileStateDirectory, getConnectionProfileId } from './connectionProfile.js'
 import { WORKFLOW_CAPABILITIES, classifyCapabilityError } from './remoteCapabilities.js'
 import { stageRemoteUpload, inspectRemoteUploads } from './remoteUploads.js'
@@ -641,6 +642,16 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 	          setJson(res, 200, { result: { title: '' } })
 	          return
 	        }
+
+        if (body.method === 'model/providerCatalog') {
+          const provider = readNonEmptyString(asRecord(body.params)?.provider)
+          try {
+            setJson(res, 200, { result: await readProviderModelCatalog((method, params) => appServer.rpc(method, params), provider) })
+          } catch {
+            setJson(res, 502, { error: 'Remote provider catalog unavailable' })
+          }
+          return
+        }
 
         if (body.method === 'getAuthStatus') {
           setJson(res, 200, { result: await readPublicAuthStatus(appServer, body.params) })

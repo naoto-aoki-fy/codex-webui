@@ -236,7 +236,7 @@ describe('official Codex model catalog', () => {
     const catalog = await getAvailableModelIds()
     expect(catalog.ids).toEqual(['gpt-test', 'gpt-second'])
     expect(catalog.models[0].defaultReasoningEffort).toBe('high')
-    expect(calls).toEqual([{ method: 'modelProvider/list', params: {} }, { method: 'model/list', params: {} }, { method: 'model/list', params: { cursor: 'page2' } }])
+    expect(calls).toEqual([{ method: 'modelProvider/list', params: {} }, { method: 'config/read', params: {} }, { method: 'model/list', params: {} }, { method: 'model/list', params: { cursor: 'page2' } }])
   })
 })
 
@@ -536,12 +536,13 @@ describe('shared reasoning catalog during gateway resolution', () => {
     reasoningCatalog.value = catalog
     const fetchMock = vi.fn().mockRejectedValueOnce(new Error('catalog unavailable'))
       .mockResolvedValueOnce(new Response('Method not found', { status: 400 }))
+      .mockResolvedValueOnce(new Response('Method not found', { status: 400 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ result: { data: catalog } })))
     vi.stubGlobal('fetch', fetchMock)
     await expect(getAvailableModelIds()).resolves.toEqual({ ids: [], models: [] })
     expect(reasoningCatalog.value).toEqual(catalog)
     await expect(getAvailableModelIds()).resolves.toEqual({ ids: ['A'], models: catalog })
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
     expect(reasoningCatalog.value).toEqual(catalog)
   })
 })

@@ -328,3 +328,20 @@ it('stale owner closes only its SSE after runtime replacement', async () => {
   expect(replacement.appServer.dispose).toHaveBeenCalledOnce()
   expect(vi.getTimerCount()).toBe(0)
 })
+
+it('normalizes remote provider catalogs before returning the bridge response', async () => {
+  const rpc = vi.fn().mockResolvedValue({ exitCode: 0, stdout: JSON.stringify({ models: [
+    { slug: 'remote-only', display_name: 'Remote', base_instructions: 'PRIVATE TEMPLATE' },
+  ] }), stderr: '' })
+  Object.assign(appServer, { rpc })
+  const s = streams('POST', '/codex-api/rpc')
+  Object.assign(s.req, { async *[Symbol.asyncIterator]() {
+    yield Buffer.from(JSON.stringify({ method: 'model/providerCatalog', params: { provider: 'local' } }))
+  } })
+  await createCodexBridgeMiddleware()(...s.args)
+  expect(s.res.statusCode).toBe(200)
+  expect(rpc.mock.calls[0]?.[0]).toBe('command/exec')
+  const body = JSON.parse(s.end.mock.calls[0]![0])
+  expect(body.result.data[0]).toMatchObject({ id: 'remote-only', modelProvider: 'local' })
+  expect(JSON.stringify(body)).not.toContain('PRIVATE TEMPLATE')
+})
