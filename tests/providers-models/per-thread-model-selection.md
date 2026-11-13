@@ -247,3 +247,43 @@ Cleanup: archive test children and retained prefixes only after inspecting unkno
 outcomes; restore browser drafts and provider settings. Do not edit source rollout
 history or change process-wide provider defaults. Check the existing error surface
 in both light and dark themes; no new theme-specific controls were introduced.
+
+
+### Fork recovery review regressions
+
+Prerequisites: dependencies installed; use the credential-free notification
+fixtures for deterministic lifecycle checks. For manual end-to-end execution,
+connect an independently managed server with providers P and Q and retain source
+D plus configured child C. Back up composer drafts, images, file/skill references.
+
+Actions and expected results:
+1. Keep C's first turn pending after acknowledgment. Type a follow-up with an
+   image, file and skill, then submit. A visible explanation appears. The complete
+   composer draft and persisted payload remain; no extra turn is submitted.
+2. Disconnect before completion. Complete, fail or interrupt that exact turn on
+   the server, then reconnect **without reloading the page**. Matching durable
+   status settles the tracker; only explicit completed status permits cleanup.
+   Repeat with an idle snapshot missing terminal status: preserve recovery and
+   report unknown outcome. A deliberate new submission is possible; no replay is
+   automatic. Repeat with a failed turn with zero display items, a mismatched old
+   status, and an active turn; neither idle nor old status establishes success.
+3. Fail C, reopen D and successfully continue using P. Retry C explicitly and
+   complete it. D remains unarchived with its independent continuation intact.
+4. Delay archive resolution after C's first success. Send a new child request
+   before resolving the archive promise. Resolving the old archive must not clear
+   the new request's pending state. While D's archive is already running, attempted
+   reuse of D must reject visibly and keep its composer draft.
+5. After C fails, edit the recovered text, image, file and skill in D and send
+   with P. Fail this turn. Recovery storage holds **the edited attempt**, and
+   restores it only if no newer ordinary composer draft exists. Repeat after
+   typing a newer draft during inference; the newer draft must remain unchanged.
+6. In light and dark themes, repeat rejected submission then refresh. Verify all
+   attachment types and the prompt survive. Accept a submission and confirm it
+   clears only its own unchanged draft, preserving any newer edits.
+
+Cleanup: inspect unknown tool effects before any retry; archive only unused test
+threads, restore backed-up drafts, and leave unrelated provider settings alone.
+The illustrative incompatible input arrays are not normalized by these fixtures;
+only their error strings drive recovery notifications. Neither original HTTP 400
+is resolved by this recovery work. Manual copy/paste instructions are not an
+implemented portable-context transfer feature.

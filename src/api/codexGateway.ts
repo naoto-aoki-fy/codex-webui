@@ -1,3 +1,4 @@
+import { readThreadTurnOutcomes, type ThreadTurnOutcomes } from './normalizers/threadMetadata'
 import { modelSelectionKey, parseModelSelection } from './modelCapabilities'
 import { readGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata'
 import { normalizeSkillsList, type SkillInfo, type SkillsListResponseEntry } from './normalizers/skills'
@@ -188,6 +189,7 @@ async function getThreadSummaryV2(threadId: string): Promise<UiThread> {
 }
 
 async function getThreadDetailV2(threadId: string): Promise<{
+  turnOutcomes?: ThreadTurnOutcomes
   nativeReadState?: import('../types/codex').NativeThreadReadState
   model: string
   modelProvider: string
@@ -208,6 +210,7 @@ async function getThreadDetailV2(threadId: string): Promise<{
     modelProvider: normalizeThreadModelProviderFromPayload(payload),
     nativeReadState: (payload as ThreadReadResponse & { readState?: import('../types/codex').NativeThreadReadState | null }).readState ?? undefined,
     messages: normalized,
+    turnOutcomes: readThreadTurnOutcomes(payload),
     inProgress: readThreadInProgressFromResponse(payload),
     activeTurnId: readActiveTurnIdFromResponse(payload),
     hasMoreOlder: startTurnIndex > 0,
@@ -269,6 +272,7 @@ export async function getThreadSummary(threadId: string): Promise<UiThread> {
 }
 
 export async function getThreadDetail(threadId: string): Promise<{
+  turnOutcomes?: ThreadTurnOutcomes
   nativeReadState?: import('../types/codex').NativeThreadReadState
   model: string
   modelProvider: string
@@ -327,6 +331,7 @@ export async function getAccountRateLimits(): Promise<UiRateLimitSnapshot | null
 }
 
 export type ResumedThread = {
+  turnOutcomes?: ThreadTurnOutcomes
   nativeReadState?: import('../types/codex').NativeThreadReadState
   model: string
   modelProvider: string
@@ -357,6 +362,7 @@ export async function resumeThread(threadId: string): Promise<ResumedThread> {
       model: normalizeThreadModelFromPayload(payload),
       modelProvider: normalizeThreadModelProviderFromPayload(payload),
       messages,
+      turnOutcomes: readThreadTurnOutcomes(payload),
       inProgress: readThreadInProgressFromResponse(payload),
       activeTurnId: readActiveTurnIdFromResponse(payload),
       hasMoreOlder: startTurnIndex > 0,

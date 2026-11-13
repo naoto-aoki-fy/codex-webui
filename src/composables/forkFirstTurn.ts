@@ -7,6 +7,14 @@ export class ForkFirstTurn {
 
   constructor(private finish: (success: boolean, error: string) => void) {}
 
+  get acceptedTurnId(): string { return this.turnId }
+
+  unresolved(detail: string): void {
+    if (this.settled) return
+    this.settled = true
+    this.finish(false, detail)
+  }
+
   accepted(turnId: string): void {
     this.turnId = turnId
     const outcome = this.early.get(turnId)

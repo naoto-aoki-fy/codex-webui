@@ -8,6 +8,7 @@ import {
   normalizeThreadModelFromPayload,
   normalizeThreadModelProviderFromPayload,
   readThreadTurnStartIndex,
+  readThreadTurnOutcomes,
 } from './threadMetadata'
 import { normalizeThreadMessagesV2, readActiveTurnIdFromResponse } from './v2'
 
@@ -137,4 +138,29 @@ describe('thread response metadata', () => {
     }), { headers: { 'Content-Type': 'application/json' } })))
     await expect(startThread()).resolves.toEqual({ threadId: ' id ', model: 'model', modelProvider: 'nested' })
   })
+})
+
+
+it('preserves durable turn statuses even when a failed turn has no display items', () => {
+  const payload = { thread: { turns: [
+    { id: 'done', status: 'completed', items: [] },
+    { id: 'fail', status: 'failed', items: [], error: { message: 'schema rejected' } },
+    { id: 'active', status: 'inProgress' },
+    { id: 'unknown', items: [] },
+  ] } }
+  expect(readThreadTurnOutcomes(payload)).toEqual({
+    done: { status: 'completed' }, fail: { status: 'failed', error: 'schema rejected' }, active: { status: 'inProgress' },
+  })
+  expect(readThreadTurnOutcomes({ thread: { status: 'idle' } })).toEqual({})
+})
+
+it('exposes durable outcomes through the real thread/read gateway', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ result: { thread: {
+    id: 't', turns: [{ id: 'failed', status: 'failed', items: [], error: { message: 'schema rejected' } }],
+  } } }))))
+  try {
+    const detail = await getThreadDetail('t')
+    expect(detail.turnOutcomes).toEqual({ failed: { status: 'failed', error: 'schema rejected' } })
+    expect(detail.messages.filter(message => message.role === 'assistant')).toEqual([])
+  } finally { vi.unstubAllGlobals() }
 })

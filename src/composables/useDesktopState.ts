@@ -746,6 +746,11 @@ export function useDesktopState() {
   const blockedProviderNotice = ref('')
   const supersededForkDrafts = new Map<string, string>()
   const forkFirstTurns = new Map<string, ForkFirstTurn>()
+  // Recovery references survive failure; archive rights do not survive reuse.
+  const disposableForkOwners = new Map<string, string>() // prefix -> child
+  const archivingForkPrefixes = new Set<string>()
+  const forkAttemptTokens = new Map<string, symbol>()
+  const recoveryStorageOwners = new Map<string, symbol>()
   const forkRecoveryErrors = new Map<string, string>()
   const freshForkStorageKey = 'codex-web-local.fresh-forks.v1'
   const freshForks = ref<Record<string, string>>((() => {
@@ -949,7 +954,7 @@ export function useDesktopState() {
   }
 
   function clearPendingTurnRequest(threadId: string): void {
-    if (supersededForkDrafts.has(threadId)) return
+    if (forkFirstTurns.has(threadId)) return
     if (!pendingTurnRequestByThreadId.value[threadId]) return
     pendingTurnRequestByThreadId.value = omitKey(pendingTurnRequestByThreadId.value, threadId)
   }
@@ -2759,7 +2764,7 @@ export function useDesktopState() {
     return run
   }
 
-  async function loadMessages(threadId: string, options: { silent?: boolean; force?: boolean } = {}) {
+  async function loadMessages(threadId: string, options: { silent?: boolean; force?: boolean; recoverForkOutcome?: boolean } = {}) {
     const generation = lifecycleGeneration
     if (!threadId) {
       return
@@ -2821,7 +2826,7 @@ export function useDesktopState() {
         applyThreadFlags()
       }
       const currentActiveTurnId = activeTurnIdByThreadId.value[threadId]
-      const hasNewerTurnState = realtimeRevision !== (realtimeRevisionByThreadId.get(threadId) ?? 0)
+      let hasNewerTurnState = realtimeRevision !== (realtimeRevisionByThreadId.get(threadId) ?? 0)
         || (inProgressById.value[threadId] === true && !detail.inProgress
           && (currentActiveTurnId
             ? !detail.messages.some((message) => message.turnId === currentActiveTurnId)
@@ -2834,6 +2839,18 @@ export function useDesktopState() {
         resumedThreadById.value = {
           ...resumedThreadById.value,
           [threadId]: true,
+        }
+      }
+
+      const tracker = forkFirstTurns.get(threadId)
+      if (tracker && realtimeRevision === (realtimeRevisionByThreadId.get(threadId) ?? 0)) {
+        const outcome = detail.turnOutcomes?.[tracker.acceptedTurnId]
+        if (outcome && ['completed', 'failed', 'interrupted'].includes(outcome.status)) {
+          hasNewerTurnState = false
+          tracker.complete(tracker.acceptedTurnId, outcome.status === 'completed' && !outcome.error, outcome.error)
+        } else if (options.recoverForkOutcome === true && !detail.inProgress) {
+          unknownOutcomeByThreadId.value = { ...unknownOutcomeByThreadId.value, [threadId]: true }
+          tracker.unresolved('The first fork turn outcome could not be established from durable history. Inspect the thread and any tool effects before explicitly sending another request.')
         }
       }
 
@@ -3290,8 +3307,20 @@ export function useDesktopState() {
 
     let threadId = selectedThreadId.value
     const nextText = text.trim()
-    if (forkFirstTurns.has(threadId)) throw new Error('Wait for the first fork turn outcome before sending again. If disconnected, inspect the thread before retrying.')
+    if (archivingForkPrefixes.has(threadId)) {
+      error.value = 'This unused fork prefix is being archived. Continue in its completed child instead.'
+      setTurnErrorForThread(threadId, error.value)
+      throw new Error(error.value)
+    }
+    if (forkFirstTurns.has(threadId)) {
+      const message = 'Wait for the first fork turn outcome before sending again. If disconnected, inspect the thread before retrying.'
+      error.value = message
+      setTurnErrorForThread(threadId, message)
+      throw new Error(message)
+    }
     if (!threadId || (!nextText && imageUrls.length === 0 && fileAttachments.length === 0)) return
+    // Even an unsuccessful explicit reuse makes this prefix non-disposable.
+    disposableForkOwners.delete(threadId)
 
     if (Object.prototype.hasOwnProperty.call(freshForks.value, threadId)
       && resolveSelectionProvider(freshForks.value[threadId]!) !== resolveSelectionProvider(submissionContext.modelId)) {
@@ -3313,6 +3342,7 @@ export function useDesktopState() {
         if (selectedThreadId.value === draftId) setSelectedThreadId(threadId)
         // Keep the exact prefix recoverable until inference completes successfully.
         supersededForkDrafts.set(threadId, draftId)
+        disposableForkOwners.set(draftId, threadId)
       } catch (failure) {
         error.value = failure instanceof Error ? failure.message : String(failure)
         setTurnErrorForThread(draftId, error.value)
@@ -3545,64 +3575,70 @@ export function useDesktopState() {
     forkRecoveryErrors.delete(threadId)
     const freshForkDefault = freshForks.value[threadId]
     const draftId = supersededForkDrafts.get(threadId)
-    const recoveryKey = profileStorageKey(`codex-web-local.thread-fork-recovery.v1.${draftId || threadId}`)
+    const disposablePrefix = draftId && disposableForkOwners.get(draftId) === threadId ? draftId : ''
+    const recoveryThreadId = disposablePrefix || threadId
+    const recoveryKey = profileStorageKey(`codex-web-local.thread-fork-recovery.v1.${recoveryThreadId}`)
+    const ownRecoveryKey = profileStorageKey(`codex-web-local.thread-fork-recovery.v1.${threadId}`)
+    const recoveryKeys = [...new Set([recoveryKey, ownRecoveryKey])]
     const recoveryPayload = JSON.stringify({ text: normalizedText, imageUrls: normalizedImageUrls,
       skills: normalizedSkills, fileAttachments: normalizedFileAttachments })
-    if (draftId && generation === lifecycleGeneration) {
-      try { window.localStorage.setItem(recoveryKey, recoveryPayload) } catch { /* Storage is optional. */ }
+    let hasRecovery = Boolean(draftId)
+    try { hasRecovery ||= Boolean(window.localStorage.getItem(recoveryKey)) } catch { /* Storage is optional. */ }
+    const attemptToken = Symbol('fork submission')
+    forkAttemptTokens.set(threadId, attemptToken)
+    const ownsAttempt = () => generation === lifecycleGeneration && forkAttemptTokens.get(threadId) === attemptToken
+    if (hasRecovery && ownsAttempt()) {
+      for (const key of recoveryKeys) {
+        recoveryStorageOwners.set(key, attemptToken)
+        try { window.localStorage.setItem(key, recoveryPayload) } catch { /* Storage is optional. */ }
+      }
     }
     const retainRecoveryPrompt = () => {
-      if (!draftId || generation !== lifecycleGeneration) return
+      if (!hasRecovery || !ownsAttempt()) return
+      const target = recoveryStorageOwners.get(recoveryKey) === attemptToken ? recoveryThreadId : threadId
       try {
-        const key = profileStorageKey(`codex-web-local.thread-draft.v1.${draftId}`)
-        // Do not overwrite a newer draft composed while inference was pending.
-        if (!window.localStorage.getItem(key)) window.localStorage.setItem(key, JSON.stringify({
-          text: normalizedText, imageUrls: normalizedImageUrls,
-          skills: normalizedSkills, fileAttachments: normalizedFileAttachments,
-        }))
-      } catch { /* The prefix remains recoverable when browser storage is unavailable. */ }
+        const key = profileStorageKey(`codex-web-local.thread-draft.v1.${target}`)
+        if (!window.localStorage.getItem(key)) window.localStorage.setItem(key, recoveryPayload)
+      } catch { /* The server-side prefix survives browser storage failure. */ }
     }
-    if (draftId && !forkFirstTurns.has(threadId)) {
+    const describeRecoveryFailure = (detail: string) => disposablePrefix && disposableForkOwners.get(disposablePrefix) === threadId
+      ? forkRecoveryMessage(disposablePrefix, detail)
+      : `${detail || 'The recovery turn failed.'} The current attempt draft is preserved at #/thread/${encodeURIComponent(threadId)}. Inspect output and tool effects before explicitly retrying; nothing was automatically replayed.`
+    if (hasRecovery) {
       forkFirstTurns.set(threadId, new ForkFirstTurn((success, detail) => {
-        if (generation !== lifecycleGeneration) return
+        if (!ownsAttempt()) return
         forkFirstTurns.delete(threadId)
         if (!success) {
           retainRecoveryPrompt()
-          replacementThreadIds.delete(draftId)
-          const message = forkRecoveryMessage(draftId, detail)
+          if (draftId) replacementThreadIds.delete(draftId)
+          const message = describeRecoveryFailure(detail)
           forkRecoveryErrors.set(threadId, message)
           setTurnErrorForThread(threadId, message)
           if (selectedThreadId.value === threadId) error.value = message
           return
         }
-        // Archive only after a matching, explicitly successful terminal event.
+        clearPendingTurnRequest(threadId)
+        unknownOutcomeByThreadId.value = omitKey(unknownOutcomeByThreadId.value, threadId)
+        for (const key of recoveryKeys) {
+          try {
+            if (recoveryStorageOwners.get(key) === attemptToken && window.localStorage.getItem(key) === recoveryPayload) window.localStorage.removeItem(key)
+          } catch { /* Storage is optional. */ }
+        }
+        if (!draftId || disposableForkOwners.get(draftId) !== threadId) return
+        // Consume archive rights before the async operation. A newer attempt must
+        // never be cleaned up by this callback, even if archive is delayed.
+        disposableForkOwners.delete(draftId)
+        supersededForkDrafts.delete(threadId)
+        archivingForkPrefixes.add(draftId)
         void archiveThread(draftId).then(() => {
           if (generation !== lifecycleGeneration) return
-          supersededForkDrafts.delete(threadId)
-          try {
-            if (window.localStorage.getItem(recoveryKey) === recoveryPayload) window.localStorage.removeItem(recoveryKey)
-          } catch { /* Storage is optional. */ }
           markFreshFork(draftId, null)
-          clearPendingTurnRequest(threadId)
           removeArchivedThreadFromLoadedLists(draftId)
-        }).catch(() => { /* Leave the draft and recovery state intact. */ })
+        }).catch(() => { /* Keep the prefix if archive fails; never replay. */ })
+          .finally(() => archivingForkPrefixes.delete(draftId))
       }))
     }
-    if (!draftId && !forkFirstTurns.has(threadId)) {
-      try {
-        const recoveredPayload = window.localStorage.getItem(recoveryKey)
-        if (recoveredPayload) forkFirstTurns.set(threadId, new ForkFirstTurn(success => {
-          if (generation !== lifecycleGeneration) return
-          forkFirstTurns.delete(threadId)
-          if (success) {
-            try {
-              if (window.localStorage.getItem(recoveryKey) === recoveredPayload) window.localStorage.removeItem(recoveryKey)
-            } catch { /* Storage is optional. */ }
-          }
-        }))
-      } catch { /* Storage is optional. */ }
-    }
-    const trackedFirstTurn = forkFirstTurns.has(threadId)
+    const trackedFirstTurn = forkFirstTurns.get(threadId)
     let submissionAttempted = false
     let submissionAccepted = false
     try {
@@ -3642,8 +3678,8 @@ export function useDesktopState() {
       )
 
       submissionAccepted = true
-      if (generation === lifecycleGeneration && startedTurnId) forkFirstTurns.get(threadId)?.accepted(startedTurnId)
-      if (generation !== lifecycleGeneration) return
+      if (!ownsAttempt()) return
+      if (startedTurnId) trackedFirstTurn?.accepted(startedTurnId)
       if (startedTurnId && (!trackedFirstTurn || forkFirstTurns.has(threadId))) {
         if (optimisticMessageId) {
           const messages = persistedMessagesByThreadId.value[threadId] ?? []
@@ -3662,6 +3698,7 @@ export function useDesktopState() {
       await syncFromNotifications()
       if (generation === lifecycleGeneration) scheduleDelayedTurnSync(threadId)
     } catch (unknownError) {
+      if (!ownsAttempt()) throw unknownError
       retainRecoveryPrompt()
       if (draftId && generation === lifecycleGeneration) replacementThreadIds.delete(draftId)
       const ambiguous = unknownError instanceof Error && /disconnected|outcome unknown/i.test(unknownError.message)
@@ -3671,7 +3708,7 @@ export function useDesktopState() {
         if (freshForkDefault !== undefined) markFreshFork(threadId, freshForkDefault)
       }
       if (draftId && generation === lifecycleGeneration) {
-        const message = forkRecoveryMessage(draftId, unknownError instanceof Error ? unknownError.message : String(unknownError))
+        const message = describeRecoveryFailure(unknownError instanceof Error ? unknownError.message : String(unknownError))
         forkRecoveryErrors.set(threadId, message)
       }
       if (generation === lifecycleGeneration && submissionAttempted && !submissionAccepted && ambiguous) {
@@ -3929,9 +3966,15 @@ export function useDesktopState() {
           if (id !== threadId && inProgressById.value[id]) void Promise.resolve(resumeThreadSubscription(id)).catch(() => {})
         }
       }
+      const recoveryIds = [...new Set([...(threadId ? [threadId] : []), ...forkFirstTurns.keys()])]
       await Promise.allSettled([
         loadThreads({ force: true }),
-        ...(threadId ? [loadMessages(threadId, { silent: true, force: true })] : []),
+        (async () => {
+          // Keep history recovery serial; many pending forks must not fan out.
+          for (const id of recoveryIds) {
+            try { await loadMessages(id, { silent: true, force: true, recoverForkOutcome: true }) } catch { /* Retain the tracker on read failure. */ }
+          }
+        })(),
       ])
       return
     }
