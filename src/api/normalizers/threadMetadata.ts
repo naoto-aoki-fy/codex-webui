@@ -81,3 +81,17 @@ export function normalizeThreadModelProviderFromPayload(payload: unknown): strin
     || ''
 }
 
+// Keep authoritative durable status separate from display messages and idle flags.
+export type ThreadTurnOutcomes = Record<string, { status: string; error?: string }>
+export function readThreadTurnOutcomes(payload: unknown): ThreadTurnOutcomes {
+  const turns = asRecord(asRecord(payload)?.thread)?.turns
+  const outcomes: ThreadTurnOutcomes = {}
+  if (!Array.isArray(turns)) return outcomes
+  for (const value of turns) {
+    const turn = asRecord(value)
+    if (typeof turn?.id !== 'string' || typeof turn.status !== 'string') continue
+    const error = asRecord(turn.error)
+    outcomes[turn.id] = { status: turn.status, ...(typeof error?.message === 'string' ? { error: error.message } : {}) }
+  }
+  return outcomes
+}
