@@ -1,0 +1,232 @@
+{
+  "scope": "Runtime audit evidence, not a normalization implementation or test fixture",
+  "externalCodexVersion": "0.168.0",
+  "repositoryCliVersion": "0.167.2",
+  "provider": {
+    "id": "rivault",
+    "wireApi": "responses",
+    "gatewayBaseUrl": "https://api.class2.llm.ai.r-ccs.riken.jp/v1/",
+    "model": "Qwen/Qwen3.6-35B-A3B",
+    "useResponsesLite": false
+  },
+  "source": {
+    "provider": "openai",
+    "model": "gpt-6-luna",
+    "useResponsesLite": true,
+    "completed": true,
+    "sourceTurnIdsUnchanged": true,
+    "persistedAdditionalToolsObserved": true
+  },
+  "openaiToQwen": {
+    "configuredDestination": {
+      "model": "Qwen/Qwen3.6-35B-A3B",
+      "provider": "rivault"
+    },
+    "status": "failed",
+    "rejection": "Unsupported input item type: additional_tools (parameter=input)",
+    "capturedInput": [
+      {
+        "index": 0,
+        "type": "message",
+        "role": "developer",
+        "contentTypes": [
+          "input_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 1,
+        "type": "additional_tools",
+        "role": "developer",
+        "contentTypes": null,
+        "toolNamespaces": [
+          "functions",
+          "clock",
+          "collaboration"
+        ]
+      },
+      {
+        "index": 2,
+        "type": "message",
+        "role": "developer",
+        "contentTypes": [
+          "input_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 3,
+        "type": "message",
+        "role": "developer",
+        "contentTypes": [
+          "input_text",
+          "input_text",
+          "input_text",
+          "input_text",
+          "input_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 4,
+        "type": "message",
+        "role": "developer",
+        "contentTypes": [
+          "input_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 5,
+        "type": "message",
+        "role": "developer",
+        "contentTypes": [
+          "input_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 6,
+        "type": "message",
+        "role": "user",
+        "contentTypes": [
+          "input_text",
+          "input_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 7,
+        "type": "message",
+        "role": "user",
+        "contentTypes": [
+          "input_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 8,
+        "type": "message",
+        "role": "assistant",
+        "contentTypes": [
+          "output_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 9,
+        "type": "message",
+        "role": "developer",
+        "contentTypes": [
+          "input_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 10,
+        "type": "message",
+        "role": "developer",
+        "contentTypes": [
+          "input_text",
+          "input_text",
+          "input_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 11,
+        "type": "message",
+        "role": "developer",
+        "contentTypes": [
+          "input_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 12,
+        "type": "message",
+        "role": "developer",
+        "contentTypes": [
+          "input_text"
+        ],
+        "toolNamespaces": []
+      },
+      {
+        "index": 13,
+        "type": "message",
+        "role": "user",
+        "contentTypes": [
+          "input_text"
+        ],
+        "toolNamespaces": []
+      }
+    ],
+    "currentTopLevelToolsCount": 23,
+    "origin": "Inherited declaration found in persisted source rollout; destination Lite is disabled"
+  },
+  "qwenToOpenai": {
+    "fullForkStatus": "failed",
+    "responseCutoffForkStatus": "failed",
+    "cutoffTurnCount": 1,
+    "sourceTurnCount": 3,
+    "sourceTurnIdsUnchanged": true,
+    "rejection": "Invalid 'input[3].content': array too long. Expected an array with maximum length 0, but got an array with length 1 instead.",
+    "threadScopedRedirectedCapture": {
+      "provider": {
+        "model": "gpt-6-luna",
+        "provider": "openai"
+      },
+      "transport": "websocket",
+      "inputTypes": [
+        "additional_tools",
+        "message",
+        "message",
+        "message",
+        "message",
+        "reasoning",
+        "message",
+        "message",
+        "message",
+        "message"
+      ],
+      "input3": {
+        "index": 3,
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text"
+          },
+          {
+            "type": "input_text"
+          }
+        ],
+        "tools": []
+      },
+      "nonemptyReasoningItems": [
+        {
+          "index": 5,
+          "type": "reasoning",
+          "content": [
+            {
+              "type": "reasoning_text"
+            }
+          ],
+          "tools": []
+        }
+      ],
+      "caveat": "Redirected endpoint capture is not a capture at the production rejection boundary. Native input[3] mapping/type remains unverified; do not infer it from this capture."
+    }
+  },
+  "freshQwen": {
+    "completedResponse": true,
+    "toolRoundTripConfirmedInDurableHistory": true,
+    "command": "/bin/bash -lc 'printf FORK_AUDIT_TOOL_OK'",
+    "commandStatus": "completed",
+    "exitCode": 0,
+    "toolOutput": "FORK_AUDIT_TOOL_OK",
+    "subsequentTurnCompleted": true
+  },
+  "cleanup": "All 10 disposable audit threads confirmed archived through thread/list across relevant providers. Capture listeners closed; process-wide model/provider configuration unchanged.",
+  "remaining": "Neither HTTP 400 resolved. LiteLLM/vLLM deployed source and versions unavailable; exact production rejection-boundary mapping needed for reasoning content."
+}
