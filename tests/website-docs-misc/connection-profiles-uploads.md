@@ -24,3 +24,7 @@ Prerequisites: disposable remote fixture filesystem and local state directory, `
 Expected: the second write is rejected before `fs/writeFile`; accounting lists shared profile records and unknown legacy sizes, reports only tracked bytes, and protects every record. Ambiguous writes retain reservation. Cleanup preview is empty, unsupported reason explains missing reference proof, and no `fs/remove` is called. Existing uploads are never test targets. Automated coverage: `src/server/remoteUploads.test.ts`.
 
 Cleanup: remove disposable fixture files and local state only. Real two-host verification remains required for filesystem quota behavior and authentication; fixture results do not establish remote quota enforcement or live reference recovery.
+
+## Browser profile transition
+
+Prerequisites: current disposable verification server on 127.0.0.1:4173. Run `node scripts/test-connection-profiles.cjs`; it intercepts API requests and supplies synthetic notification sockets. Expected: different-profile ready reloads once, colliding thread IDs have separate drafts, returning to legacy restores its draft, and same-profile ready does not reload. Light/dark screenshots land under `output/playwright/connection-profiles-*.png`. No real remote operations occur. Disabled-storage reload-loop coverage is in `src/utils/browserConnectionProfile.test.ts`. Cleanup: close fixture pages; keep the verification server running.

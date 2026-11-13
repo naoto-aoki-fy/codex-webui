@@ -1,3 +1,4 @@
+import { reloadForConnectionProfile } from '../utils/browserConnectionProfile'
 import { modelSelectionKey, parseModelSelection } from '../api/modelCapabilities'
 import { markNativeThreadRead } from '../api/codexGateway'
 import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
@@ -3720,6 +3721,7 @@ export function useDesktopState() {
     stopNotificationStream = subscribeCodexNotifications((notification) => {
       if (generation !== lifecycleGeneration) return
       if (notification.method === 'ready') {
+        if (reloadForConnectionProfile(readString(asRecord(notification.params)?.connectionProfile))) return
         const instanceId = readString(asRecord(notification.params)?.backendInstanceId)
         // Hydration can precede the first ready. An unknown instance must also
         // establish subscriptions, rather than trusting browser-only resume flags.
