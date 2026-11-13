@@ -146,6 +146,33 @@ permission to send the task again. The browser never automatically replays
 This checklist concerns browser delivery recovery, not restarting the external
 app-server or proving that tasks survive an app-server shutdown.
 
+## 7. Subscription recovery notification auto-dismissal
+
+Prerequisites: use the setup above with a disposable thread and observe actual
+subscription recovery events (or inject them through the unit-test notification
+harness). Run the visible checks in both light and dark themes.
+
+1. Deliver `recovering` for the selected thread and wait longer than three seconds.
+   Expect the existing subscription status to remain visible.
+2. Deliver `recovered`. Expect the status to remain for the first 2999 ms and
+   disappear at 3000 ms, with no subscription retry, reconnect or history request
+   caused by dismissal. Other connection warnings must remain visible.
+3. Deliver `recovered`, then within three seconds deliver `recovering` or `failed`
+   for the same thread. Wait past the old deadline. Expect the newer status to
+   remain; for `failed`, use the existing retry button and confirm it still retries.
+4. Deliver `recovered` twice one second apart. Expect dismissal three seconds
+   after the second event. Switch between two threads with separate recovery
+   events and confirm each deadline is independent of selection.
+5. Disconnect the app-server connection and wait longer than three seconds.
+   Expect the disconnected warning to remain until reconnection. Unmount/close
+   the test app with a pending dismissal and confirm no timer remains active.
+
+Deterministic coverage: run
+`pnpm exec vitest run src/composables/useDesktopState.messages.test.ts`.
+Cleanup: restore connectivity and theme, close the disposable test page and
+remove any temporary notification injection. Do not reset the real subscription
+or shared server merely to clear a UI notification.
+
 ## Request and performance evidence to record
 
 For one successful recovery burst, record notification connection attempts,

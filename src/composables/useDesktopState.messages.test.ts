@@ -2130,6 +2130,98 @@ it('invalidates failed resume flags, exposes manual recovery, and retains uncert
   expect(gateway.startThreadTurn).not.toHaveBeenCalled()
 })
 
+describe('subscription recovery notification dismissal', () => {
+  const recovery = (state: string, threadId = thread.id) => notify({
+    method: 'app-server/subscriptionRecovery', params: { threadId, state },
+  })
+
+  it('dismisses recovered at three seconds without changing transport or subscription behavior', async () => {
+    const state = await loadState()
+    recovery('recovering')
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(state.selectedRecoveryState.value).toBe('recovering')
+    recovery('recovered')
+    await vi.advanceTimersByTimeAsync(2999)
+    expect(state.selectedRecoveryState.value).toBe('recovered')
+    const reads = gateway.getThreadDetail.mock.calls.length
+    const resumes = gateway.resumeThread.mock.calls.length
+    gateway.invalidateResumeThread.mockClear()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(state.selectedRecoveryState.value).toBe('')
+    expect(state.transportState.value).toBe('connected')
+    expect(gateway.getThreadDetail).toHaveBeenCalledTimes(reads)
+    expect(gateway.resumeThread).toHaveBeenCalledTimes(resumes)
+    expect(gateway.invalidateResumeThread).not.toHaveBeenCalled()
+    expect(gateway.resumeThreadSubscription).not.toHaveBeenCalled()
+  })
+
+  it.each(['recovering', 'failed', 'disconnected'])('cancels dismissal when recovered changes to %s', async next => {
+    const state = await loadState()
+    recovery('recovered')
+    await vi.advanceTimersByTimeAsync(1000)
+    recovery(next)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(state.selectedRecoveryState.value).toBe(next)
+    if (next === 'failed') {
+      await state.retrySelectedSubscription()
+      expect(gateway.resumeThreadSubscription).toHaveBeenCalledWith(thread.id)
+    }
+  })
+
+  it('restarts the deadline for repeated recovery and ignores an outdated callback', async () => {
+    const state = await loadState()
+    const timeout = vi.spyOn(globalThis, 'setTimeout')
+    recovery('recovered')
+    const oldCallback = timeout.mock.calls.find(call => call[1] === 3000)![0] as () => void
+    timeout.mockRestore()
+    await vi.advanceTimersByTimeAsync(1000)
+    recovery('recovering')
+    recovery('recovered')
+    oldCallback()
+    expect(state.selectedRecoveryState.value).toBe('recovered')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(state.selectedRecoveryState.value).toBe('recovered')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(state.selectedRecoveryState.value).toBe('')
+  })
+
+  it('tracks dismissal per thread even when selection changes', async () => {
+    const state = await loadState()
+    recovery('recovered')
+    await vi.advanceTimersByTimeAsync(1000)
+    recovery('recovered', 'thread-2')
+    state.primeSelectedThread('thread-2')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(state.selectedRecoveryState.value).toBe('recovered')
+    state.primeSelectedThread(thread.id)
+    expect(state.selectedRecoveryState.value).toBe('')
+    state.primeSelectedThread('thread-2')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(state.selectedRecoveryState.value).toBe('')
+  })
+
+  it('keeps the disconnected warning after recovered is dismissed until reconnection', async () => {
+    const state = await loadState()
+    recovery('recovered')
+    notify({ method: 'app-server/disconnected', params: null })
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(state.selectedRecoveryState.value).toBe('')
+    expect(state.transportState.value).toBe('disconnected')
+    notify({ method: 'app-server/reconnected', params: null })
+    expect(state.transportState.value).toBe('connected')
+  })
+
+  it('cancels pending dismissal during component cleanup', async () => {
+    const state = await loadState()
+    recovery('recovered')
+    await vi.advanceTimersByTimeAsync(0)
+    state.stopPolling()
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(state.selectedRecoveryState.value).toBe('recovered')
+  })
+})
+
 it('keeps a lost submission response uncertain without replaying the turn', async () => {
   const { CodexApiError } = await import('../api/codexErrors')
   const state = await loadState()
