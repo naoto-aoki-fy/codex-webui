@@ -20,6 +20,21 @@ describe('response fork cutoff', () => {
     expect(rpc.mock.calls.map(([method]) => method)).toEqual(['thread/read', 'thread/fork', 'thread/read'])
   })
 
+  it('verifies the response identity captured before the picker opened', async () => {
+    const rpc = vi.fn(async (method: string, params: any) => {
+      if (method === 'thread/fork') {
+        expect(params).toEqual({ threadId: 'source', persistExtendedHistory: true, lastTurnId: 'turn-1' })
+        return { thread: { id: 'fork', turns: turns.slice(0, 2) } }
+      }
+      return { thread: { id: params.threadId, turns: params.threadId === 'source' ? turns : turns.slice(0, 2) } }
+    })
+    await forkThreadAtCutoff({ rpc }, { threadId: 'source', forkFromTurnIndex: 1, expectedTurnId: 'turn-1', persistExtendedHistory: true })
+    expect(rpc.mock.calls.map(([method]) => method)).toEqual(['thread/read', 'thread/fork', 'thread/read'])
+    rpc.mockClear()
+    await expect(forkThreadAtCutoff({ rpc }, { threadId: 'source', forkFromTurnIndex: 1, expectedTurnId: 'stale' })).rejects.toThrow('Source history changed')
+    expect(rpc.mock.calls.map(([method]) => method)).toEqual(['thread/read'])
+  })
+
   it.each(['ignored-cutoff', 'reappears-on-read', 'wrong-ids'])('archives the fork after %s', async failure => {
     const rpc = vi.fn(async (method: string, params: unknown) => {
       const p = params as Record<string, unknown>

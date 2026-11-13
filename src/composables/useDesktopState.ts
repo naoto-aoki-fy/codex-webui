@@ -84,6 +84,7 @@ import {
   createConversationTransfer,
   archiveThread,
   forkThread,
+  forkThreadFromResponse,
   configureFreshFork,
   getAvailableCollaborationModes,
   getAccountRateLimits,
@@ -844,7 +845,7 @@ export function useDesktopState() {
     if (!isNewThreadContextId(toThreadContextId(threadId)) && !Object.prototype.hasOwnProperty.call(freshForks.value, threadId) && (!currentProvider || !requestedProvider || currentProvider !== requestedProvider)) {
       blockedProviderContext.value = threadId
       error.value = currentProvider && requestedProvider
-        ? 'Fork this conversation to use a different model provider.'
+        ? 'Fork this conversation with Portable Transfer to use a different model provider.'
         : 'Model provider could not be confirmed. Refresh the model list before changing models.'
       blockedProviderNotice.value = error.value
       return
@@ -3165,6 +3166,42 @@ export function useDesktopState() {
     }
   }
 
+  const pendingNativeForks = new Set<string>()
+  async function forkNativeThreadById(threadId: string, turnIndex?: number, expectedTurnId?: string): Promise<string> {
+    const sourceId = threadId.trim()
+    if (!sourceId) return ''
+    if (turnIndex !== undefined && (!Number.isSafeInteger(turnIndex) || turnIndex < 0)) {
+      error.value = 'This imported response has no native turn boundary. Use Portable Transfer for this response.'
+      return ''
+    }
+    const key = JSON.stringify([sourceId, turnIndex])
+    if (pendingNativeForks.has(key)) return ''
+    if (turnIndex !== undefined && inProgressById.value[sourceId] === true) {
+      error.value = 'Finish the current turn before forking from a response.'
+      return ''
+    }
+    pendingNativeForks.add(key)
+    try {
+      error.value = ''
+      // No model/provider overrides: preserve the server-managed source state.
+      const result = turnIndex === undefined
+        ? await forkThread(sourceId)
+        : await forkThreadFromResponse(sourceId, turnIndex, expectedTurnId)
+      const source = flattenThreads(sourceGroups.value).find(row => row.id === sourceId)
+      insertOptimisticThread(result.threadId, result.cwd || source?.cwd || '', toForkedThreadTitle(source?.title || 'Forked conversation'))
+      setThreadModelId(result.threadId, result.model || readModelIdForThread(sourceId), result.modelProvider)
+      // Native forks are ordinary existing threads. Never markFreshFork: the
+      // legacy send-time provider-switch workaround must not run for these IDs.
+      setSelectedThreadId(result.threadId)
+      await loadThreads()
+      await loadMessages(result.threadId)
+      return result.threadId
+    } catch (cause) {
+      error.value = `Native Fork failed: ${cause instanceof Error ? cause.message : String(cause)}. The connected app-server must support thread/fork${turnIndex === undefined ? '' : ' with lastTurnId'}. No Portable Transfer was attempted. If the outcome is uncertain, inspect the thread list before starting another fork.`
+      return ''
+    } finally { pendingNativeForks.delete(key) }
+  }
+
   const pendingConversationTransfers = new Set<string>()
   async function completeConversationTransfer(threadId: string, transferId: string, modelId: string): Promise<string> {
     if (!transferId || !modelId || pendingConversationTransfers.has(transferId)) return ''
@@ -4127,6 +4164,7 @@ export function useDesktopState() {
     archiveThreadById,
     renameThreadById,
     forkThreadById,
+    forkNativeThreadById,
     forkThreadFromTurn,
     rollbackSelectedThread,
     executeThreadRevert,

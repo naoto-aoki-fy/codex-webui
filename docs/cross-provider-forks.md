@@ -1,7 +1,37 @@
 # Conversation transfer
 
-“Fork conversation” and “Fork from this response” snapshot the source history,
-then ask for a configured destination provider/model. Cancel creates no thread.
+Both “Fork conversation” and “Fork from this response” open the same picker.
+Choose **Portable Transfer** (the default) or **Native Fork** before confirming.
+Cancel creates no thread. Duplicate confirmations are blocked while either
+method is pending. Switching methods does not automatically create anything.
+
+- **Native Fork** uses the original provider and server-managed native thread
+  state. There is no destination provider/model selection, injection, or automatic
+  provider-switching re-fork. Full forks call `thread/fork`; response forks use the
+  existing native inclusive `lastTurnId` mechanism and verify the retained turn
+  IDs against durable history. The selected response identity is checked before
+  forking, so a stale cutoff fails instead of selecting a different response.
+- **Portable Transfer** creates a new conversation from normalized readable
+  history and lets you select a destination provider/model first. It is available
+  for same-provider transfers as well as cross-provider transfers.
+
+Native errors are independent of portable preparation/import errors. An
+unsupported native API produces a native-fork capability error; the app never
+silently falls back to transfer. A failed or uncertain native request is not
+replayed automatically. Inspect the thread list before deliberately retrying.
+Native forks have no local imported-transcript decoration or import guards,
+including after reload. Their presentation is owned by the app-server.
+
+Imported-only responses have no native turn ID. Their Native Fork option shows
+an explanation and cannot be confirmed; use Portable Transfer for that cutoff.
+A whole native fork of an imported thread relies on the app-server's stored
+context and presentation. Use Portable Transfer to retain the app's visible,
+attributed imported transcript in the new conversation.
+
+## Portable transfer lifecycle
+
+Portable mode snapshots the source history before provider/model confirmation.
+Its filtering, persistence and failure fencing are unchanged.
 The snapshot is read directly from the connected app-server with
 `thread/read { includeTurns: true }`, bypassing the browser's ten-turn page.
 Response transfers retain the selected turn inclusively. Active source turns
@@ -71,6 +101,18 @@ clicks and the next explicit submission. These are mocked protocol tests, not
 live provider validation. A fresh destination runtime may still generate an
 unsupported request independently of imported history.
 
+The picker prepares one portable snapshot by default and reuses it across method
+changes. Native creation is independent of that pending preparation and its
+limits. Cancel or successful native creation discards the unused snapshot;
+late preparation results are also cleaned up, without creating a thread.
+Method changes do not reread or recalculate history. This preserves stable
+portable cutoffs but means choosing Native Fork can still incur the default
+portable snapshot read/conversion. There is no new startup work, per-message
+RPC fanout, or native cache invalidation mechanism. Native full creation uses
+one fork RPC plus normal list/resume hydration; native response creation adds
+the existing source read and durable cutoff verification read. Live remote
+latency and large-history rendering were not measured for this follow-up.
+
 The transfer path uses one full source read, one start and one injection; it
 performs no RPC per message and no automatic retry or tool execution. Conversion
 is linear in selected history size. The 8 MiB request budget rejects rather
@@ -79,3 +121,12 @@ history; the existing atomic global-state store grows with retained imports.
 Read/resume decoration performs an asynchronous state read and no extra remote
 RPC. Large-history browser rendering and live context retention need validation
 against the deployed server/providers.
+
+The mocked browser matrix can be rerun against the current worktree's dev server
+at `http://127.0.0.1:4173` with `node scripts/test-fork-methods.cjs`. It covers both
+entry points and methods, cancel/draft preservation, double confirmation,
+light/dark themes, native versus imported reload presentation, one explicit
+continuation, native operation after portable preparation failure, and explicit
+portable selection after a native capability error. The portable service call
+is mocked at the browser boundary; server unit tests verify start/inject order.
+Screenshots and the request report are saved under `output/playwright/`.

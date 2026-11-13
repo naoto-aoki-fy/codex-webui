@@ -479,12 +479,13 @@ export async function startThread(cwd?: string, model?: string, modelProvider?: 
   }
 }
 
-export async function forkThreadFromResponse(threadId: string, turnIndex: number): Promise<ForkedThread & {
+export async function forkThreadFromResponse(threadId: string, turnIndex: number, expectedTurnId?: string): Promise<ForkedThread & {
   hasMoreOlder: boolean
   turnIndexByTurnId: ThreadTurnIndexById
 }> {
   const payload = await callRpc<ThreadForkResponse & { forkCutoff?: { sourceThreadId: string; turnIndex: number; turnId: string; turnCount: number } }>('thread/fork-at-response', {
     threadId, forkFromTurnIndex: turnIndex, persistExtendedHistory: true,
+    ...(expectedTurnId ? { expectedTurnId } : {}),
   })
   if (payload.forkCutoff?.sourceThreadId !== threadId
     || payload.forkCutoff.turnIndex !== turnIndex

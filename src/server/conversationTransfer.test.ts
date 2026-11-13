@@ -68,6 +68,18 @@ describe('portable conversation transfer', () => {
     await expect(reopened.create(prepared.id, 'model', 'provider')).rejects.toThrow('consumed')
     expect(rpc.mock.calls).toHaveLength(3)
   })
+  it('does not decorate or impose import guards on an independently native-forked thread', async () => {
+    const rpc = server(); const transfers = createConversationTransfers(rpc)
+    const prepared = await transfers.prepare('source', 0)
+    await transfers.create(prepared.id, 'model', 'provider')
+    const payload = { thread: { id: 'native-fork', turns: [turn(0)] } }
+    const reopened = createConversationTransfers(rpc)
+    const decorated = await reopened.decorate(payload)
+    expect(decorated).toBe(payload)
+    await reopened.assertReady('native-fork')
+    expect(normalizeThreadMessagesV2(decorated)[1]?.text).toBe('answer 0')
+    expect(rpc.mock.calls).toHaveLength(3)
+  })
   it('imports an existing imported prefix exactly once', async () => {
     const rpc = server(); const transfers = createConversationTransfers(rpc)
     const first = await transfers.prepare('source', 0)

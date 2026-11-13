@@ -319,15 +319,21 @@
   <div v-if="transferPicker" class="transfer-picker-backdrop" role="presentation">
     <section class="transfer-picker" role="dialog" aria-modal="true" aria-label="Transfer conversation">
       <h2>Fork conversation</h2>
-      <p v-if="transferPicker.loading">Reading the complete source history…</p>
-      <template v-else>
-        <p>Select the destination provider and model before creating the conversation.</p>
-        <ComposerDropdown v-model="transferModel" :options="transferModelOptions" placeholder="Provider / model" enable-search open-direction="down" :disabled="transferPicker.pending" />
+      <ComposerDropdown v-model="forkMethod" :options="forkMethodOptions" placeholder="Fork method" open-direction="down" :disabled="transferPicker.pending" />
+      <template v-if="forkMethod === 'portable'">
+        <p>Create a new conversation with copied history and a selectable provider/model.</p>
+        <p v-if="transferPicker.loading">Reading the complete source history…</p>
+        <ComposerDropdown v-else v-model="transferModel" :options="transferModelOptions" placeholder="Provider / model" enable-search open-direction="down" :disabled="transferPicker.pending" />
         <p v-for="warning in transferPicker.warnings" :key="warning">{{ warning }}</p>
         <p v-if="transferPicker.failure" role="alert">{{ transferPicker.failure }}</p>
-        <button type="button" :disabled="transferPicker.pending" @click="cancelTransferPicker">Cancel</button>
-        <button type="button" :disabled="transferPicker.pending || !transferPicker.id || !transferModel || !!transferPicker.failure" @click="confirmTransferPicker">{{ transferPicker.pending ? 'Importing history…' : 'Create conversation' }}</button>
       </template>
+      <template v-else>
+        <p>Fork using the original provider and native thread state. The provider stays the same.</p>
+        <p v-if="nativeForkCutoffUnavailable" role="alert">This imported response has no native turn boundary. Use Portable Transfer for this response.</p>
+        <p v-if="transferPicker.nativeFailure" role="alert">{{ transferPicker.nativeFailure }}</p>
+      </template>
+      <button type="button" :disabled="transferPicker.pending" @click="cancelTransferPicker">Cancel</button>
+      <button type="button" :disabled="!canConfirmFork" @click="confirmTransferPicker">{{ transferPicker.pending ? (forkMethod === 'native' ? 'Forking…' : 'Importing history…') : (forkMethod === 'native' ? 'Create native fork' : 'Create conversation') }}</button>
     </section>
   </div>
 </template>
@@ -450,6 +456,7 @@ const {
   loadOlderMessages,
   archiveThreadById,
   forkThreadById,
+  forkNativeThreadById,
   renameThreadById,
   forkThreadFromTurn,
   sendMessageToSelectedThread,
@@ -973,7 +980,20 @@ function onArchiveThread(threadId: string): void {
   void archiveThreadById(threadId)
 }
 
-const transferPicker = ref<null | { sourceId: string; turnIndex?: number; id: string; warnings: string[]; loading: boolean; pending: boolean; failure: string }>(null)
+const transferPicker = ref<null | { sourceId: string; turnIndex?: number; turnId?: string; id: string; warnings: string[]; loading: boolean; pending: boolean; failure: string; nativeFailure: string }>(null)
+const forkMethod = ref('portable')
+const forkMethodOptions = [
+  { value: 'portable', label: 'Portable Transfer' },
+  { value: 'native', label: 'Native Fork' },
+]
+const nativeForkCutoffUnavailable = computed(() => transferPicker.value?.turnIndex !== undefined && transferPicker.value.turnIndex < 0)
+const canConfirmFork = computed(() => {
+  const picker = transferPicker.value
+  if (!picker || picker.pending) return false
+  return forkMethod.value === 'native'
+    ? !nativeForkCutoffUnavailable.value && !picker.nativeFailure
+    : !picker.loading && !!picker.id && !picker.failure && transferModelOptions.value.some(option => option.value === transferModel.value)
+})
 const transferModel = ref('')
 const isSelectedThreadImportIncomplete = computed(() => messages.value.some(message => message.id === `import-status-${selectedThreadId.value}`))
 const transferModelOptions = computed(() => availableModelIds.value.filter(id => !!parseModelSelection(id).provider).map(id => {
@@ -982,36 +1002,48 @@ const transferModelOptions = computed(() => availableModelIds.value.filter(id =>
 }))
 async function openTransferPicker(sourceId: string, turnIndex?: number): Promise<void> {
   if (transferPicker.value) return
-  const picker = { sourceId, turnIndex, id: '', warnings: [] as string[], loading: true, pending: false, failure: '' }
-  transferPicker.value = picker
+  const turnId = selectedThreadId.value === sourceId ? messages.value.find(message => message.role === 'assistant' && message.turnIndex === turnIndex)?.turnId : undefined
+  transferPicker.value = { sourceId, turnIndex, turnId, id: '', warnings: [], loading: true, pending: false, failure: '', nativeFailure: '' }
+  const picker = transferPicker.value
+  forkMethod.value = 'portable'
   transferModel.value = ''
   try {
-    const turnId = selectedThreadId.value === sourceId ? messages.value.find(message => message.role === 'assistant' && message.turnIndex === turnIndex)?.turnId : undefined
     const prepared = await prepareConversationTransfer(sourceId, turnIndex, turnId)
-    Object.assign(transferPicker.value!, prepared)
+    Object.assign(picker, prepared)
+    // Native creation or cancellation can finish while this read is pending.
+    if (transferPicker.value !== picker) await cancelConversationTransfer(prepared.id)
   } catch (cause) {
-    transferPicker.value!.failure = cause instanceof Error ? cause.message : String(cause)
-  } finally { transferPicker.value!.loading = false }
+    picker.failure = cause instanceof Error ? cause.message : String(cause)
+  } finally { picker.loading = false }
 }
 async function cancelTransferPicker(): Promise<void> {
   const picker = transferPicker.value
   if (!picker || picker.pending) return
-  if (picker.id) await cancelConversationTransfer(picker.id)
   transferPicker.value = null
+  if (picker.id) await cancelConversationTransfer(picker.id).catch(() => {})
 }
 async function confirmTransferPicker(): Promise<void> {
   const picker = transferPicker.value
-  if (!picker || picker.pending || !picker.id || !transferModelOptions.value.some(option => option.value === transferModel.value)) return
+  if (!picker || !canConfirmFork.value) return
   picker.pending = true
-  const nextId = picker.turnIndex === undefined
-    ? await forkThreadById(picker.sourceId, picker.id, transferModel.value)
-    : await forkThreadFromTurn(picker.sourceId, picker.turnIndex, picker.id, transferModel.value)
+  const native = forkMethod.value === 'native'
+  const nextId = native
+    ? await forkNativeThreadById(picker.sourceId, picker.turnIndex, picker.turnId)
+    : picker.turnIndex === undefined
+      ? await forkThreadById(picker.sourceId, picker.id, transferModel.value)
+      : await forkThreadFromTurn(picker.sourceId, picker.turnIndex, picker.id, transferModel.value)
   picker.pending = false
-  if (!nextId) { picker.failure = desktopError.value || 'Import did not complete. Do not retry injection.'; return }
+  if (!nextId) {
+    if (native) picker.nativeFailure = desktopError.value || 'Native Fork did not complete. Inspect the thread list before trying again.'
+    else picker.failure = desktopError.value || 'Import did not complete. Do not retry injection.'
+    return
+  }
   transferPicker.value = null
+  if (native && picker.id) void cancelConversationTransfer(picker.id).catch(() => {})
   await router.push({ name: 'thread', params: { threadId: nextId } })
   if (isMobile.value) setSidebarCollapsed(true)
 }
+
 async function onForkThread(threadId: string): Promise<void> {
   await openTransferPicker(threadId)
 }
