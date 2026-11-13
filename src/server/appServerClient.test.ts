@@ -216,7 +216,7 @@ for (const outcome of ['resolve', 'reject'] as const) {
     const rpc = vi.spyOn(client, 'rpc').mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise)
     try {
       const first = client.readThreadForTurnPage('generation')
-      const firstResult = outcome === 'reject' ? expect(first).rejects.toThrow('disconnected') : expect(first).resolves.toBe('old')
+      const firstResult = outcome === 'reject' ? expect(first).rejects.toThrow('disconnected') : expect(first).rejects.toThrow('Retired app-server history read')
       const generation = internal.connectionGeneration
       // Invoke the actual transport disconnect callback without network timing.
       // Resolve before disconnect to cover a reply queued for the next microtask.
