@@ -1374,3 +1374,21 @@
 :root.dark .file-link-context-menu-item {
   @apply text-zinc-200 hover:bg-zinc-800;
 }
+
+.connection-diagnostics { margin: 0.75rem 0; font-size: 0.75rem; color: #52525b; overflow-wrap: anywhere; }
+.connection-diagnostics button { padding: 0.4rem 0.6rem; border: 1px solid #d4d4d8; border-radius: 0.5rem; background: #fff; color: #27272a; }
+.connection-diagnostics li { margin: 0.5rem 0; }
+:root.dark .connection-diagnostics { color: #d4d4d8; }
+:root.dark .connection-diagnostics button { background: #27272a; color: #f4f4f5; border-color: #52525b; }
+
+.connection-recovery-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  color: #713f12;
+  background: #fef9c3;
+  font-size: 0.8rem;
+}
+.connection-recovery-status button { text-decoration: underline; cursor: pointer; }
+:root.dark .connection-recovery-status { color: #fde68a; background: #422006; }

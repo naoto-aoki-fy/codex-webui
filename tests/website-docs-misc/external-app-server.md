@@ -450,3 +450,34 @@ Cleanup: remove only fixture/disposable threads and restore fault injection.
 Two-host streaming, live approval redelivery and ambiguous submission behavior
 still require the independent-server checklist above; mock transport results do
 not establish those upstream behaviors.
+
+Browser fixture status check: `node scripts/test-recovery-status.cjs` (set
+`PLAYWRIGHT_BROWSERS_PATH` if browsers are installed outside the default cache).
+This uses HTTP/WebSocket stubs and verifies the actual recovery banner, expired
+approval/unknown outcome guidance, compatibility diagnostics and tracked upload
+inventory in light and dark themes. Screenshots are written to
+`output/playwright/recovery-status-{light,dark}.png`; this does not test a live
+Codex connection. The verification server must already run from this checkout on
+`http://127.0.0.1:4173`.
+
+## Remote compatibility diagnostics
+
+Setup: use a disposable protocol fixture or independently managed test server;
+configure `CODEXUI_REMOTE_INITIAL_DIRECTORY` to an absolute directory on B.
+
+Actions: open Settings → Account → Check remote compatibility. Inspect per-method
+supported/unsupported/unknown evidence and managed upload inventory. Repeat with
+a missing directory, denied directory and a fixture returning JSON-RPC -32601
+for `fs/getMetadata`. Attempt a new conversation in each case. Disconnect/reconnect
+and check again. Verify both light and dark themes.
+
+Expected: only -32601 establishes unsupported. Missing paths, permissions,
+transport failures and malformed responses have distinct diagnoses. Unsupported
+metadata blocks creation with upgrade guidance; optional upload APIs remain
+unknown until an actual upload and do not block conversations. Probes only use
+metadata, directory listing, a deliberately unmatched fuzzy search and
+`git --version`; no files are written or deleted. File-read support remains
+unknown until a requested preview/read. Evidence resets on connection changes.
+Inventory explicitly covers tracked attempts and protects unknown references.
+
+Cleanup: stop disposable fixture processes; preserve existing remote uploads.

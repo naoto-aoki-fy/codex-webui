@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConnectionDiagnostics from './ConnectionDiagnostics.vue'
 import { useUiLanguage } from '../../composables/useUiLanguage'
 
 defineProps<{
@@ -24,6 +25,7 @@ const { t } = useUiLanguage()
     </div>
     <p class="sidebar-settings-account-empty">{{ authAvailable === true ? t('Signed in to Codex') : authAvailable === false ? t('Authentication is managed by the external Codex app-server. Sign in there, then reconnect.') : t('External Codex authentication status unavailable. Check the app-server connection.') }}</p>
     <div v-if="error" class="sidebar-settings-account-error">{{ error }}</div>
+    <ConnectionDiagnostics />
     <div class="sidebar-settings-account-login">
       <button v-if="authAvailable === true" class="sidebar-settings-account-login-button" type="button" :disabled="changeBlocked || refreshing" @click="emit('logout')">{{ t('Logout') }}</button>
     </div>
