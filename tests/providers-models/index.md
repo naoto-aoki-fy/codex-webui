@@ -13,3 +13,4 @@ Return to the [manual test index](../../tests.md).
 | [Official Codex models and authentication](codex-only-models-and-auth.md) |
 | [Remote provider model discovery](remote-provider-catalog.md) |
 | [Native cross-provider request compatibility](native-request-compatibility.md) |
+| [RiVault catalog and tool compatibility](rivault-tool-compatibility.md) |
