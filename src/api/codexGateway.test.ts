@@ -590,3 +590,32 @@ it('submits only confirmed Fast tiers and explicitly requests standard speed aft
   expect(requests[1]?.params).toMatchObject({ serviceTierForTurn: 'default' })
   vi.unstubAllGlobals()
 })
+
+it('preserves pin upgrade errors rather than returning an empty successful pin list', async () => {
+  const { getPinnedThreadState } = await import('./codexGateway')
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Legacy pin migration is incomplete' }), { status: 500 })))
+  await expect(getPinnedThreadState()).rejects.toThrow('Legacy pin migration is incomplete')
+  vi.unstubAllGlobals()
+})
+
+it('serializes Fast enable then disable explicitly without persistent thread-tier overrides', async () => {
+  const { setCodexSpeedMode } = await import('./codexGateway')
+  const { requests } = mockRpcFetch()
+  reasoningCatalog.value = [{ id: 'chosen', modelProvider: 'p', serviceTiers: [{ id: 'fast' }] }]
+  await setCodexSpeedMode('fast')
+  await startThreadTurn('existing', 'enabled', [], 'provider-model:["p","chosen"]', undefined, undefined, [], undefined, 'fast')
+  await setCodexSpeedMode('standard')
+  await startThreadTurn('existing', 'disabled', [], 'provider-model:["p","chosen"]', undefined, undefined, [], undefined, 'standard')
+  const edits = (value: string | null, mergeStrategy: string) => ({ method: 'config/batchWrite', params: { edits: [
+    { keyPath: 'features.fast_mode', value: true, mergeStrategy: 'upsert' },
+    { keyPath: 'service_tier', value, mergeStrategy },
+  ], filePath: null, expectedVersion: null } })
+  expect(requests).toEqual([
+    edits('fast', 'upsert'),
+    { method: 'turn/start', params: { threadId: 'existing', input: [{ type: 'text', text: 'enabled' }], model: 'chosen', serviceTierForTurn: 'fast' } },
+    edits(null, 'replace'),
+    { method: 'turn/start', params: { threadId: 'existing', input: [{ type: 'text', text: 'disabled' }], model: 'chosen', serviceTierForTurn: 'default' } },
+  ])
+  expect(requests.filter(r => r.method === 'turn/start').every(r => !('serviceTier' in r.params))).toBe(true)
+  vi.unstubAllGlobals()
+})

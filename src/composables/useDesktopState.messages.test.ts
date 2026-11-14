@@ -2435,3 +2435,25 @@ it('sends only explicitly selected images even when text refers to a historical 
   await state.sendMessageToSelectedThread('use this image', ['/codex-local-image?path=/new.png'])
   expect(gateway.startThreadTurn.mock.calls[1]?.[2]).toEqual(['/codex-local-image?path=/new.png'])
 })
+
+it.each(['fast', 'standard'] as const)('restores an existing thread with saved Fast tier while the selected configured mode is %s', async mode => {
+  const actual = await vi.importActual<typeof import('../api/codexGateway')>('../api/codexGateway')
+  gateway.startThreadTurn.mockImplementation(actual.startThreadTurn)
+  const model = { id: 'gpt-5.5', modelProvider: 'openai', serviceTiers: [{ id: 'fast' }] }
+  gateway.getAvailableModelIds.mockResolvedValue({ ids: ['provider-model:["openai","gpt-5.5"]'], models: [model] })
+  gateway.getCurrentModelConfig.mockResolvedValue({ model: 'gpt-5.5', modelProvider: 'openai', reasoningEffort: '', speedMode: mode })
+  gateway.resumeThread.mockResolvedValue({ ...oldDetail, model: 'gpt-5.5', modelProvider: 'openai', serviceTier: 'fast' })
+  const state = await loadState()
+  expect(state.selectedSpeedMode.value).toBe(mode)
+  const frames: unknown[] = []
+  vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
+    frames.push(JSON.parse(String(init.body)))
+    return new Response(JSON.stringify({ result: { turn: { id: 'restored-mode-turn' } } }))
+  }))
+  await state.sendMessageToSelectedThread('restored Fast marker')
+  expect(frames).toEqual([{ method: 'turn/start', params: {
+    threadId: thread.id, input: [{ type: 'text', text: 'restored Fast marker' }], model: 'gpt-5.5',
+    serviceTierForTurn: mode === 'fast' ? 'fast' : 'default',
+    collaborationMode: { mode: 'default', settings: { model: 'gpt-5.5', reasoning_effort: null, developer_instructions: null } },
+  } }])
+})
