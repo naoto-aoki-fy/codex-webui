@@ -18,6 +18,8 @@ it('correlates concurrent replies and colliding server IDs, clears pending calls
         socket.send(JSON.stringify({ id: frame.id, method: 'test/approval', params: {} }))
         socket.send(JSON.stringify({ method: 'test/notification', params: {} }))
         socket.send(JSON.stringify({ id: frame.id, result: 'reply' }))
+      } else if (frame.method === 'test/unknown') {
+        socket.send(JSON.stringify({ id: frame.id, error: { code: -32601, message: 'Method not found' } }))
       } else if (['thread/start', 'thread/resume'].includes(frame.method)) {
         socket.send(JSON.stringify({ id: frame.id, result: { thread: { id: 'test-thread', turns: [] } } }))
       } else if (frame.method === 'thread/archive' || frame.method === 'thread/unsubscribe') {
@@ -34,6 +36,10 @@ it('correlates concurrent replies and colliding server IDs, clears pending calls
     expect(frames.filter(f => f.method === 'initialize')).toHaveLength(1)
     expect(notifications.filter(f => f.method === 'test/notification')).toHaveLength(2)
     expect(client.listPendingServerRequests()).toHaveLength(2)
+    const [missing, valid] = await Promise.allSettled([client.rpc('test/unknown', {}), client.rpc('test/collision', {})])
+    expect(missing.status).toBe('rejected')
+    if (missing.status === 'rejected') expect(missing.reason).toMatchObject({ code: -32601, message: 'Method not found' })
+    expect(valid).toEqual({ status: 'fulfilled', value: 'reply' })
     const approval = client.listPendingServerRequests()[0]!
     await client.respondToServerRequest({ id: approval.id, result: { decision: 'accept' } })
     await client.rpc('thread/start', {})

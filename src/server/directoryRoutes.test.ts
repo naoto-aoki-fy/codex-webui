@@ -28,8 +28,8 @@ async function request(path: string, method = 'GET') {
 }
 it.each([['GET', 'status'], ['GET', 'connectors'], ['GET', 'connector'], ['POST', 'link'], ['POST', 'login'], ['POST', 'install']])('does not handle removed %s Composio %s route', async (method, suffix) => {
   const { next, body } = await request(`/codex-api/composio/${suffix}`, method)
-  expect(next).toHaveBeenCalledOnce()
-  expect(body).toBe('')
+  expect(next).not.toHaveBeenCalled()
+  expect(JSON.parse(body)).toEqual({ error: 'Not found' })
   expect(rpc).not.toHaveBeenCalled()
 })
 it('does not mix local installed skills into the remote catalog', async () => {
@@ -50,8 +50,8 @@ it.each([
   await writeFile(join(home, 'skills-sync.json'), legacyCredentials)
   const { next, body } = await request(`/codex-api/skills-sync/${suffix}`, method)
   expect(await readFile(join(home, 'skills-sync.json'), 'utf8')).toBe(legacyCredentials)
-  expect(next).toHaveBeenCalledOnce()
-  expect(body).toBe('')
+  expect(next).not.toHaveBeenCalled()
+  expect(JSON.parse(body)).toEqual({ error: 'Not found' })
   expect(rpc).not.toHaveBeenCalled()
 })
 
@@ -64,8 +64,8 @@ it.each([
   const contents = JSON.stringify({ enabled: true, apiKey: 'test-only', provider: 'custom', customBaseUrl: 'https://unused.example' })
   await writeFile(join(home, 'webui-custom-providers.json'), contents)
   const { next, body } = await request(path, method)
-  expect(next).toHaveBeenCalledOnce()
-  expect(body).toBe('')
+  expect(next).not.toHaveBeenCalled()
+  expect(JSON.parse(body)).toEqual({ error: 'Not found' })
   expect(rpc).not.toHaveBeenCalled()
   expect(await readFile(join(home, 'webui-custom-providers.json'), 'utf8')).toBe(contents)
 })
@@ -83,8 +83,8 @@ it.each([
   await writeFile(join(root, 'automation.toml'), contents)
   await writeFile(join(root, 'memory.md'), 'Existing automation memory')
   const { next, body } = await request(`/codex-api/${suffix}?threadId=example&projectName=/tmp/example&automationId=saved-example`, method)
-  expect(next).toHaveBeenCalledOnce()
-  expect(body).toBe('')
+  expect(next).not.toHaveBeenCalled()
+  expect(JSON.parse(body)).toEqual({ error: 'Not found' })
   expect(rpc).not.toHaveBeenCalled()
   expect(await readFile(join(root, 'automation.toml'), 'utf8')).toBe(contents)
   expect(await readFile(join(root, 'memory.md'), 'utf8')).toBe('Existing automation memory')
@@ -92,15 +92,15 @@ it.each([
 
 it('does not handle retired speech transcription requests or acquire credentials', async () => {
   const { next, body } = await request('/codex-api/transcribe', 'POST')
-  expect(next).toHaveBeenCalledOnce()
-  expect(body).toBe('')
+  expect(next).not.toHaveBeenCalled()
+  expect(JSON.parse(body)).toEqual({ error: 'Not found' })
   expect(rpc).not.toHaveBeenCalled()
 })
 
 it('does not proxy retired connector logos or request credentials', async () => {
   const { next, body } = await request('/codex-api/connector-logo?src=connectors://sample')
-  expect(next).toHaveBeenCalledOnce()
-  expect(body).toBe('')
+  expect(next).not.toHaveBeenCalled()
+  expect(JSON.parse(body)).toEqual({ error: 'Not found' })
   expect(rpc).not.toHaveBeenCalled()
 })
 
@@ -113,8 +113,8 @@ it.each(['GET', 'PUT'])('does not handle retired queue %s requests or recover le
     for (let restart = 0; restart < 2; restart++) {
       const { next, body } = await request('/codex-api/thread-queue-state', method)
       await vi.advanceTimersByTimeAsync(15000)
-      expect(next).toHaveBeenCalledOnce()
-      expect(body).toBe('')
+      expect(next).not.toHaveBeenCalled()
+      expect(JSON.parse(body)).toEqual({ error: 'Not found' })
       expect(rpc).not.toHaveBeenCalled()
       expect(await readFile(path, 'utf8')).toBe(contents)
     }
@@ -148,4 +148,17 @@ it('disposes replaced clients and never recovers persisted prompts across cold b
     activeRpc.mockRestore()
     vi.useRealTimers()
   }
+})
+
+it.each(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])('returns structured API misses for %s while allowing non-API routes', async method => {
+  for (const path of ['/codex-api/unknown-maintenance-route', '/codex-api', '/codex-api/rpc-not-real']) {
+    const response = await request(path, method)
+    expect(response.res.statusCode).toBe(404)
+    expect(response.res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/json; charset=utf-8')
+    expect(JSON.parse(response.body)).toEqual({ error: 'Not found' })
+    expect(response.next).not.toHaveBeenCalled()
+  }
+  expect(rpc).not.toHaveBeenCalled()
+  const page = await request('/some-client-route', method)
+  expect(page.next).toHaveBeenCalledOnce()
 })

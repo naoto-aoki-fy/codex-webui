@@ -610,11 +610,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 	          return
 	        }
 
-	        if (body.method === 'generate-thread-title') {
-	          setJson(res, 200, { result: { title: '' } })
-	          return
-	        }
-
         if (body.method === 'getAuthStatus') {
           setJson(res, 200, { result: await readPublicAuthStatus(appServer, body.params) })
           return
@@ -751,11 +746,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       // Retired API: terminate here so SPA middleware cannot serve HTML.
-      if (['/codex-api/git/repository-status', '/codex-api/prompts', '/codex-api/thread-titles', '/codex-api/worktree/create', '/codex-api/worktree/branches', '/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion'].includes(url.pathname) || url.pathname.startsWith('/codex-api/telegram/') || url.pathname === '/codex-api/worktree/create-permanent' || url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
-        setJson(res, 404, { error: 'Not found' })
-        return
-      }
-
       if (req.method === 'POST' && url.pathname === '/codex-api/server-requests/respond') {
         const payload = await readJsonBody(req)
         await appServer.respondToServerRequest(payload)
@@ -889,6 +879,11 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
+      // API misses must not reach Vite or the production SPA fallback.
+      if (url.pathname === '/codex-api' || url.pathname.startsWith('/codex-api/')) {
+        setJson(res, 404, { error: 'Not found' })
+        return
+      }
       next()
     } catch (error) {
       if (error instanceof CodexCredentialError) {

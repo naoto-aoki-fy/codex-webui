@@ -77,10 +77,11 @@ async function expectPreservedFiles() {
 }
 
 it.each([['GET', 'project-zip'], ['HEAD', 'project-zip'], ['POST', 'project-import']])(
-  'leaves retired ZIP route %s %s unhandled without changing existing files or history', async (method, path) => {
+  'rejects retired ZIP route %s %s without changing existing files or history', async (method, path) => {
     const response = await request(`/codex-api/${path}?cwd=${encodeURIComponent(project)}&parent=${encodeURIComponent(home)}`, method)
-    expect(response.next).toHaveBeenCalledOnce()
-    expect(response.body).toBe('')
+    expect(response.next).not.toHaveBeenCalled()
+    expect(response.res.statusCode).toBe(404)
+    expect(response.json).toEqual({ error: 'Not found' })
     expect(rpc).not.toHaveBeenCalled()
     expect(sqlite).not.toHaveBeenCalled()
     await expectPreservedFiles()
