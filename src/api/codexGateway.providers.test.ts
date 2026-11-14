@@ -102,3 +102,47 @@ it('retains configured defaults scoped to each provider instead of a source mode
   expect(catalog.models.filter(m => m.modelProvider === 'Q').every(m => m.providerDefaultModel === 'destination-default')).toBe(true)
   expect(catalog.models.filter(m => m.modelProvider === 'P').every(m => m.providerDefaultModel === 'source-default')).toBe(true)
 })
+
+it('returns to an existing OpenAI thread after RiVault selection without changing identities or capabilities', async () => {
+  const qwen = 'Qwen/Qwen3.6-35B-A3B'
+  reasoningCatalog.value = [
+    { id: 'gpt-test', modelProvider: 'openai', supportedReasoningEfforts: ['high'], defaultReasoningEffort: 'high' },
+    { id: qwen, modelProvider: 'rivault', supportedReasoningEfforts: [] },
+  ]
+  const before = JSON.parse(JSON.stringify(reasoningCatalog.value))
+  const calls: any[] = []
+  vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+    const body = JSON.parse(init.body); calls.push(body)
+    return response(body.method === 'thread/start'
+      ? { thread: { id: `${body.params.modelProvider}-thread` }, model: body.params.model, modelProvider: body.params.modelProvider }
+      : { turn: { id: `turn-${calls.length}` } })
+  }))
+  const openai = await startThread('/workspace', key('openai', 'gpt-test'))
+  await startThreadTurn(openai.threadId, 'first', [], key('openai', 'gpt-test'), 'high')
+  const rivault = await startThread('/workspace', key('rivault', qwen))
+  await startThreadTurn(rivault.threadId, 'second', [], key('rivault', qwen), 'high')
+  await startThreadTurn(openai.threadId, 'third', [], key('openai', 'gpt-test'), 'high')
+  expect(openai).toMatchObject({ threadId: 'openai-thread', model: 'gpt-test', modelProvider: 'openai' })
+  expect(rivault).toMatchObject({ threadId: 'rivault-thread', model: qwen, modelProvider: 'rivault' })
+  expect(calls.filter(c => c.method === 'thread/start').map(c => c.params)).toEqual([
+    { cwd: '/workspace', model: 'gpt-test', modelProvider: 'openai' },
+    { cwd: '/workspace', model: qwen, modelProvider: 'rivault' },
+  ])
+  expect(calls.filter(c => c.method === 'turn/start').map(c => c.params)).toEqual([
+    { threadId: 'openai-thread', model: 'gpt-test', effort: 'high', input: [{ type: 'text', text: 'first' }] },
+    { threadId: 'rivault-thread', model: qwen, input: [{ type: 'text', text: 'second' }] },
+    { threadId: 'openai-thread', model: 'gpt-test', effort: 'high', input: [{ type: 'text', text: 'third' }] },
+  ])
+  expect(reasoningCatalog.value).toEqual(before)
+})
+
+it('preserves the unsupported grammar diagnostic without retry or catalog mutation', async () => {
+  const message = 'litellm.BadRequestError: Hosted_vllmException Custom tools with a grammar format are not supported; only free-form text custom tools are accepted. (parameter=tools)'
+  reasoningCatalog.value = [{ id: 'Qwen/Qwen3.6-35B-A3B', modelProvider: 'rivault', supportedReasoningEfforts: [] }]
+  const before = JSON.parse(JSON.stringify(reasoningCatalog.value))
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ error: { message } }), { status: 400 }))
+  vi.stubGlobal('fetch', fetch)
+  await expect(startThreadTurn('rivault-thread', 'hello', [], key('rivault', 'Qwen/Qwen3.6-35B-A3B'))).rejects.toThrow(message)
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(reasoningCatalog.value).toEqual(before)
+})
