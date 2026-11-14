@@ -16,3 +16,5 @@ Return to the [manual test index](../../tests.md).
 | [Shared local file HTTP operations](shared-local-file-http.md) |
 
 - [Connection profiles and upload accounting](connection-profiles-uploads.md)
+
+- [Disposable live maintenance acceptance](maintenance-live-acceptance.md)
