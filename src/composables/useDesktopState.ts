@@ -1,6 +1,6 @@
 import { ForkFirstTurn, forkRecoveryMessage } from './forkFirstTurn'
 import { profileStorageKey, reloadForConnectionProfile } from '../utils/browserConnectionProfile'
-import { modelSelectionKey, parseModelSelection } from '../api/modelCapabilities'
+import { modelSelectionKey, parseModelSelection, defaultModelForProvider } from '../api/modelCapabilities'
 import { markNativeThreadRead } from '../api/codexGateway'
 import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
 import {
@@ -876,10 +876,14 @@ export function useDesktopState() {
 
     const confirmedProvider = provider?.trim() || parseModelSelection(modelId).provider
     if (confirmedProvider) effectiveThreadProviders.set(normalizedThreadId, confirmedProvider)
-    if (explicitModelContexts.has(normalizedThreadId)) return
+    const previousProvider = parseModelSelection(readModelIdForThread(normalizedThreadId)).provider
+    const providerChanged = !!confirmedProvider && !!previousProvider && confirmedProvider !== previousProvider
+    if (explicitModelContexts.has(normalizedThreadId) && !providerChanged) return
+    if (providerChanged) explicitModelContexts.delete(normalizedThreadId)
     const incoming = parseModelSelection(modelId.trim())
     const effectiveProvider = confirmedProvider || resolveSelectionProvider(modelId) || resolveSelectionProvider(readModelIdForThread(threadId))
-    const normalizedModelId = modelSelectionKey(effectiveProvider, incoming.model || parseModelSelection(readModelIdForThread(threadId)).model)
+    const fallbackModel = providerChanged ? defaultModelForProvider(reasoningCatalog.value, effectiveProvider) : parseModelSelection(readModelIdForThread(threadId)).model
+    const normalizedModelId = modelSelectionKey(effectiveProvider, incoming.model || fallbackModel)
     automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, normalizedThreadId)
     if (normalizedModelId) {
       const nextModelMap = cloneStringKeyedRecord(selectedModelIdByContext.value)
@@ -1082,7 +1086,8 @@ export function useDesktopState() {
         automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = qualify(savedDefault) || resolveModelPreference(ids, '', configured)
       }
       selectedModelId.value = model
-      publication.publish(catalog.models)
+      publication.publish(catalog.models.map(entry => entry.modelProvider === defaultProvider && config.model
+        ? { ...entry, providerDefaultModel: config.model } : entry))
       if (defaultProvider) {
         for (const entry of catalog.models) {
           if (entry.modelProvider !== defaultProvider) continue

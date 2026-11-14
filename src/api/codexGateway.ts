@@ -733,7 +733,7 @@ export function findReasoningModel(model: string): ReasoningModel | null {
   return findReasoningModelInCatalog(reasoningCatalog.value, model)
 }
 
-type ModelProvider = { id: string; displayName?: string; name?: string; isDefault?: boolean }
+type ModelProvider = { id: string; displayName?: string; name?: string; isDefault?: boolean; defaultModel?: string }
 type ModelCatalog = { ids: string[]; models: ReasoningModel[]; defaultProvider?: string; failures?: string[] }
 
 function unsupportedCatalogMethod(error: unknown): boolean {
@@ -791,9 +791,11 @@ async function loadModelCatalog(): Promise<ModelCatalog> {
   // Serial provider walks bound fanout to one RPC, including pagination.
   for (const provider of providers) {
     try {
-      const result = await callRpc<{ data: ReasoningModel[] }>('model/providerCatalog', { provider: provider.id })
+      const result = await callRpc<{ data: ReasoningModel[]; defaultModel?: string }>('model/providerCatalog', { provider: provider.id })
       if (!Array.isArray(result.data) || !result.data.length) throw new Error('Empty provider catalog')
+      const providerDefaultModel = provider.defaultModel?.trim() || result.defaultModel?.trim()
       models.push(...result.data.map(model => ({ ...model, modelProvider: provider.id,
+        ...(providerDefaultModel ? { providerDefaultModel } : {}),
         providerDisplayName: provider.displayName || provider.name || provider.id })))
     } catch { failures.push(provider.id) }
   }

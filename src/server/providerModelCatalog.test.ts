@@ -35,3 +35,9 @@ it.each(['true', '123', 'a"b', 'with space'])('preserves provider ID %s as a str
   await readProviderModelCatalog(rpc, provider)
   expect(rpc.mock.calls[0]?.[1].command[4]).toBe(`model_provider=${JSON.stringify(provider)}`)
 })
+
+it('preserves provider-declared defaults and model defaults without copying private metadata', async () => {
+  const catalog = await readProviderModelCatalog(vi.fn().mockResolvedValue(result(JSON.stringify({ ...raw, default_model: 'same', models: [{ ...raw.models[0], is_default: true }] }))), 'Q')
+  expect(catalog.data[0]).toMatchObject({ modelProvider: 'Q', providerDefaultModel: 'same', isDefault: true })
+  expect(JSON.stringify(catalog)).not.toContain('PRIVATE TEMPLATE')
+})

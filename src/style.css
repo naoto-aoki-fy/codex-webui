@@ -1399,7 +1399,7 @@
 
 .transfer-picker-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: #0008; padding: 24px; }
 .transfer-picker { width: min(560px, 100%); max-height: 85vh; overflow: auto; background: #fff; color: #202124; border: 1px solid #ccc; border-radius: 12px; padding: 24px; }
-.transfer-picker button { margin: 12px 12px 0 0; }
+.transfer-picker > button { margin: 12px 12px 0 0; }
 :root.dark .transfer-picker { background: #202124; color: #eee; border-color: #555; }
 
 :root.dark .fork-split-main { color: #a1a1aa; }
@@ -1407,3 +1407,11 @@
 :root.dark .fork-split-sidebar .fork-split-main { color: #d4d4d8; }
 :root.dark .fork-split-sidebar .fork-split-main:hover:not(:disabled) { background: #27272a; }
 .composer-dropdown-option:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.transfer-skills { margin: 16px 0; }
+.transfer-skills-toggle { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+.transfer-skills-toggle > span { display: inline-block; transition: transform .15s; }
+.transfer-skills-toggle > span.is-open { transform: rotate(90deg); }
+.transfer-skills > fieldset { margin-top: 12px; border: 0; padding: 0; min-width: 0; }
+
+body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }

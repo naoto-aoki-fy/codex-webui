@@ -17,7 +17,7 @@ const source = { id: 'source', name: 'Fork methods source', preview: 'Fork metho
 }
 const mutations = new Set(['conversation-transfer/create', 'thread/fork', 'thread/fork-at-response', 'thread/start', 'thread/inject_items', 'turn/start'])
 
-async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false, importedOnly = false } = {}) {
+async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false, importedOnly = false, sameProvider = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -31,9 +31,18 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   const destinations = new Map()
   let snapshotNumber = 0
   let rejectNative = nativeFails
+  let skillEnabled = true
+  let skillHubReads = 0
+  const destinationProvider = sameProvider ? 'P' : 'Q'
+  const destinationDefault = sameProvider ? 'A' : 'C'
   await page.route('**/codex-api/**', async route => {
     const request = route.request()
     if (request.url().includes('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': mock\n\n' })
+    if (request.url().endsWith('/skills-hub')) {
+      skillHubReads++
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ installed: [{ name: 'Review skill', description: 'Existing skill configuration', path: '/skills/review/SKILL.md', enabled: skillEnabled }] }) })
+    }
+    if (request.url().includes('/skills-hub/readme')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ content: '# Review skill' }) })
     const body = request.postDataJSON()
     const rpc = body?.method
     const params = body?.params || {}
@@ -42,7 +51,10 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (rpc === 'thread/list') result = { data: [conversation, ...[...destinations.values()].map(row => row.thread)], nextCursor: null }
     if (rpc === 'thread/read' || rpc === 'thread/resume') result = destinations.get(params.threadId) || { thread: conversation, model: 'A', modelProvider: 'P', ...(importedOnly ? { importedTranscript: importedPrefix, importStage: 'ready' } : {}) }
     if (rpc === 'modelProvider/list') result = { data: [{ id: 'P', displayName: 'Source', isDefault: true }, { id: 'Q', displayName: 'Destination' }] }
-    if (rpc === 'model/providerCatalog' || rpc === 'model/list') result = { data: [{ id: params.provider === 'Q' ? 'C' : 'A', displayName: params.provider === 'Q' ? 'C' : 'A' }] }
+    if (rpc === 'model/providerCatalog' || rpc === 'model/list') result = { data: params.provider === 'Q'
+      ? [{ id: 'A', displayName: 'Alternate', priority: 9 }, { id: 'C', displayName: 'C', priority: 0, isDefault: true }, { id: 'D', displayName: 'D', priority: 1 }]
+      : [{ id: 'A', displayName: 'A', priority: 0 }, { id: 'P-only', displayName: 'P only', priority: 1 }] }
+    if (rpc === 'skills/config/write') { skillEnabled = params.enabled; result = {} }
     if (rpc === 'account/read') result = { account: { type: 'apiKey' } }
     if (rpc === 'config/read') result = { config: { model: 'A', model_provider: 'P' } }
     if (rpc === 'threadSection/list') result = { data: [] }
@@ -69,6 +81,8 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
         turnId: turns.at(-1).id, turnCount: turns.length } }
     }
     if (rpc === 'conversation-transfer/create') {
+      assert.equal(params.modelProvider, destinationProvider)
+      assert.equal(params.model, destinationDefault, 'creation must use the provider default, not the shared source model')
       const turns = snapshots.get(params.id)
       assert(turns, 'prepared portable snapshot required')
       const importedTranscript = turns.flatMap(turn => turn.items.map(item => ({ role: item.type === 'userMessage' ? 'user' : 'assistant',
@@ -121,16 +135,52 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     await split.getByRole('button', { name: 'Portable Fork', exact: true }).click()
     await page.getByRole('dialog', { name: 'Transfer conversation' }).waitFor()
     assert.equal(await page.locator('.transfer-picker').getByText('Native Fork', { exact: true }).count(), 0)
-    if (!pendingPreparation && !prepareFails) await page.getByRole('button', { name: 'Provider / model', exact: true }).waitFor()
+    if (!pendingPreparation && !prepareFails) await page.getByRole('button', { name: 'Provider', exact: true }).waitFor()
     if (prepareFails) await page.getByRole('alert').filter({ hasText: '8 MiB' }).waitFor()
     assert.equal(await page.locator('.transfer-picker .composer-dropdown').count(), pendingPreparation ? 0 : 1)
+    assert.equal(await page.locator('.transfer-skills-toggle').getAttribute('aria-expanded'), 'false')
+    assert.equal(await page.locator('#transfer-skills-body').isVisible(), false)
+    assert.equal(await page.locator('.transfer-picker .skills-hub').count(), 0)
   }
   async function selectProvider() {
-    await page.getByRole('button', { name: 'Provider / model', exact: true }).click()
-    await page.getByRole('listbox').getByRole('button', { name: 'Q — C', exact: true }).click()
+    assert.equal(await page.getByRole('button', { name: 'Create conversation', exact: true }).isDisabled(), true)
+    await page.getByRole('button', { name: 'Provider', exact: true }).click()
+    await page.getByRole('listbox').getByRole('button', { name: 'Source', exact: true }).click()
+    if (!sameProvider) {
+      await page.getByRole('button', { name: 'Source', exact: true }).click()
+      await page.getByRole('listbox').getByRole('button', { name: 'Destination', exact: true }).click()
+    }
+    assert.equal(await page.getByRole('button', { name: 'Create conversation', exact: true }).isEnabled(), true)
+  }
+  async function checkSkills() {
+    assert.equal(skillHubReads, 0, 'collapsed skills must not load or clear configuration')
+    const toggle = page.locator('.transfer-skills-toggle')
+    await toggle.click()
+    await page.getByRole('button', { name: 'Review skill Existing skill configuration', exact: true }).click()
+    const updated = page.waitForResponse(response => response.request().postDataJSON()?.method === 'skills/config/write')
+    await page.getByRole('button', { name: 'Disable', exact: true }).click()
+    await updated
+    await page.getByRole('button', { name: 'Close', exact: true }).click()
+    await page.locator('.transfer-picker .skill-card.is-disabled').waitFor()
+    await page.waitForTimeout(2200)
+    await page.screenshot({ path: resolve(output, 'portable-skills-expanded-dark.png') })
+    const reads = skillHubReads
+    const writes = calls.filter(call => call.method === 'skills/config/write').length
+    await toggle.click()
+    assert.equal(await page.locator('#transfer-skills-body').isVisible(), false)
+    await toggle.click()
+    await page.locator('.transfer-picker .skill-card.is-disabled').waitFor()
+    assert.equal(skillEnabled, false)
+    assert.equal(skillHubReads, reads, 'expanding again must preserve the mounted Skills manager')
+    assert.equal(calls.filter(call => call.method === 'skills/config/write').length, writes, 'collapse must not clear skill settings')
+    await toggle.click()
   }
   await page.goto(`${baseUrl}/#/thread/source`)
   await page.getByText('Original answer 0', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'A', exact: true }).click()
+  await page.getByRole('listbox').getByRole('button', { name: 'P only', exact: true }).waitFor()
+  assert.deepEqual(await page.getByRole('listbox').getByRole('button').allTextContents(), ['A', 'P only'])
+  await page.keyboard.press('Escape')
   await page.locator('textarea').fill('Unsent source draft')
   // Verify menu styling and shared Revert dropdown wiring on the actual source UI.
   const options = await openOptions()
@@ -167,6 +217,12 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       effectiveMethod = 'native'
     } else {
       await selectProvider()
+      if (entry === 'full' && !sameProvider) await checkSkills()
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme)
+        await page.waitForTimeout(2200)
+        await page.screenshot({ path: resolve(output, `portable-provider-${entry}-${theme}.png`) })
+      }
       if (entry === 'response') conversation.turns.push(sourceTurn(3))
       await page.getByRole('button', { name: 'Create conversation', exact: true }).dblclick()
     }
@@ -218,15 +274,31 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   const creationCalls = calls.filter(call => mutations.has(call.method))
   assert.equal(creationCalls.length, nativeFails ? 2 : 1, 'one creation per explicit confirmation')
   assert.equal(creationCalls.at(-1).method, effectiveMethod === 'native' ? (entry === 'full' ? 'thread/fork' : 'thread/fork-at-response') : 'conversation-transfer/create')
+  const selectedModel = effectiveMethod === 'native' ? 'A' : destinationDefault
+  await page.getByRole('button', { name: selectedModel, exact: true }).click()
+  const labels = await page.getByRole('listbox').getByRole('button').allTextContents()
+  assert.deepEqual(new Set(labels), new Set(effectiveMethod === 'native' || sameProvider ? ['A', 'P only'] : ['Alternate', 'C', 'D']))
+  if (entry === 'full' && effectiveMethod === 'portable' && !sameProvider) {
+    await page.waitForTimeout(2200)
+    await page.screenshot({ path: resolve(output, 'provider-models-destination-dark.png') })
+  }
+  await page.keyboard.press('Escape')
+  let continuationModel = selectedModel
+  if (entry === 'full' && effectiveMethod === 'portable' && !sameProvider) {
+    await page.getByRole('button', { name: 'C', exact: true }).click()
+    await page.getByRole('listbox').getByRole('button', { name: 'D', exact: true }).click()
+    await page.getByRole('button', { name: 'D', exact: true }).waitFor()
+    continuationModel = 'D'
+  }
   await page.locator('textarea').fill('Explicit next message')
   await page.getByRole('button', { name: 'Send message', exact: true }).click()
   await page.waitForFunction(() => document.querySelector('textarea')?.value === '')
   const sends = calls.filter(call => call.method === 'turn/start')
   assert.equal(sends.length, 1)
-  assert.equal(sends[0].params.model, effectiveMethod === 'native' ? 'A' : 'C')
+  assert.equal(sends[0].params.model, continuationModel)
   assert.equal(calls.filter(call => ['thread/start', 'thread/inject_items'].includes(call.method)).length, 0, 'portable creation is mocked at the backend service boundary')
   assert.deepEqual(errors, [])
-  const report = { entry, method, prepareFails, nativeFails, pendingPreparation, importedOnly, url: page.url(), viewport: { width: 1280, height: 900 },
+  const report = { entry, method, prepareFails, nativeFails, pendingPreparation, importedOnly, sameProvider, url: page.url(), viewport: { width: 1280, height: 900 },
     creationCalls, explicitSends: sends.length, importMetadataAfterReload: !!resumed.importedTranscript, displayPrefixes: false, assertions: 'passed' }
   await context.close()
   return report
@@ -239,7 +311,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     const cases = []
     for (const entry of ['full', 'response']) for (const method of ['portable', 'native', 'native-menu']) cases.push([entry, method])
     cases.push(['response', 'portable', { prepareFails: true }], ['full', 'native', { nativeFails: true }],
-      ['response', 'portable', { pendingPreparation: true }], ['response', 'portable', { importedOnly: true }])
+      ['response', 'portable', { pendingPreparation: true }], ['response', 'portable', { importedOnly: true }], ['response', 'portable', { sameProvider: true }])
     const selected = process.env.FORK_TEST_CASES?.split(',').map(Number)
     for (const [index, args] of cases.entries()) {
       if (selected && !selected.includes(index)) continue

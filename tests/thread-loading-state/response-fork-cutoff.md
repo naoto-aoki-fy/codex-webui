@@ -4,9 +4,9 @@ Prerequisites: connect an independently managed app-server supporting
 `thread/inject_items`; configure two providers/models. Create a source with at
 least 25 turns, text, a tool observation and an image. Stop any active turn.
 
-1. Open the Fork arrow, choose Portable Fork and cancel its provider/model
+1. Open the Fork arrow, choose Portable Fork and cancel its provider
    picker. Verify no new thread was created and the source draft is unchanged.
-2. Choose Portable Fork again, select a destination and confirm. Double-click
+2. Choose Portable Fork again, select a destination provider and confirm. Double-click
    confirmation.
    Expect one `thread/start`, then one `thread/inject_items`, no native fork or
    `turn/start`. Check all ordinary messages, including unloaded older turns.
@@ -58,7 +58,7 @@ and run `node scripts/test-fork-methods.cjs` with an installed Playwright browse
    remains selected. Try choosing another provider in the composer; expect a
    Portable Transfer instruction, never an automatic re-fork. Explicitly submit
    one new message; expect exactly one turn on the source provider.
-5. Choose Portable Fork from each dropdown. Expect only a provider/model picker,
+5. Choose Portable Fork from each dropdown. Expect only a provider picker,
    with no Native/Portable method selector. Cancel (also during preparation);
    expect no thread or turn and an unchanged source draft. Repeat with provider
    Q and the original provider P. Expect the existing start/inject lifecycle,
@@ -67,7 +67,7 @@ and run `node scripts/test-fork-methods.cjs` with an installed Playwright browse
 6. Simulate unsupported native forking. Expect an actionable error with no silent
    fallback. Explicitly choose Portable Fork and confirm; expect it to work
    independently. Reverse the test with portable preparation failure (for example
-   the 8 MiB limit); cancel and click the main native action without a model picker.
+   the 8 MiB limit); cancel and click the main native action without a provider picker.
 7. On an imported-only response, expect the main native button and Native Fork
    option to be disabled with a clear missing-turn-boundary explanation. The
    dropdown arrow and Portable Fork remain accessible and retain the prefix once.
@@ -99,3 +99,32 @@ verify original text is never stripped. Run the mocked browser matrix with
 
 Cleanup: archive the disposable destinations. No transcript migration or source
 history rewrite is required; this change only affects message presentation.
+
+## Provider defaults, scoped model lists and collapsed Skills
+
+Setup: configure providers P and Q with different defaults. Include a model ID
+shared by both providers, at least two models in Q, and an installed skill.
+The mocked browser matrix (`node scripts/test-fork-methods.cjs`) uses P/A and
+Q/C while also advertising Q/A, so accidental source-model inheritance fails.
+
+1. Choose Portable Fork from each entry point. Expect a provider picker and no
+   model picker. Confirmation stays disabled until a provider/default is valid.
+   Select P then Q and confirm. Expect `thread/start` to receive Q and Q's
+   default C, followed by the existing single `thread/inject_items` request.
+2. Inspect the normal model picker before and after transfer. Expect only P
+   models in the source and only Q models in the destination, with plain model
+   names. Verify internal keys still distinguish shared model IDs by provider.
+3. Choose another Q model and submit once. Expect that raw model ID and the
+   existing destination provider; no re-fork or source model is retained. Repeat
+   a server-confirmed provider change after a previous explicit model selection.
+4. Open the portable dialog with Skills collapsed. Expect no Skills manager
+   request until expansion. Expand, inspect/configure a skill through the
+   existing manager, then collapse and reopen. Expect the same configuration,
+   no configuration write on collapse, and no repeated manager read/remount.
+   Existing composer draft skill selections must remain intact.
+5. Reload the destination and repeat model selection. Check the provider-only
+   dialog, expanded Skills manager, and model list in light and dark themes.
+   Repeat Native Fork to confirm its API, provider, and direct action are unchanged.
+
+Cleanup: restore any skill enable/disable changes made during this test and
+archive disposable destinations. The dialog does not write provider defaults.

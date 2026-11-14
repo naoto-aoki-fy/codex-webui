@@ -49,10 +49,12 @@ export async function readProviderModelCatalog(
       ...(typeof row.description === 'string' ? { description: row.description } : {}),
       ...(typeof row.visibility === 'string' ? { visibility: row.visibility, hidden: row.visibility !== 'list' } : {}),
       ...(typeof row.priority === 'number' ? { priority: row.priority } : {}),
+      ...(typeof row.is_default === 'boolean' ? { isDefault: row.is_default } : {}),
       supportedReasoningEfforts: efforts,
       ...(typeof row.default_reasoning_level === 'string' ? { defaultReasoningEffort: row.default_reasoning_level } : {}),
     })
   }
   if (!models.length) throw new Error('Remote provider catalog is empty')
-  return { data: models }
+  const declared = asRecord(raw)?.default_model
+  return { data: models.map(model => typeof declared === 'string' && declared.trim() ? { ...model, providerDefaultModel: declared.trim() } : model) }
 }
