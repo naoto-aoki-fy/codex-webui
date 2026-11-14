@@ -123,9 +123,6 @@
               <div class="sidebar-settings-rate-limits">
                 <RateLimitStatus :snapshots="accountRateLimitSnapshots" />
               </div>
-              <div class="sidebar-settings-build-label" :aria-label="t('Worktree name and version')">
-                WT {{ worktreeName }} · v{{ appVersion }}
-              </div>
             </div>
           </Transition>
           <button
@@ -136,9 +133,6 @@
           >
             <IconTablerSettings class="sidebar-settings-icon" />
             <span>{{ t('Settings') }}</span>
-            <span class="sidebar-settings-button-version">
-              {{ worktreeName }} · v{{ appVersion }}
-            </span>
           </button>
         </div>
       </section>
@@ -367,8 +361,6 @@ const DirectoryHub = defineAsyncComponent(() => import('./components/content/Dir
 const { t } = useUiLanguage()
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
-const worktreeName = import.meta.env.VITE_WORKTREE_NAME ?? 'unknown'
-const appVersion = import.meta.env.VITE_APP_VERSION ?? 'unknown'
 const SETTINGS_HELP = {
   sendWithEnter: t('When enabled, press Enter to send. When disabled, use Command+Enter to send.'),
   appearance: t('Switch between system theme, light mode, and dark mode.'),
@@ -1879,10 +1871,6 @@ async function onLogoutCodex(): Promise<void> {
   @apply flex items-center gap-2 w-full rounded-lg border-0 bg-transparent px-2 py-2 text-sm text-zinc-600 transition hover:bg-zinc-200 hover:text-zinc-900 cursor-pointer;
 }
 
-.sidebar-settings-button-version {
-  @apply ml-auto min-w-0 truncate text-right text-xs;
-}
-
 .sidebar-settings-icon {
   @apply w-4.5 h-4.5;
 }
@@ -1952,10 +1940,6 @@ async function onLogoutCodex(): Promise<void> {
 
 .sidebar-settings-rate-limits {
   @apply border-t border-zinc-200 px-2 pt-2;
-}
-
-.sidebar-settings-build-label {
-  @apply border-t border-zinc-100 px-3 py-2 text-[11px] text-zinc-500;
 }
 
 </style>
