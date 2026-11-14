@@ -5,9 +5,9 @@ const response = (result: unknown) => new Response(JSON.stringify({ result }))
 afterEach(() => vi.unstubAllGlobals())
 
 it.each([
-  ['self repeat', [' next ', 'next'], [{}, { cursor: 'next' }]],
-  ['cycle', ['a', 'b', 'a'], [{}, { cursor: 'a' }, { cursor: 'b' }]],
-  ['blank', ['  '], [{}]],
+  ['self repeat', [' next ', 'next'], [{ includeHidden: true }, { includeHidden: true, cursor: 'next' }]],
+  ['cycle', ['a', 'b', 'a'], [{ includeHidden: true }, { includeHidden: true, cursor: 'a' }, { includeHidden: true, cursor: 'b' }]],
+  ['blank', ['  '], [{ includeHidden: true }]],
 ] as const)('terminates %s cursors while retaining page order and duplicate records', async (_name, cursors, params) => {
   const calls: unknown[] = []
   vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
@@ -33,7 +33,7 @@ it('discards partial results after later-page failure and starts retry from the 
     ? Promise.resolve(new Response('Method not found', { status: 400 })) : fetch(url, init)))
   await expect(getAvailableModelIds()).resolves.toEqual({ ids: [], models: [] })
   await expect(getAvailableModelIds()).resolves.toEqual({ ids: ['fresh'], models: [{ id: 'fresh' }] })
-  expect(fetch.mock.calls.map(([, init]) => JSON.parse(init.body).params)).toEqual([{}, { cursor: 'next' }, {}])
+  expect(fetch.mock.calls.map(([, init]) => JSON.parse(init.body).params)).toEqual([{ includeHidden: true }, { includeHidden: true, cursor: 'next' }, { includeHidden: true }])
 })
 
 it('coalesces overlapping catalog requests and retries after completion', async () => {

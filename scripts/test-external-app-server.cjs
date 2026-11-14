@@ -25,9 +25,13 @@ async function run() {
     socket.on('message', raw => {
       const frame = JSON.parse(String(raw)); frames.push(frame)
       if (!frame.method || frame.method === 'initialized') return
+      if (frame.method === 'model/list') {
+        assert.equal(frame.params.modelProvider, 'fixture-provider')
+        assert.equal(frame.params.includeHidden, true)
+      }
       const result = frame.method === 'account/read' ? { account: { type: 'apiKey' } }
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
-        : frame.method === 'model/list' ? { data: [{ id: 'fixture-model' }] }
+        : frame.method === 'model/list' ? { data: [{ id: frame.params.cursor ? 'fixture-hidden' : 'fixture-model', hidden: Boolean(frame.params.cursor), isDefault: !frame.params.cursor }], nextCursor: frame.params.cursor ? null : 'fixture-next' }
         : frame.method === 'thread/list' ? { data: [], nextCursor: null } : {}
       socket.send(JSON.stringify({ id: frame.id, result }))
     })
@@ -71,12 +75,21 @@ async function run() {
         for (const method of ['account/read', 'modelProvider/list', 'model/list', 'thread/list']) {
           const response = await fetch(url + '/codex-api/rpc', {
             method: 'POST', headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ method, params: method === 'model/list' ? { modelProvider: 'fixture-provider' } : {} }),
+            body: JSON.stringify({ method, params: method === 'model/list' ? { modelProvider: 'fixture-provider', includeHidden: true } : {} }),
           })
           const body = await response.json()
           assert(response.ok && body.result, JSON.stringify(body))
           if (method === 'modelProvider/list') assert.equal(body.result.data[0].id, 'fixture-provider')
-          if (method === 'model/list') assert.equal(body.result.data[0].id, 'fixture-model')
+          if (method === 'model/list') {
+            assert.equal(body.result.data[0].id, 'fixture-model')
+            assert.equal(body.result.nextCursor, 'fixture-next')
+            const next = await fetch(url + '/codex-api/rpc', {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ method, params: { modelProvider: 'fixture-provider', includeHidden: true, cursor: body.result.nextCursor } }),
+            })
+            assert(next.ok)
+            assert.deepEqual((await next.json()).result, { data: [{ id: 'fixture-hidden', hidden: true, isDefault: false }], nextCursor: null })
+          }
         }
         const metadata = await (await fetch(url + '/codex-api/meta/methods')).json()
         assert(JSON.stringify(metadata).includes('thread/start'))
@@ -93,6 +106,7 @@ async function run() {
         assert(server.address(), 'fixture listener survives web shutdown')
       }
     }
+    assert(!frames.some(f => f.method === 'command/exec' || f.method === 'model/providerCatalog'))
     assert.equal(frames.filter(f => f.method === 'initialize').length, connections)
     console.log('PASS initialization count:', connections, '; independent fixture listener survives both shutdowns')
   } finally {

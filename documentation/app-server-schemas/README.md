@@ -19,3 +19,8 @@ For a future, separately scoped refresh, first establish the upstream version
 and supported codegen procedure, record the exact invocation and experimental
 flags, then review DTO and catalog compatibility together. Regeneration is outside
 this documentation update; all existing schemas and the method catalog are preserved.
+
+The application `ModelListParams` DTO extends the older generated snapshot with
+Codex CLI 0.169.0's optional `modelProvider` field. Native discovery passes it on
+every provider page, together with `includeHidden: true`. This focused extension
+does not claim that the entire snapshot or filesystem generator targets 0.169.0.

@@ -41,6 +41,7 @@ import {
 import type {
   CollaborationModeListResponse,
   ConfigReadResponse,
+  ModelListParams,
   ModelListResponse,
   ReasoningEffort,
   ThreadForkResponse,
@@ -741,15 +742,18 @@ function unsupportedCatalogMethod(error: unknown): boolean {
 }
 
 async function loadModelCatalog(): Promise<ModelCatalog> {
-  async function pages(): Promise<ReasoningModel[]> {
+  async function pages(modelProvider?: string): Promise<ReasoningModel[]> {
     const models: ReasoningModel[] = []
     let cursor: string | undefined
     const seen = new Set<string>()
     do {
       const page = await callRpc<ModelListResponse>('model/list', {
+        ...(modelProvider ? { modelProvider } : {}),
+        includeHidden: true,
         ...(cursor ? { cursor } : {}),
-      })
-      for (const model of Array.isArray(page?.data) ? page.data : []) {
+      } satisfies ModelListParams)
+      if (!Array.isArray(page?.data)) throw new Error('Invalid model list response')
+      for (const model of page.data) {
         if (model && ((typeof model.id === 'string' && model.id.trim()) || (typeof model.model === 'string' && model.model.trim()))) models.push({ ...model, modelProvider: (model as ReasoningModel).modelProvider?.trim() || undefined })
       }
       cursor = page?.nextCursor?.trim() || undefined
@@ -791,19 +795,14 @@ async function loadModelCatalog(): Promise<ModelCatalog> {
   // Serial provider walks bound fanout to one RPC, including pagination.
   for (const provider of providers) {
     try {
-      const result = await callRpc<{ data: ReasoningModel[]; defaultModel?: string }>('model/providerCatalog', { provider: provider.id })
-      if (!Array.isArray(result.data) || !result.data.length) throw new Error('Empty provider catalog')
-      const providerDefaultModel = provider.defaultModel?.trim() || result.defaultModel?.trim()
-      models.push(...result.data.map(model => ({ ...model, modelProvider: provider.id,
+      const data = await pages(provider.id)
+      const providerDefaultModel = provider.defaultModel?.trim()
+        || data.find(model => model.isDefault)?.id?.trim()
+        || data.find(model => model.isDefault)?.model?.trim()
+      models.push(...data.map(model => ({ ...model, modelProvider: provider.id,
         ...(providerDefaultModel ? { providerDefaultModel } : {}),
         providerDisplayName: provider.displayName || provider.name || provider.id })))
     } catch { failures.push(provider.id) }
-  }
-  if (!models.length) {
-    // model/list is a single active catalog. Keep it unqualified, never copy it
-    // to every configured provider, and retain explicit failure information.
-    const fallback = await legacy()
-    return { ...fallback, defaultProvider, failures }
   }
   return catalog(models, { defaultProvider, failures })
 }
