@@ -174,7 +174,10 @@ it('closes active SSE on middleware disposal, including late close and repeated 
 it.each([['POST', '/codex-api/events'], ['GET', '/codex-api/events/']])('keeps route matching exact (%s %s)', async (method, url) => {
   const s = streams(method, url)
   await createCodexBridgeMiddleware()(...s.args)
-  expect(s.next).toHaveBeenCalledOnce()
+  expect(s.next).not.toHaveBeenCalled()
+  expect(s.res.statusCode).toBe(404)
+  expect(s.end).toHaveBeenCalledOnce()
+  expect(JSON.parse(s.end.mock.calls[0]![0])).toEqual({ error: 'Not found' })
   expect(appServer.onNotification).not.toHaveBeenCalled()
   expect(vi.getTimerCount()).toBe(0)
 })
