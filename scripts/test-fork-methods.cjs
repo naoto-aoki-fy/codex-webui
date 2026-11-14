@@ -39,7 +39,6 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   const destinations = new Map()
   let snapshotNumber = 0
   let rejectNative = nativeFails
-  let skillEnabled = true
   let skillHubReads = 0
   const destinationProvider = sameProvider ? 'P' : 'Q'
   const destinationDefault = sameProvider ? 'A' : 'C'
@@ -48,7 +47,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (request.url().includes('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': mock\n\n' })
     if (request.url().endsWith('/skills-hub')) {
       skillHubReads++
-      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ installed: [{ name: 'Review skill', description: 'Existing skill configuration', path: '/skills/review/SKILL.md', enabled: skillEnabled }] }) })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ installed: [{ name: 'Review skill', description: 'Existing skill configuration', path: '/skills/review/SKILL.md', enabled: true }] }) })
     }
     if (request.url().includes('/skills-hub/readme')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ content: '# Review skill' }) })
     const body = request.postDataJSON()
@@ -62,7 +61,6 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (rpc === 'model/providerCatalog' || rpc === 'model/list') result = { data: params.provider === 'Q'
       ? [{ id: 'A', displayName: 'Alternate', priority: 9 }, { id: 'C', displayName: 'C', priority: 0, isDefault: true }, { id: 'D', displayName: 'D', priority: 1 }]
       : [{ id: 'A', displayName: 'A', priority: 0 }, { id: 'P-only', displayName: 'P only', priority: 1 }] }
-    if (rpc === 'skills/config/write') { skillEnabled = params.enabled; result = {} }
     if (rpc === 'account/read') result = { account: { type: 'apiKey' } }
     if (rpc === 'config/read') result = { config: { model: 'A', model_provider: 'P' } }
     if (rpc === 'threadSection/list') result = { data: [] }
@@ -145,9 +143,11 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (!pendingPreparation && !prepareFails) await page.getByRole('button', { name: 'Provider', exact: true }).waitFor()
     if (prepareFails) await page.getByRole('alert').filter({ hasText: '8 MiB' }).waitFor()
     assert.equal(await page.locator('.transfer-picker .composer-dropdown').count(), pendingPreparation ? 0 : 1)
-    assert.equal(await page.locator('.transfer-skills-toggle').getAttribute('aria-expanded'), 'false')
-    assert.equal(await page.locator('#transfer-skills-body').isVisible(), false)
+    assert.equal(await page.locator('.transfer-picker').getByText(/skills/i).count(), 0)
+    assert.equal(await page.locator('.transfer-skills, #transfer-skills-body').count(), 0)
     assert.equal(await page.locator('.transfer-picker .skills-hub').count(), 0)
+    assert.equal(skillHubReads, 0, 'portable dialog must not load the Skills manager')
+    assert.equal(calls.filter(call => call.method === 'skills/config/write').length, 0, 'portable dialog must not change skill configuration')
   }
   async function selectProvider() {
     assert.equal(await page.getByRole('button', { name: 'Create conversation', exact: true }).isDisabled(), true)
@@ -158,29 +158,6 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       await page.getByRole('listbox').getByRole('button', { name: 'Destination', exact: true }).click()
     }
     assert.equal(await page.getByRole('button', { name: 'Create conversation', exact: true }).isEnabled(), true)
-  }
-  async function checkSkills() {
-    assert.equal(skillHubReads, 0, 'collapsed skills must not load or clear configuration')
-    const toggle = page.locator('.transfer-skills-toggle')
-    await toggle.click()
-    await page.getByRole('button', { name: 'Review skill Existing skill configuration', exact: true }).click()
-    const updated = page.waitForResponse(response => response.request().postDataJSON()?.method === 'skills/config/write')
-    await page.getByRole('button', { name: 'Disable', exact: true }).click()
-    await updated
-    await page.getByRole('button', { name: 'Close', exact: true }).click()
-    await page.locator('.transfer-picker .skill-card.is-disabled').waitFor()
-    await page.waitForTimeout(2200)
-    await page.screenshot({ path: resolve(output, 'portable-skills-expanded-dark.png') })
-    const reads = skillHubReads
-    const writes = calls.filter(call => call.method === 'skills/config/write').length
-    await toggle.click()
-    assert.equal(await page.locator('#transfer-skills-body').isVisible(), false)
-    await toggle.click()
-    await page.locator('.transfer-picker .skill-card.is-disabled').waitFor()
-    assert.equal(skillEnabled, false)
-    assert.equal(skillHubReads, reads, 'expanding again must preserve the mounted Skills manager')
-    assert.equal(calls.filter(call => call.method === 'skills/config/write').length, writes, 'collapse must not clear skill settings')
-    await toggle.click()
   }
   await page.goto(`${baseUrl}/#/thread/source`)
   await page.getByText('Original answer 0', { exact: true }).waitFor()
@@ -224,7 +201,6 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       effectiveMethod = 'native'
     } else {
       await selectProvider()
-      if (entry === 'full' && !sameProvider) await checkSkills()
       for (const theme of ['light', 'dark']) {
         await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme)
         await page.waitForTimeout(2200)

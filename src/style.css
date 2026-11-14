@@ -1408,10 +1408,4 @@
 :root.dark .fork-split-sidebar .fork-split-main:hover:not(:disabled) { background: #27272a; }
 .composer-dropdown-option:disabled { cursor: not-allowed; opacity: 0.5; }
 
-.transfer-skills { margin: 16px 0; }
-.transfer-skills-toggle { display: flex; align-items: center; gap: 6px; font-weight: 500; }
-.transfer-skills-toggle > span { display: inline-block; transition: transform .15s; }
-.transfer-skills-toggle > span.is-open { transform: rotate(90deg); }
-.transfer-skills > fieldset { margin-top: 12px; border: 0; padding: 0; min-width: 0; }
-
 body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
