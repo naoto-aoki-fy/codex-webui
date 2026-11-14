@@ -10,7 +10,7 @@ Read the [diagnosis and adapter requirements](../../docs/rivault-model-compatibi
 
 ## Actions and expected results
 
-1. Run `codex debug models -c 'model_provider="rivault"'` on the test server host.
+1. Request `model/list` with `modelProvider: "rivault"` and `includeHidden: true` on the test server connection.
    Verify the exact `Qwen/Qwen3.6-35B-A3B` slug, direct tool mode, null patch type,
    and configured shell type. Verify reasoning efforts against provider support.
 2. Inspect a redacted outbound Responses request on a fresh RiVault thread.

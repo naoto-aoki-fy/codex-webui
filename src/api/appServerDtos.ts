@@ -15,3 +15,8 @@ export type { RateLimitSnapshot } from '../../documentation/app-server-schemas/t
 export type { RateLimitWindow } from '../../documentation/app-server-schemas/typescript/v2/RateLimitWindow'
 export type { CreditsSnapshot } from '../../documentation/app-server-schemas/typescript/v2/CreditsSnapshot'
 export type { ReasoningEffort } from '../../documentation/app-server-schemas/typescript/ReasoningEffort'
+
+// Codex CLI 0.169.0 adds provider-scoped native discovery to the older snapshot.
+export type ModelListParams = import('../../documentation/app-server-schemas/typescript/v2/ModelListParams').ModelListParams & {
+  modelProvider?: string | null
+}

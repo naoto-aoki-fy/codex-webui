@@ -16,7 +16,7 @@ it('walks remote provider catalogs, preserves duplicate IDs and isolates failed 
     if (body.method === 'modelProvider/list') return response({ providers: [
       { id: 'cloud', displayName: 'Cloud', isDefault: true }, { id: 'offline' }, { id: 'local', displayName: 'Local' },
     ] })
-    if (body.params.provider === 'offline') throw new Error('offline')
+    if (body.params.modelProvider === 'offline') throw new Error('offline')
     return response({ data: [{ id: 'same', displayName: 'Shared', supportedReasoningEfforts: ['low'], defaultReasoningEffort: 'low' }],
       nextCursor: null })
   }))
@@ -25,21 +25,22 @@ it('walks remote provider catalogs, preserves duplicate IDs and isolates failed 
   expect(catalog.defaultProvider).toBe('cloud')
   expect(catalog.failures).toEqual(['offline'])
   expect(catalog.models[1]).toMatchObject({ modelProvider: 'local', providerDisplayName: 'Local', defaultReasoningEffort: 'low' })
-  expect(calls.map((c) => c.params)).toEqual([{}, { provider: 'cloud' }, { provider: 'offline' }, { provider: 'local' }])
+  expect(calls.map((c) => c.params)).toEqual([{}, { modelProvider: 'cloud', includeHidden: true }, { modelProvider: 'offline', includeHidden: true }, { modelProvider: 'local', includeHidden: true }])
   expect(maximum).toBe(1)
 })
 
-it.each(['modelProvider/list', 'model/providerCatalog'])('falls back when %s is unsupported', async (unsupported) => {
-  const calls: unknown[] = []
+it('does not substitute an active catalog when every provider fails', async () => {
+  const calls: any[] = []
   vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
     const body = JSON.parse(init.body); calls.push(body)
-    if (body.method === unsupported && (unsupported === 'modelProvider/list' || body.params.provider)) {
-      return new Response('Invalid params: method not found', { status: 400 })
-    }
-    return response(body.method === 'modelProvider/list' ? { data: [{ id: 'provider' }] } : { data: [{ id: 'legacy' }] })
+    if (body.method === 'modelProvider/list') return response({ data: [{ id: 'unavailable' }] })
+    return new Response('Invalid params: unknown field modelProvider', { status: 400 })
   }))
-  expect(await getAvailableModelIds()).toMatchObject({ ids: ['legacy'], models: [{ id: 'legacy' }] })
-  expect(calls.at(-1)).toEqual({ method: 'model/list', params: {} })
+  expect(await getAvailableModelIds()).toEqual({ ids: [], models: [], failures: ['unavailable'], defaultProvider: undefined })
+  expect(calls).toEqual([
+    { method: 'modelProvider/list', params: {} },
+    { method: 'model/list', params: { modelProvider: 'unavailable', includeHidden: true } },
+  ])
 })
 
 it.each(['cloud', 'local'])('sends provider %s on thread creation and only the raw model on turns', async (provider) => {
@@ -77,16 +78,16 @@ it('uses explicit remote config providers when enumeration is unsupported', asyn
     return response({ data: [{ id: 'same' }] })
   }))
   expect((await getAvailableModelIds()).ids).toEqual([key('local', 'same'), key('active', 'same')])
-  expect(calls.slice(2)).toEqual([{ method: 'model/providerCatalog', params: { provider: 'local' } },
-    { method: 'model/providerCatalog', params: { provider: 'active' } }])
+  expect(calls.slice(2)).toEqual([{ method: 'model/list', params: { modelProvider: 'local', includeHidden: true } },
+    { method: 'model/list', params: { modelProvider: 'active', includeHidden: true } }])
 })
 
 it('does not fall back to unrelated models after a partial success', async () => {
   vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
     const body = JSON.parse(init.body)
     if (body.method === 'modelProvider/list') return response({ data: [{ id: 'ok' }, { id: 'old' }], defaultProviderId: 'ok' })
-    if (body.params.provider === 'old') return new Response('Method not found', { status: 400 })
-    expect(body.method).toBe('model/providerCatalog')
+    if (body.params.modelProvider === 'old') return new Response('Method not found', { status: 400 })
+    expect(body.method).toBe('model/list')
     return response({ data: [{ id: 'visible' }, { id: 'internal', hidden: true }] })
   }))
   expect(await getAvailableModelIds()).toMatchObject({ ids: [key('ok', 'visible')], failures: ['old'], defaultProvider: 'ok' })
@@ -145,4 +146,57 @@ it('preserves the unsupported grammar diagnostic without retry or catalog mutati
   await expect(startThreadTurn('rivault-thread', 'hello', [], key('rivault', 'Qwen/Qwen3.6-35B-A3B'))).rejects.toThrow(message)
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(reasoningCatalog.value).toEqual(before)
+})
+
+it('paginates each native provider catalog with hidden metadata and provider-local cursors', async () => {
+  const calls: any[] = []
+  vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+    const body = JSON.parse(init.body); calls.push(body)
+    if (body.method === 'modelProvider/list') return response({ data: [{ id: 'P' }, { id: 'Q' }] })
+    expect(body.method).toBe('model/list')
+    expect(body.params.includeHidden).toBe(true)
+    return response({ data: [{ id: body.params.cursor ? 'hidden' : 'same',
+      hidden: Boolean(body.params.cursor), isDefault: !body.params.cursor,
+      displayName: 'Shared name', supportedReasoningEfforts: [{ reasoningEffort: 'high', description: 'High' }],
+      defaultReasoningEffort: 'high' }], nextCursor: 'next' })
+  }))
+  const first = getAvailableModelIds()
+  expect(getAvailableModelIds()).toBe(first)
+  const catalog = await first
+  expect(calls.slice(1)).toEqual(['P', 'Q'].flatMap(modelProvider => [
+    { method: 'model/list', params: { modelProvider, includeHidden: true } },
+    { method: 'model/list', params: { modelProvider, includeHidden: true, cursor: 'next' } },
+  ]))
+  expect(catalog.ids).toEqual([key('P', 'same'), key('Q', 'same')])
+  expect(catalog.models).toHaveLength(4)
+  expect(catalog.models[3]).toMatchObject({ modelProvider: 'Q', hidden: true, providerDefaultModel: 'same',
+    displayName: 'Shared name', defaultReasoningEffort: 'high', supportedReasoningEfforts: [{ reasoningEffort: 'high', description: 'High' }] })
+})
+
+it('discards a failed provider walk and continues with the next provider without its cursor', async () => {
+  const calls: any[] = []
+  let fail = true
+  vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+    const body = JSON.parse(init.body); calls.push(body)
+    if (body.method === 'modelProvider/list') return response({ data: [{ id: 'P' }, { id: 'Q' }] })
+    if (body.params.modelProvider === 'P' && fail) {
+      if (body.params.cursor) throw new Error('later page unavailable')
+      return response({ data: [{ id: 'partial' }], nextCursor: 'next' })
+    }
+    expect(body.params.cursor).toBeUndefined()
+    return response({ data: [{ id: 'complete' }], nextCursor: null })
+  }))
+  expect(await getAvailableModelIds()).toMatchObject({ ids: [key('Q', 'complete')], failures: ['P'] })
+  fail = false
+  expect(await getAvailableModelIds()).toMatchObject({ ids: [key('P', 'complete'), key('Q', 'complete')], failures: [] })
+  expect(calls.filter(c => c.method === 'model/list')).toHaveLength(5)
+})
+
+it('isolates malformed provider responses while allowing a valid empty catalog', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+    const body = JSON.parse(init.body)
+    if (body.method === 'modelProvider/list') return response({ data: [{ id: 'bad' }, { id: 'empty' }] })
+    return response(body.params.modelProvider === 'bad' ? { data: null } : { data: [], nextCursor: null })
+  }))
+  expect(await getAvailableModelIds()).toMatchObject({ ids: [], models: [], failures: ['bad'] })
 })

@@ -58,7 +58,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (rpc === 'thread/list') result = { data: [conversation, ...[...destinations.values()].map(row => row.thread)], nextCursor: null }
     if (rpc === 'thread/read' || rpc === 'thread/resume') result = destinations.get(params.threadId) || { thread: conversation, model: 'A', modelProvider: 'P', ...(importedOnly ? { importedTranscript: importedPrefix, importStage: 'ready' } : {}) }
     if (rpc === 'modelProvider/list') result = { data: [{ id: 'P', displayName: 'Source', isDefault: true }, { id: 'Q', displayName: 'Destination' }] }
-    if (rpc === 'model/providerCatalog' || rpc === 'model/list') result = { data: params.provider === 'Q'
+    if (rpc === 'model/list') result = { data: params.modelProvider === 'Q'
       ? [{ id: 'A', displayName: 'Alternate', priority: 9 }, { id: 'C', displayName: 'C', priority: 0, isDefault: true }, { id: 'D', displayName: 'D', priority: 1 }]
       : [{ id: 'A', displayName: 'A', priority: 0 }, { id: 'P-only', displayName: 'P only', priority: 1 }] }
     if (rpc === 'account/read') result = { account: { type: 'apiKey' } }

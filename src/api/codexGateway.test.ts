@@ -236,7 +236,7 @@ describe('official Codex model catalog', () => {
     const catalog = await getAvailableModelIds()
     expect(catalog.ids).toEqual(['gpt-test', 'gpt-second'])
     expect(catalog.models[0].defaultReasoningEffort).toBe('high')
-    expect(calls).toEqual([{ method: 'modelProvider/list', params: {} }, { method: 'config/read', params: {} }, { method: 'model/list', params: {} }, { method: 'model/list', params: { cursor: 'page2' } }])
+    expect(calls).toEqual([{ method: 'modelProvider/list', params: {} }, { method: 'config/read', params: {} }, { method: 'model/list', params: { includeHidden: true } }, { method: 'model/list', params: { includeHidden: true, cursor: 'page2' } }])
   })
 })
 

@@ -37,13 +37,14 @@ verify tool compatibility.
 
 ## Existing application boundary
 
-`src/server/providerModelCatalog.ts` executes `codex debug models` through the
-connected app-server's `command/exec`. It normalizes Codex `models[].slug` and
-reasoning/display metadata for the picker; it does not convert OpenAI
-`data[].id` catalogs or construct inference tools. Tool metadata and instruction
-templates remain on the external server. Provider-qualified selections keep
-identical model IDs separate; thread creation/fork sends the provider and raw
-model, and turns send the raw model on the existing thread.
+`src/api/codexGateway.ts` discovers providers through the connected app-server
+and reads each catalog with native `model/list` requests, explicitly setting
+`modelProvider` on every page (Codex CLI 0.169.0). Discovery includes hidden models
+for saved-selection capabilities and preserves native display/reasoning metadata.
+It never executes a catalog command. Tool metadata and instruction templates
+remain on the external server. Provider-qualified selections keep identical model
+IDs separate; thread creation/fork sends the provider and raw model, and turns
+send the raw model on the existing thread.
 
 Configure catalogs on the independently managed Codex host, using that host's
 user, PATH and CODEX_HOME. Keep its provider ID, inference base URL, credentials,
@@ -58,12 +59,13 @@ model_catalog_url = "http://127.0.0.1:8061/codex/models"
 The URL is illustrative: use the actual separately managed service address as
 seen from the external app-server. It must return a complete Codex catalog for
 the deployed version, not just the three fields above or a raw `/v1/models` list.
-Refresh discovery after configuration changes; verify effective metadata with
-`codex debug models -c 'model_provider="rivault"'` on that host. Do not assume a
+Refresh discovery after configuration changes; verify picker metadata with
+`model/list` using `modelProvider: "rivault"` and `includeHidden: true`. Do not assume a
 picker refresh invalidates all app-server model caches or updates loaded threads.
 
-The repository pins protocol/CLI development dependencies to 0.167.2; prior
-remote-discovery checks also cover 0.168.0. The tool-planning assessment above is
+Native provider-scoped discovery targets Codex CLI 0.169.0. The older checked-in
+protocol snapshot is extended by the application ModelListParams DTO; unrelated
+filesystem protocol tooling remains pinned to 0.167.2. The tool-planning assessment above is
 specifically for 0.168.0, not a guarantee across versions. Check the exact deployed
 CLI and app-server versions and their catalog schema before deployment.
 

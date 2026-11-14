@@ -329,19 +329,17 @@ it('stale owner closes only its SSE after runtime replacement', async () => {
   expect(vi.getTimerCount()).toBe(0)
 })
 
-it('normalizes remote provider catalogs before returning the bridge response', async () => {
-  const rpc = vi.fn().mockResolvedValue({ exitCode: 0, stdout: JSON.stringify({ models: [
-    { slug: 'remote-only', display_name: 'Remote', base_instructions: 'PRIVATE TEMPLATE' },
-  ] }), stderr: '' })
-  Object.assign(appServer, { rpc })
+it('forwards native provider model lists through the existing RPC connection', async () => {
+  const result = { data: [{ id: 'remote-only', displayName: 'Remote', hidden: false }], nextCursor: 'next' }
+  const rpc = vi.fn().mockResolvedValue(result)
+  Object.assign(appServer, { rpc, getSnapshotEpoch: () => 0 })
   const s = streams('POST', '/codex-api/rpc')
+  const params = { modelProvider: 'local', includeHidden: true, cursor: 'previous' }
   Object.assign(s.req, { async *[Symbol.asyncIterator]() {
-    yield Buffer.from(JSON.stringify({ method: 'model/providerCatalog', params: { provider: 'local' } }))
+    yield Buffer.from(JSON.stringify({ method: 'model/list', params }))
   } })
   await createCodexBridgeMiddleware()(...s.args)
   expect(s.res.statusCode).toBe(200)
-  expect(rpc.mock.calls[0]?.[0]).toBe('command/exec')
-  const body = JSON.parse(s.end.mock.calls[0]![0])
-  expect(body.result.data[0]).toMatchObject({ id: 'remote-only', modelProvider: 'local' })
-  expect(JSON.stringify(body)).not.toContain('PRIVATE TEMPLATE')
+  expect(rpc).toHaveBeenCalledExactlyOnceWith('model/list', params)
+  expect(JSON.parse(s.end.mock.calls[0]![0])).toEqual({ result })
 })
