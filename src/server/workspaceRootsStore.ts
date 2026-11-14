@@ -3,7 +3,7 @@ import { asRecord } from './bridgeHttpUtils.js'
 import { readCodexGlobalState } from './codexGlobalState.js'
 
 export type WorkspaceRootsState = {
-  projectMode?: 'native' | 'legacy-readonly'
+  projectMode?: 'native'
   projectError?: string
   nativeProjects?: import('../server/protocol/0.167.2/v2/Project.js').Project[]
   order: string[]

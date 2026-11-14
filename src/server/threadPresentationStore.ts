@@ -1,39 +1,27 @@
-import { readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState.js'
-
 // Codex 0.167.2 codex-rs/state/src/lib.rs: built-in Pinned section.
 export const PINNED_THREAD_SECTION_ID = '01984de2-8f74-7c91-a3b2-5c5e937cf318'
 
 type Rpc = (method: string, params: unknown) => Promise<unknown>
 
 export function createThreadPresentationStore() {
-  let migration: Promise<void> | undefined
-  async function migrate(rpc: Rpc): Promise<void> {
-    if (migration) return migration
-    migration = (async () => {
-      const state = await readCodexGlobalState()
-      const ids = state['pinned-thread-ids']
-      if (!Array.isArray(ids)) return
-      // Verify native support before changing legacy state. An interrupted migration
-      // can safely repeat moves; no conversations or unrelated fields are removed.
-      await rpc('threadSection/list', { limit: 1 })
-      for (const threadId of [...new Set(ids)]) {
-        if (typeof threadId !== 'string' || !threadId) continue
-        await rpc('thread/section/move', { threadId, sectionId: PINNED_THREAD_SECTION_ID })
-      }
-      await updateCodexGlobalState(payload => { delete payload['pinned-thread-ids'] })
-    })().finally(() => { migration = undefined })
-    return migration
-  }
   async function readPinnedThreadIds(rpc: Rpc): Promise<string[]> {
-    await migrate(rpc)
     const ids: string[] = []
     let cursor: string | null = null
+    const seen = new Set<string>()
     do {
-      const page = await rpc('thread/list', {
+      let result: unknown
+      try { result = await rpc('thread/list', {
         sectionId: PINNED_THREAD_SECTION_ID, sortKey: 'section_position', limit: 100, cursor,
-      }) as { data: { id: string }[]; nextCursor?: string | null }
+      }) } catch (error) {
+        if ((error as { code?: number }).code === -32601) throw new Error('Native thread sections are required for pinning. Upgrade Codex.')
+        throw error
+      }
+      const page = result as { data: { id: string }[]; nextCursor?: string | null }
+      if (!Array.isArray(page?.data) || page.data.some(t => typeof t?.id !== 'string') || (page.nextCursor != null && typeof page.nextCursor !== 'string')) throw new Error('Malformed native pin listing response')
       ids.push(...page.data.map(thread => thread.id))
       cursor = page.nextCursor ?? null
+      if (cursor && seen.has(cursor)) throw new Error('Repeated native pin listing cursor')
+      if (cursor) seen.add(cursor)
     } while (cursor)
     return ids
   }

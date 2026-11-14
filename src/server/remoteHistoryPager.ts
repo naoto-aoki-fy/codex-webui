@@ -21,7 +21,6 @@ type Entry = { generation: number; expires: number; promise: Promise<Index>; pen
 export class RemoteHistoryPager {
   private readonly entries = new Map<string, Entry>()
   private readonly pendingPages = new Map<string, { threadId: string; promise: Promise<{ result: unknown; startTurnIndex: number; hasMoreOlder: boolean }> }>()
-  private unsupportedGeneration: number | null = null
   constructor(private readonly client: Client) {}
 
   getCacheStats() {
@@ -118,8 +117,7 @@ export class RemoteHistoryPager {
   private async readUncached(threadId: string, beforeTurnId: string, limit: number): Promise<{ result: unknown; startTurnIndex: number; hasMoreOlder: boolean }> {
     limit = Math.max(1, Math.min(50, Math.floor(limit) || 10))
     const generation = this.client.getConnectionGeneration()
-    if (this.unsupportedGeneration !== generation) {
-      try {
+    try {
         const index = await this.index(threadId)
         const end = beforeTurnId ? index.ids.indexOf(beforeTurnId) : index.ids.length
         if (end < 0) throw new Error('The history boundary is no longer available. Refresh the thread.')
@@ -152,19 +150,9 @@ export class RemoteHistoryPager {
         const firstId = record(turns[0])?.id
         if (typeof firstId === 'string' && page.nextCursor) index.cursors.set(firstId, page.nextCursor)
         return { result: { ...index.metadata, threadTurnStartIndex: start, thread: { ...record(index.metadata.thread), turns } }, startTurnIndex: start, hasMoreOlder: start > 0 }
-      } catch (error) {
-        // Only an explicit missing-method reply proves lack of support.
-        if ((error as { code?: number }).code !== -32601) throw error
-        this.unsupportedGeneration = generation
-        this.entries.clear()
-      }
+    } catch (error) {
+      if ((error as { code?: number }).code !== -32601) throw error
+      throw Object.assign(new Error('Connected Codex server lacks required native history APIs (thread/read and thread/turns/list). Upgrade Codex; full-history fallback is no longer supported.'), { cause: error })
     }
-    const value = record(await this.client.readThreadForTurnPage(threadId))
-    const thread = record(value?.thread)
-    if (!value || !thread || !Array.isArray(thread.turns)) throw new Error('Incompatible thread/read history response')
-    const end = beforeTurnId ? thread.turns.findIndex(turn => record(turn)?.id === beforeTurnId) : thread.turns.length
-    if (end < 0) throw new Error('The history boundary is no longer available. Refresh the thread.')
-    const start = Math.max(0, end - limit)
-    return { result: { ...value, threadTurnStartIndex: start, thread: { ...thread, turns: thread.turns.slice(start, end) } }, startTurnIndex: start, hasMoreOlder: start > 0 }
   }
 }

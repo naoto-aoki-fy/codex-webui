@@ -6,32 +6,24 @@ vi.mock('./codexGlobalState.js', () => ({
   updateCodexGlobalState: async (update: (value: Record<string, unknown>) => void) => update(state.value),
 }))
 beforeEach(() => { state.value = { unrelated: 42, 'pinned-thread-ids': ['a', 'b'] } })
-it('migrates once, preserving unrelated state, and reads native pagination', async () => {
+it('reads native pins across reload without modifying historical state', async () => {
   const rpc = vi.fn(async (method: string, params: any): Promise<any> => method === 'thread/list'
     ? { data: [{ id: params.cursor ? 'b' : 'a' }], nextCursor: params.cursor ? null : 'next' } : {})
   const store = createThreadPresentationStore()
   expect(await store.readPinnedThreadIds(rpc)).toEqual(['a', 'b'])
-  expect(state.value).toEqual({ unrelated: 42 })
-  expect(rpc).toHaveBeenCalledWith('thread/section/move', { threadId: 'a', sectionId: PINNED_THREAD_SECTION_ID })
+  expect(state.value).toEqual({ unrelated: 42, 'pinned-thread-ids': ['a', 'b'] })
+  expect(rpc).toHaveBeenCalledWith('thread/list', { sectionId: PINNED_THREAD_SECTION_ID, sortKey: 'section_position', limit: 100, cursor: null })
   rpc.mockClear()
   await store.readPinnedThreadIds(rpc)
   expect(rpc.mock.calls.every(([method]) => method === 'thread/list')).toBe(true)
 })
-it('retains legacy state on unsupported or failed migration', async () => {
+it('preserves errors and legacy state on failed native reads', async () => {
   const rpc = vi.fn(async () => { throw new Error('unsupported') })
   await expect(createThreadPresentationStore().readPinnedThreadIds(rpc)).rejects.toThrow('unsupported')
   expect(state.value['pinned-thread-ids']).toEqual(['a', 'b'])
 })
-it('retries an interrupted migration without discarding legacy IDs', async () => {
-  let fail = true
-  const rpc = vi.fn(async (method: string, params: any): Promise<any> => {
-    if (method === 'thread/section/move' && params.threadId === 'b' && fail) throw new Error('disconnected')
-    return method === 'thread/list' ? { data: [{ id: 'a' }, { id: 'b' }] } : {}
-  })
-  const store = createThreadPresentationStore()
-  await expect(store.readPinnedThreadIds(rpc)).rejects.toThrow('disconnected')
-  expect(state.value['pinned-thread-ids']).toEqual(['a', 'b'])
-  fail = false
-  expect(await store.readPinnedThreadIds(rpc)).toEqual(['a', 'b'])
-  expect(state.value).toEqual({ unrelated: 42 })
+
+it('reports explicit missing native APIs separately from malformed results', async () => {
+  await expect(createThreadPresentationStore().readPinnedThreadIds(async () => { throw Object.assign(new Error('missing'), { code: -32601 }) })).rejects.toThrow('Upgrade Codex')
+  await expect(createThreadPresentationStore().readPinnedThreadIds(async () => ({}))).rejects.toThrow('Malformed')
 })
