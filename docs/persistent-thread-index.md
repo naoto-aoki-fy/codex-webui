@@ -27,6 +27,14 @@ Do not delete this file to repair visibility: it can contain an unresolved send
 intent. Writes use locking and atomic replacement; no migration or deletion is
 part of this cleanup.
 
+Only `pending` (token, exact text and previous turn IDs) and `firstTurnId` are
+written for recovery. Old `thread` snapshots (including preview, name and
+timestamps), `archived` and `deleted` fields are neither read for presentation nor
+updated. Existing fields and unrelated recovery records survive writes unchanged;
+new records contain no list metadata. There is no format conversion or retention
+change. Project/pin upgrade guards read the profile global-state file instead,
+not this recovery file.
+
 Explicit attachment references reach Codex in the file-reference envelope.
 The request after `## My request for Codex:` stays empty for file-only submissions;
 display labels are never added as instructions. For an attachment-only first
@@ -48,8 +56,13 @@ their existing destination-ID flow. See
 Native pagination hydrates only requested turn items, with bounded metadata scans.
 Attachment intent persistence can require a full history read when the recently
 started thread is unavailable in memory; reconciliation uses existing history
-responses and serializes local file updates. No new polling, requests or cache
-invalidation paths are introduced by this documentation correction.
+responses and serializes local file updates. Native rename/archive/delete and
+ordinary turn responses without history no longer read or lock the index just to
+maintain redundant list fields. Confirmed sends still write intent then confirmation;
+reconciliation only locks when a returned history has pending intent. The bounded
+64-entry recently-started map, whole-file locked updates and atomic rename remain.
+No polling, duplicate RPCs, unbounded fanout or cache invalidation path is added.
+This is code-path analysis; no live latency benchmark was performed.
 
 Verify attachments, empty requests, reloads, reconnects and duplicate submission
 protection using the [manual procedure](../tests/chat-composer-rendering/attachment-only-thread-persistence.md).

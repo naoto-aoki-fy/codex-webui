@@ -78,3 +78,20 @@ With an isolated home containing a historical index, request
 queued submission replay. Restart/reconnect and verify ordinary native listing,
 explicit attachment history and no additional sends. Preserve the historical file.
 Cleanup: remove only the disposable home; restore connectivity.
+
+## Recovery-only persistence compatibility
+
+Prerequisites: use disposable profile state and mocked Codex RPCs, never a real
+user home. Run `pnpm exec vitest run src/server/persistentThreadIndex.test.ts`.
+
+The fixtures seed mixed legacy list metadata plus independent pending sends,
+restart the index, reconcile returned native history and write another thread.
+Expected: legacy fields remain intact, unrelated pending tokens/text/previous IDs
+remain identical, and new records contain only recovery fields. Rename, archive,
+unarchive and delete leave stored list metadata byte-identical. A lost response
+blocks retries across restart until a new matching turn appears; an earlier
+identical turn does not confirm it. A definitive protocol rejection clears only
+its intent and permits a deliberate retry. Separate profile stores remain isolated.
+Native list pages and cursors pass through even with malformed recovery storage.
+Cleanup: fixtures remove their temporary directories automatically; no rollback
+or conversion of user state is required.

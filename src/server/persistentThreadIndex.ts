@@ -5,15 +5,13 @@ import { join } from 'node:path'
 
 type Row = Record<string, any>
 type Rpc = (method: string, params: Row) => Promise<any>
-type Entry = { thread: Row; archived: boolean; deleted: boolean; firstTurnId?: string; pending?: { token: string; text: string; previous: string[] } }
+// Legacy list metadata is tolerated on disk but never generated or updated.
+type Entry = { firstTurnId?: string; pending?: { token: string; text: string; previous: string[] } }
 const object = (v: any): Row => v && typeof v === 'object' ? v : {}
 
 // Recognize only the exact transport envelope produced by attachmentPrompt.
-export function attachmentOnlyTitle(text: string): string | null {
-  const match = /^# Files mentioned by the user:\n((?:\n## [^\n]*: [^\n]+\n)+)\n## My request for Codex:\n\n\s*$/u.exec(text)
-  if (!match) return null
-  return match[1]!.split('\n').filter((line) => line.startsWith('## '))
-    .map((line) => line.slice(3).split(': ')[0] || 'File').join(', ').slice(0, 240) || 'Files'
+function isAttachmentOnly(text: string): boolean {
+  return /^# Files mentioned by the user:\n((?:\n## [^\n]*: [^\n]+\n)+)\n## My request for Codex:\n\n\s*$/u.test(text)
 }
 function inputText(params: Row): string {
   return (params.input ?? []).filter((v: Row) => v.type === 'text').map((v: Row) => v.text).join('\n')
@@ -66,21 +64,20 @@ export class PersistentThreadIndex {
       const entry = entries[id]
       if (!entry || entry.pending?.token !== token) return
       entry.firstTurnId ||= turnId
-      entry.thread.updatedAt = Date.now() / 1000
       delete entry.pending
     })
   }
   async call(method: string, params: Row, rpc: Rpc): Promise<any> {
     const id = params.threadId
     let token: string | undefined
-    const title = method === 'turn/start' ? attachmentOnlyTitle(inputText(params)) : null
-    if (id && title && !(await this.load())[id]?.firstTurnId) {
+    const attachmentOnly = method === 'turn/start' && isAttachmentOnly(inputText(params))
+    if (id && attachmentOnly && !(await this.load())[id]?.firstTurnId) {
       // A durable intent is required before submission. Capture existing turn IDs
       // so repeated identical file submissions cannot confirm an earlier turn.
       const thread = this.started.get(id) ?? object((await rpc('thread/read', { threadId: id, includeTurns: true })).thread)
       token = randomUUID()
       await this.update((entries) => {
-        const entry = entries[id] ?? { thread: { ...thread, id, preview: thread.preview || title, turns: [] }, archived: false, deleted: false }
+        const entry = entries[id] ?? {}
         if (entry.pending) throw new Error('An attachment submission is awaiting reconciliation; reopen the thread before sending again.')
         entry.pending = { token: token!, text: inputText(params), previous: turns(thread).map((turn) => turn.id) }
         entries[id] = entry
@@ -102,25 +99,15 @@ export class PersistentThreadIndex {
     }
     if (token) this.started.delete(id)
     if (token && result?.turn?.id) await this.bestEffort(() => this.confirm(id, token!, result.turn.id))
-    if (id) await this.bestEffort(async () => {
-      const entries = await this.load()
-      if (!entries[id]) return
-      await this.update((all) => {
-        const entry = all[id]!
-        if (method === 'thread/archive') entry.archived = true
-        if (method === 'thread/unarchive') entry.archived = false
-        if (method === 'thread/delete') entry.deleted = true
-        if (method === 'thread/name/set') entry.thread.name = params.name
-        if (method === 'turn/start') entry.thread.updatedAt = Date.now() / 1000
-        const thread = object(result?.thread)
-        if (thread.id) {
-          entry.thread = { ...entry.thread, ...thread, preview: thread.preview || entry.thread.preview, turns: [] }
-          if (thread.path) entry.archived = thread.path.split(/[\\/]/u).includes('archived_sessions')
-          if (entry.pending) {
-            const accepted = turns(thread).find((turn) => !entry.pending!.previous.includes(turn.id) && hasText(turn, entry.pending!.text))
-            if (accepted) { entry.firstTurnId ||= accepted.id; delete entry.pending }
-          }
-        }
+    // Reconcile only from returned native history, never from cached list metadata.
+    const thread = object(result?.thread)
+    if (id && thread.id) await this.bestEffort(async () => {
+      if (!(await this.load())[id]?.pending) return
+      await this.update((entries) => {
+        const entry = entries[id]
+        if (!entry?.pending) return
+        const accepted = turns(thread).find((turn) => !entry.pending!.previous.includes(turn.id) && hasText(turn, entry.pending!.text))
+        if (accepted) { entry.firstTurnId ||= accepted.id; delete entry.pending }
       })
     })
     return result
