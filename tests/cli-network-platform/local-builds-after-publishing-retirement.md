@@ -2,7 +2,7 @@
 
 ## Feature/Change Name
 
-Build the private package without version metadata, falling back to `unknown` for the frontend app version.
+Build the private package and use the supported development wrapper without a worktree/version badge.
 
 ## Prerequisites
 
@@ -16,12 +16,13 @@ Build the private package without version metadata, falling back to `unknown` fo
 3. Confirm `package.json` has `"private": true` and no `version` field. Run `pnpm run typecheck` and `pnpm run build`.
 4. Run `node dist-cli/index.js --help`.
 5. Run `pnpm run test:integration:fixture`.
-6. Temporarily add a `version` field to `package.json` and repeat typecheck/build with `""`, `"   "`, and `" 0.1.87 "`. Restore the original package file afterward.
+6. Start `pnpm run dev --host 127.0.0.1 --port 4173`. Open the home page, expand Settings, and confirm there is no worktree/version badge in either light or dark theme.
+7. Edit a visible Vue template, confirm HMR applies it without a page error, then restore the edit.
 
 ## Expected Results
 
 - Frontend and CLI builds succeed and produce `dist/` and `dist-cli/`.
-- Missing, empty, or whitespace-only versions resolve to `unknown` in `import.meta.env.VITE_APP_VERSION`; `" 0.1.87 "` resolves to `0.1.87`.
+- Development startup and HMR work through `scripts/dev.cjs`; the Settings button/panel omit development metadata.
 - CLI help lists the supported options and exits successfully. The CLI is ESM, so use its public executable for the entry-point smoke check.
 - The credential-free protocol fixture passes.
 - Dependency lockfiles and runtime startup behavior remain unchanged. No registry publication is performed.
@@ -29,4 +30,4 @@ Build the private package without version metadata, falling back to `unknown` fo
 ## Rollback/Cleanup
 
 - No external state is created. Build output remains ignored by Git and can be regenerated with `pnpm run build`.
-- Remove any temporary `version` field added during verification.
+- Restore the temporary template edit and original theme. Leave any shared development server running.
