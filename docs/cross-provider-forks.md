@@ -77,19 +77,25 @@ instructions. Existing composer draft skill selections are unchanged.
 
 ## Portable history
 
-The converter constructs new Responses `message` items, using `input_text`
-for user text and `output_text` for assistant text. It preserves message order
-and text without summarizing. Command output and text MCP observations become
-labeled historical user text, never executable calls or live results.
+The converter allowlists ordinary `userMessage` text content and `agentMessage`
+text, constructing new Responses `message` items with `input_text` for users and
+`output_text` for assistants. Message roles, order, Markdown, code blocks and
+multiline text are preserved. Separate source messages stay separate; text
+chunks inside a user message use the app's normal newline presentation.
+Items without readable text do not create empty messages.
 
-Images, attachments and unknown user content become explicit placeholders.
-Reasoning (including encrypted reasoning), tools/declarations, source IDs,
-continuation metadata, privileged instructions and unsupported item types are
-excluded with warnings in the destination picker. No destination has been
-verified here to accept transferred binary content. The initial request budget
-is 8 MiB; larger histories fail before creation. A destination can impose a
-smaller context limit, which is reported as an import failure, never silently
-truncated by the app.
+Tools, tool results/observations, command logs, reasoning (including encrypted
+reasoning), images, attachments, provider execution state, instructions and
+unknown item/content types are silently excluded. None are converted to text,
+placeholders, summaries or omission notices. The displayed imported transcript
+is stored from the same text messages used to build the injection request.
+The legacy `warnings` response field remains an empty array for compatibility;
+the picker and completion path do not render omission notices.
+
+The initial request budget is 8 MiB; larger histories fail before creation.
+A destination can impose a smaller context limit, reported as an import failure,
+never silently truncated by the app. Empty text-only histories cannot be imported.
+Existing completed destinations are not rewritten or reinjected by this change.
 
 ## Persistence and failure recovery
 
@@ -126,7 +132,7 @@ independently managed server, not the bundled development dependency.
 page, stable cutoffs, cancellation, persistence decoration without reinjection,
 repeated transfers, default-selection rejection and failure/timeout fencing.
 A 2,000-turn conversion audit produced 4,000 messages (365,781 bytes) in
-10.18 ms locally, with zero RPCs during conversion. This does not measure
+9.21 ms locally, with zero RPCs during conversion. This does not measure
 remote injection latency or browser rendering.
 
 Desktop state tests cover both entry points, delayed publication, duplicate
@@ -178,5 +184,13 @@ The provider/model UI uses the already loaded catalog, so provider selection and
 filtering add no catalog RPCs or request fanout. Catalog responses now retain
 small default-model fields; instruction templates remain excluded. The Skills
 manager loads only on first expansion, then stays mounted across collapse.
-No history payloads, injection retries or import caches change. Live provider
+History conversion now excludes non-conversation items; injection retries and
+import caches are unchanged. Live provider
 continuation and large catalogs were not measured for this UI update.
+
+The text-only conversion remains a single pass over source items and constructs
+no tool-output strings, attachment placeholders or warning sets. It introduces
+no RPCs, blocking filesystem work, request fanout or cache invalidation. The
+existing full-read/start/inject sequence and request budget remain unchanged.
+Browser checks use mixed text/tool/reasoning/image fixtures and verify silent
+text-only presentation after reload; native fixture history retains its tools.

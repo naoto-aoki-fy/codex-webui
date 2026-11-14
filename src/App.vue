@@ -334,7 +334,6 @@
           <SkillsHub v-if="transferSkillsMounted" @skills-changed="onSkillsChanged" />
         </fieldset>
       </section>
-      <p v-for="warning in transferPicker.warnings" :key="warning">{{ warning }}</p>
       <p v-if="transferPicker.failure" role="alert">{{ transferPicker.failure }}</p>
       <button type="button" :disabled="transferPicker.pending" @click="cancelTransferPicker">Cancel</button>
       <button type="button" :disabled="!canConfirmFork" @click="confirmTransferPicker">{{ transferPicker.pending ? 'Importing history…' : 'Create conversation' }}</button>
@@ -986,7 +985,7 @@ function onArchiveThread(threadId: string): void {
   void archiveThreadById(threadId)
 }
 
-const transferPicker = ref<null | { sourceId: string; turnIndex?: number; turnId?: string; id: string; warnings: string[]; loading: boolean; pending: boolean; failure: string }>(null)
+const transferPicker = ref<null | { sourceId: string; turnIndex?: number; turnId?: string; id: string; loading: boolean; pending: boolean; failure: string }>(null)
 const nativeForkPending = ref(false)
 const nativeForkFailure = ref('')
 const isForkOperationPending = computed(() => nativeForkPending.value || transferPicker.value !== null)
@@ -1012,7 +1011,7 @@ const transferModel = computed(() => {
 async function openTransferPicker(sourceId: string, turnIndex?: number): Promise<void> {
   if (isForkOperationPending.value) return
   const turnId = selectedThreadId.value === sourceId ? messages.value.find(message => message.role === 'assistant' && message.turnIndex === turnIndex)?.turnId : undefined
-  transferPicker.value = { sourceId, turnIndex, turnId, id: '', warnings: [], loading: true, pending: false, failure: '' }
+  transferPicker.value = { sourceId, turnIndex, turnId, id: '', loading: true, pending: false, failure: '' }
   const picker = transferPicker.value
   transferProvider.value = ''
   transferSkillsMounted.value = false

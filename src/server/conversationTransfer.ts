@@ -12,36 +12,24 @@ export function portableItems(messages: PortableMessage[]): PortableItem[] {
 /** Construct fresh text-only items. No source item IDs, instructions or tool calls cross this boundary. */
 export function convertTransferHistory(turns: unknown[], source: string): { messages: PortableMessage[]; warnings: string[] } {
   const messages: PortableMessage[] = []
-  const warnings = new Set<string>()
   for (const value of turns) {
     const turn = record(value)
     if (!Array.isArray(turn.items)) throw new Error('Incomplete source items; cannot transfer safely.')
     for (const raw of turn.items) {
       const item = record(raw)
-      if (item.type === 'userMessage') {
-        if (!Array.isArray(item.content)) throw new Error('Invalid source user content')
-        const parts = item.content.map((value: unknown) => {
+      if (item.type === 'userMessage' && Array.isArray(item.content)) {
+        const text = item.content.flatMap((value: unknown) => {
           const content = record(value)
-          if (content.type === 'text' && typeof content.text === 'string') return content.text
-          warnings.add('Images, attachments and non-text user content are represented by placeholders; their contents were not imported.')
-          return `[Historical ${String(content.type || 'attachment')} omitted]`
-        })
-        messages.push({ role: 'user', text: parts.join('\n'), source })
-      } else if (item.type === 'agentMessage' && typeof item.text === 'string') {
+          return content.type === 'text' && typeof content.text === 'string' && content.text.length ? [content.text] : []
+        }).join('\n')
+        if (text.trim()) messages.push({ role: 'user', text, source })
+      } else if (item.type === 'agentMessage' && typeof item.text === 'string' && item.text.trim()) {
         messages.push({ role: 'assistant', text: item.text, source: typeof turn.generationMetadata?.model === 'string' ? `${source}; response model ${turn.generationMetadata.model}` : source })
-      } else if (item.type === 'commandExecution' && typeof item.aggregatedOutput === 'string') {
-        messages.push({ role: 'user', text: `[Historical tool observation: ${String(item.command || 'command')}]\n${item.aggregatedOutput}`, source })
-      } else if (item.type === 'mcpToolCall') {
-        const content = record(item.result).content
-        const texts = Array.isArray(content) ? content.filter(v => record(v).type === 'text' && typeof record(v).text === 'string').map(v => record(v).text) : []
-        if (texts.length) messages.push({ role: 'user', text: `[Historical tool observation: ${String(item.server)} / ${String(item.tool)}]\n${texts.join('\n')}`, source })
-        warnings.add('Tool calls are historical text only; non-text tool output and execution state were omitted.')
-      } else {
-        warnings.add(`Excluded historical item: ${String(item.type || 'unknown')} (instructions, reasoning and execution state are not portable).`)
       }
     }
   }
-  return { messages, warnings: [...warnings] }
+  // Retain the response shape for older clients; omissions never create notices.
+  return { messages, warnings: [] }
 }
 
 type Transfer = { sourceId: string; cwd: string; messages: PortableMessage[]; warnings: string[]; stage: string; destinationId?: string; model?: string; modelProvider?: string; failure?: string }
@@ -69,8 +57,10 @@ export function createConversationTransfers(rpc: Rpc) {
       if (imported && imported.stage !== 'ready') throw new Error('The source is an incomplete transfer; inspect it before continuing.')
       if (cutoff !== undefined && cutoff < 0 && (!imported || -cutoff > imported.messages.length || imported.messages[-cutoff - 1]?.role !== 'assistant')) throw new Error('Imported response cutoff is no longer available.')
       const prefix = cutoff !== undefined && cutoff < 0 ? imported!.messages.slice(0, -cutoff) : imported?.messages || []
-      const messages = [...prefix, ...converted.messages]
-      const warnings = [...new Set([...(imported?.warnings || []), ...converted.warnings])]
+      const retainedPrefix = prefix.filter(message => (message.role === 'user' || message.role === 'assistant') && typeof message.text === 'string' && message.text.trim())
+        .map(({ role, text, source }) => ({ role, text, source }))
+      const messages = [...retainedPrefix, ...converted.messages]
+      const warnings: string[] = []
       // Explicit bounded request, never truncate. Destination context limits can be smaller.
       if (Buffer.byteLength(JSON.stringify(portableItems(messages))) > 8 * 1024 * 1024) throw new Error('History exceeds the 8 MiB transfer request limit. No thread was created.')
       if (!messages.length) throw new Error('There is no portable conversation history to import. No thread was created.')
@@ -82,7 +72,7 @@ export function createConversationTransfers(rpc: Rpc) {
     async status(id: string) {
       const transfer = (await transfers())[id]
       if (!transfer) throw new Error('Transfer record not found')
-      return { stage: transfer.stage, threadId: transfer.destinationId, model: transfer.model, modelProvider: transfer.modelProvider, warnings: transfer.warnings, failure: transfer.failure }
+      return { stage: transfer.stage, threadId: transfer.destinationId, model: transfer.model, modelProvider: transfer.modelProvider, warnings: [], failure: transfer.failure }
     },
     async cancel(id: string) {
       await updateCodexGlobalState(state => { const rows = state[KEY] as Record<string, Transfer> || {}; if (rows[id]?.stage === 'prepared') delete rows[id] })
@@ -113,7 +103,7 @@ export function createConversationTransfers(rpc: Rpc) {
         await rpc('thread/inject_items', { threadId: transfer.destinationId, items: portableItems(transfer.messages) })
         transfer.stage = 'ready'
         await save(id, transfer)
-        return { threadId: transfer.destinationId, model, modelProvider, warnings: transfer.warnings }
+        return { threadId: transfer.destinationId, model, modelProvider, warnings: [] }
       } catch (error) {
         if (transfer && claimed) {
           transfer.failure = String(error)

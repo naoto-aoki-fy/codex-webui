@@ -2349,6 +2349,15 @@ describe('conversation model and fresh fork provider selection', () => {
     expect(gateway.startThreadTurn.mock.calls[0]?.[3]).toBe(key('Q', 'C'))
     expect(gateway.configureFreshFork).not.toHaveBeenCalled()
   })
+  it('does not surface stale omission notices returned by an older backend', async () => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    gateway.createConversationTransfer.mockResolvedValueOnce({ threadId: 'text-copy', model: 'A', modelProvider: 'P', warnings: ['Legacy omission notice'] })
+    expect(await state.forkThreadById(thread.id, 'snapshot', key('P', 'A'))).toBe('text-copy')
+    // Preserve real failures from the workspace fixture instead of replacing them with omission notices.
+    expect(state.error.value).toBe('no workspace roots')
+  })
   it('allows Portable Transfer to the same provider/model without invoking native fork', async () => {
     setupCatalog()
     const state = createState()
