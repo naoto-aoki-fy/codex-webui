@@ -61,6 +61,7 @@
 
           <p v-if="threadSearchError" role="alert">{{ threadSearchError }}</p>
           <SidebarThreadTree :groups="sidebarSearchGroups" :project-display-name-by-id="projectDisplayNameById"
+            :removable-project-ids="removableProjectIds"
             :active-project-name="activeProjectName"
             v-if="!isSidebarCollapsed"
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
@@ -707,6 +708,8 @@ function getFolderOptionLabel(path: string, fallbackLabel = ''): string {
   ]
   return hasDuplicateFolderLeaf(normalizedPath, knownPaths) ? normalizedPath : leafName
 }
+
+const removableProjectIds = computed(() => workspaceRootsState.value?.nativeProjects?.map(project => project.id) ?? [])
 
 function getOrderedWorkspaceRootOptions(): string[] {
   const savedRoots = new Set(workspaceRootOptionsState.value.order)

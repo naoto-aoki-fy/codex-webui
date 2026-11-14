@@ -171,7 +171,7 @@
             </span>
             <template #right>
               <div class="project-hover-controls">
-                <div :ref="(el) => setProjectMenuWrapRef(group.projectName, el)" class="project-menu-wrap">
+                <div v-if="canRemoveProject(group.projectName)" :ref="(el) => setProjectMenuWrapRef(group.projectName, el)" class="project-menu-wrap">
                   <button
                     class="project-menu-trigger"
                     type="button"
@@ -187,17 +187,13 @@
                     :data-open-direction="projectMenuDirectionById[group.projectName] ?? 'down'"
                     @click.stop
                   >
-                    <template>
-
-                      <button
-                        class="project-menu-item project-menu-item-danger"
-                        type="button"
-                        @click="onRemoveProject(group.projectName)"
-                      >
-                        Remove
-                      </button>
-                    </template>
-
+                    <button
+                      class="project-menu-item project-menu-item-danger"
+                      type="button"
+                      @click="onRemoveProject(group.projectName)"
+                    >
+                      Remove
+                    </button>
                   </div>
                 </div>
 
@@ -370,6 +366,7 @@ const router = useRouter()
 const props = defineProps<{
   isForkDisabled?: boolean
   groups: UiProjectGroup[]
+  removableProjectIds?: string[]
   projectDisplayNameById: Record<string, string>
   selectedThreadId: string
   activeProjectName: string | null
@@ -926,8 +923,14 @@ function getProjectVisibleName(group: UiProjectGroup): string {
   return parentLeafName ? `${leafName} ${parentLeafName}` : leafName
 }
 
+const removableProjectIdSet = computed(() => new Set(props.removableProjectIds ?? []))
+
+function canRemoveProject(projectName: string): boolean {
+  return removableProjectIdSet.value.has(projectName)
+}
+
 function isProjectMenuOpen(projectName: string): boolean {
-  return openProjectMenuId.value === projectName
+  return canRemoveProject(projectName) && openProjectMenuId.value === projectName
 }
 
 function closeProjectMenu(): void {
@@ -955,6 +958,7 @@ function scheduleProjectMenuDirection(projectName: string): void {
 }
 
 function toggleProjectMenu(projectName: string): void {
+  if (!canRemoveProject(projectName)) return
   if (openProjectMenuId.value === projectName) {
     closeProjectMenu()
     return
@@ -967,6 +971,7 @@ function toggleProjectMenu(projectName: string): void {
 }
 
 function openProjectContextMenu(projectName: string): void {
+  if (!canRemoveProject(projectName)) return
   closeThreadMenu()
   isOrganizeMenuOpen.value = false
   openProjectMenuId.value = projectName
@@ -974,6 +979,7 @@ function openProjectContextMenu(projectName: string): void {
 }
 
 function onRemoveProject(projectName: string): void {
+  if (!canRemoveProject(projectName)) return
   emit('remove-project', projectName)
   closeProjectMenu()
 }
