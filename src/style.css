@@ -1388,3 +1388,8 @@
 .composer-dropdown-option:disabled { cursor: not-allowed; opacity: 0.5; }
 
 body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
+
+/* Upgrade guidance includes a full commit ID that must fit narrow sidebars. */
+.thread-tree-action-error {
+  overflow-wrap: anywhere;
+}

@@ -1,5 +1,6 @@
 <template>
   <section class="thread-tree-root">
+    <p v-if="pinStateError" class="thread-tree-action-error" role="alert">{{ pinStateError }}</p>
     <section v-if="pinnedThreads.length > 0" class="pinned-section">
       <SidebarMenuRow
         as="button"
@@ -585,28 +586,25 @@ watch([pinnedThreadIds, threadById, () => props.isLoading], () => {
   void hydrateMissingPinnedThreads()
 })
 
+const pinStateError = ref('')
+async function refreshPinnedThreadState(): Promise<void> {
+  try {
+    const { threadIds } = await getPinnedThreadState()
+    pinnedThreadIds.value = [...new Set(threadIds.map(id => id.trim()).filter(Boolean))]
+    pinStateError.value = ''
+    hasLoadedPinnedThreadState = true
+    void hydrateMissingPinnedThreads()
+  } catch (error) {
+    pinStateError.value = error instanceof Error ? error.message : 'Failed to load native pins'
+  }
+}
 const unsubscribeSections = subscribeCodexNotifications(notification => {
   if (notification.method === 'thread/section/changed' || notification.method === 'app-server/reconnected') {
-    void getPinnedThreadState().then(state => { pinnedThreadIds.value = state.threadIds })
+    void refreshPinnedThreadState()
   }
 })
 onUnmounted(unsubscribeSections)
-
-onMounted(async () => {
-  const { threadIds } = await getPinnedThreadState()
-  const normalized = Array.isArray(threadIds)
-    ? threadIds
-      .filter((item): item is string => typeof item === 'string')
-      .map((item) => item.trim())
-      .filter((item, index, rows) => item.length > 0 && rows.indexOf(item) === index)
-    : []
-
-  if (normalized.length > 0) {
-    pinnedThreadIds.value = normalized
-  }
-  hasLoadedPinnedThreadState = true
-  void hydrateMissingPinnedThreads()
-})
+onMounted(refreshPinnedThreadState)
 
 const threadProjectNameById = computed(() => {
   const map = new Map<string, string>()
@@ -710,6 +708,7 @@ function isPinned(threadId: string): boolean {
 }
 
 async function togglePin(threadId: string): Promise<void> {
+  if (pinStateError.value) return
   try {
     const pinned = !isPinned(threadId)
     await setThreadPinned(threadId, pinned, pinnedThreadIds.value[0])
