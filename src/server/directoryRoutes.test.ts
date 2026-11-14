@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
-import { createCodexBridgeMiddleware } from './codexAppServerBridge'
+import { AppServerClient, createCodexBridgeMiddleware } from './codexAppServerBridge'
 let home: string
 let previous: unknown
 const scope = globalThis as typeof globalThis & { __codexRemoteSharedBridge__?: unknown }
@@ -127,6 +127,7 @@ it('disposes replaced clients and never recovers persisted prompts across cold b
   const contents = JSON.stringify({ 'thread-queue-state': { example: [{ id: 'legacy', text: 'Never execute' }] }, unrelated: true })
   await writeFile(join(home, '.codex-global-state.json'), contents)
   const oldRpc = vi.fn()
+  const activeRpc = vi.spyOn(AppServerClient.prototype, 'rpc').mockResolvedValue({})
   const dispose = vi.fn()
   scope.__codexRemoteSharedBridge__ = {
     version: 'project-history-api-v1', appServer: { rpc: oldRpc, dispose },
@@ -136,6 +137,7 @@ it('disposes replaced clients and never recovers persisted prompts across cold b
     for (let restart = 0; restart < 2; restart++) {
       const middleware = createCodexBridgeMiddleware()
       await vi.advanceTimersByTimeAsync(15000)
+      expect(activeRpc).not.toHaveBeenCalled()
       expect(await readFile(join(home, '.codex-global-state.json'), 'utf8')).toBe(contents)
       middleware.dispose()
       delete scope.__codexRemoteSharedBridge__
@@ -143,6 +145,7 @@ it('disposes replaced clients and never recovers persisted prompts across cold b
     expect(dispose).toHaveBeenCalledOnce()
     expect(oldRpc).not.toHaveBeenCalled()
   } finally {
+    activeRpc.mockRestore()
     vi.useRealTimers()
   }
 })

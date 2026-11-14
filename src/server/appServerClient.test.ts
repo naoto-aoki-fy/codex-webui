@@ -119,10 +119,24 @@ it('uses the injected journal without recording turn metadata without creating o
   } finally { client.dispose() }
 })
 
+it('retains recovery snapshots beyond the retired full-history cache TTL', () => {
+  const client = new AppServerClient()
+  const now = vi.spyOn(Date, 'now').mockReturnValue(1000)
+  const snapshot = { thread: { id: 'retained', turns: [] } }
+  try {
+    expect(client.getLastThreadReadSnapshot('retained')).toBeNull()
+    client.storeThreadReadSnapshot('retained', snapshot)
+    now.mockReturnValue(31_000)
+    expect(client.getLastThreadReadSnapshot('retained')).toBe(snapshot)
+  } finally { now.mockRestore(); client.dispose() }
+})
+
 it('discards fallback snapshots and buffered events on thread/reverted', () => {
   const client = new AppServerClient()
   try {
     client.storeThreadReadSnapshot('reverted', { thread: { id: 'reverted', turns: ['deleted'] } })
+    ;(client as any).emitNotification({ method: 'item/completed', params: { threadId: 'reverted', turnId: 't1', item: { id: 'cmd', type: 'commandExecution' } } })
+    expect(client.getStreamEvents('reverted', 100)).toHaveLength(1)
     const epoch = client.getSnapshotEpoch()
     ;(client as any).emitNotification({ method: 'thread/reverted', params: { threadId: 'reverted' } })
     expect(client.getSnapshotEpoch()).not.toBe(epoch)
