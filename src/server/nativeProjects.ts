@@ -27,11 +27,11 @@ export class NativeProjects {
     let cursor: string | null = null
     do {
       const result = await this.rpc(method, { ...params, limit: 100, cursor })
-      if (!Array.isArray(result?.data) || !(result.nextCursor === null || typeof result.nextCursor === 'string')) throw new Error(`Incompatible ${method} pagination; project migration stopped`)
+      if (!Array.isArray(result?.data) || !(result.nextCursor === null || typeof result.nextCursor === 'string')) throw new Error(`Incompatible ${method} pagination; native Project loading stopped`)
       rows.push(...result.data)
-      if (rows.length > 100_000) throw new Error('Project migration exceeds 100,000 rows; no partial snapshot is accepted')
+      if (rows.length > 100_000) throw new Error('Native Project listing exceeds 100,000 rows; no partial snapshot is accepted')
       cursor = result.nextCursor
-      if (cursor && seen.has(cursor)) throw new Error(`${method} repeated its cursor; project migration stopped`)
+      if (cursor && seen.has(cursor)) throw new Error(`${method} repeated its cursor; native Project loading stopped`)
       if (cursor) seen.add(cursor)
     } while (cursor)
     return rows

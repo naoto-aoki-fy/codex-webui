@@ -160,3 +160,16 @@ describe('provider-scoped model selection', () => {
     expect(providerModelOptions(['legacy', modelSelectionKey('Q', 'shared')], 'P', catalog)).toEqual([])
   })
 })
+
+it('uses only provider-scoped native service tiers for Fast availability', async () => {
+  const { fastModeAvailability, findReasoningModel } = await import('./modelCapabilities')
+  const catalog = [
+    { id: 'arbitrary', modelProvider: 'a', serviceTiers: [{ id: 'fast' }] },
+    { id: 'arbitrary', modelProvider: 'b', serviceTiers: [] },
+    { id: 'gpt-5.5', modelProvider: 'b' },
+  ]
+  expect(fastModeAvailability(findReasoningModel(catalog, modelSelectionKey('a', 'arbitrary')))).toBe('supported')
+  expect(fastModeAvailability(findReasoningModel(catalog, modelSelectionKey('b', 'arbitrary')))).toBe('unsupported')
+  expect(fastModeAvailability(findReasoningModel(catalog, modelSelectionKey('b', 'gpt-5.5')))).toBe('unknown')
+  expect(fastModeAvailability(null)).toBe('unknown')
+})

@@ -224,9 +224,6 @@
 
               <div class="composer-container" :class="{ 'is-disabled': !newThreadCwd.trim() }"
                 :inert="!newThreadCwd.trim()" :aria-disabled="!newThreadCwd.trim()">
-                <div v-if="codexCliMissingError" class="composer-runtime-error" role="alert">
-                  <span>{{ t(codexCliMissingError) }}</span>
-                </div>
                 <ThreadComposer ref="homeThreadComposerRef" :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
                   :disabled="!newThreadCwd.trim()"
@@ -267,9 +264,6 @@
               </div>
 
               <div class="composer-container">
-                <div v-if="codexCliMissingError" class="composer-runtime-error" role="alert">
-                  <span>{{ t(codexCliMissingError) }}</span>
-                </div>
                 <ThreadGoalPanel
                   ref="threadGoalPanelRef"
                   :thread-id="selectedThreadId"
@@ -420,7 +414,6 @@ const {
   selectedCollaborationMode,
   selectedModelId,
   selectedSpeedMode,
-  codexCliMissingError,
   installedSkills,
   accountRateLimitSnapshots,
   messages,

@@ -20,7 +20,7 @@ import type {
   UiProjectGroup,
   UiThread,
 } from '../../types/codex'
-import { normalizePathForComparison, normalizePathForUi, toProjectName } from '../../pathUtils.js'
+import { normalizePathForComparison, normalizePathForUi } from '../../pathUtils.js'
 import { readGenerationMetadata } from '../../turnGenerationMetadata.js'
 
 function toIso(seconds: number): string {
@@ -481,7 +481,7 @@ function toUiThread(summary: Thread): UiThread {
   return {
     id: summary.id,
     title: toThreadTitle(summary),
-    projectName: typeof summary.projectId === 'string' ? summary.projectId : toProjectName(cwd),
+    projectName: typeof summary.projectId === 'string' && summary.projectId ? summary.projectId : '__codexapp_unassigned__',
     ...(Object.prototype.hasOwnProperty.call(summary, 'projectId') ? { projectId: summary.projectId } : {}),
     cwd,
     hasWorktree,

@@ -14,7 +14,7 @@ Fresh unauthenticated install mobile home screen rate-limit handling.
 2. A clean container has this project installed under `/workspace`.
 3. `@openai/codex` is installed in the container.
 4. Container dev server is running with a fresh Codex home:
-   `CODEX_HOME=/tmp/codex-home CODEXUI_CODEX_COMMAND=$(command -v codex) pnpm run dev --host 0.0.0.0 --port 4173`
+   `CODEX_HOME=/tmp/codex-home CODEXUI_APP_SERVER_URL=ws://127.0.0.1:4500 pnpm run dev --host 0.0.0.0 --port 4173`
 5. The container port is mapped to the host, for example `127.0.0.1:4174 -> 4173`.
 
 #### Steps
