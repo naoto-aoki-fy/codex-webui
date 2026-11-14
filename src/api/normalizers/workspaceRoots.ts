@@ -1,7 +1,7 @@
 import { normalizePathForUi } from '../../pathUtils.js'
 
 export type WorkspaceRootsState = {
-  projectMode?: 'native' | 'legacy-readonly'
+  projectMode?: 'native'
   projectError?: string
   nativeProjects?: import('../../server/protocol/0.167.2/v2/Project.js').Project[]
   order: string[]
@@ -44,7 +44,7 @@ export function normalizeWorkspaceRootsState(payload: unknown): WorkspaceRootsSt
   }
 
   return {
-    ...(record.projectMode === 'native' || record.projectMode === 'legacy-readonly' ? { projectMode: record.projectMode } : {}),
+    ...(record.projectMode === 'native' ? { projectMode: record.projectMode } : {}),
     ...(typeof record.projectError === 'string' ? { projectError: record.projectError } : {}),
     ...(Array.isArray(record.nativeProjects) ? { nativeProjects: record.nativeProjects as NonNullable<WorkspaceRootsState['nativeProjects']> } : {}),
     order: normalizeArray(record.order).map((value) => normalizePathForUi(value)),

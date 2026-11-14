@@ -38,7 +38,7 @@ it('uses real upstream turn pagination and keeps exact indices without full item
   expect(f.bytes).toBeLessThan(Buffer.byteLength(JSON.stringify({ thread: { turns: f.turns } })) / 10)
 })
 
-it('falls back only after explicit method-not-found and resets that diagnosis on reconnect', async () => {
+it('reports missing native pagination without reading full history, including after reconnect', async () => {
   const f = fixture(20)
   const original = f.rpc.getMockImplementation()!
   f.rpc.mockImplementation(async (method, params) => {
@@ -46,12 +46,12 @@ it('falls back only after explicit method-not-found and resets that diagnosis on
     return original(method, params)
   })
   const pager = new RemoteHistoryPager(f.client)
-  expect(await pager.read('thread')).toMatchObject({ startTurnIndex: 10 })
-  await pager.read('thread', 'turn-10')
-  expect(f.rpc.mock.calls.filter(([m]) => m === 'thread/turns/list')).toHaveLength(1)
+  await expect(pager.read('thread')).rejects.toThrow('Upgrade Codex')
+  await expect(pager.read('thread', 'turn-10')).rejects.toThrow('Upgrade Codex')
+  expect(f.legacy).not.toHaveBeenCalled()
   f.reconnect()
-  await pager.read('thread')
-  expect(f.rpc.mock.calls.filter(([m]) => m === 'thread/turns/list')).toHaveLength(2)
+  await expect(pager.read('thread')).rejects.toThrow('Upgrade Codex')
+  expect(f.legacy).not.toHaveBeenCalled()
 })
 
 it.each(['Permission denied', 'App-server disconnected', 'Timeout'])('does not classify %s as unsupported or silently fetch full history', async message => {

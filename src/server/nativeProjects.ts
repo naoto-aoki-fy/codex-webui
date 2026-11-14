@@ -1,21 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState.js'
+import { readCodexGlobalState } from './codexGlobalState.js'
 import { workspaceRootsFromPayload, type WorkspaceRootsState } from './workspaceRootsStore.js'
 import type { Project } from './protocol/0.167.2/v2/Project.js'
-import type { ProjectImportParams } from './protocol/0.167.2/v2/ProjectImportParams.js'
-import { normalizeThreadGroupsV2 } from '../api/normalizers/v2.js'
-import { filterGroupsByWorkspaceRoots, getWorkspaceProjectId } from '../utils/legacyDesktopProjectGroups.js'
 import { toProjectName } from '../pathUtils.js'
 
 const KEY = 'codexapp-native-project-migrations-v1'
 type Rpc = (method: string, params: any) => Promise<any>
-type Source = { key: string; name: string; roots: Array<{ path: string }>; threads: string[] }
-type Journal = { sources: Source[]; destinations?: Record<string, string>; completed?: boolean }
-type Journals = Record<string, Journal>
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 
-/** The legacy registry is a frozen migration input, never a second writable registry.
- * Idempotency keys and source snapshots survive ambiguous replies and restarts. */
+/** Native projects are authoritative. Historical state is inspected only to
+ * reject upgrades that have not completed the pre-upgrade migration. */
 export class NativeProjects {
   private pending?: Promise<WorkspaceRootsState>
   private queue: Promise<unknown> = Promise.resolve()
@@ -58,107 +52,14 @@ export class NativeProjects {
     let projects: Project[]
     try { projects = await this.list() } catch (error: any) {
       if (error.code !== -32601) throw error
-      const state = await readCodexGlobalState()
-      const journals = state[KEY] as Journals | undefined
-      // Never switch back to legacy if this server has accepted any migration work.
-      if (journals?.[hash(this.identity())]) throw new Error('Native Project API became unavailable after migration began. Restore server capability; legacy writes are disabled.')
-      return { ...workspaceRootsFromPayload(state), projectMode: 'legacy-readonly', projectError: 'Native project/list is unsupported. Legacy projects are read-only; upgrade the App Server to manage projects.' }
+      throw Object.assign(new Error('Native Projects require project/list. Upgrade the connected Codex server; legacy runtime support has ended.'), { cause: error })
     }
-    const namespace = hash(this.identity())
     const state = await readCodexGlobalState()
-    let journal = (state[KEY] as Journals | undefined)?.[namespace]
-    if (!journal) {
-      const legacy = workspaceRootsFromPayload(state)
-      const keys = [...new Set([...legacy.projectOrder, ...legacy.order, ...legacy.remoteProjects.map(p => p.id)])]
-        .filter(key => legacy.order.includes(key) || legacy.remoteProjects.some(p => p.id === key))
-      let sources: Source[] = []
-      if (keys.length) {
-        // This is the only path-membership inference: capture the old UI's exact
-        // grouping once, including archived members. All later grouping uses IDs.
-        const threads = [...await this.pages('thread/list', { archived: false }), ...await this.pages('thread/list', { archived: true })]
-        // Injected-only Portable imports may be absent from native thread/list.
-        // Read their native summaries once during migration, without touching the
-        // durable transcript receipts or introducing a permanent custom list index.
-        const listed = new Set(threads.map(t => t.id))
-        const receipts = state['conversation-transfers-v1']
-        const importedIds = [...new Set(Object.values(receipts && typeof receipts === 'object' ? receipts : {})
-          .flatMap((value: any) => typeof value?.destinationId === 'string' && value.destinationId && !listed.has(value.destinationId) ? [value.destinationId as string] : []))]
-        if (importedIds.length > 10_000) throw new Error('More than 10,000 imported conversation receipts; migrate in smaller batches')
-        for (const threadId of importedIds) {
-          const thread = (await this.rpc('thread/read', { threadId, includeTurns: false }))?.thread
-          if (thread?.id !== threadId) throw new Error(`Cannot migrate imported conversation ${threadId}: native summary unavailable`)
-          threads.push(thread)
-        }
-        if (threads.some(t => !Object.prototype.hasOwnProperty.call(t, 'projectId'))) throw new Error('thread/list lacks native projectId; cannot preserve associations during migration')
-        const groups = filterGroupsByWorkspaceRoots(normalizeThreadGroupsV2({ data: threads.map(t => ({ ...t, projectId: undefined })), nextCursor: null }), legacy)
-        const members = new Map<string, string[]>()
-        for (const group of groups) {
-          const key = getWorkspaceProjectId(legacy, group.projectName, groups)
-          if (key) members.set(key, [...(members.get(key) ?? []), ...group.threads.map(t => t.id)])
-        }
-        sources = keys.map(key => {
-          const remote = legacy.remoteProjects.find(p => p.id === key)
-          const root = remote?.remotePath || key
-          return { key, name: legacy.labels[key] || remote?.label || toProjectName(root) || key, roots: [{ path: root }],
-            threads: members.get(key) ?? [] }
-        })
-        // Existing native identity is never overwritten by historical path inference.
-        // Adopt an exact native project; ambiguous candidates require reconciliation.
-        const threadsById = new Map(threads.map(t => [t.id, t]))
-        for (const source of sources) {
-          const candidates = projects.filter(p => p.name === source.name && JSON.stringify(p.roots) === JSON.stringify(source.roots))
-          if (candidates.length > 1) throw new Error(`Multiple native projects match legacy project ${source.key}; reconcile identities before migration`)
-          const conflict = source.threads.map(id => threadsById.get(id)).find(t => t?.projectId && t.projectId !== candidates[0]?.id)
-          if (conflict) throw new Error(`Legacy project ${source.key} conflicts with thread ${conflict.id}'s native project ${conflict.projectId}; resolve the association before migration`)
-        }
-      }
-      journal = await updateCodexGlobalState(state => {
-        const all = state[KEY] as Journals || {}
-        all[namespace] ??= { sources }
-        state[KEY] = all
-        return all[namespace]!
-      })
-    }
-    if (!journal.completed) {
-      const migrated: string[] = []
-      for (const source of journal.sources) {
-        const migrationKey = hash(`${namespace}:${source.key}`)
-        const tagged = projects.find(p => p.metadata.codexappMigrationKey === migrationKey)
-        const exact = projects.filter(p => p.name === source.name && JSON.stringify(p.roots) === JSON.stringify(source.roots))
-        if (!tagged && exact.length > 1) throw new Error(`Ambiguous native identity for ${source.key}; migration stopped`)
-        const savedId = journal.destinations?.[source.key]
-        let project = savedId ? this.project((await this.rpc('project/read', { projectId: savedId })).project) : tagged || exact[0]
-        if (!project) {
-          const params: ProjectImportParams = { name: source.name, roots: source.roots, threads: [],
-            idempotencyKey: migrationKey, metadata: { codexappMigrationKey: migrationKey } }
-          project = this.project((await this.rpc('project/import', params)).project)
-        }
-        await updateCodexGlobalState(state => {
-          const receipt = (state[KEY] as Journals)[namespace]!
-          receipt.destinations ??= {}
-          receipt.destinations[source.key] = project!.id
-        })
-        const verified = this.project((await this.rpc('project/read', { projectId: project.id })).project)
-        if (verified.name !== source.name || JSON.stringify(verified.roots) !== JSON.stringify(source.roots)) throw new Error('Native project/import did not preserve name/roots; retry after restoring server semantics')
-        for (const threadId of source.threads) {
-          const thread = (await this.rpc('thread/read', { threadId, includeTurns: false }))?.thread
-          if (thread?.projectId === project.id) continue
-          if (thread?.projectId) throw new Error(`Thread ${threadId} changed native project during migration; association was not overwritten`)
-          const updated = (await this.rpc('thread/metadata/update', { threadId, projectId: project.id }))?.thread
-          if (updated?.id !== threadId || updated.projectId !== project.id) throw new Error('thread/metadata/update did not confirm project association')
-        }
-        migrated.push(project.id)
-        if (!projects.some(p => p.id === project!.id)) projects.push(project)
-      }
-      // Prefix the migrated order, preserving unrelated native projects' order.
-      let beforeProjectId = projects.find(p => !migrated.includes(p.id))?.id ?? null
-      for (const projectId of [...migrated].reverse()) {
-        await this.rpc('project/move', { projectId, beforeProjectId })
-        beforeProjectId = projectId
-      }
-      projects = await this.list()
-      if (migrated.some((id, index) => projects[index]?.id !== id)) throw new Error('project/move did not preserve legacy ordering; migration can be retried')
-      await updateCodexGlobalState(state => { ((state[KEY] as Journals)[namespace]!).completed = true })
+    const legacy = workspaceRootsFromPayload(state)
+    const journals = state[KEY] as Record<string, { completed?: boolean }> | undefined
+    const journal = journals?.[hash(this.identity())]
+    if ((legacy.order.length || legacy.remoteProjects.length || journal) && journal?.completed !== true) {
+      throw new Error('Legacy Project migration is incomplete for this connection. Complete migration using the pre-cleanup WebUI before upgrading; see docs/native-project-migration.md. Legacy state has not been changed.')
     }
     return { order: [...new Set(projects.flatMap(p => p.roots.map(r => r.path)))], active: [], labels: {},
       projectOrder: projects.map(p => p.id), remoteProjects: [], nativeProjects: projects, projectMode: 'native' }
@@ -172,7 +73,7 @@ export class NativeProjects {
   }
 
   async register(path: string): Promise<{ path: string; projectId: string }> {
-    // Resolve migration before entering the write queue (read itself waits on it).
+    // Resolve the upgrade guard before entering the write queue.
     const state = await this.read()
     if (!state.nativeProjects) throw new Error(state.projectError)
     return this.mutate(async () => {
