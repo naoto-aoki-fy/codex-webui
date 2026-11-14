@@ -103,13 +103,10 @@
               <GeneralPreferencesSettings
                 :send-with-enter="sendWithEnter"
                 :dark-mode="darkMode"
-                :ui-language="uiLanguage"
-                :ui-language-options="uiLanguageOptions"
                 :chat-width-label="chatWidthLabel"
                 :help="SETTINGS_HELP"
                 @toggle-send-with-enter="toggleSendWithEnter"
                 @cycle-dark-mode="cycleDarkMode"
-                @update:ui-language="setUiLanguage"
                 @cycle-chat-width="cycleChatWidth"
               />
               <div
@@ -375,7 +372,7 @@ import { copyTextToClipboard } from './utils/clipboard'
 
 const ThreadConversation = defineAsyncComponent(() => import('./components/content/ThreadConversation.vue'))
 const DirectoryHub = defineAsyncComponent(() => import('./components/content/DirectoryHub.vue'))
-const { t, uiLanguage, uiLanguageOptions, setUiLanguage } = useUiLanguage()
+const { t } = useUiLanguage()
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const worktreeName = import.meta.env.VITE_WORKTREE_NAME ?? 'unknown'
@@ -1968,18 +1965,6 @@ async function onLogoutCodex(): Promise<void> {
 
 .sidebar-settings-row {
   @apply flex items-center justify-between w-full px-3 py-2.5 text-sm text-zinc-700 border-0 bg-transparent transition hover:bg-zinc-50 cursor-pointer;
-}
-
-.sidebar-settings-language-dropdown {
-  @apply min-w-0 max-w-52;
-}
-
-.sidebar-settings-language-dropdown :deep(.composer-dropdown-trigger) {
-  @apply h-auto rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700;
-}
-
-.sidebar-settings-language-dropdown :deep(.composer-dropdown-value) {
-  @apply max-w-32;
 }
 
 .sidebar-settings-panel :deep(.sidebar-settings-row + .sidebar-settings-row) {
