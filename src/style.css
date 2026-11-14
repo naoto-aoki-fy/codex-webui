@@ -945,10 +945,6 @@
   @apply fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4;
 }
 
-.new-thread-project-modal {
-  @apply flex w-full max-w-xl max-h-[90vh] flex-col gap-3 overflow-y-auto rounded-2xl border border-zinc-200 bg-white px-4 py-4 text-left shadow-xl;
-}
-
 .new-thread-open-folder-header {
   @apply flex items-center justify-between gap-3;
 }
@@ -969,26 +965,6 @@
   @apply min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 font-mono text-xs text-zinc-700 outline-none transition focus:border-zinc-400;
 }
 
-.new-thread-project-mode-tabs {
-  @apply grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-50 p-1;
-}
-
-.new-thread-project-mode-tab {
-  @apply inline-flex h-9 items-center justify-center rounded-lg border-0 bg-transparent px-3 text-sm font-medium text-zinc-600 transition hover:bg-white hover:text-zinc-900 disabled:cursor-default disabled:opacity-60;
-}
-
-.new-thread-project-mode-tab.is-active {
-  @apply bg-white text-zinc-950 shadow-sm;
-}
-
-.new-thread-project-field {
-  @apply flex flex-col gap-1.5;
-}
-
-.new-thread-project-modal-actions {
-  @apply mt-1 flex flex-wrap justify-end gap-2;
-}
-
 .new-thread-open-folder-create-input {
   @apply w-full min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-400;
 }
@@ -997,8 +973,7 @@
   @apply m-0 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700;
 }
 
-:root.dark .new-thread-open-folder,
-:root.dark .new-thread-project-modal {
+:root.dark .new-thread-open-folder {
   @apply border-zinc-700 bg-zinc-950 text-zinc-100;
 }
 
@@ -1030,56 +1005,8 @@
   @apply text-zinc-300;
 }
 
-:root.dark .new-thread-project-mode-tabs {
-  @apply border-zinc-700 bg-zinc-900;
-}
-
-:root.dark .new-thread-project-mode-tab {
-  @apply text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50;
-}
-
-:root.dark .new-thread-project-mode-tab.is-active {
-  @apply bg-zinc-100 text-zinc-950;
-}
-
 :root.dark .new-thread-open-folder-error {
   @apply border-rose-900 bg-rose-950/60 text-rose-200;
-}
-
-:root.dark .runtime-toggle {
-  @apply border-zinc-700 bg-zinc-900;
-}
-
-:root.dark .runtime-toggle-option {
-  @apply text-zinc-300;
-}
-
-:root.dark .runtime-toggle-option:hover {
-  @apply bg-zinc-800 text-zinc-100;
-}
-
-:root.dark .runtime-toggle-option.is-selected {
-  @apply border-zinc-600 bg-zinc-800 text-zinc-100 shadow-none;
-}
-
-:root.dark .runtime-toggle-option:focus-visible {
-  @apply ring-zinc-600 ring-offset-zinc-900;
-}
-
-:root.dark .runtime-toggle-option-icon {
-  @apply text-zinc-400;
-}
-
-:root.dark .runtime-toggle-option.is-selected .runtime-toggle-option-icon {
-  @apply text-zinc-200;
-}
-
-:root.dark .worktree-init-status.is-running {
-  @apply border-zinc-600 bg-zinc-800 text-zinc-300;
-}
-
-:root.dark .worktree-init-status.is-error {
-  @apply border-rose-700 bg-rose-950/40 text-rose-200;
 }
 
 :root.dark .skills-hub-title {
@@ -1102,64 +1029,23 @@
 :root.dark .skills-hub-error {
   @apply border-rose-800 bg-rose-950/40 text-rose-200;
 }
-
 :root.dark .directory-title,
-:root.dark .directory-card-title,
-:root.dark .directory-modal-title,
-:root.dark .directory-mini-heading,
-:root.dark .directory-detail-heading {
+:root.dark .directory-mini-heading {
   @apply text-zinc-100;
 }
-
 :root.dark .directory-subtitle,
-:root.dark .directory-card-meta,
-:root.dark .directory-card-description,
-:root.dark .directory-mini-list,
-:root.dark .directory-detail-description {
+:root.dark .directory-mini-list {
   @apply text-zinc-400;
 }
-
-:root.dark .directory-tabs,
-:root.dark .directory-search,
-:root.dark .directory-card,
 :root.dark .directory-loading,
 :root.dark .directory-empty,
-:root.dark .directory-modal,
 :root.dark .directory-refresh,
-:root.dark .directory-action,
-:root.dark .directory-action-link,
-:root.dark .directory-modal-close {
+:root.dark .directory-action {
   @apply border-zinc-700 bg-zinc-900 text-zinc-100;
-}
-
-:root.dark .directory-tab,
-:root.dark .directory-sort-button {
-  @apply text-zinc-400 hover:text-zinc-100;
-}
-
-:root.dark .directory-search {
-  @apply text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-500;
-}
-
-:root.dark .directory-tab.is-active,
-:root.dark .directory-sort-button.is-active,
-:root.dark .directory-detail-block,
-:root.dark .directory-auth-panel,
-:root.dark .directory-chip {
-  @apply border-zinc-700 bg-zinc-800 text-zinc-100;
 }
 
 :root.dark .directory-action.primary {
   @apply border-zinc-100 bg-zinc-100 text-zinc-950 hover:bg-white;
-}
-
-:root.dark .directory-sort-group {
-  @apply border-zinc-700 bg-zinc-950;
-}
-
-:root.dark .directory-badge.is-muted,
-:root.dark .directory-auth-status.is-muted {
-  @apply border-zinc-700 bg-zinc-900 text-zinc-400;
 }
 
 :root.dark .skill-card {
