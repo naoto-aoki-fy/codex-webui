@@ -7,8 +7,7 @@ import { stageRemoteUpload, inspectRemoteUploads } from './remoteUploads.js'
 import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
 export { refreshChatgptAuthTokensForExternalAuth } from './externalAuthRefresh.js'
-import { normalizeStringArray, canonicalizeThreadListResponseForRead } from './workspaceRootsStore.js'
-export { canonicalizeWorkspaceRootsState, canonicalizeWorkspaceRootsStateForRead, canonicalizeThreadListResponseForRead } from './workspaceRootsStore.js'
+import { normalizeStringArray } from './workspaceRootsStore.js'
 export type { WorkspaceRootsState } from './workspaceRootsStore.js'
 import { createThreadPresentationStore } from './threadPresentationStore.js'
 import { asRecord, getErrorMessage, getErrorCode, setJson, readJsonBody, isUnauthenticatedRateLimitError, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
@@ -23,7 +22,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { handleAccountRoutes } from './accountRoutes.js'
-import { CodexCredentialError, readCodexCredentialStore, readPublicAuthStatus } from './codexCredentials.js'
+import { CodexCredentialError, readPublicAuthStatus } from './codexCredentials.js'
 import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
 import { isAbsoluteLikePath } from '../pathUtils.js'
@@ -300,7 +299,7 @@ export async function callRpcWithArchiveRecovery(
       const page = asRecord(result)
       if (Array.isArray(page?.data)) {
         const rows = page.data.map(asRecord)
-        const normalized = asRecord(await canonicalizeThreadListResponseForRead({
+        const normalized = asRecord({
           data: rows.map(row => {
             const thread = asRecord(row?.thread)
             const environments = Array.isArray(thread?.environments) ? thread.environments : []
@@ -308,14 +307,12 @@ export async function callRpcWithArchiveRecovery(
               : environments.map(asRecord).find(env => typeof env?.cwd === 'string')?.cwd ?? ''
             return { ...thread, cwd }
           }),
-        }))
+        })
         const threads = normalized?.data as unknown[]
         return { ...page, data: rows.map((row, index) => ({ ...row, thread: threads[index] })) }
       }
     }
-    return method === 'thread/list'
-      ? await canonicalizeThreadListResponseForRead(result)
-      : result
+    return result
   } catch (error) {
     const paramsRecord = asRecord(params)
     const threadId = readNonEmptyString(paramsRecord?.threadId)
@@ -353,19 +350,6 @@ export async function callRpcWithArchiveRecovery(
     })
     return appServer.rpc(method, params ?? null)
   }
-}
-
-function scoreFileCandidate(path: string, query: string): number {
-  if (!query) return 0
-  const lowerPath = path.toLowerCase()
-  const lowerQuery = query.toLowerCase()
-  const baseName = lowerPath.slice(lowerPath.lastIndexOf('/') + 1)
-  if (baseName === lowerQuery) return 0
-  if (baseName.startsWith(lowerQuery)) return 1
-  if (baseName.includes(lowerQuery)) return 2
-  if (lowerPath.includes(`/${lowerQuery}`)) return 3
-  if (lowerPath.includes(lowerQuery)) return 4
-  return 10
 }
 
 function getCodexHomeDir(): string {
@@ -926,14 +910,10 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
         try {
           const found = await appServer.rpc('fuzzyFileSearch', { query, roots: [cwd], cancellationToken: null }) as { files: Array<{ path: string }> }
-          const files = found.files.map(file => file.path)
-          const scored = files
-            .map((path) => ({ path, score: scoreFileCandidate(path, query) }))
-            .filter((row) => query.length === 0 || row.score < 10)
-            .sort((a, b) => (a.score - b.score) || a.path.localeCompare(b.path))
-            .slice(0, limit)
-            .map((row) => ({ path: row.path }))
-          setJson(res, 200, { data: scored })
+          if (!Array.isArray(found?.files) || found.files.some(file => typeof file?.path !== 'string' || !file.path)) {
+            throw new Error('Incompatible fuzzyFileSearch response: expected file paths')
+          }
+          setJson(res, 200, { data: found.files.slice(0, limit).map(file => ({ path: file.path })) })
         } catch (error) {
           setJson(res, 500, { error: getErrorMessage(error, 'Failed to search files') })
         }

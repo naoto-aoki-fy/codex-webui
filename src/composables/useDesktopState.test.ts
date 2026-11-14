@@ -1121,7 +1121,7 @@ describe('thread revert orchestration', () => {
     gatewayMocks.validateThreadRevert.mockRejectedValueOnce(new Error('Persisted paginated thread required'))
     const state = useDesktopState()
     state.selectedThreadId.value = 'legacy'
-    await state.rollbackSelectedThread('old-turn')
+    await state.executeThreadRevert(state.selectedThreadId.value, 'old-turn', 'revert')
     expect(gatewayMocks.revertThreadFileChanges).not.toHaveBeenCalled()
     expect(gatewayMocks.revertThreadHistory).not.toHaveBeenCalled()
     expect(state.error.value).toContain('paginated')
@@ -1133,7 +1133,7 @@ describe('thread revert orchestration', () => {
     gatewayMocks.revertThreadHistory.mockRejectedValueOnce(new Error('RPC unavailable'))
     const state = useDesktopState()
     state.selectedThreadId.value = 'persisted'
-    await state.rollbackSelectedThread('older-page-turn')
+    await state.executeThreadRevert(state.selectedThreadId.value, 'older-page-turn', 'revert')
     expect(gatewayMocks.revertThreadHistory).toHaveBeenCalledWith('persisted', 'older-page-turn')
     expect(state.error.value).toContain('RPC unavailable')
   })
@@ -1145,7 +1145,7 @@ describe('thread revert orchestration', () => {
     gatewayMocks.getThreadDetail.mockRejectedValueOnce(new Error('Read unavailable'))
     const state = useDesktopState()
     state.selectedThreadId.value = 'persisted'
-    await state.rollbackSelectedThread('first-turn')
+    await state.executeThreadRevert(state.selectedThreadId.value, 'first-turn', 'revert')
     expect(gatewayMocks.revertThreadHistory).toHaveBeenCalledTimes(1)
     expect(state.error.value).toContain('History reverted, but refresh failed')
   })

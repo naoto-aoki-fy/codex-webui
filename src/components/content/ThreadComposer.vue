@@ -567,30 +567,6 @@ const speedModeDescription = computed(() => {
     ? t('About 1.5x faster, with credits used at 2x')
     : t('Default speed with normal credit usage')
 })
-const attachmentFeedbackText = computed(() => {
-  const stats = attachmentBatchStats.value
-  if (stats) {
-    const completed = stats.succeeded + stats.failed
-    const remaining = Math.max(0, stats.total - completed)
-    if (remaining > 0) {
-      if (stats.failed > 0) {
-        return `${stats.failed} ${t('failed')}, ${t('attaching')} ${formatAttachmentFileCount(remaining)}...`
-      }
-      return remaining === 1 ? t('Attaching file...') : `${t('Attaching')} ${remaining} ${t('files...')}`
-    }
-    if (stats.failed > 0) {
-      if (stats.succeeded > 0) {
-        return `${stats.succeeded} ${t('attached')}, ${stats.failed} ${t('failed')}.`
-      }
-      return stats.failed === 1 ? t('Could not attach file.') : `${t('Could not attach')} ${stats.failed} ${t('files.')}`
-    }
-  }
-  if (pendingAttachmentCount.value <= 0) return ''
-  return pendingAttachmentCount.value === 1
-    ? t('Attaching file...')
-    : `${t('Attaching')} ${pendingAttachmentCount.value} ${t('files...')}`
-})
-
 const placeholderText = computed(() =>
   !props.activeThreadId
     ? t('Select a thread to send a message')
@@ -870,9 +846,7 @@ function normalizeSelectedFiles(files: FileList | File[] | null | undefined): Fi
   return Array.from(files)
 }
 
-function formatAttachmentFileCount(count: number): string {
-  return count === 1 ? '1 file' : `${count} files`
-}
+
 
 function beginAttachmentWork(sessionToken: number): boolean {
   if (sessionToken !== attachmentSessionToken) return false

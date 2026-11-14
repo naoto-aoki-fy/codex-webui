@@ -628,7 +628,6 @@ const isVirtualKeyboardOpen = computed(() => {
   if (visualViewportHeight.value <= 0 || layoutViewportHeight.value <= 0) return false
   return layoutViewportHeight.value - visualViewportHeight.value > 120
 })
-const directoryCwd = computed(() => selectedThread.value?.cwd?.trim() ?? newThreadCwd.value.trim())
 const isSelectedThreadInProgress = computed(() => !isHomeRoute.value && selectedThread.value?.inProgress === true)
 const showThreadContextBadge = computed(() => !isHomeRoute.value && !isSkillsRoute.value && selectedThreadId.value.trim().length > 0)
 const isCodexAuthChangeBlocked = computed(() =>

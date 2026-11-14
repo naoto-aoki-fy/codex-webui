@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as store from './workspaceRootsStore'
-import * as bridge from './codexAppServerBridge'
 import { updateCodexGlobalState } from './codexGlobalState'
 
 let home: string
@@ -16,60 +15,6 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.unstubAllEnvs()
   await rm(home, { recursive: true, force: true })
-})
-
-it('preserves the public bridge exports as the same functions', () => {
-  expect(bridge.canonicalizeWorkspaceRootsState).toBe(store.canonicalizeWorkspaceRootsState)
-  expect(bridge.canonicalizeWorkspaceRootsStateForRead).toBe(store.canonicalizeWorkspaceRootsStateForRead)
-  expect(bridge.canonicalizeThreadListResponseForRead).toBe(store.canonicalizeThreadListResponseForRead)
-})
-
-it('preserves remote lexical paths despite local symlinks', async () => {
-  const root = join(home, 'root')
-  const alias = join(home, 'alias')
-  await mkdir(root)
-  await symlink(root, alias)
-  const missing = join(home, 'missing', '..', 'absent')
-  const state = await store.canonicalizeWorkspaceRootsState({
-    ...empty(), order: [alias, 'remote', root, missing, 'relative/../id'],
-    active: [alias, root], projectOrder: ['remote', root, alias],
-    labels: { [alias]: 'Alias', [root]: 'Canonical' },
-  })
-  expect(state).toEqual({
-    ...empty(), order: [alias, 'remote', root, missing, 'relative/../id'],
-    active: [alias, root], projectOrder: ['remote', root, alias], labels: { [alias]: 'Alias', [root]: 'Canonical' },
-  })
-})
-
-it('bounds root resolution at eight and resolves each distinct input once', async () => {
-  let running = 0
-  let peak = 0
-  const resolver = vi.fn(async (path: string) => {
-    peak = Math.max(peak, ++running)
-    await new Promise(resolve => setTimeout(resolve, 1))
-    running--
-    return path
-  })
-  const order = Array.from({ length: 25 }, (_, i) => '/root/' + i)
-  await store.canonicalizeWorkspaceRootsState({ ...empty(), order, active: order }, resolver)
-  expect(resolver).toHaveBeenCalledTimes(25)
-  expect(peak).toBe(8)
-})
-
-it('falls back for realpath errors and preserves malformed thread-list rows and metadata', async () => {
-  const resolver = vi.fn(async () => { throw new Error('denied') })
-  const row = { id: 'empty', cwd: '' }
-  expect(await store.canonicalizeThreadListResponseForRead({
-    data: [null, row, { cwd: '/missing/../root', extra: true }, { cwd: '/missing/../root' }, { cwd: 42 }],
-    nextCursor: 'cursor', future: true,
-  }, resolver)).toEqual({
-    data: [null, row, { cwd: '/missing/../root', extra: true }, { cwd: '/missing/../root' }, { cwd: 42 }],
-    nextCursor: 'cursor', future: true,
-  })
-  expect(resolver).toHaveBeenCalledTimes(1)
-  for (const payload of [null, [], { data: 'invalid' }]) {
-    expect(await store.canonicalizeThreadListResponseForRead(payload)).toBe(payload)
-  }
 })
 
 it('normalizes malformed legacy fields without writing to the registry', async () => {

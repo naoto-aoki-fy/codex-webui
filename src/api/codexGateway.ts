@@ -1029,10 +1029,6 @@ export function openProjectRootSelection(path: string): Promise<{ path: string; 
   return queueWorkspaceRootsMutation(() => openProjectRootRequest(path))
 }
 
-export async function openProjectRoot(path: string): Promise<string> {
-  return (await openProjectRootSelection(path)).path
-}
-
 async function updateWorkspaceRootsStateRequest(operation: WorkspaceRootsOperation): Promise<WorkspaceRootsState> {
   const response = await fetch('/codex-api/workspace-roots-state', {
     method: 'PATCH',
