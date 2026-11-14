@@ -1,8 +1,0 @@
-{
-  "tag": "rust-v0.168.0",
-  "revision": "9480ec100c3edee9fc69172e8e80a4730444094d",
-  "sourceFiles": {
-    "codex-rs/core/src/client.rs": "ddeb4c09eda763c3c6d979649036b0a2ad2f56e4904e1d4e4d4b4afd715750da",
-    "codex-rs/core/src/lib.rs": "35eedb9bc6a6c100fdd1cc02a75616b87cdaf8ee7a131a61c7da117512c03137"
-  }
-}

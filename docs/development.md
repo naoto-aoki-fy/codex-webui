@@ -2,7 +2,7 @@
 
 First start `codex app-server --listen ws://127.0.0.1:4500` independently on the host that owns
 the repositories and Codex login. The web backend can use a separate host and SSH tunnel. See [connection details](external-app-server.md).
-Development honors `CODEXUI_APP_SERVER_URL`; `dev2` now preserves `CODEX_HOME`.
+Development honors `CODEXUI_APP_SERVER_URL` and preserves `CODEX_HOME`.
 
 Use Node.js 22 for development/CI (the runtime minimum in package.json is separate).
 Enable Corepack (`corepack enable`), then use the exact pnpm version in
@@ -11,10 +11,6 @@ Commit `pnpm-lock.yaml` alongside intentional dependency changes; use
 `pnpm install --lockfile-only` to update it and review the diff. Do not mix npm
 lockfiles into this pnpm workspace. The dev wrapper only installs when Vite or
 vue-tsc is missing; it does not verify an existing dependency tree.
-
-`dev2` is a compatibility alias for `dev`, with a preservation warning. Its
-historical random-home filename does not imply isolation: it forwards flags and
-preserves CODEX_HOME and CODEXUI_APP_SERVER_URL.
 
 Normal HTTP development needs no TLS
 credentials:
@@ -25,30 +21,10 @@ pnpm run dev --host 127.0.0.1 --port 4173
 
 Production builds use `pnpm run build` and do not read development certificates.
 
-## Ripgrep for file search and subprocess tests
+## File search
 
-Composer file search and the real subprocess unit tests require ripgrep (`rg`).
-Install it with `sudo apt-get update && sudo apt-get install ripgrep` on Debian/Ubuntu,
-`brew install ripgrep` on macOS, or `winget install BurntSushi.ripgrep.MSVC` on Windows.
-Verify `rg --version` in the same environment that starts the app or tests
-(`command -v rg` on POSIX; `Get-Command rg` in PowerShell).
-The Linux verification workflow explicitly installs and verifies ripgrep before tests.
-
-Resolution tries `CODEXUI_RG_COMMAND` first, then PATH and known npm Codex package
-locations (on Windows, package locations precede PATH). Package fallback is best
-effort; a separate ripgrep installation is recommended. An invalid override falls
-back to the other candidates for compatibility. Set the override to an executable
-path without arguments or embedded quotes; spaces in the path are supported:
-
-```sh
-CODEXUI_RG_COMMAND='/opt/tools with spaces/rg' pnpm run dev
-```
-
-In PowerShell, use `$env:CODEXUI_RG_COMMAND = 'C:\Tools with spaces\rg.exe'`.
-If search reports missing ripgrep, check the override, executable permissions, and
-PATH inherited by the app process, then restart the app after changing its environment.
-No startup check requires ripgrep: other app functionality remains available.
-Search failures return HTTP 500 with an error message rather than an empty success.
+Composer file search runs on the external App Server through `fuzzyFileSearch`.
+The web backend no longer resolves or launches a local ripgrep executable.
 
 ## Optional HTTPS
 

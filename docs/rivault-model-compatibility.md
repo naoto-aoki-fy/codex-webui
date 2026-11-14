@@ -70,7 +70,7 @@ specifically for 0.168.0, not a guarantee across versions. Check the exact deplo
 CLI and app-server versions and their catalog schema before deployment.
 
 [Native Fork and Portable Transfer](cross-provider-forks.md) keep their current
-semantics. The [history projection](native-provider-compatibility.md#tool-declarations)
+semantics. The retired external history projection
 retains current top-level tool definitions, including custom formats; it cannot
 resolve this error by itself. No turn rewriting, automatic retry, provider-default
 change, or global tool disabling is needed in the web application.

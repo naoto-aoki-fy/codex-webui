@@ -27,8 +27,7 @@ when no longer needed. Mobile browsers access the App Server host's projects and
 
 ## Conversation controls
 
-For native cross-provider forks on Codex 0.168.0, see the
-[external request-compatibility patch and verification guide](native-provider-compatibility.md).
+
 
 Messages submitted during an active turn use Steer immediately. There is no deferred
 prompt queue; legacy queue data and the former busy-send preference are ignored.

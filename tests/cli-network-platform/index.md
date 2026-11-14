@@ -13,7 +13,6 @@ Return to the [manual test index](../../tests.md).
 | [npx run dev compatibility shim](npx-run-dev-compatibility-shim.md) |
 | [Private network password access](private-network-password-access.md) |
 | [Feature: Login is required for local, reverse tunnel, and Tailscale requests](reverse-tunnel-login-is-required-unless-request-is-trusted-local-or-tailscale.md) |
-| [Feature: dev2 preserves the external server environment](npm-run-dev2-uses-random-codex-home.md) |
 | [Startup welcome log uses repository GitHub URL](startup-welcome-log-uses-repository-github-url.md) |
 | [Home route no longer crashes on dev startup](home-route-no-longer-crashes-on-dev-startup.md) |
 | [Local connectivity without built-in tunnels](local-connectivity-without-built-in-tunnels.md) |
