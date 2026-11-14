@@ -22,7 +22,7 @@
 - Attachment references remain intact and contents remain accessible without being copied into the prompt.
 - Threads remain discoverable after completion, full thread-list refresh, page reload, and application restart.
 - Non-empty requests and text-only messages retain the existing format; normal and steering sends use the same attachment format.
-- Native listing owns discovery; the [old index and rebuild endpoint are retired](../../docs/persistent-thread-index.md).
+- Native listing owns discovery; the [attachment intent index remains active; the rebuild endpoint is retired](../../docs/persistent-thread-index.md).
 
 ## Cleanup
 

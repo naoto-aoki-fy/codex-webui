@@ -145,4 +145,4 @@ Read status uses native Codex receipts exclusively; see
 [native Codex cleanup](docs/native-codex-cleanup.md) for protocol and data-preservation details.
 
 Native API ownership, removed features, migration and retained adapters are documented in
-[capability consolidation](docs/refactoring/native-capability-consolidation.md).
+[capability consolidation](docs/native-project-migration.md).
