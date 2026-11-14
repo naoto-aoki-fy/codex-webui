@@ -51,3 +51,28 @@ application home remain available for inspection. Preserve old metadata stores.
 Keep 4173 running unless asked to stop it. Remove disposable artifacts deliberately
 when their inspection is complete. A second host, Windows server, live approvals
 and cross-provider inference are outside this same-host acceptance run.
+
+### Feature: Read-only Project/pin upgrade safeguards
+
+Prerequisites: repository dependencies and disposable temporary state only; no
+credentials, native database or real user files. Run:
+
+```sh
+pnpm exec vitest run src/server/nativeProjects.test.ts src/server/nativeUpgradeAcceptance.test.ts src/server/threadPresentationStore.test.ts src/server/projectHistory.test.ts src/server/workspaceRootsStore.test.ts src/server/connectionProfile.test.ts
+```
+
+Actions: fixtures read fresh state, populated native Projects alongside legacy
+roots, interrupted and completed receipts, empty/meaningful legacy pins, a receipt
+for another connection, malformed JSON, an invalid top-level object and an
+unreadable state path (a directory, producing EISDIR). Completed cases retain
+legacy fields and an unrelated backup object. Exercise native create, rename,
+move and delete plus paginated pin reads and profile isolation.
+
+Expected: incomplete Projects and remaining legacy pins are independently blocked
+with upgrade instructions even when native records exist. Completed/fresh native
+installations remain usable; errors remain errors, and stored bytes are unchanged.
+Ordinary native conversation reads remain available when upgrade guards reject.
+The API gateway unit suite additionally checks pin/unpin native section moves.
+These are mocked RPC/isolated filesystem checks, not authenticated migration tests.
+Cleanup: tests remove their temporary directories and restore environment variables;
+no user-state rollback or migration is performed.

@@ -20,7 +20,7 @@ function fixture() {
   const rpc = vi.fn(async (method: string, p: any): Promise<any> => {
     if (method === 'project/list') return { data: projects.map((project, position) => ({ ...project, position })), nextCursor: null }
     if (method === 'thread/list') return { data: [...threads.values()].filter(t => t.archived === p.archived && !t.hidden), nextCursor: null }
-    if (method === 'project/import' || method === 'project/create') {
+    if (method === 'project/create') {
       if (keys.has(p.idempotencyKey)) return { project: keys.get(p.idempotencyKey) }
       const project = { id: 'p' + ++seq, name: p.name, roots: p.roots, metadata: p.metadata || {}, position: projects.length, createdAt: 1, updatedAt: 1, recencyAt: null }
       projects.push(project); keys.set(p.idempotencyKey, project)

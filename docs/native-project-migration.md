@@ -32,6 +32,14 @@ than hiding data or inferring membership. Restore the old release to finish
 migration. Completed receipts remain intact; stale legacy names cannot overwrite
 native changes. New installations need no migration receipt.
 
+The remaining Project/pin compatibility code is a read-only upgrade safeguard,
+not an importer, converter, backfill or dual writer. It reads only the existing
+profile global-state path; it does not scan backups or the thread recovery index.
+A populated native Project list does not bypass the receipt check. Malformed or
+unreadable global state propagates an error; a missing file is treated as a fresh
+installation, not as a manufactured completion receipt. No documented cutoff
+permits removing these checks for installations that still hold legacy state.
+
 ## Supported server contract
 
 The minimum supported deployment baseline is **Codex 0.169.0 with the required
