@@ -1,5 +1,5 @@
 import { readThreadTurnOutcomes, type ThreadTurnOutcomes } from './normalizers/threadMetadata'
-import { modelSelectionKey, parseModelSelection } from './modelCapabilities'
+import { fastModeAvailability, modelSelectionKey, parseModelSelection } from './modelCapabilities'
 import { normalizeSkillsList, type SkillInfo, type SkillsListResponseEntry } from './normalizers/skills'
 export type { SkillInfo } from './normalizers/skills'
 import { normalizeWorkspaceRootsState, cloneWorkspaceRootsState, type WorkspaceRootsState } from './normalizers/workspaceRoots'
@@ -604,6 +604,7 @@ export async function startThreadTurn(
   skills?: Array<{ name: string; path: string }>,
   fileAttachments: FileAttachmentParam[] = [],
   collaborationMode?: CollaborationModeKind,
+  speedMode?: SpeedMode,
 ): Promise<string> {
   try {
     const normalizedModel = model?.trim() ?? ''
@@ -615,6 +616,10 @@ export async function startThreadTurn(
     if (attachments.length > 0) params.attachments = attachments
     const resolvedModel = collaborationMode ? await resolveCollaborationModeModel(collaborationMode, normalizedModel) : normalizedModel
     const reasoningModel = findReasoningModel(resolvedModel)
+    if (speedMode === 'fast' && fastModeAvailability(reasoningModel) !== 'supported') {
+      throw new Error('Fast mode support is unavailable or unknown for this provider/model. Select Standard mode or a supported model.')
+    }
+    if (speedMode) params.serviceTierForTurn = speedMode === 'fast' ? 'fast' : 'default'
     const resolvedEffort = resolveReasoningEffort(reasoningModel, effort)
     if (resolvedModel) params.model = parseModelSelection(resolvedModel).model
     if (resolvedEffort) params.effort = resolvedEffort

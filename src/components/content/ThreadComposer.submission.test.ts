@@ -214,3 +214,25 @@ it('keeps legacy catalogs usable without inventing a provider', () => {
     expect(c.model().props.options).toEqual([{ value: 'legacy', label: 'legacy' }])
   } finally { gateway.reasoningCatalog.value = [] }
 })
+
+it('renders native Fast availability and updates it on provider/model switching', async () => {
+  gateway.reasoningCatalog.value = [
+    { id: 'same', modelProvider: 'one', serviceTiers: [{ id: 'fast' }] },
+    { id: 'same', modelProvider: 'two', serviceTiers: [] },
+    { id: 'unknown', modelProvider: 'two' },
+  ]
+  const c = mount({ selectedModel: 'provider-model:["one","same"]' })
+  c.nodes().find(n => n.props['aria-label'] === 'Add attachments and settings')!.props.onClick()
+  await vue.nextTick()
+  const fast = () => c.nodes().find(n => n.props['aria-label'] === 'Fast mode disabled')!
+  expect(fast().props.disabled).toBe(false)
+  c.props.selectedModel = 'provider-model:["two","same"]'
+  await vue.nextTick()
+  expect(fast().props.disabled).toBe(true)
+  expect(c.nodes().some(n => n.text === 'Fast mode is unavailable for this model')).toBe(true)
+  c.props.selectedModel = 'provider-model:["two","unknown"]'
+  await vue.nextTick()
+  expect(fast().props.disabled).toBe(true)
+  expect(c.nodes().some(n => n.text === 'Fast mode availability is unknown')).toBe(true)
+  expect(c.props.selectedSpeedMode).toBe('standard')
+})

@@ -1,18 +1,9 @@
 import { profileStorageKey, reloadForConnectionProfile } from '../utils/browserConnectionProfile'
-import { modelSelectionKey, parseModelSelection, defaultModelForProvider } from '../api/modelCapabilities'
+import { fastModeAvailability, modelSelectionKey, parseModelSelection, defaultModelForProvider } from '../api/modelCapabilities'
 import { markNativeThreadRead, refreshThreadGenerationMetadata } from '../api/codexGateway'
 import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
 import {
-  toProjectNameFromWorkspaceRoot,
-  getRemoteProjectDisplayName,
-  getWorkspaceProjectOrderPaths,
-  getWorkspaceProjectOrderNames,
   getWorkspaceProjectId,
-  collectDuplicateProjectLeafNames,
-  filterGroupsByWorkspaceRoots,
-} from '../utils/desktopProjectGroups'
-export {
-  collectWorkspaceRootPathsForProjectRemoval,
   filterGroupsByWorkspaceRoots,
 } from '../utils/desktopProjectGroups'
 import {
@@ -142,7 +133,7 @@ import type {
   UiThreadTokenUsage,
   UiThread,
 } from '../types/codex'
-import { getPathParent, normalizePathForUi, toProjectName } from '../pathUtils.js'
+import { normalizePathForUi } from '../pathUtils.js'
 
 function flattenThreads(groups: UiProjectGroup[]): UiThread[] {
   return groups.flatMap((group) => group.threads)
@@ -164,13 +155,7 @@ const LOCAL_THREAD_CONFIRMATION_GRACE_MS = 120_000
 const LOCAL_THREAD_RECONCILIATION_INTERVAL_MS = 5000
 const RECENT_SKILLS_LOAD_REUSE_MS = 2000
 const GLOBAL_SERVER_REQUEST_SCOPE = '__global__'
-const CODEX_CLI_MISSING_MESSAGE = 'Codex CLI not found. Install @openai/codex or set CODEXUI_CODEX_COMMAND.'
 type SelectThreadResult = 'ok' | 'not-found' | 'error'
-
-function isCodexCliMissingError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '')
-  return message.includes('Codex CLI is not available')
-}
 
 function isThreadNotFoundError(error: unknown): boolean {
   if (error instanceof CodexApiError && error.status === 404) return true
@@ -457,7 +442,6 @@ export function useDesktopState() {
   const automaticModelByContext = ref(createStringKeyedRecord<string>())
   const selectedReasoningEffort = computed(() => readReasoningEffortForThread(selectedThreadId.value))
   const selectedSpeedMode = ref<SpeedMode>('standard')
-  const codexCliMissingError = ref('')
   const projectDisplayNameById = ref<Record<string, string>>({})
   const workspaceRootsState = ref<WorkspaceRootsState | null>(null)
   const loadedVersionByThreadId = ref<Record<string, string>>({})
@@ -950,6 +934,7 @@ export function useDesktopState() {
     error.value = ''
 
     try {
+      if (nextMode === 'fast' && fastModeAvailability(reasoningModelForThread(selectedThreadId.value)) !== 'supported') throw new Error('Fast mode support is unavailable or unknown for this provider/model')
       await setCodexSpeedMode(nextMode)
     } catch (unknownError) {
       selectedSpeedMode.value = previousMode
@@ -992,7 +977,6 @@ export function useDesktopState() {
     const generation = lifecycleGeneration
     const version = ++modelRefreshVersion
     const threadId = selectedThreadId.value
-    codexCliMissingError.value = ''
     try {
       const config = await getCurrentModelConfig()
       if (generation !== lifecycleGeneration) return
@@ -1042,7 +1026,6 @@ export function useDesktopState() {
       if (generation !== lifecycleGeneration) return
       if (version !== modelRefreshVersion || threadId !== selectedThreadId.value) return
       publication.fail()
-      if (isCodexCliMissingError(error)) codexCliMissingError.value = CODEX_CLI_MISSING_MESSAGE
     }
   }
 
@@ -1164,7 +1147,7 @@ export function useDesktopState() {
     scheduleLocalThreadReconciliation()
     const nowIso = new Date().toISOString()
     const normalizedCwd = normalizePathForUi(cwd)
-    const projectName = loadedThreadListRootsState?.nativeProjects ? projectId || '__codexapp_unassigned__' : toProjectName(normalizedCwd)
+    const projectName = projectId || '__codexapp_unassigned__'
     const nextThread: UiThread = {
       id: threadId,
       title: toOptimisticThreadTitle(firstMessageText),
@@ -2425,17 +2408,6 @@ export function useDesktopState() {
     const nextLabels: Record<string, string> = { __codexapp_unassigned__: 'Unassigned' }
     for (const project of rootsState.nativeProjects ?? []) nextLabels[project.id] = project.name
     if (rootsState.projectError) error.value = rootsState.projectError
-    const ids = getWorkspaceProjectOrderPaths(rootsState)
-    const names = getWorkspaceProjectOrderNames(rootsState, collectDuplicateProjectLeafNames(loadedThreadListGroups, rootsState))
-    for (const rootPath of rootsState.order) {
-      const leafName = toProjectNameFromWorkspaceRoot(rootPath)
-      const parentLeafName = toProjectName(getPathParent(rootPath))
-      const label = (parentLeafName.startsWith('.') && parentLeafName !== leafName ? `${leafName} ${parentLeafName}` : '')
-      if (!label) continue
-      nextLabels[rootPath] = label
-      nextLabels[names[ids.indexOf(rootPath)] ?? rootPath] = label
-    }
-    for (const remote of rootsState.remoteProjects ?? []) nextLabels[remote.id] = getRemoteProjectDisplayName(remote)
     projectDisplayNameById.value = nextLabels
     loadedThreadListRootsState = rootsState
     workspaceRootsState.value = rootsState
@@ -2989,7 +2961,6 @@ export function useDesktopState() {
     const readGeneration = eventSyncGeneration
     const isCurrent = () => generation === lifecycleGeneration && readGeneration === eventSyncGeneration
     error.value = ''
-    codexCliMissingError.value = ''
     const includeSelectedThreadMessages = options.includeSelectedThreadMessages !== false
     const awaitAncillaryRefreshes = options.awaitAncillaryRefreshes === true
 
@@ -3013,11 +2984,6 @@ export function useDesktopState() {
     } catch (unknownError) {
       if (!isCurrent()) return
       error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-      if (isCodexCliMissingError(unknownError)) {
-        codexCliMissingError.value = CODEX_CLI_MISSING_MESSAGE
-      } else {
-        codexCliMissingError.value = ''
-      }
     }
   }
 
@@ -3186,7 +3152,7 @@ export function useDesktopState() {
     collaborationModeOverride?: CollaborationModeKind,
   ): Promise<void> {
     const generation = lifecycleGeneration
-    const submissionContext = { generation, modelId: readModelIdForThread(selectedThreadId.value), reasoningEffort: selectedReasoningEffort.value }
+    const submissionContext = { generation, speedMode: selectedSpeedMode.value, modelId: readModelIdForThread(selectedThreadId.value), reasoningEffort: selectedReasoningEffort.value }
     if (isUpdatingSpeedMode.value) return
 
     let threadId = selectedThreadId.value
@@ -3294,6 +3260,7 @@ export function useDesktopState() {
     const selectedModel = readModelIdForThread(NEW_THREAD_COLLABORATION_MODE_CONTEXT).trim()
     const reasoningEffort = readReasoningEffortForThread(NEW_THREAD_COLLABORATION_MODE_CONTEXT)
     const selectedMode = selectedCollaborationMode.value
+    const speedMode = selectedSpeedMode.value
     if (!nextText && imageUrls.length === 0 && fileAttachments.length === 0) return ''
 
     isSendingMessage.value = true
@@ -3307,7 +3274,7 @@ export function useDesktopState() {
         : projectId ? await startThread(targetCwd, selection.model || undefined, undefined, projectId) : await startThread(targetCwd, selection.model || undefined)
       threadId = startedThread.threadId
       const submissionModel = modelSelectionKey(startedThread.modelProvider || parseModelSelection(selectedModel).provider, startedThread.model?.trim() || parseModelSelection(selectedModel).model)
-      const submissionContext = { generation, modelId: submissionModel, reasoningEffort, resumed: true }
+      const submissionContext = { generation, speedMode, modelId: submissionModel, reasoningEffort, resumed: true }
       if (generation !== lifecycleGeneration) {
         if (threadId) {
           void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode, undefined, submissionContext).catch(() => {
@@ -3383,10 +3350,11 @@ export function useDesktopState() {
     fileAttachments: FileAttachment[] = [],
     collaborationModeOverride?: CollaborationModeKind,
     optimisticMessageId?: string,
-    context: { generation: number; modelId: string; reasoningEffort: ReasoningEffort | ''; resumed?: boolean } = {
+    context: { generation: number; modelId: string; reasoningEffort: ReasoningEffort | ''; speedMode?: SpeedMode; resumed?: boolean } = {
       generation: lifecycleGeneration,
       modelId: readModelIdForThread(threadId),
       reasoningEffort: selectedReasoningEffort.value,
+      speedMode: selectedSpeedMode.value,
     },
   ): Promise<void> {
     const generation = context.generation
@@ -3440,6 +3408,7 @@ export function useDesktopState() {
         skills.length > 0 ? skills : undefined,
         fileAttachments,
         collaborationMode,
+        context.speedMode ?? selectedSpeedMode.value,
       )
 
       submissionAccepted = true
@@ -3586,11 +3555,10 @@ export function useDesktopState() {
   async function removeProject(projectName: string): Promise<void> {
     if (!projectName) return
     const path = getWorkspaceProjectId(loadedThreadListRootsState, projectName, sourceGroups.value)
-    const isNative = loadedThreadListRootsState?.projectMode === 'native'
-    const isRegisteredLocalRoot = Boolean(path && (isNative || loadedThreadListRootsState?.order.includes(path)))
+    const isRegisteredLocalRoot = Boolean(path)
     await queueProjectOperation(async () => {
       if (isRegisteredLocalRoot) {
-        const state = await updateWorkspaceRootsState(isNative ? { type: 'delete', projectId: path } : { type: 'delete', path })
+        const state = await updateWorkspaceRootsState({ type: 'delete', projectId: path })
         applyWorkspaceRootsState(state)
       }
       const threads = flattenThreads(projectGroups.value)
@@ -3917,7 +3885,6 @@ export function useDesktopState() {
     selectedReasoningEffort,
     availableReasoningEfforts,
     selectedSpeedMode,
-    codexCliMissingError,
     installedSkills,
     accountRateLimitSnapshots,
     messages,

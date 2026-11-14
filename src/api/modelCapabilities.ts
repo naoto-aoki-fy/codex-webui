@@ -1,6 +1,7 @@
 import type { ReasoningEffort } from './appServerDtos'
 
 export type ReasoningModel = {
+  serviceTiers?: Array<{ id: string; name?: string; description?: string }>
   modelProvider?: string
   providerDefaultModel?: string
   isDefault?: boolean
@@ -100,4 +101,10 @@ export function providerModelOptions(ids: string[], provider: string, catalog: R
     }
     return { value: id, label }
   })
+}
+
+/** Missing capability metadata is distinct from an explicitly unsupported tier. */
+export function fastModeAvailability(model: ReasoningModel | null): 'supported' | 'unsupported' | 'unknown' {
+  if (!Array.isArray(model?.serviceTiers)) return 'unknown'
+  return model.serviceTiers.some(tier => tier.id === 'fast') ? 'supported' : 'unsupported'
 }

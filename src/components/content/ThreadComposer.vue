@@ -175,7 +175,6 @@
               />
             </button>
             <button
-              v-if="isFastModeSupported"
               class="thread-composer-attach-setting"
               type="button"
               role="switch"
@@ -316,6 +315,7 @@
 </template>
 
 <script setup lang="ts">
+import { fastModeAvailability, findReasoningModel as findModelCapabilities } from '../../api/modelCapabilities'
 import { profileStorageKey } from '../../utils/browserConnectionProfile'
 import { findReasoningModel, reasoningCatalog } from '../../api/codexGateway'
 import { parseModelSelection, defaultModelForProvider, modelSelectionKey, providerModelOptions } from '../../api/modelCapabilities'
@@ -552,20 +552,21 @@ const hasUnsavedDraft = computed(() =>
 )
 const isInteractionDisabled = computed(() => props.disabled || !props.activeThreadId)
 const isComposerConfigDisabled = computed(() => props.disabled || !props.activeThreadId)
-const isFastModeSupported = computed(() => /^gpt-5\.(?:4|5)(?:$|-)/.test(props.selectedModel.trim()))
+const fastAvailability = computed(() => fastModeAvailability(findModelCapabilities(reasoningCatalog.value, props.selectedModel)))
+const isFastModeSupported = computed(() => fastAvailability.value === 'supported')
 const showFastModeModelIcon = computed(() =>
   props.selectedSpeedMode === 'fast' && isFastModeSupported.value,
 )
 const isSpeedToggleDisabled = computed(() =>
-  isInteractionDisabled.value || props.isUpdatingSpeedMode === true,
+  isInteractionDisabled.value || props.isUpdatingSpeedMode === true || (!isFastModeSupported.value && props.selectedSpeedMode !== 'fast'),
 )
 const speedModeDescription = computed(() => {
   if (props.isUpdatingSpeedMode) {
     return t('Saving speed setting...')
   }
-  return props.selectedSpeedMode === 'fast'
-    ? t('About 1.5x faster, with credits used at 2x')
-    : t('Default speed with normal credit usage')
+  if (fastAvailability.value === 'unknown') return t('Fast mode availability is unknown')
+  if (fastAvailability.value === 'unsupported') return t('Fast mode is unavailable for this model')
+  return props.selectedSpeedMode === 'fast' ? t('Fast mode enabled') : t('Standard mode')
 })
 const placeholderText = computed(() =>
   !props.activeThreadId

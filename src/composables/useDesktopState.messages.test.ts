@@ -123,7 +123,7 @@ beforeEach(() => {
   })
   gateway.getThreadGroupsPage.mockResolvedValue({ groups: [{ projectName: 'project', threads: [thread] }], nextCursor: null })
   gateway.getThreadTitleCache.mockResolvedValue({ titles: {} })
-  gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [], projectMode: 'legacy-readonly' })
+  gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [], projectMode: 'native', nativeProjects: [] })
   gateway.getAvailableModelIds.mockResolvedValue({ ids: ['gpt-5.5'], models: [] })
   gateway.getCurrentModelConfig.mockResolvedValue({ model: 'gpt-5.5', reasoningEffort: '', speedMode: 'standard' })
   gateway.getAvailableCollaborationModes.mockResolvedValue([{ value: 'default', label: 'Default' }])
@@ -1009,8 +1009,8 @@ describe('async request and lifecycle characterization (current behavior)', () =
   })
 
   it.each([
-    ['config', 'ordinary failure'], ['config', 'Codex CLI is not available'],
-    ['catalog', 'ordinary failure'], ['catalog', 'Codex CLI is not available'],
+    ['config', 'ordinary failure'], ['config', 'External app-server disconnected'],
+    ['catalog', 'ordinary failure'], ['catalog', 'External app-server disconnected'],
   ])('ignores stale %s failure %s after a newer catalog succeeds', async (stage, message) => {
     const stale = deferred<unknown>()
     gateway.getAvailableModelIds.mockResolvedValue({ ids: ['gpt-5.5'], models: catalog })
@@ -1022,14 +1022,12 @@ describe('async request and lifecycle characterization (current behavior)', () =
     const newer = state.refreshAll(refreshOptions)
     await newer
     expect(reasoningCatalog.value).toEqual(catalog)
-    expect(state.codexCliMissingError.value).toBe('')
     stale.reject(new Error(message))
     await older
     expect(reasoningCatalog.value).toEqual(catalog)
     expect(state.availableModelIds.value).toEqual(['gpt-5.5'])
     expect(state.readModelIdForThread(thread.id)).toBe('gpt-5.5')
     expect(state.readReasoningEffortForThread(thread.id)).toBe('low')
-    expect(state.codexCliMissingError.value).toBe('')
     expect(state.error.value).toBe('')
   })
 
@@ -1044,17 +1042,15 @@ describe('async request and lifecycle characterization (current behavior)', () =
     const refreshing = state.refreshAll(refreshOptions)
     await vi.advanceTimersByTimeAsync(0)
     expect(reasoningCatalog.value).toEqual(catalog)
-    failure.reject(new Error(stage === 'config' ? 'Codex CLI is not available' : 'catalog failed'))
+    failure.reject(new Error(stage === 'config' ? 'External app-server disconnected' : 'catalog failed'))
     await refreshing
     expect(reasoningCatalog.value).toEqual([])
     expect(state.availableModelIds.value).toEqual(['gpt-5.5'])
     expect(state.readModelIdForThread(thread.id)).toBe('gpt-5.5')
-    expect(Boolean(state.codexCliMissingError.value)).toBe(stage === 'config')
     expect(state.error.value).toBe('')
     await state.refreshAll(refreshOptions)
     expect(reasoningCatalog.value).toEqual(catalog)
     expect(state.readReasoningEffortForThread(thread.id)).toBe('low')
-    expect(state.codexCliMissingError.value).toBe('')
   })
 
   it('ignores a catalog failure after selection changes without a newer refresh', async () => {
@@ -1068,28 +1064,10 @@ describe('async request and lifecycle characterization (current behavior)', () =
     expect(gateway.getAvailableModelIds).toHaveBeenCalledTimes(2)
     state.primeSelectedThread('B')
     expect(reasoningCatalog.value).toEqual(catalog)
-    failure.reject(new Error('Codex CLI is not available'))
+    failure.reject(new Error('External app-server disconnected'))
     await refreshing
     expect(state.selectedThreadId.value).toBe('B')
     expect(reasoningCatalog.value).toEqual(catalog)
-    expect(state.codexCliMissingError.value).toBe('')
-    expect(state.error.value).toBe('')
-  })
-
-  it('keeps a current CLI banner when an older catalog failure arrives', async () => {
-    const failure = deferred<unknown>()
-    gateway.getAvailableModelIds.mockReturnValueOnce(failure.promise)
-    const state = createState()
-    const older = state.refreshAll(refreshOptions)
-    await vi.advanceTimersByTimeAsync(0)
-    gateway.getCurrentModelConfig.mockRejectedValueOnce(new Error('Codex CLI is not available'))
-    await state.refreshAll(refreshOptions)
-    const banner = state.codexCliMissingError.value
-    expect(banner).not.toBe('')
-    failure.reject(new Error('older catalog failed'))
-    await older
-    expect(state.codexCliMissingError.value).toBe(banner)
-    expect(reasoningCatalog.value).toEqual([])
     expect(state.error.value).toBe('')
   })
 
@@ -1159,10 +1137,8 @@ describe('async request and lifecycle characterization (current behavior)', () =
     await first
     expect(state.availableModelIds.value).toEqual([])
     expect(reasoningCatalog.value).toEqual([])
-    expect(state.codexCliMissingError.value).toBe('')
-    failure.reject(new Error('Codex CLI is not available'))
+    failure.reject(new Error('External app-server disconnected'))
     await second
-    expect(state.codexCliMissingError.value).toBe('')
   })
 
   it('lets submission complete without UI synchronization or timers after stopPolling', async () => {
@@ -1485,10 +1461,9 @@ describe('lifecycle generation ownership across restart', () => {
     const catalog = [{ id: 'gpt-5.5', supportedReasoningEfforts: ['low'], defaultReasoningEffort: 'low' }]
     gateway.getAvailableModelIds.mockResolvedValue({ ids: ['gpt-5.5'], models: catalog })
     await state.refreshAll(refreshOptions)
-    config.reject(new Error('Codex CLI is not available'))
+    config.reject(new Error('External app-server disconnected'))
     await old
     expect(reasoningCatalog.value).toEqual(catalog)
-    expect(state.codexCliMissingError.value).toBe('')
   })
 
   it('starts a fresh refresh without waiting for a stopped thread-list request', async () => {
@@ -1677,11 +1652,10 @@ describe('shared catalog ownership and deferred submission characterization', ()
     expect(reasoningCatalog.value).toEqual([])
     state.startPolling()
     await state.refreshAll(options)
-    failure.reject(new Error('Codex CLI is not available'))
+    failure.reject(new Error('External app-server disconnected'))
     await older
     expect(reasoningCatalog).toBe(originalRef)
     expect(reasoningCatalog.value).toEqual(a)
-    expect(state.codexCliMissingError.value).toBe('')
     state.stopPolling()
     state.stopPolling()
     expect(reasoningCatalog.value).toEqual([])
@@ -1760,7 +1734,7 @@ describe('shared catalog ownership and deferred submission characterization', ()
       expect(gateway.startThreadTurn.mock.calls[0]?.slice(3, 5)).toEqual([key(model), model === 'B' ? 'medium' : 'high'])
       expect(requests).toEqual([{
         method: 'turn/start', params: {
-          threadId: thread.id, input: [{ type: 'text', text: 'race marker' }], model,
+          serviceTierForTurn: 'default', threadId: thread.id, input: [{ type: 'text', text: 'race marker' }], model,
           ...(effort ? { effort } : {}),
           collaborationMode: { mode: 'default', settings: { model, reasoning_effort: effort ?? null, developer_instructions: null } },
         },
@@ -1836,12 +1810,12 @@ describe('new-thread preference context across deferred creation', () => {
       expect(await sending).toBe(result.threadId)
       await vi.advanceTimersByTimeAsync(0)
       expect(gateway.startThreadTurn.mock.calls).toEqual([
-        [result.threadId, 'new context marker', [], gatewayModel, 'medium', undefined, [], 'default'],
+        [result.threadId, 'new context marker', [], gatewayModel, 'medium', undefined, [], 'default', 'standard'],
       ])
       expect(requests).toEqual([
         {
           method: 'turn/start', params: {
-            threadId: result.threadId, input: [{ type: 'text', text: 'new context marker' }], model, effort,
+            serviceTierForTurn: 'default', threadId: result.threadId, input: [{ type: 'text', text: 'new context marker' }], model, effort,
             collaborationMode: { mode: 'default', settings: { model, reasoning_effort: effort, developer_instructions: null } },
           },
         },

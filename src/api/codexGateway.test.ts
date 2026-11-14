@@ -382,7 +382,7 @@ describe('workspace roots cache coordination', () => {
     const second = deferred()
     const fetch = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
     vi.stubGlobal('fetch', fetch)
-    const operation: WorkspaceRootsOperation = { type: 'delete', path: '/a' }
+    const operation: WorkspaceRootsOperation = { type: 'delete', projectId: 'a' }
     const failed = updateWorkspaceRootsState(operation)
     const failure = expect(failed).rejects.toThrow('failed')
     const updated = updateWorkspaceRootsState(operation)
@@ -576,4 +576,17 @@ it('returns the native accepted turn ID without recording response metadata', as
   const metadata = { model: 'A', modelSource: 'submitted', effort: null, effortSource: 'submitted' }
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ result: { turn: { id: 'accepted', generationMetadata: metadata } } }))))
   await expect(startThreadTurn('thread', 'hello', [], 'A', undefined, undefined, [], undefined)).resolves.toBe('accepted')
+})
+
+it('submits only confirmed Fast tiers and explicitly requests standard speed after model switching', async () => {
+  const { requests } = mockRpcFetch()
+  reasoningCatalog.value = [{ id: 'a', modelProvider: 'p', serviceTiers: [{ id: 'fast' }] }, { id: 'a', modelProvider: 'other', serviceTiers: [] }, { id: 'unknown' }]
+  await startThreadTurn('t', 'fast', [], 'provider-model:["p","a"]', undefined, undefined, [], undefined, 'fast')
+  expect(requests[0]?.params).toMatchObject({ model: 'a', serviceTierForTurn: 'fast' })
+  await expect(startThreadTurn('t', 'bad', [], 'provider-model:["other","a"]', undefined, undefined, [], undefined, 'fast')).rejects.toThrow('unavailable or unknown')
+  await expect(startThreadTurn('t', 'unknown', [], 'unknown', undefined, undefined, [], undefined, 'fast')).rejects.toThrow('unavailable or unknown')
+  expect(requests).toHaveLength(1)
+  await startThreadTurn('t', 'standard', [], 'unknown', undefined, undefined, [], undefined, 'standard')
+  expect(requests[1]?.params).toMatchObject({ serviceTierForTurn: 'default' })
+  vi.unstubAllGlobals()
 })

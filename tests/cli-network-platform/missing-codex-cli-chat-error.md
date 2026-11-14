@@ -1,30 +1,14 @@
-> **Historical / retired — not a current acceptance test.** These expectations
-> describe the former locally managed Codex runtime. Current defaults belong to
-> the external server; missing local Codex is not a backend error. Follow
-> [external server verification](../website-docs-misc/external-app-server.md).
+# External connection errors and retired local CLI diagnostics
 
-### Missing Codex CLI chat error
+Setup: disposable browser profile, an external Codex server, and no local Codex
+executable in the WebUI host PATH. See the [external-server procedure](../website-docs-misc/external-app-server.md).
 
-#### Feature/Change Name
-Fresh installs without a runnable Codex CLI show a visible chat runtime error.
+1. Connect and open composer settings in light and dark themes. Expect native
+   models and no local CLI installation/configuration banner.
+2. Disconnect the external server. Expect connection/authentication guidance from
+   the active error path. Reconnect; expect recovery without duplicate submissions.
+3. Lose the response after an accepted submission. Expect an unknown-outcome
+   warning and no automatic resend. Inspect native history before retrying.
 
-#### Prerequisites/Setup
-1. Start the app in an isolated environment without `codex` in `PATH` and without `CODEXUI_CODEX_COMMAND`.
-2. Use a mobile viewport such as `390x844`.
-3. Light theme and dark theme both available from the appearance switcher when the app can reach settings.
-
-#### Steps
-1. In light theme, open the app home/new chat screen.
-2. Confirm the composer area shows `Codex CLI not found. Install @openai/codex or set CODEXUI_CODEX_COMMAND.`
-3. Confirm the model dropdown no longer fails silently as the only visible symptom.
-4. Switch to dark theme and repeat steps 1-3.
-
-#### Expected Results
-- The missing CLI condition is visible in the chat/composer area.
-- The banner remains readable and does not overlap the mobile composer controls.
-- Dark theme uses a dark error surface, not a light-theme panel.
-
-#### Rollback/Cleanup
-- Stop and remove the isolated container or test server.
-
----
+Cleanup: restore connectivity and remove only disposable test data. Never stop
+or restart the persistent 5173 server for this check.
