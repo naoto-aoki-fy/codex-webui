@@ -41,3 +41,29 @@ it('preserves provider-declared defaults and model defaults without copying priv
   expect(catalog.data[0]).toMatchObject({ modelProvider: 'Q', providerDefaultModel: 'same', isDefault: true })
   expect(JSON.stringify(catalog)).not.toContain('PRIVATE TEMPLATE')
 })
+
+it.each([
+  { tool_mode: 'direct', apply_patch_tool_type: null, shell_type: 'unified_exec' },
+  { tool_mode: 'code_mode_only', apply_patch_tool_type: 'freeform', shell_type: 'shell_command' },
+])('keeps server-owned tool settings out of picker metadata: %j', async toolSettings => {
+  const slug = 'Qwen/Qwen3.6-35B-A3B'
+  const source = { models: [{ slug, ...toolSettings, supported_reasoning_levels: [] }] }
+  const catalog = await readProviderModelCatalog(vi.fn().mockResolvedValue(result(JSON.stringify(source))), 'rivault')
+  expect(catalog.data).toEqual([{ id: slug, model: slug, modelProvider: 'rivault', supportedReasoningEfforts: [] }])
+})
+
+it('does not borrow reasoning capabilities from a matching OpenAI model', async () => {
+  const rpc = vi.fn()
+    .mockResolvedValueOnce(result(JSON.stringify({ models: [{ slug: 'shared', supported_reasoning_levels: ['high'], default_reasoning_level: 'high' }] })))
+    .mockResolvedValueOnce(result(JSON.stringify({ models: [{ slug: 'shared' }] })))
+  const openai = await readProviderModelCatalog(rpc, 'openai')
+  const rivault = await readProviderModelCatalog(rpc, 'rivault')
+  expect(openai.data[0]).toMatchObject({ modelProvider: 'openai', supportedReasoningEfforts: ['high'] })
+  expect(rivault.data[0]).toEqual({ id: 'shared', model: 'shared', modelProvider: 'rivault', supportedReasoningEfforts: [] })
+})
+
+it('rejects raw OpenAI model lists rather than pretending they are Codex catalogs', async () => {
+  const rpc = vi.fn().mockResolvedValue(result(JSON.stringify({ data: [{ id: 'Qwen/Qwen3.6-35B-A3B' }] })))
+  await expect(readProviderModelCatalog(rpc, 'rivault')).rejects.toThrow('Invalid remote provider catalog shape')
+  expect(rpc).toHaveBeenCalledTimes(1)
+})
