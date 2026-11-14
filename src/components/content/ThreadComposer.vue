@@ -160,6 +160,21 @@
 
             <div class="thread-composer-attach-separator" />
             <button
+              class="thread-composer-attach-setting"
+              type="button"
+              role="switch"
+              :aria-checked="isSkillsSelectorVisible"
+              :aria-label="t('Skills')"
+              :disabled="isComposerConfigDisabled"
+              @click="toggleSkillsSelector"
+            >
+              <span class="thread-composer-attach-setting-label">{{ t('Skills') }}</span>
+              <span
+                class="thread-composer-attach-switch"
+                :class="{ 'is-on': isSkillsSelectorVisible }"
+              />
+            </button>
+            <button
               v-if="isFastModeSupported"
               class="thread-composer-attach-setting"
               type="button"
@@ -226,6 +241,7 @@
         />
 
         <ComposerSearchDropdown
+          v-if="isSkillsSelectorVisible"
           class="thread-composer-control"
           :options="skillDropdownOptions"
           :selected-values="selectedSkillPaths"
@@ -444,6 +460,7 @@ const photoLibraryInputRef = ref<HTMLInputElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const { isMobile } = useMobile()
 const isAttachMenuOpen = ref(false)
+const isSkillsSelectorVisible = ref(false)
 const mentionStartIndex = ref<number | null>(null)
 const mentionQuery = ref('')
 const fileMentionSuggestions = ref<ComposerFileSuggestion[]>([])
@@ -767,6 +784,12 @@ function onToggleSpeedMode(): void {
 function toggleAttachMenu(): void {
   if (isInteractionDisabled.value) return
   isAttachMenuOpen.value = !isAttachMenuOpen.value
+}
+
+function toggleSkillsSelector(): void {
+  if (isComposerConfigDisabled.value) return
+  isSkillsSelectorVisible.value = !isSkillsSelectorVisible.value
+  isAttachMenuOpen.value = false
 }
 
 function triggerPhotoLibrary(): void {
