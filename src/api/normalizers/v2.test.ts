@@ -4,7 +4,14 @@ import type { ThreadReadResponse } from '../appServerDtos'
 
 function threadReadResponseWithContent(content: ThreadReadResponse['thread']['turns'][number]['items'][number][]): ThreadReadResponse {
   return {
+    readState: null,
     thread: {
+      environments: null, extra: null, sessionId: 'session', forkedFromId: null,
+      parentThreadId: null, ephemeral: false, section: null, sectionEnteredAt: null,
+      projectId: null, historyMode: 'paginated', model: null, reasoningEffort: null,
+      recencyAt: null, status: { type: 'idle' }, originator: null,
+      canAcceptDirectInput: null, threadSource: null, agentNickname: null,
+      agentRole: null, name: null, daybreakEnabled: null,
       id: 'thread-1',
       preview: 'Use a skill',
       modelProvider: 'openai',
@@ -17,6 +24,7 @@ function threadReadResponseWithContent(content: ThreadReadResponse['thread']['tu
       gitInfo: null,
       turns: [{
         id: 'turn-1',
+        rootTurnId: null, itemsView: 'full', startedAt: null, completedAt: null, durationMs: null,
         status: 'completed',
         error: null,
         items: content,
@@ -33,7 +41,7 @@ describe('normalizeThreadMessagesV2', () => {
       { role: 'user' as const, text: 'Imported: this is original user-authored text.', source: 'another-source (Q / B)' },
     ]
     const payload = {
-      ...threadReadResponseWithContent([{ type: 'agentMessage', id: 'new-answer', text: 'New native answer' }]),
+      ...threadReadResponseWithContent([{ type: 'agentMessage', phase: null, memoryCitation: null, delivery: null, questions: null, id: 'new-answer', text: 'New native answer' }]),
       importedTranscript: transcript,
       importStage: 'ready',
     }
@@ -51,7 +59,7 @@ describe('normalizeThreadMessagesV2', () => {
 
   it('preserves selected skill inputs on the rendered user message', () => {
     const messages = normalizeThreadMessagesV2(threadReadResponseWithContent([{
-      type: 'userMessage',
+      type: 'userMessage', clientId: null,
       id: 'user-1',
       content: [
         { type: 'text', text: 'Use the browser skill', text_elements: [] },
@@ -70,7 +78,7 @@ describe('normalizeThreadMessagesV2', () => {
 
   it('renders skill-only user messages instead of dropping them as raw blocks', () => {
     const messages = normalizeThreadMessagesV2(threadReadResponseWithContent([{
-      type: 'userMessage',
+      type: 'userMessage', clientId: null,
       id: 'user-2',
       content: [
         { type: 'skill', name: 'sample-skill', path: '/local/skills/sample-skill/SKILL.md' },
@@ -89,7 +97,7 @@ describe('normalizeThreadMessagesV2', () => {
 
   it('decodes escaped heartbeat instructions without exposing raw XML', () => {
     const messages = normalizeThreadMessagesV2(threadReadResponseWithContent([{
-      type: 'userMessage',
+      type: 'userMessage', clientId: null,
       id: 'automation-user-1',
       content: [{
         type: 'text',
@@ -116,7 +124,7 @@ Reply with &lt;/instructions&gt; and A &amp; B
 
   it('applies a base turn index for paged thread slices', () => {
     const messages = normalizeThreadMessagesV2(threadReadResponseWithContent([{
-      type: 'userMessage',
+      type: 'userMessage', clientId: null,
       id: 'user-3',
       content: [{ type: 'text', text: 'Paged message', text_elements: [] }],
     }]), 12)
@@ -131,7 +139,7 @@ Reply with &lt;/instructions&gt; and A &amp; B
 
   it('renders failed turn errors as chat system messages', () => {
     const response = threadReadResponseWithContent([{
-      type: 'userMessage',
+      type: 'userMessage', clientId: null,
       id: 'user-4',
       content: [{ type: 'text', text: 'hi', text_elements: [] }],
     }])
@@ -139,7 +147,7 @@ Reply with &lt;/instructions&gt; and A &amp; B
     response.thread.turns[0].error = {
       message: 'unexpected status 401 Unauthorized: Missing bearer or basic authentication in header',
       codexErrorInfo: null,
-      additionalDetails: null,
+      additionalDetails: null, misalignment: null,
     }
 
     const messages = normalizeThreadMessagesV2(response)
@@ -160,21 +168,23 @@ Reply with &lt;/instructions&gt; and A &amp; B
     response.thread.turns = [
       {
         id: '',
+        rootTurnId: null, itemsView: 'full', startedAt: null, completedAt: null, durationMs: null,
         status: 'failed',
         error: {
           message: 'first failed turn',
           codexErrorInfo: null,
-          additionalDetails: null,
+          additionalDetails: null, misalignment: null,
         },
         items: [],
       },
       {
         id: '   ',
+        rootTurnId: null, itemsView: 'full', startedAt: null, completedAt: null, durationMs: null,
         status: 'failed',
         error: {
           message: 'second failed turn',
           codexErrorInfo: null,
-          additionalDetails: null,
+          additionalDetails: null, misalignment: null,
         },
         items: [],
       },
@@ -210,9 +220,9 @@ describe('readThreadInProgressFromResponse', () => {
 
 it('only stamps the completed answer and never substitutes thread activity time', () => {
   const payload = threadReadResponseWithContent([
-    { type: 'userMessage', id: 'u', content: [{ type: 'text', text: 'hello', text_elements: [] }] },
-    { type: 'agentMessage', id: 'a', text: 'Working' },
-    { type: 'agentMessage', id: 'b', text: 'Done' },
+    { type: 'userMessage', clientId: null, id: 'u', content: [{ type: 'text', text: 'hello', text_elements: [] }] },
+    { type: 'agentMessage', phase: null, memoryCitation: null, delivery: null, questions: null, id: 'a', text: 'Working' },
+    { type: 'agentMessage', phase: null, memoryCitation: null, delivery: null, questions: null, id: 'b', text: 'Done' },
   ] as ThreadReadResponse['thread']['turns'][number]['items'])
   Object.assign(payload.thread.turns[0]!, { submittedAt: '2026-11-05T00:12:00Z', completedAt: '2026-11-05T00:13:00Z' })
   let messages = normalizeThreadMessagesV2(payload)
@@ -226,9 +236,9 @@ it('only stamps the completed answer and never substitutes thread activity time'
 
 function timedResponse() {
   const payload = threadReadResponseWithContent([
-    { type: 'userMessage', id: 'u', content: [{ type: 'text', text: 'hello', text_elements: [] }] },
-    { type: 'agentMessage', id: 'progress', text: 'Working' },
-    { type: 'agentMessage', id: 'final', text: 'Done' },
+    { type: 'userMessage', clientId: null, id: 'u', content: [{ type: 'text', text: 'hello', text_elements: [] }] },
+    { type: 'agentMessage', phase: null, memoryCitation: null, delivery: null, questions: null, id: 'progress', text: 'Working' },
+    { type: 'agentMessage', phase: null, memoryCitation: null, delivery: null, questions: null, id: 'final', text: 'Done' },
   ])
   Object.assign(payload.thread, { historyMode: 'paginated', cliVersion: '0.166.0' })
   Object.assign(payload.thread.turns[0]!, { startedAt: 1793800494, completedAt: '2026-11-04T13:54:59.257Z' })

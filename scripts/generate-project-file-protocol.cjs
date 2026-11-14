@@ -1,6 +1,6 @@
-// Generate only the protocol slice used by the project filesystem adapter.
+// Generate the protocol slices imported by the application from pinned Codex.
 const { execFileSync } = require('node:child_process')
-const { mkdtempSync, readdirSync, copyFileSync, readFileSync, mkdirSync, rmSync } = require('node:fs')
+const { mkdtempSync, readdirSync, copyFileSync, readFileSync, writeFileSync, mkdirSync, rmSync } = require('node:fs')
 const { tmpdir } = require('node:os')
 const { join, dirname, resolve, relative } = require('node:path')
 const binary = join(process.cwd(), 'node_modules/.bin/codex')
@@ -24,5 +24,9 @@ try {
       copyType(resolve(dirname(source), match[1] + '.ts'))
     }
   }
-  for (const name of ['v2/CommandExecParams.ts', 'v2/CommandExecResponse.ts', 'FuzzyFileSearchParams.ts', 'FuzzyFileSearchResponse.ts']) copyType(join(temp, name))
+  const dtoSource = readFileSync(join(process.cwd(), 'src/api/appServerDtos.ts'), 'utf8')
+  const dtoTypes = [...dtoSource.matchAll(/protocol\/0\.167\.2\/([^'"]+)/g)].map(match => match[1])
+  for (const name of ['v2/CommandExecParams', 'v2/CommandExecResponse', 'FuzzyFileSearchParams', 'FuzzyFileSearchResponse', ...dtoTypes]) copyType(join(temp, name + '.ts'))
+  const methods = name => [...new Set([...readFileSync(join(temp, name + '.ts'), 'utf8').matchAll(/"method": "([^"]+)"/g)].map(match => match[1]))].sort()
+  writeFileSync(join(process.cwd(), 'src/server/appServerMethods.json'), JSON.stringify({ methods: methods('ClientRequest'), notifications: methods('ServerNotification') }, null, 2) + '\n')
 } finally { rmSync(temp, { recursive: true, force: true }) }

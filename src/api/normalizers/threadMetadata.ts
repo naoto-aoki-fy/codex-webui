@@ -15,7 +15,7 @@ function readString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-export function buildTurnIndexByTurnId(payload: ThreadReadResponse, baseTurnIndex = 0): ThreadTurnIndexById {
+export function buildTurnIndexByTurnId(payload: Pick<ThreadReadResponse, 'thread'>, baseTurnIndex = 0): ThreadTurnIndexById {
   const turns = Array.isArray(payload.thread.turns) ? payload.thread.turns : []
   const lookup: ThreadTurnIndexById = {}
 
@@ -29,7 +29,7 @@ export function buildTurnIndexByTurnId(payload: ThreadReadResponse, baseTurnInde
   return lookup
 }
 
-export function readThreadTurnStartIndex(payload: ThreadReadResponse): number {
+export function readThreadTurnStartIndex(payload: Pick<ThreadReadResponse, 'thread'>): number {
   const record = asRecord(payload)
   const raw = record?.threadTurnStartIndex
   return Math.max(0, Math.floor(typeof raw === 'number' ? raw : 0))
