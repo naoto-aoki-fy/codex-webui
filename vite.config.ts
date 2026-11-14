@@ -50,7 +50,11 @@ function getWorktreeName(): string {
 }
 
 const worktreeName = getWorktreeName();
-const appVersion = typeof pkg.version === "string" ? pkg.version : "unknown";
+const packageVersion: unknown = "version" in pkg ? pkg.version : undefined;
+const appVersion =
+  typeof packageVersion === "string" && packageVersion.trim().length > 0
+    ? packageVersion.trim()
+    : "unknown";
 const WS_UPGRADE_ATTACHED_KEY = "__codexBridgeWsAttached__";
 
 function readEnvValueFromFile(filePath: string, key: string): string {
