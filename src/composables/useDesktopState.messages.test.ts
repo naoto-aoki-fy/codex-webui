@@ -2314,6 +2314,17 @@ describe('conversation model and fresh fork provider selection', () => {
     expect(gateway.startThreadTurn.mock.calls[0]?.[3]).toBe(key('P', 'B'))
   })
 
+  it.each(['C', ''])('discards a previous provider model override when the server confirms a new provider with model %s', async model => {
+    setupCatalog()
+    const state = createState()
+    await state.loadMessages(thread.id)
+    state.setSelectedModelId(key('P', 'B'))
+    gateway.getThreadDetail.mockResolvedValueOnce({ ...oldDetail, model, modelProvider: 'Q' })
+    await state.loadMessages(thread.id, { force: true })
+    expect(state.readModelIdForThread(thread.id)).toBe(key('Q', 'C'))
+    await state.sendMessageToSelectedThread('continue with confirmed provider')
+    expect(gateway.startThreadTurn.mock.calls[0]?.[3]).toBe(key('Q', 'C'))
+  })
   it.each(['full', 'response'])('publishes a %s transfer only after import and submits the next explicit message once', async (entry) => {
     setupCatalog()
     const state = createState()

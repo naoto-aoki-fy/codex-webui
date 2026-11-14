@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { computed } from 'vue'
 import {
   findReasoningModel,
+  defaultModelForProvider,
+  providerModelOptions,
   modelSelectionKey,
   parseModelSelection,
   normalizeReasoningEffort,
@@ -128,4 +130,33 @@ it('normalizes provider and model whitespace without folding distinct provider I
   expect(parseModelSelection('provider-model:[" openai "," a "]')).toEqual({ provider: 'openai', model: 'a' })
   expect(parseModelSelection(' a ')).toEqual({ provider: '', model: 'a' })
   expect(modelSelectionKey('OpenAI', 'a')).not.toBe(modelSelectionKey('openai', 'a'))
+})
+
+
+describe('provider-scoped model selection', () => {
+  const catalog: ReasoningModel[] = [
+    { id: 'shared', modelProvider: 'P', displayName: 'Source model', priority: 0 },
+    { id: 'shared', modelProvider: 'Q', displayName: 'RiVault / Shared', providerDisplayName: 'RiVault', priority: 9 },
+    { id: 'q-default', modelProvider: 'Q', displayName: 'Default', priority: 0 },
+    { id: 'q-other', modelProvider: 'Q', displayName: 'Other', priority: 1 },
+  ]
+  it('uses only the destination provider default, independent of source and usage order', () => {
+    expect(defaultModelForProvider(catalog, 'Q')).toBe('q-default')
+    expect(defaultModelForProvider(catalog.map(entry => entry.id === 'q-other' ? { ...entry, isDefault: true } : entry), 'Q')).toBe('q-other')
+    expect(defaultModelForProvider(catalog.map(entry => entry.modelProvider === 'Q' ? { ...entry, providerDefaultModel: 'configured' } : entry), 'Q')).toBe('configured')
+    expect(defaultModelForProvider(catalog, 'missing')).toBe('')
+  })
+  it('filters by exact provider and keeps IDs while removing redundant label prefixes', () => {
+    const ids = ['P', 'Q'].flatMap(provider => catalog.filter(m => m.modelProvider === provider).map(m => modelSelectionKey(provider, m.id!)))
+    expect(providerModelOptions(ids, 'P', catalog)).toEqual([{ value: modelSelectionKey('P', 'shared'), label: 'Source model' }])
+    expect(providerModelOptions(ids, 'Q', catalog)).toEqual([
+      { value: modelSelectionKey('Q', 'shared'), label: 'Shared' },
+      { value: modelSelectionKey('Q', 'q-default'), label: 'Default' },
+      { value: modelSelectionKey('Q', 'q-other'), label: 'Other' },
+    ])
+  })
+  it('keeps legacy single-provider IDs without assigning a foreign catalog to a provider', () => {
+    expect(providerModelOptions(['legacy'], 'P', [{ id: 'legacy' }])).toEqual([{ value: 'legacy', label: 'legacy' }])
+    expect(providerModelOptions(['legacy', modelSelectionKey('Q', 'shared')], 'P', catalog)).toEqual([])
+  })
 })

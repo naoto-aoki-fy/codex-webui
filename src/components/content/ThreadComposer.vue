@@ -214,12 +214,12 @@
 
         <ComposerDropdown
           class="thread-composer-control"
-          :model-value="selectedModel"
+          :model-value="displayedModel"
           :options="modelOptions"
           :selected-prefix-icon="showFastModeModelIcon ? IconTablerBolt : null"
           :placeholder="t('Model')"
           open-direction="up"
-          :disabled="isComposerConfigDisabled || models.length === 0"
+          :disabled="isComposerConfigDisabled || modelOptions.length === 0"
           enable-search
           :search-placeholder="t('Search models...')"
           @update:model-value="onModelSelect"
@@ -291,7 +291,7 @@
 <script setup lang="ts">
 import { profileStorageKey } from '../../utils/browserConnectionProfile'
 import { findReasoningModel, reasoningCatalog } from '../../api/codexGateway'
-import { parseModelSelection } from '../../api/modelCapabilities'
+import { parseModelSelection, defaultModelForProvider, modelSelectionKey, providerModelOptions } from '../../api/modelCapabilities'
 import { normalizeSkillMarkdownPath } from '../../api/normalizers/skills'
 import { toBrowseUrl } from '../../utils/conversationLinks'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -330,6 +330,7 @@ const props = defineProps<{
   cwd?: string
   collaborationModes?: CollaborationModeOption[]
   selectedCollaborationMode: CollaborationModeKind
+  modelProvider?: string
   models: string[]
   selectedModel: string
   selectedReasoningEffort: ReasoningEffort | ''
@@ -461,18 +462,15 @@ const DRAFT_STORAGE_PREFIX = 'codex-web-local.thread-draft.v1.'
 let lastActiveThreadId = ''
 
 const reasoningOptions = computed(() => props.reasoningEffortOptions ?? [])
-function formatModelLabel(modelId: string): string {
-  const selection = parseModelSelection(modelId)
-  // Depend on the reactive catalog so labels update after discovery.
-  void reasoningCatalog.value
-  const entry = findReasoningModel(modelId)
-  const label = entry?.displayName || selection.model.trim().replace(/^gpt/i, 'GPT')
-  return selection.provider ? `${entry?.providerDisplayName || selection.provider} — ${label}` : label
-}
-
-const modelOptions = computed(() =>
-  props.models.map((modelId) => ({ value: modelId, label: formatModelLabel(modelId) })),
-)
+const activeModelProvider = computed(() => props.modelProvider || parseModelSelection(props.selectedModel).provider)
+const modelOptions = computed(() => providerModelOptions(props.models, activeModelProvider.value, reasoningCatalog.value))
+const displayedModel = computed(() => modelOptions.value.some(option => option.value === props.selectedModel) ? props.selectedModel : '')
+watch([activeModelProvider, modelOptions, () => props.selectedModel], () => {
+  if (!props.modelProvider || !props.selectedModel || parseModelSelection(props.selectedModel).provider === props.modelProvider) return
+  const fallback = modelSelectionKey(props.modelProvider, defaultModelForProvider(reasoningCatalog.value, props.modelProvider))
+  const next = modelOptions.value.find(option => option.value === fallback)?.value || modelOptions.value[0]?.value || ''
+  emit('update:selected-model', next)
+}, { immediate: true })
 const isPlanModeSelected = computed(() => props.selectedCollaborationMode === 'plan')
 
 const isPlanModeWaitingForModel = computed(() =>
@@ -749,6 +747,7 @@ function toggleComposerExpanded(): void {
 }
 
 function onModelSelect(value: string): void {
+  if (!modelOptions.value.some(option => option.value === value)) return
   emit('update:selected-model', value)
 }
 

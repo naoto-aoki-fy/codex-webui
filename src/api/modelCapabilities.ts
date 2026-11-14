@@ -2,6 +2,8 @@ import type { ReasoningEffort } from './appServerDtos'
 
 export type ReasoningModel = {
   modelProvider?: string
+  providerDefaultModel?: string
+  isDefault?: boolean
   providerDisplayName?: string
   description?: string
   visibility?: string
@@ -71,4 +73,31 @@ export function parseModelSelection(value: string): { provider: string; model: s
     } catch { /* Interpret malformed legacy values as bare model IDs. */ }
   }
   return { provider: '', model: value.trim() }
+}
+
+// Provider defaults must never come from a source thread or model usage order.
+export function defaultModelForProvider(catalog: ReasoningModel[], provider: string): string {
+  const entries = catalog.filter(entry => entry.modelProvider === provider)
+  const configured = entries.find(entry => entry.providerDefaultModel?.trim())?.providerDefaultModel?.trim()
+  if (configured) return configured
+  const visible = entries.filter(entry => !entry.hidden)
+  const declared = visible.find(entry => entry.isDefault)
+  const preferred = declared || [...visible].sort((a, b) => (a.priority ?? Number.MAX_SAFE_INTEGER) - (b.priority ?? Number.MAX_SAFE_INTEGER))[0]
+  return preferred?.id?.trim() || preferred?.model?.trim() || ''
+}
+
+export function providerModelOptions(ids: string[], provider: string, catalog: ReasoningModel[]): Array<{ value: string; label: string }> {
+  const legacy = !catalog.some(entry => entry.modelProvider)
+  return ids.filter(id => {
+    const selection = parseModelSelection(id)
+    return selection.provider === provider || (legacy && !selection.provider)
+  }).map(id => {
+    const entry = findReasoningModel(catalog, id)
+    let label = entry?.displayName || parseModelSelection(id).model
+    if (entry?.displayName) for (const name of [entry.providerDisplayName, entry.modelProvider]) {
+      if (!name) continue
+      for (const separator of [' / ', ' — ', ': ']) if (label.startsWith(name + separator)) label = label.slice(name.length + separator.length)
+    }
+    return { value: id, label }
+  })
 }

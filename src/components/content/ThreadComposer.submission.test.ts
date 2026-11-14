@@ -33,7 +33,7 @@ const renderer = vue.createRenderer<Node, Node>({
 })
 const cleanup: Array<() => void> = []
 afterEach(() => { cleanup.splice(0).forEach(fn => fn()); vi.unstubAllGlobals() })
-function mount() {
+function mount(initial: Record<string, unknown> = {}) {
   const storage = new Map<string, string>()
   vi.stubGlobal('window', { localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) }, addEventListener() {}, removeEventListener() {} })
   vi.stubGlobal('Document', class {})
@@ -42,6 +42,7 @@ function mount() {
   const exports = { default: undefined as any }
   new Function('exports', 'require', code)(exports, (path: string) => {
     if (path === 'vue') return vue
+    if (path.endsWith('ComposerDropdown.vue')) return { default: vue.defineComponent({ props: ['options', 'modelValue', 'placeholder'], setup: props => () => vue.h('dropdown', { options: props.options, modelValue: props.modelValue, placeholder: props.placeholder }) }) }
     if (path.endsWith('.vue')) return { default: { render: () => null } }
     if (path.includes('useMobile')) return { useMobile: () => ({ isMobile: vue.ref(false) }) }
     if (path.includes('useUiLanguage')) return { useUiLanguage: () => ({ t: (s: string) => s }) }
@@ -50,11 +51,18 @@ function mount() {
   })
   const submitted = vi.fn()
   const root = node('root')
-  const app = renderer.createApp(exports.default, { activeThreadId: 'child', models: [], selectedModel: '', selectedReasoningEffort: '', selectedSpeedMode: 'standard', collaborationModes: [], selectedCollaborationMode: 'default', onSubmit: submitted })
-  const exposed = app.mount(root) as unknown as ThreadComposerExposed
+  const selectedModels = vi.fn()
+  const props = vue.reactive<Record<string, any>>({ activeThreadId: 'child', models: [], selectedModel: '', selectedReasoningEffort: '', selectedSpeedMode: 'standard', collaborationModes: [], selectedCollaborationMode: 'default', onSubmit: submitted,
+    'onUpdate:selectedModel': (value: string) => { selectedModels(value); props.selectedModel = value }, ...initial })
+  const component = vue.ref<ThreadComposerExposed>()
+  const app = renderer.createApp({ setup: () => () => vue.h(exports.default, { ...props, ref: component }) })
+  app.mount(root)
+  const exposed = component.value!
+
   cleanup.push(() => app.unmount())
   function find(n: Node, tag: string): Node | undefined { return n.tag === tag ? n : n.children.map(child => find(child, tag)).find(Boolean) }
-  return { storage, exposed, submitted, submit: () => find(root, 'form')!.props.onSubmit({ preventDefault() {} }) }
+  function findModel(n: Node): Node | undefined { return n.tag === 'dropdown' && n.props.placeholder === 'Model' ? n : n.children.map(findModel).find(Boolean) }
+  return { storage, exposed, submitted, props, selectedModels, model: () => findModel(root)!, submit: () => find(root, 'form')!.props.onSubmit({ preventDefault() {} }) }
 }
 const payload = { text: 'follow-up', imageUrls: ['data:image/png;base64,abc'], fileAttachments: [{ label: 'file', path: '/file', fsPath: '/file' }], skills: [{ name: 'skill', path: '/skill' }] }
 it('preserves text, images, files, skills and persisted draft when the app rejects a rendered submission', async () => {
@@ -85,4 +93,23 @@ it('does not clear newer edits when an earlier submission is accepted', async ()
   c.submitted.mock.calls[0]![1](true)
   await vue.nextTick()
   expect(JSON.parse(c.storage.get('codex-web-local.thread-draft.v1.child')!).text).toBe('new edit')
+})
+
+it('reactively filters models by provider and replaces a previous provider selection', async () => {
+  const key = (provider: string, model: string) => `provider-model:${JSON.stringify([provider, model])}`
+  gateway.reasoningCatalog.value = [
+    { id: 'shared', modelProvider: 'P', displayName: 'Source model' },
+    { id: 'shared', modelProvider: 'Q', displayName: 'Alternate', priority: 9 },
+    { id: 'default', modelProvider: 'Q', displayName: 'Destination model', isDefault: true },
+  ]
+  try {
+    const c = mount({ modelProvider: 'P', selectedModel: key('P', 'shared'), models: [key('P', 'shared'), key('Q', 'shared'), key('Q', 'default')] })
+    expect(c.model().props.options).toEqual([{ value: key('P', 'shared'), label: 'Source model' }])
+    c.props.modelProvider = 'Q'
+    await vue.nextTick()
+    expect(c.model().props.options.map((option: any) => option.label)).toEqual(['Alternate', 'Destination model'])
+    expect(c.props.selectedModel).toBe(key('Q', 'default'))
+    expect(c.model().props.modelValue).toBe(key('Q', 'default'))
+    expect(c.selectedModels).toHaveBeenCalledExactlyOnceWith(key('Q', 'default'))
+  } finally { gateway.reasoningCatalog.value = [] }
 })

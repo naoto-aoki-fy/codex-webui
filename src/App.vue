@@ -237,7 +237,7 @@
                   :disabled="!newThreadCwd.trim()"
                   :collaboration-modes="availableCollaborationModes"
                   :selected-collaboration-mode="selectedCollaborationMode"
-                  :models="availableModelIds" :selected-model="composerSelectedModelId"
+                  :models="availableModelIds" :model-provider="parseModelSelection(composerSelectedModelId).provider" :selected-model="composerSelectedModelId"
                   :selected-reasoning-effort="composerReasoningEffort"
                   :reasoning-effort-options="composerReasoningOptions"
                   :selected-speed-mode="selectedSpeedMode"
@@ -295,7 +295,7 @@
                   :cwd="composerCwd"
                   :collaboration-modes="availableCollaborationModes"
                   :selected-collaboration-mode="selectedCollaborationMode"
-                  :models="availableModelIds"
+                  :models="availableModelIds" :model-provider="parseModelSelection(composerSelectedModelId).provider"
                   :selected-model="composerSelectedModelId"
                   :selected-reasoning-effort="composerReasoningEffort"
                   :reasoning-effort-options="composerReasoningOptions"
@@ -322,9 +322,18 @@
   <div v-if="transferPicker" class="transfer-picker-backdrop" role="presentation">
     <section class="transfer-picker" role="dialog" aria-modal="true" aria-label="Transfer conversation">
       <h2>Portable Fork</h2>
-      <p>Create a new conversation with copied history and a selectable provider/model.</p>
+      <p>Select the destination provider. Its default model will be used; you can change the model afterward.</p>
       <p v-if="transferPicker.loading">Reading the complete source history…</p>
-      <ComposerDropdown v-else v-model="transferModel" :options="transferModelOptions" placeholder="Provider / model" enable-search open-direction="down" :disabled="transferPicker.pending" />
+      <ComposerDropdown v-else v-model="transferProvider" :options="transferProviderOptions" placeholder="Provider" enable-search open-direction="down" :disabled="transferPicker.pending" />
+      <section class="transfer-skills">
+        <button type="button" class="transfer-skills-toggle" :aria-expanded="transferSkillsExpanded" aria-controls="transfer-skills-body"
+          :disabled="transferPicker.pending" @click="toggleTransferSkills">
+          <span aria-hidden="true" :class="{ 'is-open': transferSkillsExpanded }">›</span> Skills
+        </button>
+        <fieldset v-show="transferSkillsExpanded" id="transfer-skills-body" :disabled="transferPicker.pending">
+          <SkillsHub v-if="transferSkillsMounted" @skills-changed="onSkillsChanged" />
+        </fieldset>
+      </section>
       <p v-for="warning in transferPicker.warnings" :key="warning">{{ warning }}</p>
       <p v-if="transferPicker.failure" role="alert">{{ transferPicker.failure }}</p>
       <button type="button" :disabled="transferPicker.pending" @click="cancelTransferPicker">Cancel</button>
@@ -335,8 +344,8 @@
 
 <script setup lang="ts">
 import type { ForkMethod } from './types/codex'
-import { prepareConversationTransfer, cancelConversationTransfer } from './api/codexGateway'
-import { parseModelSelection } from './api/modelCapabilities'
+import { prepareConversationTransfer, cancelConversationTransfer, reasoningCatalog } from './api/codexGateway'
+import { parseModelSelection, modelSelectionKey, defaultModelForProvider } from './api/modelCapabilities'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNewThreadCwdRoute } from './composables/useNewThreadCwdRoute'
@@ -375,6 +384,7 @@ import { getPathLeafName, getPathParent, isProjectlessChatPath, normalizePathFor
 import { copyTextToClipboard } from './utils/clipboard'
 
 const ThreadConversation = defineAsyncComponent(() => import('./components/content/ThreadConversation.vue'))
+const SkillsHub = defineAsyncComponent(() => import('./components/content/SkillsHub.vue'))
 const DirectoryHub = defineAsyncComponent(() => import('./components/content/DirectoryHub.vue'))
 const { t, uiLanguage, uiLanguageOptions, setUiLanguage } = useUiLanguage()
 
@@ -982,20 +992,31 @@ const nativeForkFailure = ref('')
 const isForkOperationPending = computed(() => nativeForkPending.value || transferPicker.value !== null)
 const canConfirmFork = computed(() => {
   const picker = transferPicker.value
-  return !!picker && !picker.pending && !picker.loading && !!picker.id && !picker.failure && transferModelOptions.value.some(option => option.value === transferModel.value)
+  return !!picker && !picker.pending && !picker.loading && !!picker.id && !picker.failure && !!transferModel.value && transferProviderOptions.value.some(option => option.value === transferProvider.value)
 })
-const transferModel = ref('')
+const transferProvider = ref('')
+const transferSkillsMounted = ref(false)
+const transferSkillsExpanded = ref(false)
+function toggleTransferSkills(): void {
+  transferSkillsExpanded.value = !transferSkillsExpanded.value
+  if (transferSkillsExpanded.value) transferSkillsMounted.value = true
+}
 const isSelectedThreadImportIncomplete = computed(() => messages.value.some(message => message.id === `import-status-${selectedThreadId.value}`))
-const transferModelOptions = computed(() => availableModelIds.value.filter(id => !!parseModelSelection(id).provider).map(id => {
-  const selection = parseModelSelection(id)
-  return { value: id, label: `${selection.provider} — ${selection.model}` }
-}))
+const transferProviderOptions = computed(() => [...new Map(reasoningCatalog.value.filter(model => !!model.modelProvider)
+  .map(model => [model.modelProvider!, { value: model.modelProvider!, label: model.providerDisplayName || model.modelProvider! }])).values()])
+const transferModel = computed(() => {
+  const model = defaultModelForProvider(reasoningCatalog.value, transferProvider.value)
+  return model && transferProvider.value ? modelSelectionKey(transferProvider.value, model) : ''
+})
+
 async function openTransferPicker(sourceId: string, turnIndex?: number): Promise<void> {
   if (isForkOperationPending.value) return
   const turnId = selectedThreadId.value === sourceId ? messages.value.find(message => message.role === 'assistant' && message.turnIndex === turnIndex)?.turnId : undefined
   transferPicker.value = { sourceId, turnIndex, turnId, id: '', warnings: [], loading: true, pending: false, failure: '' }
   const picker = transferPicker.value
-  transferModel.value = ''
+  transferProvider.value = ''
+  transferSkillsMounted.value = false
+  transferSkillsExpanded.value = false
   try {
     const prepared = await prepareConversationTransfer(sourceId, turnIndex, turnId)
     Object.assign(picker, prepared)

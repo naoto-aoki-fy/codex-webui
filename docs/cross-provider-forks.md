@@ -5,7 +5,7 @@ pattern as Revert. The main **Fork** button immediately runs **Native Fork**.
 Its arrow opens **Native Fork** / **Portable Fork** options without reading
 history or creating a thread. Choosing Native Fork from the menu has the same
 behavior as the main button. Choosing Portable Fork opens only the existing
-provider/model picker; there is no method selector in that dialog.
+provider picker; there is no model or method selector in that dialog.
 
 Canceling the portable picker creates no thread. Duplicate operations are
 blocked while either creation path is pending.
@@ -17,7 +17,7 @@ blocked while either creation path is pending.
   IDs against durable history. The selected response identity is checked before
   forking, so a stale cutoff fails instead of selecting a different response.
 - **Portable Fork** uses Portable Transfer to create a new conversation from normalized readable
-  history and lets you select a destination provider/model first. It is available
+  history and lets you select a destination provider first. It is available
   for same-provider transfers as well as cross-provider transfers.
 
 Native errors are independent of portable preparation/import errors. An
@@ -36,7 +36,7 @@ persisted imported transcript and its internal attribution in the new conversati
 
 ## Portable transfer lifecycle
 
-Portable mode snapshots the source history before provider/model confirmation.
+Portable mode snapshots the source history before provider confirmation.
 Its filtering, persistence and failure fencing are unchanged.
 The snapshot is read directly from the connected app-server with
 `thread/read { includeTurns: true }`, bypassing the browser's ten-turn page.
@@ -49,6 +49,31 @@ awaits `thread/inject_items { threadId, items }`. It never calls native fork,
 `turn/start`, or resends a failed prompt. Normal configured new-thread
 instructions come from the destination app-server. Edit/retry/revert retain
 their existing native cutoff semantics.
+
+## Provider, model and Skills controls
+
+Portable Fork requires only a destination provider. The app resolves its model
+from provider-scoped default metadata and passes the resulting raw model and
+provider explicitly to the existing transfer API. For the server's configured
+provider, the configured `model` wins. For other providers, an explicitly
+reported provider/catalog default wins, followed by a declared default model,
+then the visible catalog's priority order (the Codex picker default convention).
+The source thread's model and model usage order never supply this default.
+Providers without a usable catalog/default cannot be confirmed. Effective
+provider/model verification still runs before injection. No provider defaults
+are written or changed by the dialog.
+
+The normal model pickers show only the active provider's models and use model
+names without provider prefixes. IDs and provider associations remain qualified
+internally. Switching context/provider recalculates the list; a model override
+from a previously confirmed provider is discarded. Users can change models
+within the destination provider after creation.
+
+The dialog's Skills section is collapsed by default. Expanding it lazily mounts
+the existing Skills manager, including its normal enable/disable configuration.
+Collapsing hides the manager without unmounting it or writing/clearing settings.
+These are the existing server-managed skill settings, not a new set of injected
+instructions. Existing composer draft skill selections are unchanged.
 
 ## Portable history
 
@@ -148,3 +173,10 @@ source metadata participates in message reconciliation, so unchanged messages
 can reuse cached objects. This presentation change adds no API requests,
 synchronous filesystem work, fanout, or cache invalidation. Live provider latency
 was not measured for this presentation refinement.
+
+The provider/model UI uses the already loaded catalog, so provider selection and
+filtering add no catalog RPCs or request fanout. Catalog responses now retain
+small default-model fields; instruction templates remain excluded. The Skills
+manager loads only on first expansion, then stays mounted across collapse.
+No history payloads, injection retries or import caches change. Live provider
+continuation and large catalogs were not measured for this UI update.

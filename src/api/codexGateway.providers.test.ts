@@ -91,3 +91,14 @@ it('does not fall back to unrelated models after a partial success', async () =>
   }))
   expect(await getAvailableModelIds()).toMatchObject({ ids: [key('ok', 'visible')], failures: ['old'], defaultProvider: 'ok' })
 })
+
+it('retains configured defaults scoped to each provider instead of a source model', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+    const body = JSON.parse(init.body)
+    if (body.method === 'modelProvider/list') return response({ data: [{ id: 'P', defaultModel: 'source-default' }, { id: 'Q', defaultModel: 'destination-default' }] })
+    return response({ data: [{ id: 'shared' }, { id: 'destination-default' }] })
+  }))
+  const catalog = await getAvailableModelIds()
+  expect(catalog.models.filter(m => m.modelProvider === 'Q').every(m => m.providerDefaultModel === 'destination-default')).toBe(true)
+  expect(catalog.models.filter(m => m.modelProvider === 'P').every(m => m.providerDefaultModel === 'source-default')).toBe(true)
+})
