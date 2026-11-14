@@ -104,6 +104,7 @@ import {
   replyToServerRequest,
   revertThreadHistory,
   validateThreadRevert,
+  getThreadDetailForRevert,
   invalidateResumeThread,
   resumeThreadSubscription,
   getThreadGroupsPage,
@@ -3592,7 +3593,7 @@ export function useDesktopState() {
       setTurnErrorForThread(threadId, null)
       stage = 'Refresh destination'
       const owner = historyReadOwner(threadId)
-      const detail = await getThreadDetail(threadId)
+      const detail = await getThreadDetailForRevert(threadId)
       if (historyReadOwnerByThreadId.get(threadId) !== owner) return ''
       setPersistedMessagesForThread(threadId, detail.messages)
       turnIndexByTurnIdByThreadId.value = { ...turnIndexByTurnIdByThreadId.value, [threadId]: detail.turnIndexByTurnId }

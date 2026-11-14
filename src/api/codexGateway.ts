@@ -400,6 +400,16 @@ export async function renameThread(threadId: string, threadName: string): Promis
   await callRpc('thread/name/set', { threadId, name: threadName })
 }
 
+/** Resume/materialization notifications can retire an index immediately after a
+ * fork. Retry only that read-only snapshot race, once; never replay a mutation. */
+export async function getThreadDetailForRevert(threadId: string): Promise<ResumedThread> {
+  try { return await getThreadDetail(threadId) }
+  catch (cause) {
+    if (!(cause instanceof Error) || !cause.message.includes('History changed while loading. Refresh the thread.')) throw cause
+    return getThreadDetail(threadId)
+  }
+}
+
 // Resume also ensures the thread is loaded before any filesystem mutation.
 export async function validateThreadRevert(threadId: string, beforeTurnId: string): Promise<void> {
   const payload = await callRpc<{ thread: { historyMode?: string; ephemeral?: boolean; status?: { type?: string } } }>(
@@ -413,7 +423,7 @@ export async function validateThreadRevert(threadId: string, beforeTurnId: strin
     throw new Error('Stop the active turn before editing history.')
   }
   // Check the target against durable history before restoring files.
-  const detail = await getThreadDetail(threadId)
+  const detail = await getThreadDetailForRevert(threadId)
   let page = detail
   let found = page.messages.some(message => message.turnId === beforeTurnId)
   while (!found && page.hasMoreOlder) {

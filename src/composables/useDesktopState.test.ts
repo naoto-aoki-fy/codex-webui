@@ -43,6 +43,7 @@ const gatewayMocks = vi.hoisted(() => ({
 vi.mock('../api/codexGateway', async (original) => ({
   ...await original<typeof import('../api/codexGateway')>(),
   ...gatewayMocks,
+  getThreadDetailForRevert: gatewayMocks.getThreadDetail,
   getBackgroundThreadListLimit: vi.fn(() => 100),
   pickCodexRateLimitSnapshot: vi.fn(() => null),
 }))
