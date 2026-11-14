@@ -153,7 +153,7 @@ async function startServer(options: {
   const port = await listenWithFallback(server, requestedPort, options.host)
   const lines = [
     '',
-    'Codex Web Local is running!',
+    'Codex WebUI is running!',
     `  Version:  ${version}`,
     '',
     `  Bind:     http://${options.host}:${String(port)}`,

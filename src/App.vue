@@ -598,13 +598,9 @@ const contentProjectName = computed(() => {
   const projectName = selectedThread.value?.projectName?.trim() ?? ''
   return projectName ? (projectDisplayNameById.value[projectName] ?? projectName) : ''
 })
-const browserHostName =
-  typeof window !== 'undefined'
-    ? (window.location.hostname || window.location.host || 'codexui')
-    : 'codexui'
 const pageTitle = computed(() => {
   const threadTitle = selectedThread.value?.title?.trim() ?? ''
-  if (!threadTitle) return browserHostName
+  if (!threadTitle) return 'Codex WebUI'
   return contentProjectName.value ? `${contentProjectName.value} - ${threadTitle}` : threadTitle
 })
 const filteredMessages = computed(() =>
