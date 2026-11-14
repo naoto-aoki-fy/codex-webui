@@ -163,21 +163,6 @@ export type UiProjectGroup = {
   threads: UiThread[]
 }
 
-export type ChatMessage = {
-  id: string
-  role: string
-  text: string
-  createdAt: string | null
-}
-
-export type ChatThread = {
-  id: string
-  title: string
-  projectName: string
-  updatedAt: string | null
-  messages: ChatMessage[]
-}
-
 export type CollaborationModeOption = {
   value: CollaborationModeKind
   label: string

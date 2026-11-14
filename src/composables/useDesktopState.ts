@@ -16,7 +16,6 @@ export {
   filterGroupsByWorkspaceRoots,
 } from '../utils/desktopProjectGroups'
 import {
-  extractLocalImagePathFromUrl,
   readPlanUpdate,
   asRecord,
   readString,
@@ -524,25 +523,6 @@ export function useDesktopState() {
   const isPolling = ref(false)
   const hasLoadedThreads = ref(false)
 
-  function shouldReuseAttachedImageFromPrompt(promptText: string): boolean {
-    const normalized = promptText.trim().toLowerCase()
-    if (!normalized) return false
-    return /\b(attached image|attached screenshot|save the attached|copy (the )?screenshot|save screenshot)\b/i.test(normalized)
-  }
-
-  function findLatestUserLocalImageUrl(threadId: string): string {
-    const persisted = persistedMessagesByThreadId.value[threadId] ?? []
-    for (let index = persisted.length - 1; index >= 0; index -= 1) {
-      const message = persisted[index]
-      if (message.role !== 'user' || !Array.isArray(message.images) || message.images.length === 0) continue
-      for (let imageIndex = message.images.length - 1; imageIndex >= 0; imageIndex -= 1) {
-        const imageUrl = message.images[imageIndex]?.trim() ?? ''
-        if (!imageUrl) continue
-        if (extractLocalImagePathFromUrl(imageUrl)) return imageUrl
-      }
-    }
-    return ''
-  }
   // Work may begin before polling starts; only stop invalidates its ownership.
   let lifecycleGeneration = 0
   let catalogOwnership: ReturnType<typeof acquireReasoningCatalog> | null = null
@@ -3416,15 +3396,6 @@ export function useDesktopState() {
       : selectedCollaborationMode.value
     const normalizedText = nextText.trim()
     const normalizedImageUrls = [...imageUrls]
-    if (
-      normalizedImageUrls.length === 0
-      && shouldReuseAttachedImageFromPrompt(normalizedText)
-    ) {
-      const latestAttachedImageUrl = findLatestUserLocalImageUrl(threadId)
-      if (latestAttachedImageUrl) {
-        normalizedImageUrls.push(latestAttachedImageUrl)
-      }
-    }
     const normalizedSkills = skills.map((skill) => ({ name: skill.name, path: skill.path }))
     const normalizedFileAttachments = fileAttachments.map((file) => ({ ...file }))
 
@@ -3541,10 +3512,6 @@ export function useDesktopState() {
     } finally {
       isInterruptingTurn.value = false
     }
-  }
-
-  async function rollbackSelectedThread(turnId: string): Promise<string> {
-    return executeThreadRevert(selectedThreadId.value, turnId, 'revert')
   }
 
   async function executeThreadRevert(sourceThreadId: string, turnId: string, operation: 'revert' | 'fork-and-revert'): Promise<string> {
@@ -3977,7 +3944,6 @@ export function useDesktopState() {
     forkThreadById,
     forkNativeThreadById,
     forkThreadFromTurn,
-    rollbackSelectedThread,
     executeThreadRevert,
 
     sendMessageToSelectedThread,

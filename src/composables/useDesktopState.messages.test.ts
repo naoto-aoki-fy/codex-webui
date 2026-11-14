@@ -2451,3 +2451,13 @@ describe('conversation model and fresh fork provider selection', () => {
   })
 
 })
+
+it('sends only explicitly selected images even when text refers to a historical attachment', async () => {
+  const historical = '/codex-local-image?path=/old.png'
+  gateway.resumeThread.mockResolvedValue({ ...oldDetail, messages: [{ ...oldUser, images: [historical] }] })
+  const state = await loadState()
+  await state.sendMessageToSelectedThread('save the attached screenshot')
+  expect(gateway.startThreadTurn.mock.calls[0]?.[2]).toEqual([])
+  await state.sendMessageToSelectedThread('use this image', ['/codex-local-image?path=/new.png'])
+  expect(gateway.startThreadTurn.mock.calls[1]?.[2]).toEqual(['/codex-local-image?path=/new.png'])
+})

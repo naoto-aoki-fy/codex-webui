@@ -12,7 +12,7 @@ it.each([false, true])('searches remote-only files without local rg, unsupported
     if (method === 'fs/getMetadata') return { isDirectory: true, isFile: false }
     if (method === 'fuzzyFileSearch') {
       if (unsupported) throw Object.assign(new Error('fuzzyFileSearch unavailable on connected server'), { code: -32601 })
-      return { files: [{ path: 'remote-only.txt' }] }
+      return { files: [{ path: 'rmt.txt' }, { path: 'remote-only.txt' }, { path: 'a/remote.txt' }] }
     }
     throw new Error('Unexpected RPC ' + method)
   })
@@ -24,7 +24,7 @@ it.each([false, true])('searches remote-only files without local rg, unsupported
     const res = Object.assign(new EventEmitter(), { statusCode: 200, setHeader: vi.fn(), write: vi.fn(), end: (chunk: unknown) => { body += chunk ?? '' } }) as unknown as ServerResponse
     await middleware(req, res, vi.fn())
     expect(res.statusCode).toBe(unsupported ? 500 : 200)
-    expect(JSON.parse(body)).toEqual(unsupported ? { error: 'fuzzyFileSearch unavailable on connected server' } : { data: [{ path: 'remote-only.txt' }] })
+    expect(JSON.parse(body)).toEqual(unsupported ? { error: 'fuzzyFileSearch unavailable on connected server' } : { data: [{ path: 'rmt.txt' }, { path: 'remote-only.txt' }, { path: 'a/remote.txt' }] })
     expect(rpc).toHaveBeenCalledWith('fuzzyFileSearch', { roots: ['/only-on-B'], query: 'remote', cancellationToken: null })
   } finally { scope.__codexRemoteSharedBridge__ = previous }
 })
