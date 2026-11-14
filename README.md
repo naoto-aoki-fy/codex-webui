@@ -1,4 +1,4 @@
-# codexapp
+# Codex WebUI
 
 A browser interface for the official Codex app-server, hosted on Windows or Linux.
 Desktop and mobile browsers (including Android and iOS) can connect to the host;

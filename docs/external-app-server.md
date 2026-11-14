@@ -23,11 +23,11 @@ CODEXUI_REMOTE_INITIAL_DIRECTORY=/home/user/projects \
   --app-server-url ws://127.0.0.1:14500 --connection-profile machine-b --no-open
 ```
 
-The tunnel and server remain outside codexapp's lifecycle. Shutdown, deadlines
+The tunnel and server remain outside Codex WebUI's lifecycle. Shutdown, deadlines
 and disconnects never stop them. Existing upstream authentication requirements
 are preserved; no bearer-token or mTLS configuration is added. Client-managed
 external token refresh is unsupported and returns instructions to log in on B;
-codexapp never reads A's auth.json to answer it.
+Codex WebUI never reads A's auth.json to answer it.
 
 `--host 127.0.0.1` binds HTTP to loopback. `--host 0.0.0.0` intentionally enables
 LAN access (the existing default). Optional `--password <password>` protection
@@ -213,7 +213,7 @@ Same-host Linux/macOS deployments can use `unix:///absolute/path.sock` with an
 independently started `codex app-server --listen unix:///tmp/codex.sock`.
 WebSocket framing and recovery are shared with TCP. Percent-encode special
 characters; host, query, fragment and credentials are forbidden. Windows uses
-ws/wss. codexapp never creates or deletes the socket. This transport requires
+ws/wss. Codex WebUI never creates or deletes the socket. This transport requires
 access to the socket, but does not change project ownership rules.
 
 ## Verification and performance
