@@ -181,3 +181,29 @@ it('rejects all legacy path mutations without rewriting registry fields', async 
   expect(await readFile(statePath, 'utf8')).toBe(raw)
   expect(rpc).not.toHaveBeenCalled()
 })
+
+it('rejects an adapter missing native pagination without fetching full history', async () => {
+  const response = await request('/codex-api/thread-turn-page?threadId=historical-thread')
+  expect(response.res.statusCode).toBe(500)
+  expect(response.json.error).toContain('Native history pagination is required')
+  expect(rpc).not.toHaveBeenCalled()
+})
+
+it('reports Project and pin upgrade errors without blocking native conversation reads or rewriting state', async () => {
+  const path = join(home, '.codex-global-state.json')
+  const before = JSON.stringify({ 'electron-saved-workspace-roots': ['/legacy'], 'pinned-thread-ids': ['legacy-pin'], other: 42 }) + '\n'
+  await writeFile(path, before)
+  const projects = await request('/codex-api/workspace-roots-state')
+  expect(projects.res.statusCode).toBe(502)
+  expect(projects.json.error).toContain('pre-cleanup WebUI')
+  const pins = await request('/codex-api/thread-pins')
+  expect(pins.res.statusCode).toBe(502)
+  expect(pins.json.error).toContain('Legacy pin migration')
+  const listed = await request('/codex-api/rpc', 'POST', { method: 'thread/list', params: {} })
+  expect(listed.res.statusCode).toBe(200)
+  rpc.mockResolvedValueOnce({ thread: { id: 'native', turns: [] } })
+  const read = await request('/codex-api/rpc', 'POST', { method: 'thread/read', params: { threadId: 'native', includeTurns: false } })
+  expect(read.res.statusCode).toBe(200)
+  expect(read.json.result.thread.id).toBe('native')
+  expect(await readFile(path, 'utf8')).toBe(before)
+})

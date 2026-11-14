@@ -1,3 +1,5 @@
+import { RemoteHistoryPager } from './remoteHistoryPager'
+import { nativeHistoryResponse } from './testFixtures/nativeHistory'
 import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
@@ -34,8 +36,9 @@ beforeEach(async () => {
   snapshot = null
   events = []
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
+  const pager = new RemoteHistoryPager({ rpc: async (method, params) => nativeHistoryResponse(method, params, await rpc(method, params)), getConnectionGeneration: () => 1, readThreadForTurnPage: vi.fn() })
   scope.__codexRemoteSharedBridge__ = {
-    version: 'external-websocket-files-v2', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getLastThreadReadSnapshot: () => snapshot, getStreamEvents: () => events, readThreadForTurnPage: () => rpc('thread/read', {}) },
+    version: 'external-websocket-files-v2', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getLastThreadReadSnapshot: () => snapshot, getStreamEvents: () => events, readThreadForTurnPage: () => rpc('thread/read', {}), readThreadPage: pager.read.bind(pager) },
     methodCatalog: {},
   }
 })
@@ -236,12 +239,11 @@ it('preserves RPC body validation, malformed JSON mapping, and success envelopes
   expect(valid.json).toEqual({ result: { data: ['fixture'] } })
 })
 
-it('shares one cached thread read across pagination cursors and limits until invalidated', async () => {
+it('shares the native metadata index across pagination cursors and invalidates it on notifications', async () => {
   const client = new AppServerClient()
-  const read = vi.spyOn(client, 'rpc').mockResolvedValue({ thread: {
-    id: 'cursor-cache', turns: Array.from({ length: 8 }, (_, i) => ({ id: `t${i}`, items: [] })),
-  } })
-  ;(scope.__codexRemoteSharedBridge__ as any).appServer.readThreadForTurnPage = client.readThreadForTurnPage.bind(client)
+  const snapshot = { thread: { id: 'cursor-cache', turns: Array.from({ length: 8 }, (_, i) => ({ id: `t${i}`, items: [] })) } }
+  const read = vi.spyOn(client, 'rpc').mockImplementation(async (method, params) => nativeHistoryResponse(method, params, snapshot))
+  ;(scope.__codexRemoteSharedBridge__ as any).appServer.readThreadPage = client.readThreadPage.bind(client)
   try {
     const [first, second] = await Promise.all([
       request('/codex-api/thread-turn-page?threadId=cursor-cache&beforeTurnId=t6&limit=2'),
@@ -251,9 +253,11 @@ it('shares one cached thread read across pagination cursors and limits until inv
     expect(second.json.result.thread.turns.map((t: any) => t.id)).toEqual(['t1', 't2', 't3'])
     expect(first.json).toMatchObject({ startTurnIndex: 4, hasMoreOlder: true })
     expect(second.json).toMatchObject({ startTurnIndex: 1, hasMoreOlder: true })
-    expect(read).toHaveBeenCalledExactlyOnceWith('thread/read', { threadId: 'cursor-cache', includeTurns: true })
-    client.storeThreadReadSnapshot('cursor-cache', {})
+    expect(read.mock.calls.filter(([method]) => method === 'thread/read')).toEqual([['thread/read', { threadId: 'cursor-cache', includeTurns: false }]])
+    expect(read.mock.calls.filter(([method, params]) => method === 'thread/turns/list' && (params as any).itemsView === 'full')).toHaveLength(2)
+    ;(client as any).emitNotification({ method: 'item/completed', params: { threadId: 'cursor-cache', turnId: 't7', item: { id: 'item' } } })
     await request('/codex-api/thread-turn-page?threadId=cursor-cache&beforeTurnId=t2&limit=2')
-    expect(read).toHaveBeenCalledTimes(2)
+    expect(read.mock.calls.filter(([method]) => method === 'thread/read')).toHaveLength(2)
+    expect(read.mock.calls.some(([, params]) => (params as any).includeTurns === true)).toBe(false)
   } finally { client.dispose() }
 })

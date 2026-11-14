@@ -52,3 +52,20 @@ Actions: reopen, reload and reconnect; inspect history and submit another turn.
 Expected: native history remains visible; first-turn recovery and duplicate-send prevention remain active. No local session log scan or codexapp-turn-metadata JSONL write occurs. Live response model/reasoning labels still use submitted settings.
 Cleanup: remove only test conversations if desired; retain existing metadata files.
 Performance: eliminates unused session parsing/cache implementations and one filesystem append per accepted turn; native history requests remain unchanged. Live timings were not measured.
+
+## Native pagination compatibility boundary
+
+Setup: disposable native RPC fixture. Run
+`pnpm exec vitest run src/server/remoteHistoryPager.test.ts
+src/server/threadLiveStateRetirement.test.ts src/server/threadFileChangeRetirement.test.ts
+src/server/projectHistory.test.ts src/server/conversationTransfer.test.ts
+src/composables/useDesktopState.test.ts`.
+
+Expect native recent/older pages with absolute positions and unchanged fork
+cutoffs, coalesced metadata indexes, notification invalidation and preserved
+inline media/errors. An adapter lacking the native pager must return a clear
+compatibility error without a full read. Explicit method-not-found is an upgrade
+failure; permission, transport and malformed responses remain distinct. Portable
+transfer full reads and revert/fork-and-revert still execute their supported
+entry points. No fixture operates on real history. Cleanup is automatic for
+fixture homes; do not delete real conversations or restart the persistent server.
