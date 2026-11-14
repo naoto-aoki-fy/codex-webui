@@ -27,3 +27,12 @@ New visits incur no registration, precache, cache lookup, or background revalida
 ## Rollback / cleanup
 
 Restore online mode and remove only test caches/profiles. To roll back, deploy the prior release; it will register its worker again on load. Do not delete unrelated origin storage.
+
+The medium-risk cleanup retains this retirement URL: no upgrade cutoff has been
+established for old registrations. For an isolated automated reproduction, seed a
+worker at `/sw.js` which serves a cached stale navigation from `codexweb-shell-v2`,
+also seed `codexweb-assets-v1` and an unrelated cache. Restore the retirement
+script, call `registration.update()`, and wait for unregistration and removal of
+only the two application caches. Reload must serve the current application;
+the unrelated cache entry must retain its original contents. Always restore the
+original worker source and close the disposable browser context.
