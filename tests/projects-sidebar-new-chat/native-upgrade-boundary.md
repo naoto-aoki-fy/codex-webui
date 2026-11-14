@@ -20,3 +20,16 @@ migration or deletion against real user data.
 
 Cleanup: remove only disposable profiles/homes and restore test connectivity.
 Existing native data and legacy files must not be automatically removed.
+
+## Independent acceptance matrix
+
+Run `pnpm exec vitest run src/server/nativeUpgradeAcceptance.test.ts
+src/server/projectHistory.test.ts src/server/threadPresentationStore.test.ts
+src/components/sidebar/SidebarThreadTree.test.ts src/api/codexGateway.test.ts`.
+The six disposable fixtures cover no legacy data, unmigrated Projects,
+interrupted migration, completed migration, completed Projects with remaining
+pins, and pins without Projects. Expect byte-identical state files in every case.
+Project receipts must never suppress pin warnings. Native thread list/direct read
+remain usable after both guards fail; pin UI changes are blocked until recovery.
+Use the exact source/environment/completion checks in the migration guide for a
+live acceptance run. Restore connectivity and remove only disposable fixture homes.

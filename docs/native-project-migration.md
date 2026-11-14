@@ -62,3 +62,57 @@ per-response generation metadata remain in their existing services. No migration
 or cleanup here deletes or rewrites that data. Native listing's pre-existing
 injected-only import discovery limitation remains documented in
 [the maintenance evidence](maintenance-cleanup.md#portable-discoverability-acceptance-comparison).
+
+## Reproducible migration source and environment
+
+The exact migration source is Git commit
+`3f659043adef2fb075919dec669e88e843fe4889` (not the current package tag).
+To obtain it without changing the working branch, extract it into a fresh source
+folder and install that revision's locked dependencies:
+
+```sh
+migration_source=$(mktemp -d /tmp/codex-webui-migration.XXXXXX)
+git archive 3f659043adef2fb075919dec669e88e843fe4889 | tar -x -C "$migration_source"
+cd "$migration_source"
+pnpm install --frozen-lockfile
+# Stop the current WebUI before pointing this process at the same local state.
+CODEX_HOME="$existing_webui_state_home" \
+CODEXUI_CONNECTION_PROFILE="$existing_profile_id" \
+CODEXUI_APP_SERVER_URL="$existing_exact_endpoint" \
+pnpm run dev --host 127.0.0.1 --port 4173
+```
+
+Supply the **existing** values from the deployment being upgraded, not a new
+profile or fresh home. Default profile is `legacy`; changing it creates a distinct
+state namespace and does not migrate the old one. `CODEX_HOME` here is the
+WebUI's local application-state home. The independently managed server must keep
+its original user, remote Codex home, native database and capabilities; do not
+point it at a different home or copy credentials. Keep the exact resolved endpoint
+(including transport/address) used during migration and upgrade.
+
+The Project receipt key is SHA-256 of
+`JSON.stringify([profileId, resolvedAppServerUrl, initializedRemoteCodexHome])`.
+The state file is `$CODEX_HOME/.codex-global-state.json` for `legacy`, or
+`$CODEX_HOME/codexapp-profiles/<sha256(profileId)>/.codex-global-state.json` for a
+named profile. An initialized remote home is required for the same receipt key;
+a successful connection to a different server is not proof of migration.
+
+Observable completion checks in the old revision:
+
+- Authenticated `GET /codex-api/workspace-roots-state` succeeds in native mode;
+  the receipt for the exact identity above has `completed: true`. Check native
+  empty projects, duplicate identities, ordering and archived/imported membership.
+- Separately, authenticated `GET /codex-api/thread-pins` succeeds and contains
+  every intended old pin in native section order. `pinned-thread-ids` must be
+  absent after the old migrator finishes. A completed Project receipt is **not**
+  a pin receipt. Retry the old pin reader after an interrupted native move.
+- Reload/reconnect and repeat both reads before replacing the old WebUI.
+
+The current pin reader independently rejects any remaining valid legacy pin ID,
+even with completed Projects or no legacy Projects. It never deletes the key or
+moves sections. A pin error blocks pin loading/toggling in the sidebar, leaves
+already loaded pins intact and displays a warning. Project upgrade errors block
+Project loading/registration/rename/move/delete. Neither guard gates ordinary
+native thread list/read, direct conversation navigation, or history APIs. They
+can coexist: finish each prerequisite independently. Empty legacy pin arrays do
+not represent unmigrated pins.

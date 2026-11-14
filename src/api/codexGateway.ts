@@ -1142,14 +1142,12 @@ function getErrorMessageFromPayload(payload: unknown, fallback: string): string 
 export type ThreadPinnedState = { threadIds: string[] }
 
 export async function getPinnedThreadState(): Promise<ThreadPinnedState> {
-  try {
-    const response = await fetch('/codex-api/thread-pins')
-    if (!response.ok) return { threadIds: [] }
-    const envelope = (await response.json()) as { data?: ThreadPinnedState }
-    return envelope.data ?? { threadIds: [] }
-  } catch {
-    return { threadIds: [] }
-  }
+  const response = await fetch('/codex-api/thread-pins')
+  const payload = await readJsonResponse(response)
+  if (!response.ok) throw new Error(getErrorMessageFromPayload(payload, 'Failed to load native pins'))
+  const data = (payload as { data?: ThreadPinnedState }).data
+  if (!Array.isArray(data?.threadIds) || data.threadIds.some(id => typeof id !== 'string')) throw new Error('Malformed native pin state')
+  return data
 }
 
 export async function setThreadPinned(threadId: string, pinned: boolean, beforeThreadId?: string): Promise<void> {

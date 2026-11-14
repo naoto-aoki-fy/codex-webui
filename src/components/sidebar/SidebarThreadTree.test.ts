@@ -29,6 +29,9 @@ type SidebarState = {
   filteredGroups: UiProjectGroup[]
   chatSortMode: 'updated' | 'created'
   globalThreads: UiThread[]
+  pinStateError: string
+  togglePin(threadId: string): Promise<void>
+  refreshPinnedThreadState(): Promise<void>
   pinnedThreads: UiThread[]
   unpinnedThreadsByProjectName: Map<string, UiThread[]>
 }
@@ -136,4 +139,18 @@ describe('SidebarThreadTree native project timestamp sorting', () => {
     await nextTick()
     expect(names(state.filteredGroups)).toEqual(['Zulu', 'Alpha', 'Empty', 'Empty A'])
   })
+})
+
+it('keeps native conversations accessible and existing pins intact when pin loading fails, then recovers', async () => {
+  const { state } = await mountNativeSidebar()
+  const before = ids(state.globalThreads)
+  vi.mocked(getPinnedThreadState).mockRejectedValueOnce(new Error('Legacy pin migration is incomplete'))
+  await state.refreshPinnedThreadState()
+  expect(state.pinStateError).toContain('Legacy pin migration')
+  expect(ids(state.globalThreads)).toEqual(before)
+  expect(ids(state.pinnedThreads)).toEqual(['z-new'])
+  await state.togglePin('a-new')
+  expect(setThreadPinned).not.toHaveBeenCalled()
+  await state.refreshPinnedThreadState()
+  expect(state.pinStateError).toBe('')
 })
