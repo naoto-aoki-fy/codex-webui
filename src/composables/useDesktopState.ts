@@ -1,7 +1,7 @@
 import { ForkFirstTurn, forkRecoveryMessage } from './forkFirstTurn'
 import { profileStorageKey, reloadForConnectionProfile } from '../utils/browserConnectionProfile'
 import { modelSelectionKey, parseModelSelection, defaultModelForProvider } from '../api/modelCapabilities'
-import { markNativeThreadRead } from '../api/codexGateway'
+import { markNativeThreadRead, refreshThreadGenerationMetadata } from '../api/codexGateway'
 import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
 import {
   toProjectNameFromWorkspaceRoot,
@@ -2206,7 +2206,7 @@ export function useDesktopState() {
     }
 
     const notificationThreadId = extractThreadIdFromNotification(notification)
-    if (notificationThreadId && (
+    if (notificationThreadId && notification.method !== 'turn/generationMetadata' && (
       notification.method.startsWith('turn/') || notification.method.startsWith('item/') || notification.method === 'error'
     )) {
       realtimeRevisionByThreadId.set(notificationThreadId, (realtimeRevisionByThreadId.get(notificationThreadId) ?? 0) + 1)
@@ -4119,6 +4119,7 @@ export function useDesktopState() {
   async function reconcileSelectedHistory(): Promise<void> {
     const id = selectedThreadId.value
     if (!id) return
+    void refreshThreadGenerationMetadata(id).catch(() => {})
     // A snapshot alone cannot prove an ambiguously accepted submission failed.
     await loadMessages(id, { force: true })
   }
