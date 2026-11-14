@@ -18,3 +18,5 @@ Return to the [manual test index](../../tests.md).
 - [Connection profiles and upload accounting](connection-profiles-uploads.md)
 
 - [Disposable live maintenance acceptance](maintenance-live-acceptance.md)
+
+- [Portable discoverability comparison](portable-discoverability-comparison.md)
