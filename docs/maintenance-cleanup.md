@@ -165,8 +165,10 @@ navigate and refresh repeatedly.
   for those turns remains unknown, while content remains accessible.
 - Native 0.169.0 thread/list omits injected-only Portable conversations, even after
   naming them and with all-provider, database-only and title-search queries.
-  Existing imported content still displays through its destination link/receipt,
-  and migration preserves its native project association. No fabricated turns or
+  The before/current comparison below classifies this as pre-existing. After the
+  first completed ordinary turn, native listing and fresh-start UI discovery work;
+  injected-only destinations remain undiscoverable through those UI lists/searches.
+  Imported content and native project association are preserved. No fabricated turns or
   custom merged index were introduced to hide this upstream discovery limitation.
 - Live checks covered one POSIX host and its default provider. Separate-host
   tunnels, Windows runtime, other server releases, cross-provider inference and
@@ -194,3 +196,118 @@ and the corrected targeted test, full suite, typecheck, build and fixture all
 passed before handoff. No baseline test failures were observed.
 
 All work stayed on main. No commits were pushed.
+
+## Portable discoverability acceptance comparison
+
+**Conclusion: pre-existing native discovery limitation, not a cleanup regression.**
+The earlier URL-based display check did not establish discoverability; this
+comparison explicitly tests fresh-start discovery without using destination URLs.
+No production discovery code or additional application-owned state was introduced.
+
+Compared the actual pre-cleanup build at `de7fde9` (parent of the first cleanup
+commit `9dc2470`) with current production source at `de138cc`. The baseline was
+exported with git archive and built in /tmp using the same dependency tree; no
+branch was created or switched. Both applications used the same independently
+managed `codex-web-local/0.169.0` server, OpenAI provider, gpt-6-luna model, source
+conversation, working directory and explicit naming. One Portable destination
+was created through each version's real conversation-transfer API. The source
+had one ordinary completed turn and served as a positive listing control.
+
+The precise sidebar listing conditions were archived=false, limit=50,
+sortKey=updated_at, modelProviders=[], cursor=null, with every returned cursor
+exhausted. Additional native probes used projectId, cwd, useStateDbOnly=true and
+title searchTerm filters; native thread/search used known imported content.
+The old creation path initially left projectId null, while current creation set
+it. The baseline destination was explicitly assigned to the same test Project
+before the equivalent-membership comparison. Assignment and naming did not make
+an injected-only destination discoverable.
+
+| Observation after application process restart and a fresh browser context | Pre-cleanup | Current |
+| --- | --- | --- |
+| Injected-only: native ordinary turns | 0 | 0 |
+| Injected-only with correct native Project ID: global/project/cwd/database/title-filtered native listing | Absent | Absent |
+| Injected-only: actual application thread/list response | Absent | Absent |
+| Injected-only: sidebar, title search, imported-content search from home | Not discoverable | Not discoverable |
+| First completed ordinary turn: native listing, project listing and application response | Present | Present |
+| Fresh-start sidebar/title/content search after that turn | Discoverable | Discoverable |
+| Reopen by clicking the sidebar, without a saved URL | Imported text preserved | Imported text preserved |
+
+The omission occurs in **native listing/search before application grouping**.
+Native thread/read confirmed the same correct Project ID even while both global
+and project-filtered listings omitted the destination. The applications returned
+the same stable native list results. Pre-cleanup AppServerClient.rpc already
+bypassed PersistentThreadIndex for thread/list, and the bridge supplied an empty
+legacy callback; the removed merger was not providing durable import discovery.
+Both versions inserted only a temporary optimistic Portable row, with a 120-second
+confirmation grace period. That is not persistent discovery after a reload.
+
+The first ordinary turn was sent through each actual application, using the same
+provider/model and destination ID, with a small text prompt and no attachments or
+tools. Both turn/start replies initially reported inProgress. Native visibility
+changed asynchronously: the first global native probe still omitted the thread,
+then later project/cwd/database and application queries included it during the
+same probe sequence. By completed-turn verification, all ordinary listings and
+native content search included it. After another application restart and an empty
+browser context, sidebar and UI search found it and a sidebar click reopened the
+original imported prompt/answer plus the new ordinary turn. No duplicate threads
+were created. This establishes the tested eventual condition, not an atomic
+listing guarantee at turn/start acknowledgement. Failed/rejected first turns,
+other providers and other native server releases were not tested.
+
+Executed `node --check scripts/test-portable-discoverability.cjs`, the archived
+baseline's `pnpm run build`, and the opt-in live command in the
+[reproduction checklist](../tests/website-docs-misc/portable-discoverability-comparison.md).
+The final comparison passed all four fresh-process UI cases (two versions, before
+and after the ordinary turn), at 1440x1000 in light/dark themes, with no browser
+page errors. Browser Use was unavailable in this session; Playwright also enabled
+the response interception needed to hide unrelated user data. Real responses were
+filtered only to hide unrelated user records;
+no test rows were injected and no discovery filters were changed. The home routes
+were http://127.0.0.1:4194/#/ for baseline and http://127.0.0.1:4173/#/ for current.
+Evidence: `output/playwright/portable-discoverability.json`. The comparison harness is
+standalone test tooling; no production TypeScript, dependencies, registries or
+metadata/cache modules changed in this acceptance follow-up. `pnpm run typecheck`
+was also rerun.
+
+The final baseline post-turn UI open encountered the history-index invalidation
+race (`History changed while loading`) and recovered after one explicit read-only
+refresh. The final current open needed no such refresh. Both occurrences and the
+absence of any remaining visible history error are recorded separately from
+listing/discovery assertions. The test never retries a mutation to recover a UI
+read error.
+
+Screenshot paths (all under
+`/home/naoto-aoki/Projects/20261105-codexapp-dev/output/playwright/`):
+
+- `portable-discovery-before-injected-only-light.png` and `-dark.png`
+- `portable-discovery-current-injected-only-light.png` and `-dark.png`
+- `portable-discovery-before-ordinary-completed-light.png` and `-dark.png`
+- `portable-discovery-current-ordinary-completed-light.png` and `-dark.png`
+
+The test archived only its three disposable threads and deleted its one native
+Project. Both comparison application processes were stopped; the independently
+managed Codex server and user conversations/projects were not modified. Original
+rollouts, temporary comparison homes and transfer receipts were retained. The
+current 4173 development server was restarted afterward from this checkout.
+
+No runtime change is justified as a cleanup regression fix. The tested native
+membership/naming/listing APIs provide no observed way to register these normal
+injected-only threads into ordinary discovery without an ordinary turn. The
+pinned root-thread listing schema offers no general include-empty flag. A native
+server change making persisted injected history eligible for ordinary listing and
+search would address the underlying limitation without client-owned indexing.
+
+The smallest client alternative would be a bounded read-only **Recent imports**
+chooser derived from the existing persistent conversation-transfer receipts. It
+could show receipt previews and validate the native destination on selection,
+without a new persistent store or merging native pagination. Its maintenance cost
+is one paginated receipt endpoint, a UI entry and profile/stale/archived/error
+handling plus restart/browser tests; native reads can be limited to selected
+entries rather than startup fanout. That would be a separate feature, not a
+restored index merger or fresh-fork state machine. It has not been implemented.
+Runtime metadata recording, metadata inheritance and rollout-cache ownership are
+unchanged by this verification.
+
+This follow-up adds the reproducible live comparison and documentation in the
+commit `Verify Portable discoverability before and after cleanup`. It contains
+no production behavior change and remains unpushed.

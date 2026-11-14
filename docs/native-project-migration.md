@@ -70,5 +70,7 @@ and native title search. Existing imported content is still displayed from its
 receipt when opened by destination ID, and migration preserves that destination's
 native project association. This upstream discovery limitation does not authorize
 fabricating native turns, editing rollouts or restoring a custom merged index.
-Native discovery may require a subsequent ordinary user turn; that transition
-was not exercised here. Keep destination links for injected-only conversations.
+A controlled pre-cleanup/current comparison confirmed that the first completed
+ordinary turn restores listing and fresh-start UI discovery on this server, with
+an asynchronous transition after acceptance. The omission is pre-existing; see
+the [comparison evidence and smallest alternative](maintenance-cleanup.md#portable-discoverability-acceptance-comparison).
