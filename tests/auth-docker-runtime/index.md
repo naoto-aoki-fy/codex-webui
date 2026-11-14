@@ -6,6 +6,8 @@ The former local-process/provider Docker matrix below is historical; do not run 
 
 Return to the [manual test index](../../tests.md).
 
+Current optional container workflow: [fast container with an external App Server](fast-external-server.md).
+
 ## Historical references (excluded from current acceptance)
 
 | Section |

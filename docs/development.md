@@ -133,3 +133,48 @@ for native Projects, fork/revert, Portable import display and a fresh-process
 rollout-cache check. The live test is opt-in and does not run in credential-free
 CI. Its browser checks use only test-created IDs; fixture coverage is reported
 separately from live provider execution. See the [final maintenance report](maintenance-cleanup.md).
+
+
+## Optional Docker feature checks
+
+The reusable fast runner remains an optional source-mounted deployment check.
+It does not install or launch Codex. First manage a compatible App Server outside
+the WebUI container, using the [current capability contract](native-project-migration.md).
+Its endpoint must be reachable **from inside the container**. A host service
+bound only to host loopback is not reachable via the Docker bridge; supply an
+explicitly managed test tunnel or a reachable test-service address. The runner
+adds the Linux `host.docker.internal:host-gateway` alias but does not rebind services.
+
+Rebuild the base image after changes to its Dockerfile:
+
+```sh
+docker build -t codexapp-fast-test-base:latest -f scripts/docker-fast-test-base.Dockerfile .
+CODEXUI_APP_SERVER_URL=ws://host.docker.internal:4500 scripts/run-docker-fast-test.sh
+```
+
+The example URL assumes a test listener reachable at that address. Do not expose
+an unauthenticated App Server publicly. Use a disposable test identity/home for
+authenticated checks; credentials remain with the independently managed server.
+No credentials are included in the image.
+
+The runner builds the current checkout, mounts it read-only, publishes WebUI only
+on `127.0.0.1:${PORT:-4191}`, and checks both the page and an `account/read` RPC.
+Readiness establishes connection, not full native-capability or authenticated-turn
+acceptance. Failures print container logs and remove only the container created
+by that invocation. An existing container name causes an error instead of deletion.
+
+On success the container remains available for manual testing. Stop it afterwards:
+
+```sh
+docker rm -f codexapp-fast-test
+```
+
+Override `CODEXAPP_DOCKER_FAST_CONTAINER`, `CODEXAPP_DOCKER_FAST_IMAGE`,
+`CODEXAPP_DOCKER_FAST_HOME` and `PORT` for isolated runs. The named application
+state volume is preserved even on failure; use a new volume for clean tests.
+Remove a volume only when deliberately discarding test state.
+
+Credential-free protocol checks remain `pnpm run test:integration:fixture`.
+That harness manages its own synthetic WebSocket server and tests both CLI and
+development entry points; it does not establish Docker execution or live Codex
+authentication. See the [Docker acceptance checklist](../tests/auth-docker-runtime/fast-external-server.md).
