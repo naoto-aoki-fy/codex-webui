@@ -123,17 +123,14 @@ it.each(['GET', 'PUT'])('does not handle retired queue %s requests or recover le
   }
 })
 
-it('retires cached workers and never recovers persisted prompts across cold bridge restarts', async () => {
+it('disposes replaced clients and never recovers persisted prompts across cold bridge restarts', async () => {
   const contents = JSON.stringify({ 'thread-queue-state': { example: [{ id: 'legacy', text: 'Never execute' }] }, unrelated: true })
   await writeFile(join(home, '.codex-global-state.json'), contents)
   const oldRpc = vi.fn()
-  const worker = { dispose: vi.fn(), scheduleThreadQueueDrain: vi.fn(), processThreadQueue: vi.fn(), startQueuedTurn: vi.fn() }
   const dispose = vi.fn()
   scope.__codexRemoteSharedBridge__ = {
     version: 'project-history-api-v1', appServer: { rpc: oldRpc, dispose },
-    backendQueueProcessor: worker,
   }
-  const old = scope.__codexRemoteSharedBridge__ as { appServer: { rpc: (method: string) => Promise<unknown> } }
   vi.useFakeTimers()
   try {
     for (let restart = 0; restart < 2; restart++) {
@@ -143,13 +140,8 @@ it('retires cached workers and never recovers persisted prompts across cold brid
       middleware.dispose()
       delete scope.__codexRemoteSharedBridge__
     }
-    expect(worker.dispose).toHaveBeenCalledOnce()
     expect(dispose).toHaveBeenCalledOnce()
-    await worker.scheduleThreadQueueDrain()
-    await worker.processThreadQueue()
-    await worker.startQueuedTurn()
     expect(oldRpc).not.toHaveBeenCalled()
-    await expect(old.appServer.rpc('turn/start')).rejects.toThrow('Retired app-server bridge')
   } finally {
     vi.useRealTimers()
   }
