@@ -97,7 +97,7 @@
 
 - Use this for local-only feature checks that do not need packaged install behavior, for example project discovery HTTP endpoints.
 - Build the reusable base image once with `docker build -t codexapp-fast-test-base:latest -f scripts/docker-fast-test-base.Dockerfile .`.
-- For each test run, prefer `scripts/run-docker-fast-test.sh`; it runs `pnpm run build`, mounts the current repo read-only, reuses a Docker `CODEX_HOME` volume, and starts `node /repo/dist-cli/index.js` on `127.0.0.1:${PORT:-4191}`.
+- For each test run, supply `CODEXUI_APP_SERVER_URL` for an independently managed server reachable from the container (see `docs/development.md`), then prefer `scripts/run-docker-fast-test.sh`; it runs `pnpm run build`, mounts the current repo read-only, reuses a Docker `CODEX_HOME` volume, and starts `node /repo/dist-cli/index.js` on `127.0.0.1:${PORT:-4191}`.
 - Do not rebuild a packed-image Docker artifact for these checks unless the task specifically needs package install, npm tarball contents, postinstall behavior, auth/provider startup, or published `npx` behavior.
 - To reset state, remove the named volume printed by the script or pass a new `CODEXAPP_DOCKER_FAST_HOME=<volume>` value.
 
