@@ -4,8 +4,6 @@ import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   callRpcWithArchiveRecovery,
-  canonicalizeThreadListResponseForRead,
-  canonicalizeWorkspaceRootsStateForRead,
   isEmptyThreadReadError,
   isThreadMaterializationPendingError,
   isThreadNotFoundError,
@@ -134,92 +132,10 @@ describe('callRpcWithArchiveRecovery', () => {
   })
 })
 
-describe('canonicalizeWorkspaceRootsStateForRead', () => {
-  it('realpaths existing local roots so symlink cwd sessions remain visible', async () => {
-    const state = await canonicalizeWorkspaceRootsStateForRead({
-      order: ['/workspace-link/projects/demo', 'remote-project-id'],
-      labels: {
-        '/storage/projects/demo': 'Canonical Demo',
-        '/workspace-link/projects/demo': 'Symlink Demo',
-        'remote-project-id': 'Remote Demo',
-      },
-      active: ['/workspace-link/projects/demo'],
-      projectOrder: ['remote-project-id', '/workspace-link/projects/demo'],
-      remoteProjects: [{
-        id: 'remote-project-id',
-        hostId: 'remote-ssh-discovered:host',
-        remotePath: '/remote/projects/demo',
-        label: 'remote-demo',
-      }],
-    }, async (value) => value.replace('/workspace-link/', '/storage/'))
-
-    expect(state.order).toEqual([
-      '/storage/projects/demo',
-      'remote-project-id',
-    ])
-    expect(state.active).toEqual(['/storage/projects/demo'])
-    expect(state.projectOrder).toEqual([
-      'remote-project-id',
-      '/storage/projects/demo',
-    ])
-    expect(state.labels).toEqual({
-      '/storage/projects/demo': 'Canonical Demo',
-      'remote-project-id': 'Remote Demo',
-    })
-    expect(state.remoteProjects[0]?.id).toBe('remote-project-id')
-  })
-})
-
-describe('canonicalizeThreadListResponseForRead', () => {
-  it('realpaths thread cwd values to match canonicalized workspace roots', async () => {
-    const payload = await canonicalizeThreadListResponseForRead({
-      data: [
-        { id: 'symlink-cwd-thread', cwd: '/workspace-link/projects/demo' },
-        { id: 'canonical-cwd-thread', cwd: '/storage/projects/demo' },
-        { id: 'remote-thread', cwd: 'remote-project-id' },
-      ],
-      nextCursor: null,
-    }, async (value) => value.replace('/workspace-link/', '/storage/'))
-
-    expect(payload).toEqual({
-      data: [
-        { id: 'symlink-cwd-thread', cwd: '/storage/projects/demo' },
-        { id: 'canonical-cwd-thread', cwd: '/storage/projects/demo' },
-        { id: 'remote-thread', cwd: 'remote-project-id' },
-      ],
-      nextCursor: null,
-    })
-  })
-
-  it('reuses cwd realpath results within one thread list response', async () => {
-    const calls: string[] = []
-    const payload = await canonicalizeThreadListResponseForRead({
-      data: [
-        { id: 'first-symlink-thread', cwd: '/workspace-link/projects/demo' },
-        { id: 'second-symlink-thread', cwd: '/workspace-link/projects/demo' },
-        { id: 'canonical-cwd-thread', cwd: '/storage/projects/demo' },
-        { id: 'remote-thread', cwd: 'remote-project-id' },
-      ],
-      nextCursor: null,
-    }, async (value) => {
-      calls.push(value)
-      return value.replace('/workspace-link/', '/storage/')
-    })
-
-    expect(payload).toEqual({
-      data: [
-        { id: 'first-symlink-thread', cwd: '/storage/projects/demo' },
-        { id: 'second-symlink-thread', cwd: '/storage/projects/demo' },
-        { id: 'canonical-cwd-thread', cwd: '/storage/projects/demo' },
-        { id: 'remote-thread', cwd: 'remote-project-id' },
-      ],
-      nextCursor: null,
-    })
-    expect(calls).toEqual([
-      '/workspace-link/projects/demo',
-      '/storage/projects/demo',
-    ])
-  })
+it.each(['/remote/link/../root', 'C:\\work\\demo', '\\\\host\\share\\demo'])('preserves remote cwd %s without host canonicalization', async cwd => {
+  const result = { data: [{ id: 'remote', cwd }], nextCursor: null }
+  const rpc = vi.fn(async () => result)
+  expect(await callRpcWithArchiveRecovery({ rpc }, 'thread/list', {})).toBe(result)
 })
 
 describe('isUnauthenticatedRateLimitError', () => {
