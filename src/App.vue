@@ -1334,11 +1334,14 @@ function onInterruptTurn(): void {
 }
 
 async function onRollback(payload: { threadId: string; turnId: string; operation: 'revert' | 'fork-and-revert' }): Promise<void> {
+  const sourceRoute = route.fullPath
+  const ownsRoute = routeThreadId.value === payload.threadId && selectedThreadId.value === payload.threadId
   const text = filteredMessages.value.find(message => message.role === 'user' && message.turnId === payload.turnId)?.text
   const destination = await executeThreadRevert(payload.threadId, payload.turnId, payload.operation)
-  if (destination && selectedThreadId.value === destination && text) {
+  if (destination && ownsRoute && (route.fullPath === sourceRoute || (route.name === 'thread' && routeThreadId.value === destination))) {
+    await router.replace({ name: 'thread', params: { threadId: destination } })
     await nextTick()
-    if (selectedThreadId.value === destination) threadComposerRef.value?.appendTextToDraft(text)
+    if (selectedThreadId.value === destination && text) threadComposerRef.value?.appendTextToDraft(text)
   }
 }
 
@@ -1567,7 +1570,6 @@ watch(
       route.name,
       routeThreadId.value,
       isLoadingThreads.value,
-      selectedThreadId.value,
     ] as const,
   async () => {
     if (!hasInitialized.value) return

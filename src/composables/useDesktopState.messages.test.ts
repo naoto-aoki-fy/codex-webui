@@ -34,6 +34,7 @@ const gateway = vi.hoisted(() => ({
 vi.mock('../api/codexGateway', async (importOriginal) => ({
   ...await importOriginal<typeof import('../api/codexGateway')>(),
   ...gateway,
+  getThreadDetailForRevert: gateway.getThreadDetail,
 }))
 
 const oldUser: UiMessage = {
