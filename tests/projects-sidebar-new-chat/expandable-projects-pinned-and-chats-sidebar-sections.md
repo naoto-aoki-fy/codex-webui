@@ -16,7 +16,7 @@ Prerequisites: connect an app-server with two projects (Alpha and Zulu), multipl
 1. Open Projects → Organize → By project → Updated. Expect Zulu first and its threads ordered by update time descending. Empty projects appear last. Equal timestamps use project name, or thread ID within a project, ascending.
 2. Select Created. Expect Alpha first and threads ordered by creation time descending. Select Chronological list and verify the same selected timestamp determines the global order.
 3. Switch back to Updated, send a message in Alpha, and wait for server metadata refresh. Expect Alpha to move first when its server update time becomes newest. Load additional thread pages and verify newly loaded threads are inserted according to the selected timestamp.
-4. Verify pinned thread order is unchanged in both modes, pinned rows stay excluded from project/global rows, and projectless chats remain excluded as before. Search, select a thread, and collapse/expand a project; verify these actions still work.
+4. Verify pinned thread order is unchanged in both modes, pinned rows stay excluded from project/global rows, and dated-directory conversations appear as ordinary project conversations. Search, select a thread, and collapse/expand a project; verify these actions still work.
 5. Refresh after selecting Created and verify the preference persists. Repeat menu and list checks in light and dark themes.
 
 Cleanup: restore the original sort/view preferences and pin order; archive any test threads created for this check.

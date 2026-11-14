@@ -34,6 +34,7 @@ const gatewayMocks = vi.hoisted(() => ({
   validateThreadRevert: vi.fn(),
   setCodexSpeedMode: vi.fn(),
   setWorkspaceRootsState: vi.fn(),
+  updateWorkspaceRootsState: vi.fn(),
   startThread: vi.fn(),
   startThreadTurn: vi.fn(),
   subscribeCodexNotifications: vi.fn(),
@@ -50,7 +51,7 @@ function thread(id: string, cwd: string, options: { hasWorktree?: boolean } = {}
   return {
     id,
     title: id,
-    projectName: cwd ? cwd.split('/').at(-1) || cwd : 'Projectless',
+    projectName: cwd ? cwd.split('/').at(-1) || cwd : 'Conversations',
     cwd,
     hasWorktree: options.hasWorktree ?? false,
     createdAtIso: '2026-04-28T00:00:00.000Z',
@@ -88,10 +89,10 @@ afterEach(() => {
 })
 
 describe('filterGroupsByWorkspaceRoots', () => {
-  it('keeps projectless chats visible when workspace roots are configured', () => {
+  it('keeps all history projects and missing-cwd conversations visible with registered roots', () => {
     const groups: UiProjectGroup[] = [
       {
-        projectName: 'Projectless',
+        projectName: 'Conversations',
         threads: [thread('projectless-chat', '')],
       },
       {
@@ -111,8 +112,9 @@ describe('filterGroupsByWorkspaceRoots', () => {
     }
 
     expect(filterGroupsByWorkspaceRoots(groups, rootsState).map((group) => group.projectName)).toEqual([
-      'Projectless',
       'allowed-project',
+      'Conversations',
+      'other-project',
     ])
   })
 
@@ -274,6 +276,7 @@ describe('filterGroupsByWorkspaceRoots', () => {
 
     expect(filterGroupsByWorkspaceRoots(groups, rootsState).map((group) => [group.projectName, group.threads.map((row) => row.id)])).toEqual([
       ['/Users/igor/Git-projects/codex-web-local', ['main-chat']],
+      ['/tmp/other/.git/worktrees/codex-web-local', ['other-git-worktree-chat']],
     ])
   })
 })
@@ -1055,7 +1058,7 @@ describe('locally created threads awaiting sidebar indexing', () => {
     expect(ids()).not.toContain('new-chat')
   })
 
-  it('honors workspace filtering for pending and existing threads, including active turns', async () => {
+  it('retains pending and returned threads when unrelated workspace roots are registered', async () => {
     await create()
     gatewayMocks.getThreadGroupsPage.mockResolvedValue({
       groups: [{ projectName: 'project', threads: [thread('existing', '/tmp/project')] }], nextCursor: null,
@@ -1064,7 +1067,7 @@ describe('locally created threads awaiting sidebar indexing', () => {
       order: ['/tmp/allowed'], active: ['/tmp/allowed'], labels: {}, projectOrder: [],
     })
     await refresh()
-    expect(ids()).toEqual([])
+    expect(new Set(ids())).toEqual(new Set(['new-chat', 'existing']))
   })
 
   it('keeps concurrent pending chats grouped alongside paginated server history', async () => {
@@ -1368,5 +1371,43 @@ describe('existing conversation model identity', () => {
     state.setSelectedModelId('b')
     expect(state.selectedModelId.value).toBe('a')
     expect(state.error.value).toContain('could not be confirmed')
+  })
+})
+
+
+describe('history discovery across pagination and workspace removal', () => {
+  it('keeps dated history after unregistering, background paging and a fresh state', async () => {
+    installTestWindow()
+    const cwd = '/home/user/Documents/Codex/2026-11-12/hello'
+    const roots = { order: [cwd, '/tmp/empty'], active: [cwd], projectOrder: [], labels: {} }
+    const unregistered = { ...roots, order: ['/tmp/empty'], active: [] }
+    const first = { projectName: 'hello', threads: [thread('first', cwd)] }
+    const later = { projectName: 'hello', threads: [thread('first', cwd), thread('older', cwd)] }
+    gatewayMocks.getWorkspaceRootsState.mockResolvedValue(roots)
+    gatewayMocks.getThreadGroupsPage.mockResolvedValueOnce({ groups: [first], nextCursor: 'older-page' })
+      .mockResolvedValue({ groups: [later], nextCursor: null })
+    gatewayMocks.updateWorkspaceRootsState.mockResolvedValue(unregistered)
+    const state = useDesktopState()
+    await state.refreshAll({ includeSelectedThreadMessages: false })
+    await state.removeProject('hello')
+    expect(gatewayMocks.updateWorkspaceRootsState).toHaveBeenCalledWith({ type: 'delete', path: cwd })
+    expect(state.projectGroups.value.find(group => group.projectName === 'hello')?.threads.map(row => row.id)).toEqual(['first'])
+    const timer = vi.mocked(window.setTimeout).mock.calls.find(call => call[1] === 10_000)
+    expect(timer).toBeDefined()
+    ;(timer![0] as () => void)()
+    await vi.waitFor(() => expect(state.isThreadListFullyLoaded.value).toBe(true))
+    expect(gatewayMocks.getThreadGroupsPage).toHaveBeenCalledWith('older-page', 100)
+    expect(state.projectGroups.value.find(group => group.projectName === 'hello')?.threads.map(row => row.id)).toEqual(['first', 'older'])
+    await state.removeProject('hello') // Unregistered history is not removable as a workspace.
+    expect(gatewayMocks.updateWorkspaceRootsState).toHaveBeenCalledTimes(1)
+    expect(state.projectGroups.value.flatMap(group => group.threads)).toHaveLength(2)
+    gatewayMocks.getWorkspaceRootsState.mockResolvedValue(unregistered)
+    const restored = useDesktopState()
+    await restored.refreshAll({ includeSelectedThreadMessages: false })
+    expect(restored.projectGroups.value.map(group => group.projectName)).toEqual(['empty', 'hello'])
+    expect(restored.projectGroups.value.flatMap(group => group.threads).map(row => row.id)).toEqual(['first', 'older'])
+    expect(gatewayMocks.getThreadDetail).not.toHaveBeenCalled()
+    state.stopPolling()
+    restored.stopPolling()
   })
 })

@@ -379,7 +379,7 @@ import {
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import { getCodexAuthenticationStatus } from './api/codexGateway'
-import { getPathLeafName, getPathParent, isProjectlessChatPath, normalizePathForComparison, normalizePathForUi } from './pathUtils.js'
+import { getPathLeafName, getPathParent, normalizePathForComparison, normalizePathForUi } from './pathUtils.js'
 import { copyTextToClipboard } from './utils/clipboard'
 
 const ThreadConversation = defineAsyncComponent(() => import('./components/content/ThreadConversation.vue'))
@@ -582,11 +582,11 @@ const activeProjectName = computed<string | null>(() => {
   if (isSkillsRoute.value) return null
   if (!isHomeRoute.value) {
     const thread = selectedThread.value
-    return thread && !isProjectlessChatPath(thread.cwd) ? thread.projectName : null
+    return thread?.projectName ?? null
   }
 
   const cwd = normalizePathForComparison(newThreadCwd.value).replace(/\/+$/u, '')
-  if (!cwd || isProjectlessChatPath(cwd)) return null
+  if (!cwd) return null
   const matchesCwd = (path: string) => normalizePathForComparison(path).replace(/\/+$/u, '') === cwd
 
   // Full paths distinguish same-name folders and include worktree threads.
@@ -778,7 +778,7 @@ const newThreadFolderOptions = computed(() => {
 
   for (const group of projectGroups.value) {
     const cwd = group.threads[0]?.cwd?.trim() ?? ''
-    if (!cwd || seenCwds.has(cwd) || isProjectlessChatPath(cwd)) continue
+    if (!cwd || seenCwds.has(cwd)) continue
     seenCwds.add(cwd)
     options.push({
       value: cwd,

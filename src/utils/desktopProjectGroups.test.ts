@@ -33,16 +33,16 @@ describe('desktop project group presentation', () => {
     }
   })
 
-  it('filters history groups, adds placeholders and retains projectless threads', () => {
+  it('unions history groups with registered placeholders and retains missing-cwd threads', () => {
     const allowed = group('api', '/one/api')
-    const projectless = group('Projectless', '')
+    const missingCwd = group('Conversations', '')
     const result = filterGroupsByWorkspaceRoots(
-      [allowed, group('outside', '/outside'), projectless], roots(['/one/api', '/one/empty']),
+      [allowed, group('outside', '/outside'), missingCwd], roots(['/one/api', '/one/empty']),
     )
-    expect(result.map((row) => row.projectName)).toEqual(['api', 'Projectless', 'empty'])
+    expect(result.map((row) => row.projectName)).toEqual(['api', 'empty', 'outside', 'Conversations'])
     expect(result[0]).toBe(allowed)
-    expect(result[1]).toBe(projectless)
-    expect(result[2]?.threads).toEqual([])
+    expect(result[3]).toBe(missingCwd)
+    expect(result[1]?.threads).toEqual([])
   })
 
   it('disambiguates duplicate leaf paths and preserves unchanged thread references', () => {
@@ -96,11 +96,11 @@ describe('desktop project group presentation', () => {
   it('retains unknown metadata and existing malformed-path failures', () => {
     const groups = [{ ...group('', ''), custom: 'retained' }]
     expect(filterGroupsByWorkspaceRoots(groups, null)).toBe(groups)
-    expect(filterGroupsByWorkspaceRoots(groups, roots(['/one/api']))[0]).toBe(groups[0])
+    expect(filterGroupsByWorkspaceRoots(groups, roots(['/one/api']))[1]).toBe(groups[0])
     expect(() => filterGroupsByWorkspaceRoots([], roots([null as unknown as string]))).toThrow(TypeError)
     expect(getRemoteProjectDisplayName({
       id: 'remote', hostId: '', remotePath: '', label: '',
-    })).toBe('Projectless')
+    })).toBe('Conversations')
   })
 
   it('preserves empty-root and unknown-removal behavior', () => {
