@@ -146,7 +146,7 @@ function parseUserMessageContent(
     if (block.type === 'text' && typeof block.text === 'string' && block.text.length > 0) {
       textChunks.push(block.text)
     }
-    if (block.type === 'image' && typeof block.url === 'string' && block.url.trim().length > 0) {
+    if (block.type === 'image' && 'url' in block && typeof block.url === 'string' && block.url.trim().length > 0) {
       images.push(block.url.trim())
     }
     if (block.type === 'localImage' && typeof block.path === 'string' && block.path.trim().length > 0) {
@@ -493,7 +493,7 @@ function toUiThread(summary: Thread): UiThread {
   }
 }
 
-export function normalizeThreadSummaryV2(payload: ThreadReadResponse): UiThread {
+export function normalizeThreadSummaryV2(payload: Pick<ThreadReadResponse, 'thread'> & Partial<Pick<ThreadReadResponse, 'readState'>>): UiThread {
   const receipt = (payload as ThreadReadResponse & { readState?: NativeThreadReadState }).readState
   return { ...toUiThread(payload.thread), ...(receipt ? { nativeReadState: receipt } : {}) }
 }
@@ -520,7 +520,7 @@ function groupThreadsByProject(threads: UiThread[]): UiProjectGroup[] {
     })
 }
 
-export function normalizeThreadGroupsV2(payload: ThreadListResponse): UiProjectGroup[] {
+export function normalizeThreadGroupsV2(payload: Pick<ThreadListResponse, 'data'> & Partial<ThreadListResponse>): UiProjectGroup[] {
   const receipts = (payload as ThreadListResponse & { readStates?: Record<string, NativeThreadReadState> }).readStates
   const uiThreads = payload.data.map(thread => ({ ...toUiThread(thread), ...(receipts?.[thread.id] ? { nativeReadState: receipts[thread.id] } : {}) }))
   return groupThreadsByProject(uiThreads)
@@ -533,7 +533,7 @@ function readMessageMilliseconds(value: unknown): string | undefined {
   return Number.isFinite(date.getTime()) ? date.toISOString() : undefined
 }
 
-export function normalizeThreadMessagesV2(payload: ThreadReadResponse, baseTurnIndex = 0): UiMessage[] {
+export function normalizeThreadMessagesV2(payload: Pick<ThreadReadResponse, 'thread'> & Partial<Pick<ThreadReadResponse, 'readState'>>, baseTurnIndex = 0): UiMessage[] {
   const turns = Array.isArray(payload.thread.turns) ? payload.thread.turns : []
   const imported = payload as ThreadReadResponse & { importedTranscript?: Array<{ role: 'user' | 'assistant'; text: string; source: string }>; importStage?: string; importFailure?: string }
   const messages: UiMessage[] = (imported.importedTranscript || []).map((message, index) => ({
@@ -584,13 +584,13 @@ export function normalizeThreadMessagesV2(payload: ThreadReadResponse, baseTurnI
   return messages
 }
 
-export function readThreadInProgressFromResponse(payload: ThreadReadResponse): boolean {
+export function readThreadInProgressFromResponse(payload: Pick<ThreadReadResponse, 'thread'> & Partial<Pick<ThreadReadResponse, 'readState'>>): boolean {
   if (readThreadInProgress(payload.thread)) return true
   const turns = Array.isArray(payload.thread.turns) ? payload.thread.turns : []
   return isTurnInProgress(turns.at(-1))
 }
 
-export function readActiveTurnIdFromResponse(payload: ThreadReadResponse): string {
+export function readActiveTurnIdFromResponse(payload: Pick<ThreadReadResponse, 'thread'> & Partial<Pick<ThreadReadResponse, 'readState'>>): string {
   const turns = Array.isArray(payload.thread.turns) ? payload.thread.turns : []
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turn = turns[index]

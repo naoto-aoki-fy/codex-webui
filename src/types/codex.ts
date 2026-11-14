@@ -4,7 +4,7 @@ export type RpcEnvelope<T> = {
   result: T
 }
 
-export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+export type ReasoningEffort = import('../server/protocol/0.167.2/ReasoningEffort').ReasoningEffort
 export type SpeedMode = 'standard' | 'fast'
 export type CollaborationModeKind = 'default' | 'plan'
 
