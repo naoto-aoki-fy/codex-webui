@@ -4,6 +4,7 @@ import { profileStateDirectory } from './connectionProfile.js'
 import { SubscriptionRecovery } from './subscriptionRecovery.js'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { RolloutGenerationMetadata } from './rolloutGenerationMetadata.js'
 import { TurnGenerationMetadataStore } from './turnGenerationMetadata.js'
 import { inheritForkTurnMetadata } from './forkGenerationMetadata.js'
 import { randomInt } from 'node:crypto'
@@ -83,6 +84,31 @@ export class AppServerClient {
   private async saveMetadata(store: TurnGenerationMetadataStore, threadId: string, entries: Parameters<TurnGenerationMetadataStore['saveMany']>[1]) {
     try { await store.saveMany(threadId, entries) }
     catch (error) { console.warn('Accepted turn metadata could not be persisted:', error) }
+  }
+  private readonly rolloutMetadata = new RolloutGenerationMetadata({
+    rpc: (method, params) => this.call(method, params),
+    generation: () => this.getConnectionGeneration(),
+    home: () => this.getInitializationMetadata()?.codexHome,
+  })
+  private readonly rolloutRequests = new Map<string, Set<string> | null>()
+  private recoverRolloutMetadata(threadId: string, turns: unknown[] | null, force = false): void {
+    const generation = this.getConnectionGeneration()
+    const key = `${generation}:${threadId}:${force}`
+    const ids = turns ? new Set(turns.map(turn => readNonEmptyString(asRecord(turn)?.id)).filter(Boolean)) : null
+    if (this.rolloutRequests.has(key)) {
+      const existing = this.rolloutRequests.get(key)
+      if (!ids) this.rolloutRequests.set(key, null)
+      else if (existing) for (const id of ids) existing.add(id)
+      return
+    }
+    this.rolloutRequests.set(key, ids)
+    void this.rolloutMetadata.recover(threadId, force).then(entries => {
+      if (generation !== this.getConnectionGeneration()) return
+      const requested = this.rolloutRequests.get(key)
+      for (const [turnId, generationMetadata] of entries) {
+        if (!requested || requested.has(turnId)) this.emitNotification({ method: 'turn/generationMetadata', params: { threadId, turnId, generationMetadata } })
+      }
+    }).catch(() => { /* Metadata must never break history loading. */ }).finally(() => this.rolloutRequests.delete(key))
   }
   private nextId = 1
   private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }>()
@@ -178,7 +204,7 @@ export class AppServerClient {
   private emitNotification(notification: { method: string; params: unknown }): void {
     this.recordStreamEvent(notification)
     const nThreadId = this.extractThreadIdFromParams(notification.params)
-    if (nThreadId) {
+    if (nThreadId && notification.method !== 'turn/generationMetadata') {
       this.historyPager.invalidate(nThreadId)
       this.invalidateThreadTurnPageRead(nThreadId)
       if (notification.method === 'thread/reverted') {
@@ -481,6 +507,10 @@ export class AppServerClient {
 
   async rpc(method: string, params: unknown, forkSourceTurns?: unknown[]): Promise<unknown> {
     await this.ensureInitialized()
+    if (method === 'thread/generationMetadata/refresh') {
+      this.recoverRolloutMetadata(readNonEmptyString(asRecord(params)?.threadId), null, true)
+      return {}
+    }
     if (method !== 'turn/start') {
       const resumeId = readNonEmptyString(asRecord(params)?.threadId)
       const joiningBackgroundRecovery = method === 'thread/resume' && asRecord(params)?.excludeTurns !== true
@@ -492,11 +522,13 @@ export class AppServerClient {
       if (joiningBackgroundRecovery) result = await this.call('thread/read', { threadId: resumeId, includeTurns: true })
       const record = asRecord(result)
       if (method === 'thread/turns/list' && Array.isArray(record?.data)) {
+        if (record.data.length && asRecord(params)?.itemsView !== 'notLoaded') this.recoverRolloutMetadata(resumeId, record.data)
         result = { ...record, data: await this.metadataStore().enrich(readNonEmptyString(asRecord(params)?.threadId), record.data) }
       }
       const thread = asRecord(record?.thread)
       const store = this.metadataStore()
       if (thread && typeof thread.id === 'string' && Array.isArray(thread.turns)) {
+        if (thread.turns.length && ['thread/read', 'thread/resume', 'thread/fork'].includes(method)) this.recoverRolloutMetadata(thread.id, thread.turns)
         let turns = await store.enrich(thread.id, thread.turns)
         if (method === 'thread/fork') {
           const sourceId = readNonEmptyString(asRecord(params)?.threadId)

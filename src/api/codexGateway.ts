@@ -1298,3 +1298,8 @@ export async function createConversationTransfer(id: string, modelId: string): P
     throw new Error(`Transfer ${id}: destination ${receipt?.threadId || 'not acknowledged'}, stage ${receipt?.stage || 'unknown'}. ${cause instanceof Error ? cause.message : String(cause)} Do not replay injection.`)
   }
 }
+
+/** Regenerate remote rollout evidence without reloading conversation items. */
+export async function refreshThreadGenerationMetadata(threadId: string): Promise<void> {
+  await callRpc('thread/generationMetadata/refresh', { threadId })
+}

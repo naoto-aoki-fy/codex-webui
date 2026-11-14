@@ -287,3 +287,37 @@ The illustrative incompatible input arrays are not normalized by these fixtures;
 only their error strings drive recovery notifications. Neither original HTTP 400
 is resolved by this recovery work. Manual copy/paste instructions are not an
 implemented portable-context transfer feature.
+
+### Historical rollout generation metadata
+
+Prerequisites: connect an independently managed App Server with filesystem RPCs;
+use a historical thread containing at least three turns with different recorded
+models/efforts (including `none`), no submitted sidecars, and more than ten turns
+for pagination. Record the Codex version and remote CODEX_HOME. Use a tunnel to
+verify that the backend and App Server have different homes. Keep original rollout
+files unchanged; inspect RPC counts with transport instrumentation.
+
+Actions and expected results:
+1. Open the thread with a different composer model selected. History appears
+   promptly; assistant footers update to each exact turn's recorded values, with
+   no `(sent setting)` suffix for execution evidence. Unknown fields stay unknown.
+2. Load older messages. Their footers show their own turn context, never the
+   latest model. Verify light and dark themes and then reload the browser.
+3. Inspect the remote `cache/model-history/v1/` SHA-256 JSON file. It contains
+   only version/source path/mtime and per-turn model/effort metadata. Reopen the
+   thread, then restart only the web backend and reopen. Cache hits read the
+   compact JSON and do not issue `fs/readFile` for the original rollout.
+4. Submit a real new turn using Codex so its rollout grows, then reopen history.
+   Verify source mtime invalidation, retained older evidence, and the new turn's
+   exact metadata. Use **Refresh history** when offered; it bypasses valid cache.
+5. Repeat against a server without filesystem methods or with denied cache writes.
+   Conversations and submitted metadata remain usable; denied cache writes still
+   allow current execution evidence. Switch profiles and confirm evidence cannot
+   leak into another server with the same thread ID.
+6. Open an existing fork: annotate only turn IDs actually found in its rollout.
+   A malformed record or incomplete trailing line must not break thread loading.
+
+Cleanup: archive disposable test threads, restore composer/profile settings, and
+optionally remove only the tested remote model-history cache file. Never edit or
+delete original rollout files or submitted-setting sidecars. Real cross-host RPC
+compatibility and latency require this live check; unit fixtures are insufficient.

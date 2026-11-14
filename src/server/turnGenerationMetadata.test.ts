@@ -39,7 +39,7 @@ it.each(['completed', 'inProgress'])('recovers mixed turns after refresh and bac
     const page = await b.instance.readThreadForTurnPage('t') as any
     expect(page.thread.turns[0].generationMetadata).toEqual(sent('A'))
     await b.instance.readThreadForTurnPage('t')
-    expect(b.rpc).toHaveBeenCalledTimes(3)
+    expect(b.rpc.mock.calls.filter(([, params]) => (params as any)?.includeTurns !== false)).toHaveLength(3)
   } finally { b.instance.dispose() }
 })
 
