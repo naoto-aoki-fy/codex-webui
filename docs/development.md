@@ -125,3 +125,11 @@ PROFILE_BASE_URL=http://127.0.0.1:4173 PROFILE_ROUTE='#/thread/<thread-id>' PROF
 Inspect `duplicateCounts`, `warnings`, `totalApiKB`, `topApiSummary` and
 `slowestApiRows` under `output/playwright/`. Error pages and failed boots do not
 provide valid performance evidence. See [script follow-ups](maintenance-scope.md#script-follow-ups).
+
+## Maintenance acceptance
+
+Use the [disposable live maintenance checklist](../tests/website-docs-misc/maintenance-live-acceptance.md)
+for native Projects, fork/revert, Portable import display and a fresh-process
+rollout-cache check. The live test is opt-in and does not run in credential-free
+CI. Its browser checks use only test-created IDs; fixture coverage is reported
+separately from live provider execution. See the [final maintenance report](maintenance-cleanup.md).

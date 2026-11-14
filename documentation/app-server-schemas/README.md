@@ -9,7 +9,7 @@ catalog or the server version.
 Run `pnpm run generate:project-file-protocol` after installing the locked dev
 dependencies. The script checks `codex --version`, runs `codex app-server
 generate-ts --experimental --out <temporary-directory>`, copies the filesystem,
-command, search and frontend DTO dependency closures into
+command, search, native Project request and frontend DTO dependency closures into
 `src/server/protocol/0.167.2/`, and extracts sorted method and notification names
 from `ClientRequest.ts` and `ServerNotification.ts` into
 `src/server/appServerMethods.json`. Run it twice and compare diffs to verify
@@ -19,3 +19,10 @@ reproducibility, then run typecheck, unit tests and build.
 The previous unversioned snapshots and duplicated JSON schemas had unknown
 provenance and no remaining source consumers after the DTO migration. They are
 available in Git history. No arbitrary latest-version regeneration is involved.
+
+The previous manual `ModelListParams.modelProvider` extension is now supplied by
+the pinned generated type itself. All 18 previous DTO exports remain available.
+The 0.169.0 live acceptance exercises native Projects, thread metadata updates,
+pagination, fork/revert, inject-items and rollout filesystem operations. Generated
+0.167.2 types remain the build-time baseline; runtime availability and response
+semantics are checked per operation rather than inferred from the catalog.

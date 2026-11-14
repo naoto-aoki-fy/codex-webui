@@ -344,7 +344,7 @@ local access or separate browser tunnel.
    with no placeholder created on A. Repeat with an opposite-platform path if
    available; the picker must retain B's drive/separator semantics.
 2. Put different sentinel content at the same lexical file path on A and B.
-   Browse/read through codexapp, query `/codex-api/git/repository-status`,
+   Browse/read through codexapp
    and search for a file existing only on B. Expect B's content/results and no
    changed sentinel or repository on A. Verify retired worktree-create and branch
    endpoints return JSON 404; dedicated branch/worktree features are unavailable. Repeat with command/exec

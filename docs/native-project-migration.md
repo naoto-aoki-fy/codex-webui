@@ -70,5 +70,5 @@ and native title search. Existing imported content is still displayed from its
 receipt when opened by destination ID, and migration preserves that destination's
 native project association. This upstream discovery limitation does not authorize
 fabricating native turns, editing rollouts or restoring a custom merged index.
-A normal subsequent native user turn makes the conversation an ordinary native
-history. Keep destination links when using an injected-only conversation.
+Native discovery may require a subsequent ordinary user turn; that transition
+was not exercised here. Keep destination links for injected-only conversations.

@@ -1,87 +1,196 @@
 # Maintenance cleanup status
 
-## Scope and status
+## Final scope status
 
 | Item | Status | Result |
 | --- | --- | --- |
-| 1 | Completed | Repository-status implementation, gateway, sidebar props/events/watchers and obsolete tests removed. Retired URL returns JSON 404. Other Git/diff functionality retained. |
-| 2 | Completed | Unused local command, command-resolution and invocation modules/tests removed; no production callers remained. Remote filesystem/search operations remain. |
-| 3 | Completed | Unreachable custom list merger, synthetic cursors, list-triggered reconciliation, unused recovery entry point and legacy list callback removed. Durable attachment-only submission intent, exact acceptance checks, pending state, locks and lifecycle updates remain. Production thread lists already bypassed this merger. Imported content remains owned by conversation transfer. |
-| 4 | Completed | Standalone 0.168.0 adapter, patch, Rust manifest/lockfile, probes, fixtures, tests and deployment guide removed. No runtime or package integration used them. Native providers/forks remain. |
-| 7 | Completed | Persistent fresh-fork registry, provider-triggered second fork, first-turn tracking, special recovery writes, replacement routing and prefix auto-archive removed. Ordinary drafts, ambiguous-send protection, Portable Fork and Fork and Revert remain. The composer retains read-only recovery of old saved drafts. |
-| 8 | Completed | Runtime metadata store, request/response recording hooks and acceptance metadata callback removed. Existing metadata stores are neither deleted nor relabeled. Persistent rollout cache remains. |
-| 10 | Partially completed | Source-to-fork copying and matching removed; each fork uses its own rollout cache. Fixture coverage passes. Actual live fork/revert rollout behavior remains unverified: the bounded live sample did not contain a source with two readable turns. |
-| 11 | Partially completed | API inspection and read-only runtime probe completed; migration NOT implemented. The pinned 0.167.2 generator exposes project list/read/create/import/update/move/delete and native thread project IDs. The connected 0.169.0 server successfully returned six projects. API absence is NOT a blocker on that server. A complete migration of the current path-keyed registry/UI, ordering and associations remains required before retiring its storage. |
-| 12 | Blocked by item 11 | Path grouping retained to preserve current behavior. Cwd/execution information remains intact. |
-| 13 | Completed | Unsupported refresh has no success branch, credential callback or single-flight promise; the originating server request receives error -32001. Other authentication/approval paths remain. |
-| 14 | Completed review; fallback retained | Native structured responses are used first. The narrow unknown-plan decode-error recovery remains for existing external deployments: no enforced minimum server version proves all supported endpoints decode these quota payloads natively. Removal needs an explicit runtime compatibility floor and native coverage, not only generated type availability. |
-| 15 | Completed | DTOs and backend imports share generated 0.167.2 types. Old unversioned TS/JSON snapshots removed. Version-checked generator reproduces retained types and method/notification catalog. No dependency upgrade. |
-| 16 | Completed | dev2 alias/shim, packaged shim entry and unpacked debug launcher removed. Normal dev/build/test commands remain. |
-| 17 | Partially completed | Tests/manual procedures and architecture docs updated. Project-migration tests do not exist because migration is not implemented. Full live authentication, provider turns and fork/revert/browser acceptance remain unverified. |
+| 1 | Completed | Obsolete repository-status implementation/UI hooks removed; retired URL returns JSON 404. Other Git/diff capabilities remain. |
+| 2 | Completed | Unused local command, resolution and invocation modules/tests removed. Remote filesystem/search operations remain. |
+| 3 | Completed | Unreachable custom list merger, synthetic cursors, list reconciliation/recovery and legacy callback removed. Durable attachment submission intents, acceptance checks and pending state remain. |
+| 4 | Completed | Standalone 0.168.0 compatibility adapter, patch, dedicated manifests/probes/fixtures/tests and deployment guide removed. Native providers and fork operations remain. |
+| 7 | Completed | Persistent fresh-fork registry, provider-triggered re-fork, first-turn tracker, special recovery writes, replacement routing and prefix auto-archive removed. Ordinary drafts and ambiguous-send protection remain. |
+| 8 | Completed | Runtime historical-metadata recording/store/hooks removed. Old stores remain untouched. Persistent rollout-derived caching remains. |
+| 10 | Completed, with native metadata limitation | Source-to-fork copying/matching removed. Live Native Fork preserved three turns, native revert retained one, and source content stayed unchanged. Destination rollouts on 0.169.0 supplied no inherited turn contexts, so inherited model/effort display is unknown. |
+| 11 | Completed | Repeatable non-destructive native Project migration, native mutations and verified association/order handling implemented. Empty projects, names, roots, order, archived members and existing imported-content receipts are preserved. Conditional capability/identity failures stop migration explicitly. |
+| 12 | Completed | Native sidebar grouping, ordering, folder selection, new-thread creation and optimistic fork rows use native project IDs. Cwd remains an execution path. Old path inference is restricted to one-time migration or explicit read-only compatibility display. |
+| 13 | Completed | Unsupported external refresh delivers error -32001; no unused success branch, credential callback or single-flight promise remains. |
+| 14 | Completed review; fallback retained | Native structured rate-limit responses are preferred. Narrow unknown-plan decode recovery remains; see removal condition below. |
+| 15 | Completed | Frontend DTOs and backend slices share pinned 0.167.2 generated definitions. Duplicate unversioned snapshots are removed; generation and runtime compatibility were audited. |
+| 16 | Completed | Obsolete dev2 shim/alias and unpacked debug launcher removed. Normal development/build/test commands work. |
+| 17 | Completed for this scope | Unit, integration-fixture, 11 mocked browser cases and disposable live/browser acceptance passed. Manual procedures and architecture docs are updated. Broader deployment limits remain explicitly unverified below. |
 
-This is a partial completion of the requested scope, not a completed Project API
-migration. Existing projects, native projects and old application stores have not
-been migrated, deleted or rewritten. Before switching storage, native IDs must be
-propagated through the gateway/sidebar/new-thread path and migration must prove
-repeatable preservation of empty projects, labels, ordering and membership,
-including coexistence with already-created native projects.
+## Native Project migration and retries
 
-## Historical metadata and compatibility
+See [implementation and compatibility details](native-project-migration.md).
+Native Projects are the writable source of identity, names, roots, positions and
+membership. The legacy root registry has no production writer, including CLI
+registration. Its original fields, unknown data, inactive browser project preferences and
+Portable transfer receipts remain intact. The workspace HTTP response is a projection of native data, not a
+second persistent registry. Native change notifications invalidate browser caches.
 
-See the exact [rollout/cache/normalization path](turn-generation-metadata.md).
-The persistent cache is on the App Server host at
-`<CODEX_HOME>/cache/model-history/v1/<sha256(threadId)>.json`. It validates source
-path and modification time and reuses valid data across backend restarts. The
-shared metadata value/parser/merge/label module remains. No original rollout is
-modified, and old `codexapp-turn-metadata` stores remain untouched and unread.
-Native fork/revert histories without matching native context rows show unknown
-metadata, without losing content. No source-thread settings are copied.
+The profile/endpoint/remote-home-scoped journal captures legacy input once and
+records acknowledged destination IDs before validation. Stable native import
+idempotency keys and migration tags recover lost replies; checkpoints recover
+incompatible replies without creating another destination. Each name/root record,
+member association and final project order is verified. Partial failures retain
+the snapshot and retry unfinished work. Existing native associations changed by
+another client are not overwritten; explicit conflicts require reconciliation.
+Injected-only imports missing from native lists are discovered from their existing
+receipts and their native summaries are checked once during migration.
 
-No user migration command is required for this cleanup. The retired dev2 alias
-must be replaced by `pnpm run dev`. The removed external adapter is no longer a
-supported deployment workflow. Remote capability availability remains a runtime
-requirement; 0.167.2 is the reproducible build-time protocol baseline, not an
-assertion that every experimental method is available on every server.
+Only explicit -32601 for project/list before migration enables `legacy-readonly`.
+Project writes remain disabled there. Permission, transport, malformed responses,
+unsupported import/association/order operations, and capability loss after
+migration starts never reactivate legacy writes. Normal conversation content can
+still load independently of a project-state error. The pinned schema is not a
+capability guarantee for other external deployments.
 
-## Validation and performance evidence
+## Rollout-cache evidence and exact path
 
-- Baseline: `pnpm run test:unit`: 99 files / 1,329 tests passed, one skipped.
-- Final: `pnpm run test:unit`: 90 files / 1,268 tests passed, one skipped. Removed
-  cases covered deleted helpers, custom list merging, adapter and metadata
-  recording/inheritance. Retained fork/transfer/revert, imports, attachment journal,
-  drafts, ambiguous sends, authentication and approval tests pass.
-- `pnpm run typecheck`: passed (Vue/frontend and server TypeScript).
-- `pnpm run build`: passed (frontend, precompression and ESM CLI).
-- `pnpm run test:integration:fixture`: passed for built CLI and development server,
-  including retired endpoint JSON 404s, HTTP RPC, metadata, browser WebSocket,
-  single initialization and independent fixture process survival.
-- CJS entry smoke: `node -e "const {execFileSync}=require('node:child_process');
-  const out=execFileSync(process.execPath,['dist-cli/index.js','--help'],
-  {encoding:'utf8'}); if(!out.includes('Usage:')) throw new Error('Missing CLI help');"`
-  passed. There are no public CJS exports; the CJS harness launches the public ESM
-  CLI, as does the integration fixture.
-- `pnpm run generate:project-file-protocol`: repeated generation produced identical
-  hashes for 160 retained type files and the method catalog (161 files total).
-  Codex emitted a harmless read-only stale-temp cleanup warning; generation passed.
-- `git diff --check`: passed.
+Architecture remains:
 
-Concrete code-path audit: repository checks now issue zero Git-status filesystem
-or command RPCs. Fork metadata copying issues zero source-history RPCs; cutoff
-validation still reads one source snapshot for correctness. Send metadata
-recording performs zero metadata-store writes and adds zero RPCs. Rollout recovery
-retains one serialized source transfer, 16 queued/coalesced threads, bounded
-payloads and timestamp validation. The cold/restart fixture asserts seven cold
-RPCs, three warm RPCs and only one original-rollout transfer; append and explicit
-refresh invalidate correctly. No synchronous source reads, session traversal or
-new unbounded fanout were added. Sparse attachment intent remains durable.
+`Codex rollout JSONL -> reader/parser -> persistent rollout-derived cache -> history normalization/UI`
 
-Current build output is approximately 383 kB for the main JS chunk and 187 kB for
-the ESM CLI (uncompressed). No baseline bundle comparison or live render/latency
-measurement was made. No browser automation/theme screenshots were run; the
-cleanup removes obsolete UI wiring and notices without adding visual controls.
+`AppServerClient` triggers optional recovery on content-bearing history reads.
+`RolloutGenerationMetadata.recover` resolves the rollout with metadata-only
+`thread/read`, stats it with `fs/getMetadata`, then reads
+`<remote CODEX_HOME>/cache/model-history/v1/<sha256(threadId)>.json` using
+`fs/readFile`. A valid source path/version/positive mtime/execution-provenance cache
+is reused. Otherwise, complete native `turn_context` rows are parsed by exact turn
+ID; a second stat guards publication, and `fs/createDirectory`/`fs/writeFile`
+persist only the compact cache. Metadata notifications merge into per-thread
+history state and the V2 normalizer/ThreadConversation display. Source rollouts
+are never written through filesystem APIs. Legacy metadata stores are untouched
+and neither read nor relabeled as rollout evidence.
 
-Read-only live probe: initialization reported `codex-web-local/0.169.0`; native
-`project/list` succeeded. A fork rollout probe inspected at most five of ten
-listed threads and found no source with two readable turns. It created no fork,
-sent no model request and changed no source conversation. Fixture tests are not
-substitutes for live fork/provider/authentication acceptance.
+Specific evidence:
+
+- Cold live read extracted two actual model/effort contexts and created the cache.
+- A new reader reused it. A separately launched Node process, using a bundle of
+  the actual reader, recovered both turns with **zero original-rollout reads**.
+- Completing a third native turn refreshed the cache to three entries with one
+  source transfer. Unchanged data was not unnecessarily reparsed.
+- Native Fork and Fork and Revert retained content with zero inherited metadata
+  entries; no source values leaked into the destination. Unit cases also cover
+  colliding turn IDs across unrelated threads, appended/replaced rollouts,
+  conflicting rows, malformed/partial data and unsupported/denied filesystem APIs.
+- Missing metadata does not block history or fabricate composer settings. The live
+  browser displayed rollout-derived `gpt-6-luna / low` while the composer selected
+  Medium. Labels survived refresh in light and dark themes.
+
+The metadata API exposes mtime but no source file size. Rewrites preserving the
+same timestamp require explicit refresh; this pre-existing validation limitation
+is unchanged. Reader limits remain 16 MiB/source, 2 MiB/cache, 10,000 turn IDs,
+one serialized source transfer and at most 16 queued/coalesced threads.
+
+## Checks actually run
+
+| Layer | Command/evidence | Result |
+| --- | --- | --- |
+| Baseline from existing commits | test:unit | 90 files / 1,268 tests passed; one skipped |
+| Unit | `pnpm run test:unit` | 93 files / 1,281 tests passed; two opt-in live tests skipped |
+| Focused after final migration optimization | `pnpm exec vitest run src/server/nativeProjects.test.ts src/api/revertHistoryRead.test.ts` | 13 passed |
+| Type checking | `pnpm run typecheck` | Passed for Vue/frontend and server |
+| Build | `pnpm run build` | Passed; frontend/precompression and public ESM CLI |
+| Integration fixture | `pnpm run test:integration:fixture` | Built CLI and dev server passed HTTP RPC, metadata, browser WebSocket, retired JSON 404s, one initialization and independent fixture survival |
+| Mocked browser | `PLAYWRIGHT_BROWSERS_PATH=/tmp/codexapp-playwright node scripts/test-fork-methods.cjs` | All 11 cases passed at 1280x900, including Native/Portable entry points, failure cases and old imported content |
+| Live and browser | Gated command in the [live checklist](../tests/website-docs-misc/maintenance-live-acceptance.md) | Passed against independently managed `codex-web-local/0.169.0`, Rocky Linux 9.8, default OpenAI/gpt-6-luna |
+| Protocol generation | `pnpm run generate:project-file-protocol` plus SHA-256 comparison | Identical 176 type files and method catalog: 177 artifacts |
+| CJS smoke | Command below | Passed |
+| Diff | `git diff --check` | Passed |
+
+```sh
+node -e "const {execFileSync}=require('node:child_process');const out=execFileSync(process.execPath,['dist-cli/index.js','--help'],{encoding:'utf8'});if(!out.includes('Usage:'))throw new Error('Missing CLI help');"
+```
+
+There are no public CJS exports. The CJS harness launches the public ESM CLI.
+The fresh-process rollout check separately requires the actual reader's temporary
+CJS test bundle. Neither requires a dependency upgrade.
+
+Live acceptance verified native create and import idempotency, name/root updates,
+ordering, explicit associations, deletion, repeat migration, legacy-field/receipt
+preservation, and migration of an imported conversation created before migration.
+It verified actual native fork/revert, Portable injection and content after service
+recreation/reload, model history via the rollout cache, and Fork and Revert prompt
+restoration after refresh. Only disposable threads/projects were mutated; five test
+threads were archived and two migration projects deleted, in addition to the
+create/delete probe. Existing native project order was asserted unchanged.
+
+Browser Use was unavailable; Playwright request interception restricted list
+visibility to test-created IDs while backend operations remained live. Actual
+changed UI was checked at `http://127.0.0.1:4173`, 1440x1000:
+
+- [Light sidebar/history screenshot](../output/playwright/maintenance-native-projects-light.png)
+- [Dark sidebar/history screenshot](../output/playwright/maintenance-native-projects-dark.png)
+- [Restored prompt screenshot](../output/playwright/maintenance-fork-revert-draft.png)
+- [Live assertions and cleanup evidence](../output/playwright/maintenance-live.json)
+
+Screenshots were inspected; dark surfaces were correctly themed. Port 4173 is
+left running from this checkout with a disposable local application home. The
+persistent 5173 server was not stopped or restarted.
+
+## Protocol and performance audit
+
+Compared the DTO facade before consolidation (`46186aa`) with current consumers:
+all 18 exported DTO names remain. The manual modelProvider extension is now part
+of generated ModelListParams. Normalizers accept thread-only resume/fork responses
+without requiring readState, and tolerate the native image union. ReasoningEffort
+uses the native string type. No active consumer imports removed snapshots.
+Live 0.169.0 exercised native pagination, fork/revert, inject-items, filesystem/cache,
+Project operations and thread metadata updates; model/provider discovery ran
+through the actual browser. Approval/authentication handlers remain independently
+covered by unit/integration fixtures. package.json and the lockfile have no
+continuation dependency changes; 0.167.2 remains the generator baseline.
+
+Completed project reads need only native project pagination plus one asynchronous
+local migration-receipt read. Startup callers coalesce their project read, and
+thread listing waits for initial migration so it cannot publish old path-derived
+associations. Migration reads summary pages, not conversation payloads; import
+receipt discovery and association verification are bounded and serial, without
+unbounded fanout. Membership maps avoid repeated per-project group scans and
+quadratic thread-ID searches. No synchronous filesystem work is added. The only
+new fork/revert recovery is one read-only retry for an index invalidation race;
+mutations are never replayed. Native change events invalidate project caches.
+
+Cold/warm rollout fixtures still assert seven/three RPCs respectively, with one
+source transfer across cold plus restart. The live fresh-process check confirms
+that behavior on the real filesystem service. Current CLI output is about 209 kB
+uncompressed. No baseline bundle comparison, large-migration latency, browser heap
+profile or duplicate-request improvement is claimed; browser flows deliberately
+navigate and refresh repeatedly.
+
+## Compatibility limits and retained fallback
+
+- Current native fork/revert rollouts omit inherited context rows: model/effort
+  for those turns remains unknown, while content remains accessible.
+- Native 0.169.0 thread/list omits injected-only Portable conversations, even after
+  naming them and with all-provider, database-only and title-search queries.
+  Existing imported content still displays through its destination link/receipt,
+  and migration preserves its native project association. No fabricated turns or
+  custom merged index were introduced to hide this upstream discovery limitation.
+- Live checks covered one POSIX host and its default provider. Separate-host
+  tunnels, Windows runtime, other server releases, cross-provider inference and
+  live approval/redelivery scenarios were not exercised here. Those retain their
+  unit/fixture/manual coverage and explicit capability checks.
+- Keep distinct connection profiles for independent remote hosts. Endpoint/home
+  strings cannot identify a replaced server instance with the same values.
+- Keep rateLimitDecodeRecovery until an enforced runtime compatibility floor and
+  native tests establish that every supported endpoint handles the relevant quota
+  payloads through structured responses/errors. A successful 0.169.0 call alone
+  is insufficient justification to remove the narrow fallback.
+
+## Continuation commits
+
+- `eff44c6` — Migrate legacy projects to native Project APIs and IDs
+- `1d03cc8` — Keep fork-and-revert routing and prompt restoration consistent
+- `7bf704d` — Add live maintenance and fresh-process rollout-cache acceptance
+- `06715f7` — Preserve inactive legacy project preferences during startup
+- The documentation handoff commit containing this report is titled
+  `Finalize maintenance cleanup compatibility and acceptance report`.
+
+The final documentation commit also corrects the new legacy-preference regression
+test to use stopPolling for lifecycle cleanup; its initial dispose call failed,
+and the corrected targeted test, full suite, typecheck, build and fixture all
+passed before handoff. No baseline test failures were observed.
+
+All work stayed on main. No commits were pushed.

@@ -1,4 +1,4 @@
-// Workspace paths belong to the App Server; persisted UI state is local.
+// Legacy workspace fields are read-only migration input. Native Projects belong to the App Server.
 const preserveRemotePath = async (path: string) => path
 import { projectPath } from './appServerFileSystem.js'
 import { asRecord } from './bridgeHttpUtils.js'
