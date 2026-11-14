@@ -5,7 +5,6 @@ The application is a Node.js CLI server and browser UI for Codex app-server. Sup
 ## Supported workflows
 
 - `package.json` defines frontend/CLI builds, unit tests, and development commands.
-- `publish.sh` publishes the package named in `package.json`.
 
 ## Retired material
 
