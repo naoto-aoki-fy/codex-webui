@@ -18,7 +18,6 @@ const gateway = vi.hoisted(() => ({
   createConversationTransfer: vi.fn(),
   forkThreadFromResponse: vi.fn(),
   forkThread: vi.fn(),
-  configureFreshFork: vi.fn(),
   renameThread: vi.fn(),
   subscribeCodexNotifications: vi.fn(),
   getPendingServerRequests: vi.fn(),
@@ -1836,7 +1835,7 @@ describe('new-thread preference context across deferred creation', () => {
       expect(await sending).toBe(result.threadId)
       await vi.advanceTimersByTimeAsync(0)
       expect(gateway.startThreadTurn.mock.calls).toEqual([
-        [result.threadId, 'new context marker', [], gatewayModel, 'medium', undefined, [], 'default', expect.any(Function)],
+        [result.threadId, 'new context marker', [], gatewayModel, 'medium', undefined, [], 'default'],
       ])
       expect(requests).toEqual([
         {
@@ -2088,13 +2087,13 @@ it('restores running background threads after backend replacement and leaves idl
 })
 
 
-it('retains successful RPC metadata with no started notification and ignores later submitted downgrades', async () => {
+it('receives rollout-derived metadata asynchronously without submission recording', async () => {
   gateway.getThreadDetail.mockResolvedValue(completedDetail)
   const state = await loadState()
   const metadata = { model: 'actual', modelSource: 'execution' as const, effort: 'none', effortSource: 'execution' as const }
-  gateway.startThreadTurn.mockImplementation(async (...args: any[]) => { args[8]?.('turn-2', metadata); return 'turn-2' })
+  gateway.startThreadTurn.mockResolvedValue('turn-2')
   await state.sendMessageToSelectedThread('missing notification')
-  notify({ method: 'turn/generationMetadata', params: { threadId: thread.id, turnId: 'turn-2', generationMetadata: { model: 'sent', modelSource: 'submitted', effort: 'high', effortSource: 'submitted' } } })
+  notify({ method: 'turn/generationMetadata', params: { threadId: thread.id, turnId: 'turn-2', generationMetadata: metadata } })
   expect(state.messages.value.find(message => message.id === reply.id)?.generationMetadata).toEqual(metadata)
 })
 
@@ -2342,12 +2341,10 @@ describe('conversation model and fresh fork provider selection', () => {
     expect(await result).toBe('imported')
     expect(gateway.forkThread).not.toHaveBeenCalled()
     expect(gateway.forkThreadFromResponse).not.toHaveBeenCalled()
-    expect(gateway.configureFreshFork).not.toHaveBeenCalled()
     expect(gateway.startThreadTurn).not.toHaveBeenCalled()
     await state.sendMessageToSelectedThread('explicit continuation')
     expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
     expect(gateway.startThreadTurn.mock.calls[0]?.[3]).toBe(key('Q', 'C'))
-    expect(gateway.configureFreshFork).not.toHaveBeenCalled()
   })
   it('does not surface stale omission notices returned by an older backend', async () => {
     setupCatalog()
@@ -2367,7 +2364,6 @@ describe('conversation model and fresh fork provider selection', () => {
     expect(gateway.createConversationTransfer).toHaveBeenCalledExactlyOnceWith('snapshot', key('P', 'A'))
     expect(gateway.forkThread).not.toHaveBeenCalled()
     expect(gateway.forkThreadFromResponse).not.toHaveBeenCalled()
-    expect(gateway.configureFreshFork).not.toHaveBeenCalled()
   })
   it.each(['full', 'response'])('creates a %s native fork with the original provider, without transfer or automatic re-fork', async entry => {
     setupCatalog()
@@ -2399,7 +2395,6 @@ describe('conversation model and fresh fork provider selection', () => {
     expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
     expect(gateway.startThreadTurn.mock.calls[0]?.[3]).toBe(key('P', 'A'))
     expect(forkApi).toHaveBeenCalledTimes(1)
-    expect(gateway.configureFreshFork).not.toHaveBeenCalled()
     expect(gateway.createConversationTransfer).not.toHaveBeenCalled()
     expect(gateway.startThread).not.toHaveBeenCalled()
   })
@@ -2418,7 +2413,6 @@ describe('conversation model and fresh fork provider selection', () => {
     gateway.resumeThread.mockResolvedValue({ ...oldDetail, model: 'C', modelProvider: 'Q' })
     expect(await state.forkThreadById(thread.id, 'independent-snapshot', key('Q', 'C'))).toBe('imported')
     expect(forkApi).toHaveBeenCalledTimes(1)
-    expect(gateway.configureFreshFork).not.toHaveBeenCalled()
   })
   it('keeps native available after portable failure and rejects imported response cutoffs before native RPC', async () => {
     setupCatalog()
@@ -2431,7 +2425,6 @@ describe('conversation model and fresh fork provider selection', () => {
     expect(gateway.forkThreadFromResponse).not.toHaveBeenCalled()
     gateway.forkThread.mockResolvedValueOnce({ ...oldDetail, threadId: 'native', cwd: thread.cwd, model: 'A', modelProvider: 'P' })
     expect(await state.forkNativeThreadById(thread.id)).toBe('native')
-    expect(gateway.configureFreshFork).not.toHaveBeenCalled()
   })
   it('does nothing without a prepared selection and retains the source on import failure', async () => {
     setupCatalog()

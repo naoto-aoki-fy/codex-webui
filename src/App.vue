@@ -62,7 +62,6 @@
           <p v-if="threadSearchError" role="alert">{{ threadSearchError }}</p>
           <SidebarThreadTree :groups="sidebarSearchGroups" :project-display-name-by-id="projectDisplayNameById"
             :active-project-name="activeProjectName"
-            :project-git-repo-by-name="projectGitRepoByName"
             v-if="!isSidebarCollapsed"
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
             :is-fork-disabled="isForkOperationPending"
@@ -71,7 +70,6 @@
             :search-matched-thread-ids="serverMatchedThreadIds"
             @select="onSelectThread"
             @archive="onArchiveThread" @start-new-thread="onStartNewThread"
-            @request-project-git-status="onRequestProjectGitStatus"
             @rename-thread="onRenameThread"
             @fork-thread="onForkThread"
             @remove-project="onRemoveProject"
@@ -357,7 +355,6 @@ import { useFolderPicker } from './composables/useFolderPicker'
 import { useMobile } from './composables/useMobile'
 import { useUiLanguage } from './composables/useUiLanguage'
 import {
-  getGitRepositoryStatus,
   logoutCodex,
   getHomeDirectory,
   getWorkspaceRootsState,
@@ -439,7 +436,7 @@ const {
   transportState, selectedRecoveryState, selectedUnknownOutcome, selectedLostApproval,
   retrySelectedSubscription, reconcileSelectedHistory,
   error: desktopError,
-  modelSelectionNotice, resolveThreadReplacement,
+  modelSelectionNotice,
   refreshAll,
   refreshWorkspaceRoots,
   refreshSkills,
@@ -483,8 +480,6 @@ let hasPendingRouteSync = false
 const hasInitialized = ref(false)
 const newThreadCwd = ref('')
 useNewThreadCwdRoute(router, newThreadCwd)
-const gitRepoStatusByCwd = ref<Record<string, boolean>>({})
-const gitRepoStatusRequestByCwd = new Map<string, Promise<boolean>>()
 const workspaceRootOptionsState = ref<{ order: string[]; labels: Record<string, string>; projectOrder: string[] }>({
   order: [],
   labels: {},
@@ -779,14 +774,6 @@ const newThreadFolderOptions = computed(() => {
 
   return options
 })
-const projectGitRepoByName = computed<Record<string, boolean>>(() => {
-  const result: Record<string, boolean> = {}
-  for (const group of projectGroups.value) {
-    const cwd = resolvePreferredLocalCwd(group.projectName, group.threads[0]?.cwd?.trim() ?? '')
-    result[group.projectName] = cwd ? gitRepoStatusByCwd.value[cwd] === true : false
-  }
-  return result
-})
 const darkModeMediaQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
 const chatWidthLabel = computed(() => t(CHAT_WIDTH_PRESETS[chatWidth.value].label))
 const contentStyle = computed(() => {
@@ -1067,11 +1054,6 @@ function onStartNewThread(projectName: string): void {
   void router.push({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value } : {} })
 }
 
-function getProjectCwd(projectName: string): string {
-  const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
-  return resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
-}
-
 function resolveSelectedThreadProjectCwd(): string {
   const thread = selectedThread.value
   if (!thread) return ''
@@ -1090,38 +1072,6 @@ function onStartNewThreadFromToolbar(): void {
   void router.push({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value } : {} })
 }
 
-async function loadGitRepoStatus(cwdRaw: string): Promise<void> {
-  const cwd = cwdRaw.trim()
-  if (!cwd || Object.prototype.hasOwnProperty.call(gitRepoStatusByCwd.value, cwd)) return
-
-  const existingRequest = gitRepoStatusRequestByCwd.get(cwd)
-  if (existingRequest) {
-    const isGitRepo = await existingRequest
-    if (!Object.prototype.hasOwnProperty.call(gitRepoStatusByCwd.value, cwd)) {
-      gitRepoStatusByCwd.value = {
-        ...gitRepoStatusByCwd.value,
-        [cwd]: isGitRepo,
-      }
-    }
-    return
-  }
-
-  const request = getGitRepositoryStatus(cwd)
-    .then((status) => status.isGitRepo)
-    .catch(() => false)
-    .finally(() => {
-      gitRepoStatusRequestByCwd.delete(cwd)
-    })
-  gitRepoStatusRequestByCwd.set(cwd, request)
-
-  const isGitRepo = await request
-  if (Object.prototype.hasOwnProperty.call(gitRepoStatusByCwd.value, cwd)) return
-  gitRepoStatusByCwd.value = {
-    ...gitRepoStatusByCwd.value,
-    [cwd]: isGitRepo,
-  }
-}
-
 function onRenameThread(payload: { threadId: string; title: string }): void {
   void renameThreadById(payload.threadId, payload.title)
 }
@@ -1129,12 +1079,6 @@ function onRenameThread(payload: { threadId: string; title: string }): void {
 async function onRemoveProject(projectName: string): Promise<void> {
   await removeProject(projectName)
   await loadWorkspaceRootOptionsState()
-}
-
-function onRequestProjectGitStatus(projectName: string): void {
-  const group = projectGroups.value.find((entry) => entry.projectName === projectName)
-  const cwd = resolvePreferredLocalCwd(projectName, group?.threads[0]?.cwd?.trim() ?? '')
-  void loadGitRepoStatus(cwd)
 }
 
 function onRespondServerRequest(payload: UiServerRequestReply): void {
@@ -1593,13 +1537,6 @@ async function syncThreadSelectionWithRoute(): Promise<void> {
       if (route.name === 'thread') {
         const threadId = routeThreadId.value
         if (!threadId) continue
-        const replacement = resolveThreadReplacement(threadId)
-        if (replacement !== threadId) {
-          await router.replace({ name: 'thread', params: { threadId: replacement } })
-          hasPendingRouteSync = true
-          continue
-        }
-
         if (selectedThreadId.value !== threadId) {
           const result = await selectThread(threadId)
           if (result === 'not-found') {
@@ -1632,14 +1569,6 @@ watch(
   },
 )
 
-watch(
-  () => [route.name, composerCwd.value] as const,
-  ([routeName, cwd]) => {
-    if (routeName !== 'thread') return
-    void loadGitRepoStatus(cwd)
-  },
-  { immediate: true },
-)
 
 watch(
   () => selectedThreadId.value,

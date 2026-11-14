@@ -1,18 +1,11 @@
 import { RemoteHistoryPager } from './remoteHistoryPager.js'
 import { RemoteCapabilities } from './remoteCapabilities.js'
-import { profileStateDirectory } from './connectionProfile.js'
 import { SubscriptionRecovery } from './subscriptionRecovery.js'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { RolloutGenerationMetadata } from './rolloutGenerationMetadata.js'
-import { TurnGenerationMetadataStore } from './turnGenerationMetadata.js'
-import { inheritForkTurnMetadata } from './forkGenerationMetadata.js'
 import { randomInt } from 'node:crypto'
-import { AppServerWebSocketClient, positiveEnv, resolveAppServerUrl } from './appServerWebSocketClient.js'
+import { AppServerWebSocketClient, positiveEnv } from './appServerWebSocketClient.js'
 import { asRecord, getErrorMessage } from './bridgeHttpUtils.js'
-import { readCodexCredentialStore } from './codexCredentials.js'
-import { refreshChatgptAuthTokensForExternalAuth, type ChatgptAuthTokensRefreshParams, type ChatgptAuthTokensRefreshResponse } from './externalAuthRefresh.js'
-import { submittedGenerationMetadata, readGenerationMetadata, mergeGenerationMetadata } from '../turnGenerationMetadata.js'
+import { refreshChatgptAuthTokensForExternalAuth } from './externalAuthRefresh.js'
 
 export interface AppServerClientDependencies {
   threadIndex: {
@@ -73,18 +66,6 @@ export class AppServerClient {
 
   getInitializationMetadata() { return this.transport.getInitializationMetadata() }
 
-  private readonly metadataEndpoint = resolveAppServerUrl()
-  private metadataStore(): TurnGenerationMetadataStore {
-    const remoteHome = this.getInitializationMetadata()?.codexHome ?? ''
-    return new TurnGenerationMetadataStore(profileStateDirectory(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex')),
-      JSON.stringify([this.metadataEndpoint, remoteHome]),
-      Boolean(remoteHome) && process.env.CODEXUI_LEGACY_METADATA_SERVER_URL === this.metadataEndpoint
-        && process.env.CODEXUI_LEGACY_METADATA_CODEX_HOME === remoteHome)
-  }
-  private async saveMetadata(store: TurnGenerationMetadataStore, threadId: string, entries: Parameters<TurnGenerationMetadataStore['saveMany']>[1]) {
-    try { await store.saveMany(threadId, entries) }
-    catch (error) { console.warn('Accepted turn metadata could not be persisted:', error) }
-  }
   private readonly rolloutMetadata = new RolloutGenerationMetadata({
     rpc: (method, params) => this.call(method, params),
     generation: () => this.getConnectionGeneration(),
@@ -128,7 +109,6 @@ export class AppServerClient {
   private readonly snapshotBytesByThreadId = new Map<string, number>()
   private readonly threadTurnPageReadCacheByThreadId = new Map<string, { result: unknown; expiresAt: number; bytes: number }>()
   private readonly threadTurnPageReadPromiseByThreadId = new Map<string, Promise<unknown>>()
-  private chatgptAuthRefreshPromise: Promise<ChatgptAuthTokensRefreshResponse> | null = null
   private disposed = false
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private retryAttempt = 0
@@ -379,38 +359,9 @@ export class AppServerClient {
     })
   }
 
-  private async refreshChatgptAuthTokens(params: ChatgptAuthTokensRefreshParams): Promise<ChatgptAuthTokensRefreshResponse> {
-    if (!this.chatgptAuthRefreshPromise) {
-      this.chatgptAuthRefreshPromise = refreshChatgptAuthTokensForExternalAuth(
-        params,
-        // Use config/read only: asking for auth refresh here would recurse into this request.
-        () => readCodexCredentialStore({ rpc: (method, rpcParams) => this.call(method, rpcParams) }),
-      ).finally(() => {
-        this.chatgptAuthRefreshPromise = null
-      })
-    }
-    return await this.chatgptAuthRefreshPromise
-  }
-
   private async handleChatgptAuthTokensRefreshRequest(requestId: number | string, params: unknown, generation: number): Promise<void> {
-    const requestParams = asRecord(params)
-    const previousAccountId = readNonEmptyString(requestParams?.previousAccountId ?? requestParams?.previous_account_id)
     try {
-      const result = await this.refreshChatgptAuthTokens({
-        reason: readNonEmptyString(requestParams?.reason) || undefined,
-        previousAccountId: previousAccountId || undefined,
-      })
-      if (generation !== this.connectionGeneration) return
-      this.sendServerRequestReply(requestId, { result })
-      this.emitNotification({
-        method: 'server/request/resolved',
-        params: {
-          id: requestId,
-          method: 'account/chatgptAuthTokens/refresh',
-          mode: 'automatic',
-          resolvedAtIso: new Date().toISOString(),
-        },
-      })
+      await refreshChatgptAuthTokensForExternalAuth()
     } catch (error) {
       if (generation !== this.connectionGeneration) return
       this.sendServerRequestReply(requestId, {
@@ -501,11 +452,7 @@ export class AppServerClient {
     }
   }
 
-  async forkWithMetadataSource(params: unknown, sourceTurns: unknown[]): Promise<unknown> {
-    return this.rpc('thread/fork', params, sourceTurns)
-  }
-
-  async rpc(method: string, params: unknown, forkSourceTurns?: unknown[]): Promise<unknown> {
+  async rpc(method: string, params: unknown): Promise<unknown> {
     await this.ensureInitialized()
     if (method === 'thread/generationMetadata/refresh') {
       this.recoverRolloutMetadata(readNonEmptyString(asRecord(params)?.threadId), null, true)
@@ -523,26 +470,10 @@ export class AppServerClient {
       const record = asRecord(result)
       if (method === 'thread/turns/list' && Array.isArray(record?.data)) {
         if (record.data.length && asRecord(params)?.itemsView !== 'notLoaded') this.recoverRolloutMetadata(resumeId, record.data)
-        result = { ...record, data: await this.metadataStore().enrich(readNonEmptyString(asRecord(params)?.threadId), record.data) }
       }
       const thread = asRecord(record?.thread)
-      const store = this.metadataStore()
       if (thread && typeof thread.id === 'string' && Array.isArray(thread.turns)) {
         if (thread.turns.length && ['thread/read', 'thread/resume', 'thread/fork'].includes(method)) this.recoverRolloutMetadata(thread.id, thread.turns)
-        let turns = await store.enrich(thread.id, thread.turns)
-        if (method === 'thread/fork') {
-          const sourceId = readNonEmptyString(asRecord(params)?.threadId)
-          if (sourceId && sourceId !== thread.id) {
-            try {
-              // One source snapshot per fork, never one request per message.
-              const source = forkSourceTurns ? null : asRecord(asRecord(await this.rpc('thread/read', { threadId: sourceId, includeTurns: true }))?.thread)
-              const inherited = inheritForkTurnMetadata(forkSourceTurns ?? (Array.isArray(source?.turns) ? source.turns : []), turns)
-              turns = inherited.turns
-              await this.saveMetadata(store, thread.id, inherited.entries)
-            } catch (error) { console.warn('Fork metadata recovery unavailable:', error) }
-          }
-        }
-        result = { ...record, thread: { ...thread, turns } }
       }
       if (method === 'thread/revert') {
         this.snapshotEpoch = {}
@@ -562,18 +493,7 @@ export class AppServerClient {
       }
       return result
     }
-    const threadId = readNonEmptyString(asRecord(params)?.threadId)
-    const metadata = submittedGenerationMetadata(params)
-    const store = this.metadataStore()
-    const result = await this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, (m, p) => this.call(m, p))
-    const turn = asRecord(asRecord(result)?.turn)
-    const turnId = readNonEmptyString(turn?.id)
-    const merged = mergeGenerationMetadata(metadata, readGenerationMetadata(turn?.generationMetadata))
-    if (threadId && turnId) {
-      await this.saveMetadata(store, threadId, [{ turnId, metadata: merged }])
-      this.emitNotification({ method: 'turn/generationMetadata', params: { threadId, turnId, generationMetadata: merged } })
-    }
-    return turn ? { ...asRecord(result), turn: { ...turn, generationMetadata: merged } } : result
+    return this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, (m, p) => this.call(m, p))
   }
 
   onNotification(listener: (value: { method: string; params: unknown }) => void): () => void {

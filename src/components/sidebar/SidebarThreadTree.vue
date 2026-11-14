@@ -370,7 +370,6 @@ const props = defineProps<{
   isForkDisabled?: boolean
   groups: UiProjectGroup[]
   projectDisplayNameById: Record<string, string>
-  projectGitRepoByName: Record<string, boolean>
   selectedThreadId: string
   activeProjectName: string | null
   isLoading: boolean
@@ -385,7 +384,6 @@ const emit = defineEmits<{
   select: [threadId: string]
   archive: [threadId: string]
   'start-new-thread': [projectName: string]
-  'request-project-git-status': [projectName: string]
   'rename-thread': [payload: { threadId: string; title: string }]
   'remove-project': [projectName: string]
   'copy-thread-chat': [threadId: string]
@@ -951,8 +949,7 @@ function setThreadViewMode(mode: 'project' | 'chronological'): void {
   isOrganizeMenuOpen.value = false
 }
 
-function requestProjectGitStatusAndUpdateMenuDirection(projectName: string): void {
-  emit('request-project-git-status', projectName)
+function scheduleProjectMenuDirection(projectName: string): void {
   nextTick(() => {
     updateProjectMenuDirection(projectName)
   })
@@ -967,14 +964,14 @@ function toggleProjectMenu(projectName: string): void {
   closeThreadMenu()
   isOrganizeMenuOpen.value = false
   openProjectMenuId.value = projectName
-  requestProjectGitStatusAndUpdateMenuDirection(projectName)
+  scheduleProjectMenuDirection(projectName)
 }
 
 function openProjectContextMenu(projectName: string): void {
   closeThreadMenu()
   isOrganizeMenuOpen.value = false
   openProjectMenuId.value = projectName
-  requestProjectGitStatusAndUpdateMenuDirection(projectName)
+  scheduleProjectMenuDirection(projectName)
 }
 
 function onRemoveProject(projectName: string): void {
@@ -1330,22 +1327,6 @@ watch(
     if (Object.keys(nextMeasuredHeights).length !== Object.keys(measuredHeightByProject.value).length) {
       measuredHeightByProject.value = nextMeasuredHeights
     }
-  },
-)
-
-watch(
-  () => {
-    const projectName = openProjectMenuId.value
-    return projectName ? props.projectGitRepoByName[projectName] : undefined
-  },
-  () => {
-    const projectName = openProjectMenuId.value
-    if (!projectName) return
-    nextTick(() => {
-      if (openProjectMenuId.value === projectName) {
-        updateProjectMenuDirection(projectName)
-      }
-    })
   },
 )
 

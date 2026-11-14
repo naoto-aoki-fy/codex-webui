@@ -31,16 +31,6 @@ export function readGenerationMetadata(value: unknown): TurnGenerationMetadata |
   return Object.keys(result).length ? result : undefined
 }
 
-export function submittedGenerationMetadata(params: unknown): TurnGenerationMetadata {
-  const row = record(params)
-  const settings = record(record(row?.collaborationMode)?.settings)
-  const model = settings && 'model' in settings ? settings.model : row?.model
-  const effort = settings && 'reasoning_effort' in settings ? settings.reasoning_effort : row?.effort
-  return readGenerationMetadata({
-    model, modelSource: 'submitted', effort, effortSource: 'submitted',
-  }) ?? {}
-}
-
 export function generationMetadataLabel(metadata?: TurnGenerationMetadata): string {
   const model = metadata?.model === null ? 'Model unspecified' : metadata?.model ?? 'Model unknown'
   const effort = metadata?.effort === null ? 'unspecified' : metadata?.effort ?? 'unknown'

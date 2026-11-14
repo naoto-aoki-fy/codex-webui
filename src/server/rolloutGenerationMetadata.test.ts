@@ -141,3 +141,34 @@ it('does not reuse persistent data across different remote homes', async () => {
   expect((await other.recover('t')).size).toBe(0)
   expect(sourceReads(f)).toBe(1)
 })
+
+it('does not leak metadata between source, native fork and unrelated threads with colliding turn IDs', async () => {
+  const f = fixture(), original = f.rpc.getMockImplementation()!
+  const forkPath = path.replace('test.jsonl', 'fork.jsonl')
+  const otherPath = path.replace('test.jsonl', 'other.jsonl')
+  f.files.set(forkPath, context('old', { model: 'fork-model', effort: 'low' }))
+  f.files.set(otherPath, context('old', { model: 'unrelated-model' }))
+  f.rpc.mockImplementation((m, p) => m === 'thread/read' ? Promise.resolve({ thread: {
+    id: p.threadId, path: p.threadId === 'fork' ? forkPath : p.threadId === 'other' ? otherPath : path,
+  } }) : original(m, p))
+  expect((await f.service.recover('t')).get('old')).toEqual(execution('A', 'high'))
+  expect((await f.service.recover('fork')).get('old')).toEqual(execution('fork-model', 'low'))
+  expect((await f.service.recover('other')).get('old')).toEqual(execution('unrelated-model'))
+  // A revert rewrites the fork rollout; unavailable inherited evidence stays unknown.
+  f.files.set(forkPath, 'malformed\n' + context('old', {})); f.change()
+  expect(await f.service.recover('fork')).toEqual(new Map())
+  expect((await f.service.recover('t')).get('old')).toEqual(execution('A', 'high'))
+  expect([...f.files.keys()].filter(key => key.endsWith('.json'))).toHaveLength(3)
+  expect(f.files.get(path)).toContain('"model":"A"')
+})
+
+it('discards request-derived values inserted into a rollout cache and rebuilds from the source', async () => {
+  const f = fixture()
+  await f.service.recover('t')
+  const key = [...f.files.keys()].find(key => key !== path)!
+  const cached = JSON.parse(f.files.get(key)!)
+  cached.turns[0].metadata = { model: 'request-only', modelSource: 'submitted' }
+  f.files.set(key, JSON.stringify(cached))
+  expect((await new RolloutGenerationMetadata(f.client).recover('t')).get('old')).toEqual(execution('A', 'high'))
+  expect(sourceReads(f)).toBe(2)
+})

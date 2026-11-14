@@ -5,7 +5,7 @@
 - Official Codex CLI available, or an isolated disposable account allowing npm installation.
 
 #### Actions
-1. Run `pnpm exec vitest run src/cli/ensureCodexInstalled.test.ts src/utils/commandInvocation.test.ts`.
+1. Run `pnpm exec vitest run src/cli/ensureCodexInstalled.test.ts`.
 2. Run `pnpm run build`, then `node dist-cli/index.js --help`.
 3. Run `node dist-cli/index.js --port 4198 --no-open --no-password`.
 4. Request `http://127.0.0.1:4198/` and connect from a mobile browser using the host's reachable address.

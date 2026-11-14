@@ -54,14 +54,3 @@ describe('response fork cutoff', () => {
     expect(rpc).not.toHaveBeenCalled()
   })
 })
-
-it('passes the already read source into metadata inheritance without another source read', async () => {
-  const rpc = vi.fn(async (_method: string, params: unknown) => ({ thread: {
-    id: (params as any).threadId,
-    turns: (params as any).threadId === 'source' ? turns : turns.slice(0, 2),
-  } }))
-  const forkWithMetadataSource = vi.fn(async () => ({ thread: { id: 'fork', turns: turns.slice(0, 2) } }))
-  await forkThreadAtCutoff({ rpc, forkWithMetadataSource }, { threadId: 'source', forkFromTurnIndex: 1 })
-  expect(forkWithMetadataSource).toHaveBeenCalledExactlyOnceWith({ threadId: 'source', lastTurnId: 'turn-1' }, turns.slice(0, 2))
-  expect(rpc.mock.calls.map(([, params]) => (params as any).threadId)).toEqual(['source', 'fork'])
-})
