@@ -42,6 +42,8 @@ profile on a destination whose dialect has not been established.
 
 ### Tool declarations
 
+For grammar-format tool rejections, see [RiVault catalog compatibility](rivault-model-compatibility.md). Catalog tool selection is separate from history projection.
+
 For a standard destination, current top-level tools are the authoritative active
 handler inventory. They are retained unchanged, including parameters, custom
 formats, built-ins and namespace structure. Inherited `additional_tools`
