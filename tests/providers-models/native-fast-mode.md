@@ -16,3 +16,10 @@ and a third model omitting metadata. Use a disposable conversation.
    expect ordinary external connection/authentication guidance, no local CLI banner.
 
 Cleanup: restore test catalog/network and remove only disposable conversations.
+
+Acceptance regression evidence: `codexGateway.test.ts` asserts exact serialized
+Fast-enable/config, Fast turn, disable/config and Standard turn bodies. The
+messages suite restores an existing Fast-tier thread with configured Fast and
+configured Standard and calls the real serializer. See the
+[acceptance report](../../docs/native-maintenance-acceptance.md#2-fast-request-semantics)
+for omitted/null/default semantics and the intentional config-write boundary.

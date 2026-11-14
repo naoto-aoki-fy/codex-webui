@@ -1,0 +1,54 @@
+diff --git a/src/api/codexGateway.test.ts b/src/api/codexGateway.test.ts
+diff --git a/src/api/modelCapabilities.test.ts b/src/api/modelCapabilities.test.ts
+diff --git a/src/components/content/ThreadComposer.submission.test.ts b/src/components/content/ThreadComposer.submission.test.ts
+diff --git a/src/components/sidebar/threadVisibility.test.ts b/src/components/sidebar/threadVisibility.test.ts
+diff --git a/src/composables/useDesktopState.messages.test.ts b/src/composables/useDesktopState.messages.test.ts
+-  it('keeps a current CLI banner when an older catalog failure arrives', async () => {
+diff --git a/src/composables/useDesktopState.test.ts b/src/composables/useDesktopState.test.ts
+-  it('keeps all history projects and missing-cwd conversations visible with registered roots', () => {
+-  it('keeps workspace roots with the same folder name as separate projects', () => {
+-  it('uses Codex project-order when workspace roots are hydrated', () => {
+-  it('keeps empty duplicate workspace roots visible in Codex project order', () => {
+-  it('keeps remote projects from Codex project order visible as empty project rows', () => {
+-  it('keeps managed worktree threads under the matching workspace root project', () => {
+-  it('keeps unregistered managed worktrees under the main root when another managed worktree root is registered', () => {
+-  it('does not group unrelated git worktrees under a same-leaf workspace root project', () => {
+-  it('collects duplicate-path project roots by full path when removing a project', () => {
+-  it('surfaces a chat runtime error when the app-server bridge cannot find Codex CLI', async () => {
+-  it('clears a previous Codex CLI missing banner when a later refresh fails for another reason', async () => {
+diff --git a/src/server/codexAppServerBridge.archive.test.ts b/src/server/codexAppServerBridge.archive.test.ts
+-  it('realpaths existing local roots so symlink cwd sessions remain visible', async () => {
+-  it('realpaths thread cwd values to match canonicalized workspace roots', async () => {
+-  it('reuses cwd realpath results within one thread list response', async () => {
+diff --git a/src/server/composerFileSearch.test.ts b/src/server/composerFileSearch.test.ts
+-it.each([false, true])('searches remote-only files without local rg, unsupported=%s', async unsupported => {
+diff --git a/src/server/nativeProjects.test.ts b/src/server/nativeProjects.test.ts
+-it('migrates empty projects, labels, roots, order and archived/unarchived members once; preserves legacy/imported data', async () => {
+-it.each(['lost import reply', 'failed move'])('retries a partial migration after %s without duplicate projects or lost associations', async failure => {
+-it('repairs an import missing a thread association and rejects an unsupported association method without falling back', async () => {
+-it('uses a read-only legacy fallback only for explicit project/list absence before any migration; never for transport or denied calls', async () => {
+-it('adopts one exact existing native project and preserves unrelated native order; refuses conflicting native membership', async () => {
+-it('checkpoints accepted destination IDs before validation so incompatible replies cannot create duplicates on retry', async () => {
+-it('migrates existing injected-only imports omitted by native lists without changing their transcript receipts', async () => {
+-it('does not overwrite an association changed by another client while migration was interrupted', async () => {
+diff --git a/src/server/remoteHistoryPager.test.ts b/src/server/remoteHistoryPager.test.ts
+-it('falls back only after explicit method-not-found and resets that diagnosis on reconnect', async () => {
+diff --git a/src/server/threadPresentationStore.test.ts b/src/server/threadPresentationStore.test.ts
+-it('migrates once, preserving unrelated state, and reads native pagination', async () => {
+-it('retains legacy state on unsupported or failed migration', async () => {
+-it('retries an interrupted migration without discarding legacy IDs', async () => {
+diff --git a/src/server/workspaceRootsStore.test.ts b/src/server/workspaceRootsStore.test.ts
+-it('preserves the public bridge exports as the same functions', () => {
+-it('preserves remote lexical paths despite local symlinks', async () => {
+-it('bounds root resolution at eight and resolves each distinct input once', async () => {
+-it('falls back for realpath errors and preserves malformed thread-list rows and metadata', async () => {
+diff --git a/src/utils/desktopProjectGroups.test.ts b/src/utils/desktopProjectGroups.test.ts
+-  it('preserves the existing public function exports', () => {
+-  it('preserves arrays and groups without roots or disambiguation', () => {
+-  it('unions history groups with registered placeholders and retains missing-cwd threads', () => {
+-  it('disambiguates duplicate leaf paths and preserves unchanged thread references', () => {
+-  it('preserves separator distinctions while treating repeated identical roots as one identity', () => {
+-  it('keeps managed worktrees with their unique canonical root', () => {
+-  it('keeps remote ids in ordering and placeholders, with existing label fallbacks', () => {
+-  it('retains unknown metadata and existing malformed-path failures', () => {
+-  it('preserves empty-root and unknown-removal behavior', () => {

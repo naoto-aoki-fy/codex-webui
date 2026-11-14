@@ -79,3 +79,8 @@ the CJS smoke harness uses `execFileSync` against its public CLI entry rather
 than attempting `require` of an ESM executable. No pre-existing test failures
 were found. Playwright initially lacked its browser binary; it was installed
 under `/tmp` and the check rerun successfully.
+
+The subsequent [focused acceptance audit](native-maintenance-acceptance.md)
+identified and fixed independent legacy-pin fencing and the remaining adapter
+pagination fallback. It records the six upgrade cases, exact Fast frames,
+deleted-test mapping, verification layers and reproducible migration source.
