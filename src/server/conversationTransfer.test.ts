@@ -20,24 +20,78 @@ function server() {
 }
 beforeEach(() => { disk.state = {} })
 describe('portable conversation transfer', () => {
-  it('allowlists ordinary text and readable observations, without copying opaque source state', () => {
+  it('allowlists only ordinary user and assistant text, silently excluding all other content', () => {
     const history = [{ items: [
       ...turn(0).items,
       { type: 'reasoning', encrypted_content: 'SECRET', content: ['SECRET'] },
       { type: 'additional_tools', tools: ['SECRET'] },
       { type: 'message', role: 'developer', content: 'SECRET' },
-      { type: 'commandExecution', command: 'pwd', aggregatedOutput: '/workspace' },
-      { type: 'mcpToolCall', server: 's', tool: 't', result: { content: [{ type: 'text', text: 'observation' }] } },
-      { type: 'userMessage', content: [{ type: 'image', url: 'SECRET' }] },
+      { type: 'commandExecution', command: 'pwd', aggregatedOutput: 'SECRET' },
+      { type: 'mcpToolCall', server: 's', tool: 't', result: { content: [{ type: 'text', text: 'SECRET' }] } },
+      { type: 'userMessage', content: [{ type: 'image', url: 'SECRET' }, { type: 'localImage', path: 'SECRET' }, { type: 'skill', name: 'SECRET', path: 'SECRET' }] },
+      { type: 'fileChange', changes: [{ path: 'SECRET', diff: 'SECRET' }] },
+      { type: 'function_call_output', call_id: 'SECRET', output: 'SECRET' },
+      { type: 'custom_tool_call_output', output: 'SECRET' },
+      { type: 'importAnnotation', text: 'SECRET' },
+      { type: 'plan', text: 'SECRET' },
+      { type: 'unknown', text: 'SECRET' },
+      { type: 'userMessage', content: [{ type: 'text', text: '' }, { type: 'text', text: '  \n  ' }] },
+      { type: 'userMessage', content: null },
+      { type: 'agentMessage', text: '' },
+      { type: 'agentMessage', text: '  \n  ' },
     ] }]
     const result = convertTransferHistory(history, 'source')
     const items = portableItems(result.messages)
-    expect(items.map(i => i.role)).toEqual(['user', 'assistant', 'user', 'user', 'user'])
+    expect(items.map(i => i.role)).toEqual(['user', 'assistant'])
     expect(items[0]?.content).toEqual([{ type: 'input_text', text: 'question 0' }])
     expect(items[1]?.content).toEqual([{ type: 'output_text', text: 'answer 0' }])
     expect(JSON.stringify(items)).not.toContain('SECRET')
     expect(items.every(i => i.type === 'message' && Object.keys(i).length === 3)).toBe(true)
-    expect(result.warnings.length).toBeGreaterThan(0)
+    expect(result.warnings).toEqual([])
+    expect(result.messages.map(message => message.text)).toEqual(['question 0', 'answer 0'])
+  })
+  it('keeps adjacent messages, Markdown, code blocks and whitespace unchanged around excluded content', () => {
+    const texts = ['  Hello\n\n**Explain** this code.  ', '```ts\nconst value = 1\n```\n', 'Imported: user-authored text [Attachment omitted] stays verbatim.', 'A separate consecutive user message.']
+    const { messages, warnings } = convertTransferHistory([{ items: [
+      { type: 'userMessage', content: [{ type: 'image', url: 'SECRET' }, { type: 'text', text: texts[0] }, { type: 'attachment', path: 'SECRET' }] },
+      { type: 'commandExecution', aggregatedOutput: 'SECRET' },
+      { type: 'agentMessage', text: texts[1] },
+      { type: 'userMessage', content: [{ type: 'text', text: texts[2] }] },
+      { type: 'userMessage', content: [{ type: 'text', text: texts[3] }] },
+    ] }], 'source')
+    expect(messages.map(message => message.text)).toEqual(texts)
+    expect(messages.map(message => message.role)).toEqual(['user', 'assistant', 'user', 'user'])
+    expect(portableItems(messages).map(item => item.content[0]?.text)).toEqual(texts)
+    expect(warnings).toEqual([])
+  })
+  it('injects and persists exactly the same text-only cutoff through reopening and a later transfer', async () => {
+    const rpc = server()
+    const sourceTurns = [turn(0), { ...turn(1), items: [
+      { type: 'reasoning', content: ['SECRET'] },
+      { type: 'userMessage', content: [{ type: 'text', text: 'next **question**' }, { type: 'image', url: 'SECRET' }] },
+      { type: 'mcpToolCall', result: { content: [{ type: 'text', text: 'SECRET' }] } },
+      { type: 'agentMessage', text: '```js\nanswer()\n```' },
+    ] }, turn(2)]
+    rpc.mockImplementationOnce(async () => ({ thread: { cwd: '/workspace', turns: sourceTurns } }))
+    const transfers = createConversationTransfers(rpc)
+    const prepared = await transfers.prepare('source', 1, 'turn-1')
+    expect(prepared.warnings).toEqual([])
+    expect(prepared.messageCount).toBe(4)
+    await transfers.create(prepared.id, 'model', 'provider')
+    const items = rpc.mock.calls.find(call => call[0] === 'thread/inject_items')![1].items
+    expect(items.map((item: any) => item.content[0].text)).toEqual(['question 0', 'answer 0', 'next **question**', '```js\nanswer()\n```'])
+    const reopened = createConversationTransfers(rpc)
+    const payload = await reopened.decorate({ thread: { id: 'destination', turns: [] } })
+    expect(normalizeThreadMessagesV2(payload).map(message => message.text)).toEqual(items.map((item: any) => item.content[0].text))
+    expect(JSON.stringify(payload)).not.toContain('SECRET')
+    expect((await reopened.status(prepared.id)).warnings).toEqual([])
+    const readOnlyCalls = rpc.mock.calls.length
+    await reopened.assertReady('destination')
+    expect(rpc.mock.calls).toHaveLength(readOnlyCalls)
+    rpc.mockImplementationOnce(async () => ({ thread: { cwd: '/workspace', turns: [] } }))
+    const next = await reopened.prepare('destination', -4)
+    expect(next.messageCount).toBe(4)
+    expect(next.warnings).toEqual([])
   })
   it('prepares before selection and cancellation creates nothing', async () => {
     const rpc = server(); const transfers = createConversationTransfers(rpc)
@@ -88,7 +142,11 @@ describe('portable conversation transfer', () => {
     const rpc = server(); const transfers = createConversationTransfers(rpc)
     const first = await transfers.prepare('source', 0)
     await transfers.create(first.id, 'model', 'provider')
+    const stored = Object.values(disk.state['conversation-transfers-v1'] as Record<string, any>)[0]!
+    stored.warnings = ['Legacy omission notice']
+    stored.messages.push({ role: 'tool', text: 'SECRET', source: 'source' }, { role: 'assistant', text: '', source: 'source' })
     const second = await transfers.prepare('destination', 0)
+    expect(second.warnings).toEqual([])
     expect(second.messageCount).toBe(4)
     const response = await transfers.prepare('destination', -2)
     expect(response.messageCount).toBe(2)

@@ -8,9 +8,17 @@ const baseUrl = 'http://127.0.0.1:4173'
 const output = resolve('output/playwright')
 mkdirSync(output, { recursive: true })
 const sourceTurn = n => ({ id: `t${n}`, status: 'completed', items: [
-  { id: `u${n}`, type: 'userMessage', content: [{ type: 'text', text: `Original question ${n}` }] },
+  { id: `u${n}`, type: 'userMessage', content: [{ type: 'text', text: `Original question ${n}` }, { type: 'image', url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRwAAAABJRU5ErkJggg==' }] },
+  { id: `cmd${n}`, type: 'commandExecution', command: 'historical command', cwd: '/workspace', status: 'completed', aggregatedOutput: 'TOOL_ONLY_SECRET', exitCode: 0, commandActions: [] },
+  { id: `reason${n}`, type: 'reasoning', content: ['REASONING_ONLY_SECRET'], summary: [], encrypted_content: 'REASONING_ONLY_SECRET' },
   { id: `a${n}`, type: 'agentMessage', text: `Original answer ${n}` },
 ] })
+const textTranscript = turns => turns.flatMap(turn => turn.items.flatMap(item => {
+  const text = item.type === 'userMessage'
+    ? item.content.filter(content => content.type === 'text').map(content => content.text).join('\n')
+    : item.type === 'agentMessage' ? item.text : ''
+  return text.trim() ? [{ role: item.type === 'userMessage' ? 'user' : 'assistant', text, source: 'source (P / A)' }] : []
+}))
 const source = { id: 'source', name: 'Fork methods source', preview: 'Fork methods source', cwd: '/workspace',
   createdAt: 1700000000, updatedAt: 1700000001, modelProvider: 'P', model: 'A', status: { type: 'idle' },
   turns: Array.from({ length: 3 }, (_, n) => sourceTurn(n)),
@@ -25,7 +33,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   const calls = []
   const conversation = structuredClone(source)
   if (importedOnly) conversation.turns = []
-  const importedPrefix = sourceTurn(0).items.map(item => ({ role: item.type === 'userMessage' ? 'user' : 'assistant', text: item.text || item.content[0].text, source: 'source (P / A)' }))
+  const importedPrefix = textTranscript([sourceTurn(0)])
   const preparations = []
   const snapshots = new Map()
   const destinations = new Map()
@@ -64,7 +72,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       const id = `snapshot-${++snapshotNumber}`
       snapshots.set(id, turns)
       if (pendingPreparation) await new Promise(resolve => preparations.push({ id, resolve }))
-      result = { id, warnings: ['Images and execution state are omitted.'], messageCount: turns.length * 2 }
+      result = { id, warnings: [], messageCount: turns.length * 2 }
     }
     if (rpc === 'conversation-transfer/cancel') snapshots.delete(params.id)
     if (rpc === 'thread/fork' || rpc === 'thread/fork-at-response') {
@@ -85,9 +93,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       assert.equal(params.model, destinationDefault, 'creation must use the provider default, not the shared source model')
       const turns = snapshots.get(params.id)
       assert(turns, 'prepared portable snapshot required')
-      const importedTranscript = turns.flatMap(turn => turn.items.map(item => ({ role: item.type === 'userMessage' ? 'user' : 'assistant',
-        text: item.text || item.content[0].text, source: 'source (P / A)',
-      })))
+      const importedTranscript = textTranscript(turns)
       destinations.set('imported', { thread: { ...conversation, id: 'imported', turns: [] }, model: params.model,
         modelProvider: params.modelProvider, importedTranscript, importStage: 'ready' })
       result = { threadId: 'imported', model: params.model, modelProvider: params.modelProvider, warnings: [] }
@@ -135,6 +141,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     await split.getByRole('button', { name: 'Portable Fork', exact: true }).click()
     await page.getByRole('dialog', { name: 'Transfer conversation' }).waitFor()
     assert.equal(await page.locator('.transfer-picker').getByText('Native Fork', { exact: true }).count(), 0)
+    assert.equal((await page.locator('.transfer-picker').innerText()).includes('omitted'), false)
     if (!pendingPreparation && !prepareFails) await page.getByRole('button', { name: 'Provider', exact: true }).waitFor()
     if (prepareFails) await page.getByRole('alert').filter({ hasText: '8 MiB' }).waitFor()
     assert.equal(await page.locator('.transfer-picker .composer-dropdown').count(), pendingPreparation ? 0 : 1)
@@ -261,6 +268,12 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     assert.equal(resumed.importStage, 'ready')
     assert.equal(resumed.importedTranscript[1].source, 'source (P / A)')
     assert.equal(resumed.importedTranscript[1].text, 'Original answer 0')
+    assert.equal(JSON.stringify(resumed.importedTranscript).includes('TOOL_ONLY_SECRET'), false)
+    assert.equal(JSON.stringify(resumed.importedTranscript).includes('REASONING_ONLY_SECRET'), false)
+    const rendered = await page.locator('body').innerText()
+    for (const marker of ['Historical tool observation', 'TOOL_ONLY_SECRET', 'REASONING_ONLY_SECRET', 'Attachment omitted', 'Excluded historical item']) assert.equal(rendered.includes(marker), false)
+  } else {
+    assert.equal(resumed.thread.turns.some(turn => turn.items.some(item => item.type === 'commandExecution')), true, 'native history must remain unchanged')
   }
   await page.getByText('Original answer 0', { exact: true }).waitFor()
   assert.equal((await page.locator('body').innerText()).includes('[Imported context from'), false)

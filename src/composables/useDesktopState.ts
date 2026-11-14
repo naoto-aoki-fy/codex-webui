@@ -3221,7 +3221,6 @@ export function useDesktopState() {
       setSelectedThreadId(result.threadId)
       await loadThreads()
       await loadMessages(result.threadId)
-      if (result.warnings.length) error.value = result.warnings.join(' ')
       return result.threadId
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause)

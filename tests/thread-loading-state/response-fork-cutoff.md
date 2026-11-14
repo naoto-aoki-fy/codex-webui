@@ -14,8 +14,9 @@ least 25 turns, text, a tool observation and an image. Stop any active turn.
    another client. Confirm; expect only the captured prefix through the selected
    response. Transferred text must match the source without repeated import labels.
    Source attribution must remain in the internal transcript metadata.
-4. Verify omission warnings, attachment placeholders and labeled tool observations.
-   Expect no executable historical tools, reasoning, or privileged instructions.
+4. Verify that only ordinary user/assistant text remains. Expect no tools, tool
+   observations, reasoning, attachments, placeholders, or omission notices in
+   the picker, injected items, or resulting conversation.
 5. Reload/reopen the destination. Verify visible imported history remains and no
    reinjection occurs. Explicitly ask about the earliest source text. Expect one
    new turn on the selected provider/model with the imported context available.
@@ -93,7 +94,7 @@ verify original text is never stripped. Run the mocked browser matrix with
    contain `importedTranscript` source attribution and a ready import stage.
    Expect no reinjection or regenerated historical response.
 3. Transfer that conversation again. Expect the imported prefix exactly once;
-   internal attribution, omission warnings and duplicate-injection guards remain.
+   internal attribution and duplicate-injection guards remain, without omission notices.
 4. Repeat Native Fork and verify its text, provider and API workflow are unchanged.
    Inspect the actual destination conversation in light and dark themes.
 
@@ -128,3 +129,27 @@ Q/C while also advertising Q/A, so accidental source-model inheritance fails.
 
 Cleanup: restore any skill enable/disable changes made during this test and
 archive disposable destinations. The dialog does not write provider defaults.
+
+## Ordinary text-only transfer
+
+Setup: create a mixed-history source with user prompts, assistant replies,
+Markdown/code blocks, command output, MCP/tool results, reasoning, images and
+attachments. Include adjacent user messages and items containing no text.
+
+1. Choose Portable Fork from the whole-conversation action, then from a selected
+   response. Expect no omission notices or generated placeholders in the picker.
+2. Inspect the injection request. Expect only user/assistant text messages in
+   source order through the inclusive cutoff. No tool calls/results, observations,
+   reasoning, provider state, images or unsupported items may appear. Expect no
+   empty messages, rewritten text, merged messages, or generated annotation text.
+3. Inspect the destination before and after reload. Expect the exact injected
+   text and formatting, with no omitted-content labels, summaries or warnings.
+   Transfer it again and expect its text prefix exactly once, without reinjection
+   on ordinary resume. Internal attribution and import guards remain intact.
+4. Repeat Native Fork. Expect its original native state, including historical
+   tools, to remain intact. No native provider/model behavior changes.
+5. Simulate an import failure or uncertain timeout. Expect the existing failure
+   stage error and blocked continuation; genuine failures are still displayed.
+
+Cleanup: archive disposable destinations. Existing completed transfers are not
+rewritten or automatically reinjected. No workspace rollback is performed.
