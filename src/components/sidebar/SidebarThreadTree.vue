@@ -368,7 +368,6 @@ const router = useRouter()
 
 const props = defineProps<{
   isForkDisabled?: boolean
-  nativeProjectOrder?: boolean
   groups: UiProjectGroup[]
   projectDisplayNameById: Record<string, string>
   selectedThreadId: string
@@ -430,9 +429,7 @@ const chatSortMode = ref<ThreadSortMode>(typeof window !== 'undefined' && window
 watch(chatSortMode, value => {
   if (typeof window !== 'undefined') window.localStorage.setItem(CHAT_SORT_MODE_STORAGE_KEY, value)
 })
-const sortedGroups = computed(() => props.nativeProjectOrder
-  ? props.groups.map(group => ({ ...group, threads: [...group.threads].sort(compareThreads(chatSortMode.value)) }))
-  : sortThreadGroups(props.groups, chatSortMode.value))
+const sortedGroups = computed(() => sortThreadGroups(props.groups, chatSortMode.value))
 const threadViewMode = ref<'project' | 'chronological'>(loadThreadViewMode())
 const projectGroupResizeObserver =
   typeof window !== 'undefined'

@@ -60,7 +60,7 @@
           </div>
 
           <p v-if="threadSearchError" role="alert">{{ threadSearchError }}</p>
-          <SidebarThreadTree :groups="sidebarSearchGroups" :native-project-order="workspaceRootOptionsState.projectMode === 'native'" :project-display-name-by-id="projectDisplayNameById"
+          <SidebarThreadTree :groups="sidebarSearchGroups" :project-display-name-by-id="projectDisplayNameById"
             :active-project-name="activeProjectName"
             v-if="!isSidebarCollapsed"
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
