@@ -31,3 +31,5 @@ Return to the [manual test index](../../tests.md).
 - Actions: Click the Skills icon beside Search; repeat with keyboard navigation and on mobile. Check both light and dark themes.
 - Expected: The icon opens the Skills route, exposes a translated label and tooltip, and marks the active route with `aria-current="page"` and active styling. Mobile navigation closes the sidebar. The previous full-width cards are absent; search and new-thread actions still work.
 - Cleanup: Return to the home route and restore the original theme. No persistent data is changed.
+
+- [Native Project migration and ID-based sidebar grouping](native-project-migration.md)

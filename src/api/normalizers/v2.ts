@@ -481,7 +481,8 @@ function toUiThread(summary: Thread): UiThread {
   return {
     id: summary.id,
     title: toThreadTitle(summary),
-    projectName: toProjectName(cwd),
+    projectName: typeof summary.projectId === 'string' ? summary.projectId : toProjectName(cwd),
+    ...(Object.prototype.hasOwnProperty.call(summary, 'projectId') ? { projectId: summary.projectId } : {}),
     cwd,
     hasWorktree,
     createdAtIso: toIso(summary.createdAt),

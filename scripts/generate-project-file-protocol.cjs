@@ -26,7 +26,7 @@ try {
   }
   const dtoSource = readFileSync(join(process.cwd(), 'src/api/appServerDtos.ts'), 'utf8')
   const dtoTypes = [...dtoSource.matchAll(/protocol\/0\.167\.2\/([^'"]+)/g)].map(match => match[1])
-  for (const name of ['v2/CommandExecParams', 'v2/CommandExecResponse', 'FuzzyFileSearchParams', 'FuzzyFileSearchResponse', ...dtoTypes]) copyType(join(temp, name + '.ts'))
+  for (const name of ['v2/CommandExecParams', 'v2/CommandExecResponse', 'FuzzyFileSearchParams', 'FuzzyFileSearchResponse', 'v2/ProjectListParams', 'v2/ProjectListResponse', 'v2/ProjectReadParams', 'v2/ProjectReadResponse', 'v2/ProjectCreateParams', 'v2/ProjectImportParams', 'v2/ProjectUpdateParams', 'v2/ProjectMoveParams', 'v2/ProjectDeleteParams', 'v2/ThreadMetadataUpdateParams', 'v2/ThreadMetadataUpdateResponse', ...dtoTypes]) copyType(join(temp, name + '.ts'))
   const methods = name => [...new Set([...readFileSync(join(temp, name + '.ts'), 'utf8').matchAll(/"method": "([^"]+)"/g)].map(match => match[1]))].sort()
   writeFileSync(join(process.cwd(), 'src/server/appServerMethods.json'), JSON.stringify({ methods: methods('ClientRequest'), notifications: methods('ServerNotification') }, null, 2) + '\n')
 } finally { rmSync(temp, { recursive: true, force: true }) }

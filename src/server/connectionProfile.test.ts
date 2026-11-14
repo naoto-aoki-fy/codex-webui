@@ -1,9 +1,10 @@
+import { updateCodexGlobalState } from './codexGlobalState'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { getConnectionProfileId, profileStateDirectory } from './connectionProfile'
-import { persistWorkspaceRoot, readWorkspaceRootsState } from './workspaceRootsStore'
+import { readWorkspaceRootsState } from './workspaceRootsStore'
 
 afterEach(() => vi.unstubAllEnvs())
 it('isolates profiles using the same forwarding URL and preserves legacy settings without copying', async () => {
@@ -16,7 +17,7 @@ it('isolates profiles using the same forwarding URL and preserves legacy setting
     for (const profile of ['machine-a', 'machine-b']) {
       vi.stubEnv('CODEXUI_CONNECTION_PROFILE', profile)
       expect((await readWorkspaceRootsState()).order).toEqual([])
-      await persistWorkspaceRoot('/' + profile)
+      await updateCodexGlobalState(state => { state['electron-saved-workspace-roots'] = ['/' + profile] })
     }
     for (const profile of ['machine-a', 'machine-b', 'machine-a']) {
       vi.stubEnv('CODEXUI_CONNECTION_PROFILE', profile)

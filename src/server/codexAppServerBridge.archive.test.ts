@@ -10,7 +10,6 @@ import {
   isThreadMaterializationPendingError,
   isThreadNotFoundError,
   isUnauthenticatedRateLimitError,
-  writeWorkspaceRootsState,
 } from './codexAppServerBridge'
 
 const originalCodexHome = process.env.CODEX_HOME
@@ -168,58 +167,6 @@ describe('canonicalizeWorkspaceRootsStateForRead', () => {
       'remote-project-id': 'Remote Demo',
     })
     expect(state.remoteProjects[0]?.id).toBe('remote-project-id')
-  })
-})
-
-describe('writeWorkspaceRootsState', () => {
-  it('persists workspace roots in canonical form', async () => {
-    const codexHome = await mkdtemp(join(tmpdir(), 'codex-home-workspace-roots-'))
-    const canonicalRoot = join(codexHome, 'storage', 'projects', 'demo')
-    const symlinkParent = join(codexHome, 'workspace-link', 'projects')
-    const symlinkRoot = join(symlinkParent, 'demo')
-    process.env.CODEX_HOME = codexHome
-
-    try {
-      await mkdir(canonicalRoot, { recursive: true })
-      await mkdir(symlinkParent, { recursive: true })
-      await symlink(canonicalRoot, symlinkRoot)
-      await writeWorkspaceRootsState({
-        order: [symlinkRoot, 'remote-project-id', canonicalRoot],
-        labels: {
-          [canonicalRoot]: 'Canonical Demo',
-          [symlinkRoot]: 'Symlink Demo',
-          'remote-project-id': 'Remote Demo',
-        },
-        active: [symlinkRoot, canonicalRoot],
-        projectOrder: ['remote-project-id', symlinkRoot, canonicalRoot],
-        remoteProjects: [{
-          id: 'remote-project-id',
-          hostId: 'remote-ssh-discovered:host',
-          remotePath: '/remote/projects/demo',
-          label: 'remote-demo',
-        }],
-      })
-
-      const rawState = JSON.parse(await readFile(join(codexHome, '.codex-global-state.json'), 'utf8')) as Record<string, unknown>
-      expect(rawState['electron-saved-workspace-roots']).toEqual([
-        symlinkRoot,
-        'remote-project-id',
-        canonicalRoot,
-      ])
-      expect(rawState['active-workspace-roots']).toEqual([symlinkRoot, canonicalRoot])
-      expect(rawState['project-order']).toEqual([
-        'remote-project-id',
-        symlinkRoot,
-        canonicalRoot,
-      ])
-      expect(rawState['electron-workspace-root-labels']).toEqual({
-        [canonicalRoot]: 'Canonical Demo',
-        [symlinkRoot]: 'Symlink Demo',
-        'remote-project-id': 'Remote Demo',
-      })
-    } finally {
-      await rm(codexHome, { recursive: true, force: true })
-    }
   })
 })
 

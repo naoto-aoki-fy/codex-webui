@@ -1,6 +1,9 @@
 import { normalizePathForUi } from '../../pathUtils.js'
 
 export type WorkspaceRootsState = {
+  projectMode?: 'native' | 'legacy-readonly'
+  projectError?: string
+  nativeProjects?: import('../../server/protocol/0.167.2/v2/Project.js').Project[]
   order: string[]
   labels: Record<string, string>
   active: string[]
@@ -41,6 +44,9 @@ export function normalizeWorkspaceRootsState(payload: unknown): WorkspaceRootsSt
   }
 
   return {
+    ...(record.projectMode === 'native' || record.projectMode === 'legacy-readonly' ? { projectMode: record.projectMode } : {}),
+    ...(typeof record.projectError === 'string' ? { projectError: record.projectError } : {}),
+    ...(Array.isArray(record.nativeProjects) ? { nativeProjects: record.nativeProjects as NonNullable<WorkspaceRootsState['nativeProjects']> } : {}),
     order: normalizeArray(record.order).map((value) => normalizePathForUi(value)),
     labels,
     active: normalizeArray(record.active).map((value) => normalizePathForUi(value)),
@@ -64,6 +70,9 @@ export function normalizeWorkspaceRootsState(payload: unknown): WorkspaceRootsSt
 
 export function cloneWorkspaceRootsState(state: WorkspaceRootsState): WorkspaceRootsState {
   return {
+    ...(state.projectMode ? { projectMode: state.projectMode } : {}),
+    ...(state.projectError ? { projectError: state.projectError } : {}),
+    nativeProjects: state.nativeProjects?.map(p => ({ ...p, roots: p.roots.map(r => ({ ...r })), metadata: { ...p.metadata } })),
     order: [...state.order],
     labels: { ...state.labels },
     active: [...state.active],

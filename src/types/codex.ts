@@ -15,6 +15,7 @@ export type RpcMethodCatalog = {
 export type NativeThreadReadState = { firstUnread: { type: 'threadStart' } | { type: 'turn'; turnId: string } | null; revision: string }
 
 export type UiThread = {
+  projectId?: string | null
   nativeReadState?: NativeThreadReadState
 
   id: string

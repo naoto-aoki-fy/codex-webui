@@ -81,7 +81,7 @@ function installTestWindow(initialStorage: Record<string, string> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  gatewayMocks.getWorkspaceRootsState.mockRejectedValue(new Error('no workspace roots state'))
+  gatewayMocks.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [], projectMode: 'legacy-readonly' })
 })
 
 afterEach(() => {
@@ -570,7 +570,7 @@ describe('startup request deduplication', () => {
       await Promise.resolve()
 
       expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('Updated title')
-      expect(gatewayMocks.getThreadGroupsPage.mock.calls.length).toBeGreaterThan(callsBeforeNotification)
+      await vi.waitFor(() => expect(gatewayMocks.getThreadGroupsPage.mock.calls.length).toBeGreaterThan(callsBeforeNotification))
     } finally {
       nowSpy.mockRestore()
     }

@@ -433,12 +433,14 @@ export async function revertThreadHistory(threadId: string, beforeTurnId: string
 }
 
 export type StartedThread = {
+  projectId?: string | null
   threadId: string
   model: string
   modelProvider: string
 }
 
 export type ForkedThread = {
+  projectId?: string | null
   threadId: string
   cwd: string
   model: string
@@ -446,12 +448,13 @@ export type ForkedThread = {
   messages: UiMessage[]
 }
 
-export async function startThread(cwd?: string, model?: string, modelProvider?: string): Promise<StartedThread> {
+export async function startThread(cwd?: string, model?: string, modelProvider?: string, projectId?: string): Promise<StartedThread> {
   try {
     const selection = parseModelSelection(model || '')
     model = selection.model
     modelProvider ||= selection.provider
     const params: Record<string, unknown> = {}
+    if (projectId) params.projectId = projectId
     if (modelProvider) params.modelProvider = modelProvider
     if (typeof cwd === 'string' && cwd.trim().length > 0) {
       params.cwd = cwd.trim()
@@ -466,6 +469,7 @@ export async function startThread(cwd?: string, model?: string, modelProvider?: 
     }
     return {
       threadId,
+      projectId: payload.thread.projectId,
       model: normalizeThreadModelFromPayload(payload),
       modelProvider: normalizeThreadModelProviderFromPayload(payload),
     }
@@ -493,6 +497,7 @@ export async function forkThreadFromResponse(threadId: string, turnIndex: number
   const start = readThreadTurnStartIndex(payload)
   return {
     threadId: id,
+    projectId: payload.thread.projectId,
     cwd: normalizeThreadCwdFromPayload(payload),
     model: normalizeThreadModelFromPayload(payload),
     modelProvider: normalizeThreadModelProviderFromPayload(payload),
@@ -524,6 +529,7 @@ export async function forkThread(
       }
       return {
         threadId: forkedThreadId,
+        projectId: payload.thread.projectId,
         cwd: normalizeThreadCwdFromPayload(payload),
         model: normalizeThreadModelFromPayload(payload),
         modelProvider: normalizeThreadModelProviderFromPayload(payload),
@@ -557,6 +563,7 @@ export async function forkThread(
     }
     return {
       threadId: nextThreadId,
+      projectId: payload.thread.projectId,
       model: normalizeThreadModelFromPayload(payload),
       modelProvider: normalizeThreadModelProviderFromPayload(payload),
     }
@@ -903,7 +910,7 @@ async function fetchWorkspaceRootsState(): Promise<WorkspaceRootsState> {
   const response = await fetch('/codex-api/workspace-roots-state')
   const payload = (await response.json()) as unknown
   if (!response.ok) {
-    throw new Error('Failed to load workspace roots state')
+    throw new Error(getErrorMessageFromPayload(payload, 'Failed to load workspace roots state'))
   }
   const envelope =
     payload && typeof payload === 'object' && !Array.isArray(payload)
@@ -1008,8 +1015,12 @@ export function updateWorkspaceRootsState(operation: WorkspaceRootsOperation): P
   return queueWorkspaceRootsMutation(() => updateWorkspaceRootsStateRequest(operation), (state) => state)
 }
 
-export function openProjectRoot(path: string): Promise<string> {
+export function openProjectRootSelection(path: string): Promise<{ path: string; projectId?: string }> {
   return queueWorkspaceRootsMutation(() => openProjectRootRequest(path))
+}
+
+export async function openProjectRoot(path: string): Promise<string> {
+  return (await openProjectRootSelection(path)).path
 }
 
 async function updateWorkspaceRootsStateRequest(operation: WorkspaceRootsOperation): Promise<WorkspaceRootsState> {
@@ -1027,7 +1038,7 @@ async function updateWorkspaceRootsStateRequest(operation: WorkspaceRootsOperati
   return cloneWorkspaceRootsState(state)
 }
 
-async function openProjectRootRequest(path: string): Promise<string> {
+async function openProjectRootRequest(path: string): Promise<{ path: string; projectId?: string }> {
   const response = await fetch('/codex-api/project-root', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1049,7 +1060,7 @@ async function openProjectRootRequest(path: string): Promise<string> {
       ? (record.data as Record<string, unknown>)
       : {}
   const normalizedPath = typeof data.path === 'string' ? normalizePathForUi(data.path) : ''
-  return normalizedPath
+  return { path: normalizedPath, ...(typeof data.projectId === 'string' ? { projectId: data.projectId } : {}) }
 }
 
 export async function searchComposerFiles(cwd: string, query: string, limit = 20): Promise<ComposerFileSuggestion[]> {

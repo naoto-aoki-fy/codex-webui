@@ -22,7 +22,6 @@ it('preserves the public bridge exports as the same functions', () => {
   expect(bridge.canonicalizeWorkspaceRootsState).toBe(store.canonicalizeWorkspaceRootsState)
   expect(bridge.canonicalizeWorkspaceRootsStateForRead).toBe(store.canonicalizeWorkspaceRootsStateForRead)
   expect(bridge.canonicalizeThreadListResponseForRead).toBe(store.canonicalizeThreadListResponseForRead)
-  expect(bridge.writeWorkspaceRootsState).toBe(store.writeWorkspaceRootsState)
 })
 
 it('preserves remote lexical paths despite local symlinks', async () => {
@@ -73,7 +72,7 @@ it('falls back for realpath errors and preserves malformed thread-list rows and 
   }
 })
 
-it('normalizes malformed persisted fields while preserving unknown records on write', async () => {
+it('normalizes malformed legacy fields without writing to the registry', async () => {
   await writeFile(file(), JSON.stringify({
     'electron-saved-workspace-roots': ['remote', '', 4, 'remote'],
     'electron-workspace-root-labels': { remote: 'Label', invalid: 42 },
@@ -85,45 +84,16 @@ it('normalizes malformed persisted fields while preserving unknown records on wr
     order: ['remote'], active: [], labels: { remote: 'Label' }, projectOrder: [],
     remoteProjects: [{ id: 'r', hostId: 'h', remotePath: '', label: '' }],
   })
-  await store.persistWorkspaceRoot(' another ')
-  const raw = JSON.parse(await readFile(file(), 'utf8'))
-  expect(raw.unknown).toEqual({ nested: true })
-  expect(raw['remote-projects']).toEqual([null, { id: ' r ', hostId: ' h ', future: 42 }, { id: 'r' }, {}])
-  expect(raw['electron-saved-workspace-roots']).toEqual(['another', 'remote'])
-  expect(raw['electron-workspace-root-labels']).toEqual({ remote: 'Label' })
+  expect(JSON.parse(await readFile(file(), 'utf8')).unknown).toEqual({ nested: true })
 })
 
 it('handles absent state and blank roots without creating a file', async () => {
   expect(await store.readWorkspaceRootsState()).toEqual(empty())
-  await store.persistWorkspaceRoot('  ')
   await expect(stat(file())).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
 it.each(['{broken', 'null', '[]'])('rejects malformed global state without overwriting it: %s', async raw => {
   await writeFile(file(), raw)
   await expect(store.readWorkspaceRootsState()).rejects.toThrow()
-  await expect(store.writeWorkspaceRootsState({ ...empty(), order: ['new'] })).rejects.toThrow()
   expect(await readFile(file(), 'utf8')).toBe(raw)
-})
-
-it('propagates filesystem failures and allows later transactions to recover', async () => {
-  await mkdir(file())
-  await expect(store.persistWorkspaceRoot('root')).rejects.toThrow()
-  await rm(file(), { recursive: true })
-  await store.persistWorkspaceRoot('root')
-  expect((await store.readWorkspaceRootsState()).order).toEqual(['root'])
-})
-
-it('shares the global transaction queue and preserves no-op file bytes and mtime', async () => {
-  await store.persistWorkspaceRoot('root')
-  await Promise.all([
-    store.persistWorkspaceRoot('second'),
-    updateCodexGlobalState(payload => { payload.unrelated = true }),
-  ])
-  expect(JSON.parse(await readFile(file(), 'utf8')).unrelated).toBe(true)
-  const raw = await readFile(file(), 'utf8')
-  const before = await stat(file())
-  await store.writeWorkspaceRootsState(await store.readWorkspaceRootsState())
-  expect(await readFile(file(), 'utf8')).toBe(raw)
-  expect((await stat(file())).mtimeMs).toBe(before.mtimeMs)
 })
