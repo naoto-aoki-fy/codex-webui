@@ -122,7 +122,7 @@ beforeEach(() => {
   })
   gateway.getThreadGroupsPage.mockResolvedValue({ groups: [{ projectName: 'project', threads: [thread] }], nextCursor: null })
   gateway.getThreadTitleCache.mockResolvedValue({ titles: {} })
-  gateway.getWorkspaceRootsState.mockRejectedValue(new Error('no workspace roots'))
+  gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [], projectMode: 'legacy-readonly' })
   gateway.getAvailableModelIds.mockResolvedValue({ ids: ['gpt-5.5'], models: [] })
   gateway.getCurrentModelConfig.mockResolvedValue({ model: 'gpt-5.5', reasoningEffort: '', speedMode: 'standard' })
   gateway.getAvailableCollaborationModes.mockResolvedValue([{ value: 'default', label: 'Default' }])
@@ -2348,6 +2348,7 @@ describe('conversation model and fresh fork provider selection', () => {
   })
   it('does not surface stale omission notices returned by an older backend', async () => {
     setupCatalog()
+    gateway.getWorkspaceRootsState.mockRejectedValue(new Error('no workspace roots'))
     const state = createState()
     await state.loadMessages(thread.id)
     gateway.createConversationTransfer.mockResolvedValueOnce({ threadId: 'text-copy', model: 'A', modelProvider: 'P', warnings: ['Legacy omission notice'] })

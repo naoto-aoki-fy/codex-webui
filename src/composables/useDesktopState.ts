@@ -263,6 +263,7 @@ function areThreadFieldsEqual(first: UiThread, second: UiThread): boolean {
     first.id === second.id &&
     first.title === second.title &&
     first.projectName === second.projectName &&
+    first.projectId === second.projectId &&
     first.cwd === second.cwd &&
     first.createdAtIso === second.createdAtIso &&
     first.updatedAtIso === second.updatedAtIso &&
@@ -462,6 +463,7 @@ export function useDesktopState() {
     window.localStorage.removeItem('codex-web-local.project-display-name.v1')
   } catch { /* Storage may be unavailable. */ }
   const projectDisplayNameById = ref<Record<string, string>>({})
+  const workspaceRootsState = ref<WorkspaceRootsState | null>(null)
   const loadedVersionByThreadId = ref<Record<string, string>>({})
   const loadedMessagesByThreadId = ref<Record<string, boolean>>({})
   const hasMoreOlderMessagesByThreadId = ref<Record<string, boolean>>({})
@@ -1180,15 +1182,16 @@ export function useDesktopState() {
     projectGroups.value = mergeThreadGroups(projectGroups.value, flaggedGroups)
   }
 
-  function insertOptimisticThread(threadId: string, cwd: string, firstMessageText: string): void {
+  function insertOptimisticThread(threadId: string, cwd: string, firstMessageText: string, projectId?: string | null): void {
     localThreadConfirmationDeadlineById.set(threadId, Date.now() + LOCAL_THREAD_CONFIRMATION_GRACE_MS)
     scheduleLocalThreadReconciliation()
     const nowIso = new Date().toISOString()
     const normalizedCwd = normalizePathForUi(cwd)
-    const projectName = toProjectName(normalizedCwd)
+    const projectName = loadedThreadListRootsState?.nativeProjects ? projectId || '__codexapp_unassigned__' : toProjectName(normalizedCwd)
     const nextThread: UiThread = {
       id: threadId,
       title: toOptimisticThreadTitle(firstMessageText),
+      ...(projectId !== undefined ? { projectId } : {}),
       projectName,
       cwd: normalizedCwd,
       hasWorktree: normalizedCwd.includes('/.codex/worktrees/') || normalizedCwd.includes('/.git/worktrees/'),
@@ -2166,6 +2169,10 @@ export function useDesktopState() {
       setTurnActivityForThread(turnActivity.threadId, turnActivity.activity)
     }
 
+    if (notification.method === 'project/changed' || notification.method === 'thread/project/updated') {
+      invalidateWorkspaceRootsStateCache()
+      pendingThreadsRefresh = true
+    }
     const notificationThreadId = extractThreadIdFromNotification(notification)
     if (notificationThreadId && notification.method !== 'turn/generationMetadata' && (
       notification.method.startsWith('turn/') || notification.method.startsWith('item/') || notification.method === 'error'
@@ -2405,7 +2412,7 @@ export function useDesktopState() {
       method === 'error'
     const shouldRefreshThreads =
       method.startsWith('thread/') ||
-      method === 'turn/completed'
+      method === 'turn/completed' || method === 'project/changed'
 
     if (!shouldRefreshMessages && !shouldRefreshThreads) return
 
@@ -2438,7 +2445,9 @@ export function useDesktopState() {
   }
 
   function applyWorkspaceRootsState(rootsState: WorkspaceRootsState): void {
-    const nextLabels: Record<string, string> = {}
+    const nextLabels: Record<string, string> = { __codexapp_unassigned__: 'Unassigned' }
+    for (const project of rootsState.nativeProjects ?? []) nextLabels[project.id] = project.name
+    if (rootsState.projectError) error.value = rootsState.projectError
     const ids = getWorkspaceProjectOrderPaths(rootsState)
     const names = getWorkspaceProjectOrderNames(rootsState, collectDuplicateProjectLeafNames(loadedThreadListGroups, rootsState))
     for (const rootPath of rootsState.order) {
@@ -2452,6 +2461,7 @@ export function useDesktopState() {
     for (const remote of rootsState.remoteProjects ?? []) nextLabels[remote.id] = getRemoteProjectDisplayName(remote)
     projectDisplayNameById.value = nextLabels
     loadedThreadListRootsState = rootsState
+    workspaceRootsState.value = rootsState
     applyThreadGroups(loadedThreadListGroups, rootsState)
   }
 
@@ -2483,7 +2493,7 @@ export function useDesktopState() {
       return await getWorkspaceRootsState()
     } catch (cause) {
       if (generation === lifecycleGeneration) error.value = cause instanceof Error ? cause.message : 'Failed to load projects'
-      return loadedThreadListRootsState
+      return loadedThreadListRootsState ?? { projectMode: 'native', nativeProjects: [], order: [], active: [], labels: {}, projectOrder: [], projectError: cause instanceof Error ? cause.message : 'Projects unavailable' }
     }
   }
 
@@ -2666,10 +2676,8 @@ export function useDesktopState() {
         if (!hasLoadedThreads.value) isLoadingThreads.value = true
         try {
           const rootsGeneration = getWorkspaceRootsStateGeneration()
-          const [page, requestedRootsState] = await Promise.all([
-            getThreadGroupsPage(),
-            loadWorkspaceRootsStateForThreadList(),
-          ])
+          const requestedRootsState = await loadWorkspaceRootsStateForThreadList()
+          const page = await getThreadGroupsPage()
           if (generation === threadListGeneration) {
             // A registration or edit can invalidate roots while the thread page loads.
             const rootsState = rootsGeneration === getWorkspaceRootsStateGeneration()
@@ -3122,7 +3130,7 @@ export function useDesktopState() {
         ? await forkThread(sourceId)
         : await forkThreadFromResponse(sourceId, turnIndex, expectedTurnId)
       const source = flattenThreads(sourceGroups.value).find(row => row.id === sourceId)
-      insertOptimisticThread(result.threadId, result.cwd || source?.cwd || '', toForkedThreadTitle(source?.title || 'Forked conversation'))
+      insertOptimisticThread(result.threadId, result.cwd || source?.cwd || '', toForkedThreadTitle(source?.title || 'Forked conversation'), result.projectId)
       setThreadModelId(result.threadId, result.model || readModelIdForThread(sourceId), result.modelProvider)
       // Native forks are ordinary existing threads; the
       // legacy send-time provider-switch workaround must not run for these IDs.
@@ -3144,7 +3152,7 @@ export function useDesktopState() {
       error.value = ''
       const result = await createConversationTransfer(transferId, modelId)
       const source = flattenThreads(sourceGroups.value).find(row => row.id === threadId)
-      insertOptimisticThread(result.threadId, source?.cwd || '', toForkedThreadTitle(source?.title || 'Imported conversation'))
+      insertOptimisticThread(result.threadId, source?.cwd || '', toForkedThreadTitle(source?.title || 'Imported conversation'), result.projectId)
       setThreadModelId(result.threadId, result.model, result.modelProvider)
       // This is a new, configured thread, never a native fresh fork.
       setSelectedThreadId(result.threadId)
@@ -3295,6 +3303,7 @@ export function useDesktopState() {
     imageUrls: string[] = [],
     skills: Array<{ name: string; path: string }> = [],
     fileAttachments: FileAttachment[] = [],
+    projectId?: string,
   ): Promise<string> {
     const generation = lifecycleGeneration
     if (isUpdatingSpeedMode.value) return ''
@@ -3317,8 +3326,8 @@ export function useDesktopState() {
     try {
       const selection = parseModelSelection(selectedModel)
       const startedThread = selection.provider
-        ? await startThread(targetCwd, selection.model || undefined, selection.provider)
-        : await startThread(targetCwd, selection.model || undefined)
+        ? await startThread(targetCwd, selection.model || undefined, selection.provider, ...(projectId ? [projectId] : []))
+        : projectId ? await startThread(targetCwd, selection.model || undefined, undefined, projectId) : await startThread(targetCwd, selection.model || undefined)
       threadId = startedThread.threadId
       const submissionModel = modelSelectionKey(startedThread.modelProvider || parseModelSelection(selectedModel).provider, startedThread.model?.trim() || parseModelSelection(selectedModel).model)
       const submissionContext = { generation, modelId: submissionModel, reasoningEffort, resumed: true }
@@ -3334,7 +3343,7 @@ export function useDesktopState() {
       setSelectedCollaborationModeForThread(threadId, selectedMode)
       if (!threadId) return ''
 
-      insertOptimisticThread(threadId, targetCwd, nextText || '[Image]')
+      insertOptimisticThread(threadId, targetCwd, nextText || '[Image]', startedThread.projectId ?? projectId)
       const optimisticMessageId = appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments)
       blockInterruptUntilThreadIsPersisted(threadId)
       resumedThreadById.value = {
@@ -3563,7 +3572,7 @@ export function useDesktopState() {
         const forked = await forkThread(sourceThreadId, threadCwd || undefined, readModelIdForThread(sourceThreadId) || undefined)
         threadId = forked.threadId.trim()
         if (!threadId || threadId === sourceThreadId) throw new Error('Invalid fork destination')
-        insertOptimisticThread(threadId, threadCwd, 'Forked chat')
+        insertOptimisticThread(threadId, threadCwd, 'Forked chat', forked.projectId)
         setThreadModelId(threadId, forked.model, forked.modelProvider)
         stage = 'Validate fork target'
         await validateThreadRevert(threadId, turnId)
@@ -3613,10 +3622,11 @@ export function useDesktopState() {
   async function removeProject(projectName: string): Promise<void> {
     if (!projectName) return
     const path = getWorkspaceProjectId(loadedThreadListRootsState, projectName, sourceGroups.value)
-    const isRegisteredLocalRoot = Boolean(path && loadedThreadListRootsState?.order.includes(path))
+    const isNative = loadedThreadListRootsState?.projectMode === 'native'
+    const isRegisteredLocalRoot = Boolean(path && (isNative || loadedThreadListRootsState?.order.includes(path)))
     await queueProjectOperation(async () => {
       if (isRegisteredLocalRoot) {
-        const state = await updateWorkspaceRootsState({ type: 'delete', path })
+        const state = await updateWorkspaceRootsState(isNative ? { type: 'delete', projectId: path } : { type: 'delete', path })
         applyWorkspaceRootsState(state)
       }
       const threads = flattenThreads(projectGroups.value)
@@ -3928,7 +3938,7 @@ export function useDesktopState() {
     transportState, selectedRecoveryState, selectedUnknownOutcome, selectedLostApproval,
     retrySelectedSubscription, reconcileSelectedHistory,
     projectGroups,
-    projectDisplayNameById,
+    projectDisplayNameById, workspaceRootsState,
     selectedThread,
     selectedThreadTokenUsage,
     isSelectedThreadInterruptPending,

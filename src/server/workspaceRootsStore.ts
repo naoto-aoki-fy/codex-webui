@@ -1,12 +1,13 @@
 // Workspace paths belong to the App Server; persisted UI state is local.
 const preserveRemotePath = async (path: string) => path
 import { projectPath } from './appServerFileSystem.js'
-import { isDeepStrictEqual } from 'node:util'
 import { asRecord } from './bridgeHttpUtils.js'
-import { readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState.js'
-import type { WorkspaceRootsOperation } from '../types/workspaceRoots.js'
+import { readCodexGlobalState } from './codexGlobalState.js'
 
 export type WorkspaceRootsState = {
+  projectMode?: 'native' | 'legacy-readonly'
+  projectError?: string
+  nativeProjects?: import('../server/protocol/0.167.2/v2/Project.js').Project[]
   order: string[]
   labels: Record<string, string>
   active: string[]
@@ -155,7 +156,7 @@ export async function canonicalizeThreadListResponseForRead(
   }
 }
 
-function workspaceRootsFromPayload(payload: Record<string, unknown>): WorkspaceRootsState {
+export function workspaceRootsFromPayload(payload: Record<string, unknown>): WorkspaceRootsState {
   return {
     order: normalizeStringArray(payload['electron-saved-workspace-roots']),
     labels: normalizeStringRecord(payload['electron-workspace-root-labels']),
@@ -167,59 +168,5 @@ function workspaceRootsFromPayload(payload: Record<string, unknown>): WorkspaceR
 
 export async function readWorkspaceRootsState(): Promise<WorkspaceRootsState> {
   return workspaceRootsFromPayload(await readCodexGlobalState())
-}
-
-export async function writeWorkspaceRootsState(nextState: WorkspaceRootsState): Promise<void> {
-  await updateWorkspaceRootsState(() => nextState)
-}
-
-function prependUniqueString(value: string, items: string[]): string[] {
-  return [value, ...items.filter((item) => item !== value)]
-}
-
-async function updateWorkspaceRootsState(
-  updater: (existingState: WorkspaceRootsState) => WorkspaceRootsState | Promise<WorkspaceRootsState>,
-): Promise<WorkspaceRootsState> {
-  return updateCodexGlobalState(async (payload) => {
-    const current = workspaceRootsFromPayload(payload)
-    const state = await updater(current)
-    if (isDeepStrictEqual(current, state)) return state
-    payload['electron-saved-workspace-roots'] = state.order
-    payload['electron-workspace-root-labels'] = state.labels
-    payload['active-workspace-roots'] = state.active
-    payload['project-order'] = state.projectOrder
-    // Preserve remote records, including fields unknown to this version.
-    return state
-  })
-}
-
-export async function applyWorkspaceRootsOperation(operation: WorkspaceRootsOperation): Promise<WorkspaceRootsState> {
-  // Resolve only the requested identifiers here; read all saved values under the lock.
-  const normalizedOperation = { ...operation, path: await canonicalizeWorkspaceRootPath(operation.path, preserveRemotePath) }
-  return updateWorkspaceRootsState((state) => {
-    const path = normalizedOperation.path
-    const order = state.order.filter((item) => item !== path)
-    const labels = { ...state.labels }
-    delete labels[path]
-    const active = state.active.filter((item) => item !== path)
-    if (active.length === 0 && order.length > 0) active.push(order[0])
-    return { ...state, order, labels, active, projectOrder: state.projectOrder.filter((item) => item !== path) }
-  })
-}
-
-export async function persistWorkspaceRoot(workspaceRoot: string): Promise<void> {
-  const trimmedRoot = workspaceRoot.trim()
-  if (!trimmedRoot) return
-  const normalizedRoot = await canonicalizeWorkspaceRootPath(trimmedRoot, preserveRemotePath)
-
-  await updateWorkspaceRootsState((existingState) => {
-    return {
-      order: prependUniqueString(normalizedRoot, existingState.order),
-      labels: { ...existingState.labels },
-      active: prependUniqueString(normalizedRoot, existingState.active),
-      projectOrder: prependUniqueString(normalizedRoot, existingState.projectOrder),
-      remoteProjects: existingState.remoteProjects,
-    }
-  })
 }
 

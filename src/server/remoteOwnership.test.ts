@@ -15,11 +15,13 @@ it.each(['/only-on-B/repository', 'D:\\only-on-B\\repository'])('browses, regist
   const previous = scope.__codexRemoteSharedBridge__
   vi.stubEnv('CODEX_HOME', state)
   await expect(access(path)).rejects.toThrow()
+  const projects: any[] = []
   const rpc = vi.fn(async (method, p) => {
+    if (method === 'project/list') return { data: projects, nextCursor: null }
+    if (method === 'project/create') { const project = { id: 'native-project', name: p.name, roots: p.roots, metadata: {}, position: 0 }; projects.push(project); return { project } }
     if (method === 'fs/getMetadata') return { isDirectory: true, isFile: false }
     if (method === 'fs/readDirectory') return { entries: [{ fileName: 'child', isDirectory: true }] }
     if (method === 'thread/start') return { thread: { id: 'remote-thread', cwd: p.cwd } }
-    if (method === 'command/exec') { expect(p.cwd).toBe(path); expect(p.command).toEqual(['git', 'rev-parse', '--show-toplevel']); return { exitCode: 0, stdout: path, stderr: '' } }
     throw new Error('Unexpected RPC ' + method)
   })
   const client = { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: vi.fn() }

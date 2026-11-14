@@ -1,3 +1,5 @@
+import { resolveAppServerUrl } from './appServerWebSocketClient.js'
+import { NativeProjects } from './nativeProjects.js'
 import { createConversationTransfers } from './conversationTransfer.js'
 import { profileStateDirectory, getConnectionProfileId } from './connectionProfile.js'
 import { WORKFLOW_CAPABILITIES, classifyCapabilityError } from './remoteCapabilities.js'
@@ -5,8 +7,8 @@ import { stageRemoteUpload, inspectRemoteUploads } from './remoteUploads.js'
 import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
 export { refreshChatgptAuthTokensForExternalAuth } from './externalAuthRefresh.js'
-import { normalizeStringArray, canonicalizeThreadListResponseForRead, readWorkspaceRootsState, applyWorkspaceRootsOperation, persistWorkspaceRoot } from './workspaceRootsStore.js'
-export { canonicalizeWorkspaceRootsState, canonicalizeWorkspaceRootsStateForRead, canonicalizeThreadListResponseForRead, writeWorkspaceRootsState } from './workspaceRootsStore.js'
+import { normalizeStringArray, canonicalizeThreadListResponseForRead } from './workspaceRootsStore.js'
+export { canonicalizeWorkspaceRootsState, canonicalizeWorkspaceRootsStateForRead, canonicalizeThreadListResponseForRead } from './workspaceRootsStore.js'
 export type { WorkspaceRootsState } from './workspaceRootsStore.js'
 import { createThreadPresentationStore } from './threadPresentationStore.js'
 import { asRecord, getErrorMessage, getErrorCode, setJson, readJsonBody, isUnauthenticatedRateLimitError, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
@@ -24,7 +26,6 @@ import { handleAccountRoutes } from './accountRoutes.js'
 import { CodexCredentialError, readCodexCredentialStore, readPublicAuthStatus } from './codexCredentials.js'
 import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
-import type { WorkspaceRootsOperation } from '../types/workspaceRoots.js'
 import { isAbsoluteLikePath } from '../pathUtils.js'
 
 type RpcProxyRequest = {
@@ -453,6 +454,7 @@ class MethodCatalog {
 
 type CodexBridgeMiddleware = ((req: IncomingMessage, res: ServerResponse, next: () => void) => Promise<void>) & {
   files: ProjectFileService
+  projects: NativeProjects
   dispose: () => void
   subscribeNotifications: (listener: (value: { method: string; params: unknown; atIso: string }) => void) => () => void
 }
@@ -520,6 +522,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   const { appServer, methodCatalog } = sharedState
   const transfers = createConversationTransfers((method, params) => appServer.rpc(method, params))
   const files = sharedState.files ?? new ProjectFileService(appServer)
+  const projects = new NativeProjects((m, p) => appServer.rpc(m, p), () => JSON.stringify([getConnectionProfileId(), resolveAppServerUrl(), appServer.getInitializationMetadata?.()?.codexHome ?? '']))
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const requestStartNs = process.hrtime.bigint()
     const rawUrl = req.url ?? ''
@@ -595,7 +598,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       if (req.method === 'GET' && url.pathname === '/codex-api/connection-diagnostics') {
-        const state = await readWorkspaceRootsState()
+        const state = await projects.read()
         const directory = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state.active[0] || state.order[0] || null
         const generation = appServer.getConnectionGeneration()
         const diagnostics = appServer.capabilities
@@ -731,6 +734,11 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           ? mergeStreamTurnErrorsIntoThreadResult(appServer, trimmedResult)
           : trimmedResult
         const sanitizedResult = await sanitizeThreadTurnsInlinePayloads(body.method, errorMergedResult)
+        if (body.method === 'thread/start' && asRecord(body.params)?.projectId) {
+          const expected = asRecord(body.params)!.projectId
+          const thread = asRecord(asRecord(rpcResult)?.thread)
+          if (thread?.projectId !== expected) throw new Error(`thread/start did not confirm native project ${expected}; inspect destination ${thread?.id || '(unknown)'} before retrying`)
+        }
         const result = await transfers.decorate(sanitizedResult)
 
 	        if (THREAD_METHODS_WITH_THREAD_SNAPSHOT.has(body.method) && !asRecord(body.params)?.excludeTurns && snapshotEpoch === appServer.getSnapshotEpoch()) {
@@ -845,13 +853,13 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       if (req.method === 'GET' && url.pathname === '/codex-api/workspace-roots-state') {
-        const state = await readWorkspaceRootsState()
+        const state = await projects.read()
         setJson(res, 200, { data: state })
         return
       }
 
       if (req.method === 'GET' && url.pathname === '/codex-api/home-directory') {
-        const state = await readWorkspaceRootsState()
+        const state = await projects.read()
         const path = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state.active[0] || state.order[0]
         if (!path) { setJson(res, 409, { error: 'Enter an absolute workspace path on the App Server host, or set CODEXUI_REMOTE_INITIAL_DIRECTORY.' }); return }
         setJson(res, 200, { data: { path } })
@@ -866,13 +874,13 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
       if (req.method === 'PATCH' && url.pathname === '/codex-api/workspace-roots-state') {
         const record = asRecord(await readJsonBody(req))
-        let operation: WorkspaceRootsOperation
-        if (record?.type !== 'delete' || typeof record.path !== 'string' || !isAbsoluteLikePath(record.path.trim())) {
-          setJson(res, 400, { error: 'Expected a delete project operation with a stable path' })
+        if (!record || !['delete', 'rename', 'move'].includes(String(record.type)) || typeof record.projectId !== 'string' || !record.projectId
+          || (record.type === 'rename' && (typeof record.name !== 'string' || !record.name.trim()))
+          || (record.type === 'move' && record.beforeProjectId != null && typeof record.beforeProjectId !== 'string')) {
+          setJson(res, 400, { error: 'Expected a native project operation with projectId; legacy path writes are disabled' })
           return
         }
-        operation = { type: 'delete', path: record.path.trim() }
-        const state = await applyWorkspaceRootsOperation(operation)
+        const state = await projects.operation(record as { type: 'delete' | 'rename' | 'move'; projectId: string; name?: string; beforeProjectId?: string | null })
         setJson(res, 200, { data: state })
         return
       }
@@ -893,8 +901,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           return
         }
 
-        await persistWorkspaceRoot(normalizedPath)
-        setJson(res, 200, { data: { path: normalizedPath } })
+        const selection = await projects.register(normalizedPath)
+        setJson(res, 200, { data: selection })
         return
       }
 
@@ -969,6 +977,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   }
 
   middleware.files = sharedState.files
+  middleware.projects = projects
   middleware.dispose = () => {
     if (released) return
     released = true

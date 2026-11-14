@@ -10,7 +10,6 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import { Command } from 'commander'
-import { updateCodexGlobalState } from '../server/codexGlobalState.js'
 import { createServer as createApp } from '../server/httpServer.js'
 
 const program = new Command().name('codexui').description('Web interface for Codex app-server')
@@ -84,18 +83,6 @@ function listenWithFallback(server: ReturnType<typeof createServer>, startPort: 
   })
 }
 
-function normalizeUniqueStrings(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  const next: string[] = []
-  for (const item of value) {
-    if (typeof item !== 'string') continue
-    const trimmed = item.trim()
-    if (!trimmed || next.includes(trimmed)) continue
-    next.push(trimmed)
-  }
-  return next
-}
-
 async function persistLaunchProject(projectPath: string): Promise<void> {
   const trimmed = projectPath.trim()
   if (!trimmed) return
@@ -105,14 +92,9 @@ async function persistLaunchProject(projectPath: string): Promise<void> {
   try {
     const info = await bridge.files.getMetadata(normalizedPath)
     if (!info.isDirectory) throw new Error(`Not a remote directory: ${normalizedPath}`)
+    await bridge.projects.register(normalizedPath)
   } finally { bridge.dispose() }
 
-  await updateCodexGlobalState((payload) => {
-    for (const key of ['electron-saved-workspace-roots', 'active-workspace-roots', 'project-order']) {
-      const values = normalizeUniqueStrings(payload[key])
-      payload[key] = [normalizedPath, ...values.filter((value) => value !== normalizedPath)]
-    }
-  })
 }
 
 async function addProjectOnly(projectPath: string): Promise<void> {

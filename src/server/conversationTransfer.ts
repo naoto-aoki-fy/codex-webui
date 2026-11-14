@@ -32,7 +32,7 @@ export function convertTransferHistory(turns: unknown[], source: string): { mess
   return { messages, warnings: [] }
 }
 
-type Transfer = { sourceId: string; cwd: string; messages: PortableMessage[]; warnings: string[]; stage: string; destinationId?: string; model?: string; modelProvider?: string; failure?: string }
+type Transfer = { projectId?: string | null; sourceId: string; cwd: string; messages: PortableMessage[]; warnings: string[]; stage: string; destinationId?: string; model?: string; modelProvider?: string; failure?: string }
 const KEY = 'conversation-transfers-v1'
 async function transfers(): Promise<Record<string, Transfer>> { return (await readCodexGlobalState())[KEY] as Record<string, Transfer> || {} }
 async function save(id: string, transfer: Transfer) {
@@ -66,7 +66,7 @@ export function createConversationTransfers(rpc: Rpc) {
       if (!messages.length) throw new Error('There is no portable conversation history to import. No thread was created.')
       if (typeof thread.cwd !== 'string' || !thread.cwd.trim()) throw new Error('The source has no working directory. Select a source with an existing workspace before transferring.')
       const id = randomUUID()
-      await save(id, { sourceId, cwd: thread.cwd, messages, warnings, stage: 'prepared' })
+      await save(id, { sourceId, cwd: thread.cwd, ...(thread.projectId ? { projectId: thread.projectId } : {}), messages, warnings, stage: 'prepared' })
       return { id, warnings, messageCount: messages.length }
     },
     async status(id: string) {
@@ -93,7 +93,7 @@ export function createConversationTransfers(rpc: Rpc) {
           transfer.stage = 'starting'
         })
         claimed = true
-        const started = await rpc('thread/start', { cwd: transfer.cwd, model, modelProvider, persistExtendedHistory: true })
+        const started = await rpc('thread/start', { cwd: transfer.cwd, ...(transfer.projectId ? { projectId: transfer.projectId } : {}), model, modelProvider, persistExtendedHistory: true })
         transfer.destinationId = started.thread?.id
         transfer.model = started.model
         transfer.modelProvider = started.modelProvider
@@ -103,7 +103,7 @@ export function createConversationTransfers(rpc: Rpc) {
         await rpc('thread/inject_items', { threadId: transfer.destinationId, items: portableItems(transfer.messages) })
         transfer.stage = 'ready'
         await save(id, transfer)
-        return { threadId: transfer.destinationId, model, modelProvider, warnings: [] }
+        return { threadId: transfer.destinationId, ...(transfer.projectId ? { projectId: transfer.projectId } : {}), model, modelProvider, warnings: [] }
       } catch (error) {
         if (transfer && claimed) {
           transfer.failure = String(error)

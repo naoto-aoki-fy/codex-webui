@@ -37,7 +37,14 @@ beforeEach(async () => {
   await writeFile(sessionPath, sessionRaw)
   vi.stubEnv('CODEX_HOME', home)
   previous = scope.__codexRemoteSharedBridge__
-  rpc.mockReset().mockImplementation(async method => method === 'fs/getMetadata' ? { isDirectory: true, isFile: false } : { data: [] })
+  const projects: any[] = []
+  rpc.mockReset().mockImplementation(async (method, raw) => {
+    const p = raw as any
+    if (method === 'fs/getMetadata') return { isDirectory: true, isFile: false }
+    if (method === 'project/create') { const project = { id: 'native-id', name: p.name, roots: p.roots, metadata: {}, position: 0 }; projects.push(project); return { project } }
+    if (method === 'project/list') return { data: projects, nextCursor: null }
+    return { data: [], nextCursor: null }
+  })
   storeSnapshot.mockReset()
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
   scope.__codexRemoteSharedBridge__ = {
@@ -164,27 +171,13 @@ it('rejects legacy workspace PUT without reading its body or changing state', as
   expect(rpc).not.toHaveBeenCalled()
 })
 
-it('rejects retired metadata mutations while unregistering without losing data', async () => {
+it('rejects all legacy path mutations without rewriting registry fields', async () => {
   const statePath = join(home, '.codex-global-state.json')
-  const other = join(home, 'other')
-  await writeFile(statePath, JSON.stringify({
-    'electron-saved-workspace-roots': [project, other],
-    'active-workspace-roots': [other], 'project-order': [project, other],
-    'remote-projects': [{ id: 'remote', future: { keep: true } }], unknown: { keep: true },
-  }))
-  const responses = await Promise.all([
-    request('/codex-api/workspace-roots-state', 'PATCH', { type: 'rename', path: project, label: ' Renamed ' }),
-    request('/codex-api/workspace-roots-state', 'PATCH', { type: 'reorder', order: ['remote', other, project] }),
-    request('/codex-api/workspace-roots-state', 'PATCH', { type: 'delete', path: other }),
-  ])
-  expect(responses.map(response => response.res.statusCode)).toEqual([400, 400, 200])
-  const response = await request('/codex-api/workspace-roots-state')
-  expect(response.json).toEqual({ data: {
-    order: [project], active: [project], labels: {},
-    projectOrder: [project], remoteProjects: [{ id: 'remote', hostId: '', remotePath: '', label: '' }],
-  } })
-  const saved = JSON.parse(await readFile(statePath, 'utf8'))
-  expect(saved.unknown).toEqual({ keep: true })
-  expect(saved['remote-projects']).toEqual([{ id: 'remote', future: { keep: true } }])
+  const raw = JSON.stringify({ 'electron-saved-workspace-roots': [project], 'remote-projects': [{ id: 'remote', future: { keep: true } }], unknown: true })
+  await writeFile(statePath, raw)
+  for (const operation of [{ type: 'rename', path: project, label: 'Renamed' }, { type: 'reorder', order: [project] }, { type: 'delete', path: project }]) {
+    expect((await request('/codex-api/workspace-roots-state', 'PATCH', operation)).res.statusCode).toBe(400)
+  }
+  expect(await readFile(statePath, 'utf8')).toBe(raw)
   expect(rpc).not.toHaveBeenCalled()
 })
