@@ -358,9 +358,10 @@ import IconTablerFolder from '../icons/IconTablerFolder.vue'
 import IconTablerFolderOpen from '../icons/IconTablerFolderOpen.vue'
 import IconTablerTrash from '../icons/IconTablerTrash.vue'
 import { useUiLanguage } from '../../composables/useUiLanguage'
-import { getPathLeafName, getPathParent, isProjectlessChatPath } from '../../pathUtils.js'
+import { getPathLeafName, getPathParent } from '../../pathUtils.js'
 import SidebarMenuRow from './SidebarMenuRow.vue'
 import SidebarThreadRow from './SidebarThreadRow.vue'
+import { filterSidebarGroups, collectChronologicalThreads } from './threadVisibility'
 import { compareThreads, sortThreadGroups, type ThreadSortMode } from './threadSorting'
 
 const router = useRouter()
@@ -532,32 +533,15 @@ function threadMatchesSearch(thread: UiThread): boolean {
   return thread.title.toLowerCase().includes(q) || thread.preview.toLowerCase().includes(q)
 }
 
-const filteredGroups = computed<UiProjectGroup[]>(() => {
-  return sortedGroups.value.flatMap((group) => {
-    const threads = group.threads.filter((thread) => !isProjectlessChatPath(thread.cwd) && threadMatchesSearch(thread))
-    if (threads.length > 0) return [{ ...group, threads }]
-    if (isSearchActive.value && group.projectName === props.activeProjectName) {
-      return [{ ...group, threads }]
-    }
-    return !isSearchActive.value && group.threads.length === 0 ? [{ ...group, threads }] : []
-  })
-})
+const filteredGroups = computed(() => filterSidebarGroups(
+  sortedGroups.value, threadMatchesSearch, isSearchActive.value, props.activeProjectName,
+))
 
 const isChronologicalView = computed(() => threadViewMode.value === 'chronological')
 
-const globalThreads = computed<UiThread[]>(() => {
-  const rows: UiThread[] = []
-
-  for (const group of props.groups) {
-    for (const thread of group.threads) {
-      if (isProjectlessChatPath(thread.cwd) || pinnedThreadIdSet.value.has(thread.id)) continue
-      if (!threadMatchesSearch(thread)) continue
-      rows.push(thread)
-    }
-  }
-
-  return rows.sort(compareThreads(chatSortMode.value))
-})
+const globalThreads = computed(() => collectChronologicalThreads(
+  props.groups, threadMatchesSearch, pinnedThreadIdSet.value,
+).sort(compareThreads(chatSortMode.value)))
 
 const threadById = computed(() => {
   const map = new Map<string, UiThread>()

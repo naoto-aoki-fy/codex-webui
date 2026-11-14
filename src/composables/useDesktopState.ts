@@ -2550,7 +2550,7 @@ export function useDesktopState() {
     const visibleGroups = filterGroupsByWorkspaceRoots(groups, rootsState)
     const serverThreadIds = new Set(flattenThreads(visibleGroups).map((thread) => thread.id))
     markServerListedThreads(serverThreadIds)
-    // Filter local candidates as well: retention must never resurrect a removed workspace.
+    // Use the same project identities for incoming history and retained local threads.
     const visibleLocalGroups = filterGroupsByWorkspaceRoots(sourceGroups.value, rootsState)
     const visibleLocalIds = new Set(flattenThreads(visibleLocalGroups).map((thread) => thread.id))
     const now = Date.now()
@@ -3815,10 +3815,6 @@ export function useDesktopState() {
       if (isRegisteredLocalRoot) {
         const state = await updateWorkspaceRootsState({ type: 'delete', path })
         applyWorkspaceRootsState(state)
-      } else {
-        sourceGroups.value = sourceGroups.value.filter((group) => group.projectName !== projectName)
-        projectDisplayNameById.value = omitKey(projectDisplayNameById.value, projectName)
-        applyThreadFlags()
       }
       const threads = flattenThreads(projectGroups.value)
       pruneThreadScopedState(threads)

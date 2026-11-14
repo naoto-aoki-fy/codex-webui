@@ -51,11 +51,5 @@ export function getPathParent(value: string): string {
 
 export function toProjectName(value: string): string {
   const leaf = getPathLeafName(value)
-  return leaf || normalizePathForUi(value) || 'Projectless'
-}
-
-export function isProjectlessChatPath(value: string): boolean {
-  const normalized = normalizePathForUi(value).replace(/[\\/]+/gu, '/')
-  if (!normalized) return false
-  return /(?:^|\/)Documents\/Codex\/\d{4}-\d{2}-\d{2}\/[^/]+$/u.test(normalized)
+  return leaf || normalizePathForUi(value) || 'Conversations'
 }

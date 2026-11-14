@@ -1,7 +1,6 @@
 import type { WorkspaceRootsState } from '../api/codexGateway'
 import type { UiProjectGroup } from '../types/codex'
-import { isProjectlessChatPath, normalizePathForUi, toProjectName } from '../pathUtils.js'
-import { areStringArraysEqual } from './desktopMessageReconciliation'
+import { normalizePathForUi, toProjectName } from '../pathUtils.js'
 
 
 
@@ -83,7 +82,6 @@ function orderGroupsByWorkspaceProjectOrder(
   if (order.length === 0) return groups
   const orderIndexByName = new Map(order.map((name, index) => [name, index]))
   return [...groups].sort((first, second) => {
-    if (isProjectlessGroup(first) || isProjectlessGroup(second)) return 0
     const firstIndex = orderIndexByName.get(first.projectName) ?? Number.POSITIVE_INFINITY
     const secondIndex = orderIndexByName.get(second.projectName) ?? Number.POSITIVE_INFINITY
     if (firstIndex === secondIndex) return 0
@@ -220,10 +218,7 @@ function addWorkspaceRootPlaceholderGroups(
   return nextGroups
 }
 
-function isProjectlessGroup(group: UiProjectGroup): boolean {
-  return group.threads.some((thread) => thread.cwd.trim().length === 0 || isProjectlessChatPath(thread.cwd))
-}
-
+// Workspace registrations supply empty projects and ordering, never a history allowlist.
 export function filterGroupsByWorkspaceRoots(
   groups: UiProjectGroup[],
   rootsState: WorkspaceRootsState | null,
@@ -231,12 +226,5 @@ export function filterGroupsByWorkspaceRoots(
   const duplicateLeafNames = collectDuplicateProjectLeafNames(groups, rootsState)
   const disambiguatedGroups = disambiguateProjectGroupsByCwd(groups, rootsState)
   const groupsWithWorkspaceRoots = addWorkspaceRootPlaceholderGroups(disambiguatedGroups, rootsState, duplicateLeafNames)
-  if (!rootsState || (rootsState.order.length === 0 && (rootsState.remoteProjects ?? []).length === 0)) return groupsWithWorkspaceRoots
-  const allowedProjectNames = new Set<string>()
-  for (const projectName of getWorkspaceProjectOrderNames(rootsState, duplicateLeafNames)) {
-    allowedProjectNames.add(projectName)
-  }
-  const filteredGroups = groupsWithWorkspaceRoots.filter((group) => allowedProjectNames.has(group.projectName) || isProjectlessGroup(group))
-  return orderGroupsByWorkspaceProjectOrder(filteredGroups, rootsState, duplicateLeafNames)
+  return orderGroupsByWorkspaceProjectOrder(groupsWithWorkspaceRoots, rootsState, duplicateLeafNames)
 }
-
