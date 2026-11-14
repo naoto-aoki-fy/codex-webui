@@ -9,6 +9,7 @@ Return to the [manual test index](../../tests.md).
 | Section |
 | --- |
 | [Startup avoids duplicate setup probes](startup-avoids-duplicate-setup-probes.md) |
+| [CLI startup without version output](startup-without-version.md) |
 | [CLI password output redaction](cli-password-output-redaction.md) |
 | [npx run dev compatibility shim](npx-run-dev-compatibility-shim.md) |
 | [Private network password access](private-network-password-access.md) |

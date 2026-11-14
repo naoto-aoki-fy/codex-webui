@@ -3,27 +3,12 @@ import { createCodexBridgeMiddleware } from '../server/codexAppServerBridge.js'
 import { isAbsoluteLikePath } from '../pathUtils.js'
 import { resolveAppServerUrl } from '../server/appServerWebSocketClient.js'
 import { createServer } from 'node:http'
-import { readFile } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
-import { join } from 'node:path'
 import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import { dirname } from 'node:path'
 import { Command } from 'commander'
 import { createServer as createApp } from '../server/httpServer.js'
 
 const program = new Command().name('codexui').description('Web interface for Codex app-server')
-const __dirname = dirname(fileURLToPath(import.meta.url))
-async function readCliVersion(): Promise<string> {
-  try {
-    const packageJsonPath = join(__dirname, '..', 'package.json')
-    const raw = await readFile(packageJsonPath, 'utf8')
-    const parsed = JSON.parse(raw) as { version?: unknown }
-    return typeof parsed.version === 'string' ? parsed.version : 'unknown'
-  } catch {
-    return 'unknown'
-  }
-}
 
 function openBrowser(url: string): void {
   const command = process.platform === 'darwin'
@@ -117,7 +102,6 @@ async function startServer(options: {
   if (options.connectionProfile) process.env.CODEXUI_CONNECTION_PROFILE = options.connectionProfile
   getConnectionProfileId()
   process.env.CODEXUI_APP_SERVER_URL = resolveAppServerUrl(options.appServerUrl)
-  const version = await readCliVersion()
   const password = typeof options.password === 'string' ? options.password : undefined
   const { app, dispose, attachWebSocket } = createApp({ password })
   const projectPath = options.projectPath?.trim() ?? ''
@@ -136,7 +120,6 @@ async function startServer(options: {
   const lines = [
     '',
     'Codex WebUI is running!',
-    `  Version:  ${version}`,
     '',
     `  Bind:     http://${options.host}:${String(port)}`,
     `  App-server: ${process.env.CODEXUI_APP_SERVER_URL}`,
