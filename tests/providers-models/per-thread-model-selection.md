@@ -321,3 +321,42 @@ Cleanup: archive disposable test threads, restore composer/profile settings, and
 optionally remove only the tested remote model-history cache file. Never edit or
 delete original rollout files or submitted-setting sidecars. Real cross-host RPC
 compatibility and latency require this live check; unit fixtures are insufficient.
+
+### New-thread Model Provider selector
+
+Prerequisites: connect to an independently managed app-server exposing two model
+providers, with declared default models and different reasoning capabilities.
+Include a shared model ID in both providers. Record the server version. Also
+repeat with a single-provider configuration and an older unqualified model list.
+
+Actions:
+1. On **Start new thread**, open **Model Provider** immediately before **Model**.
+   Verify the discovered provider display names, then switch providers.
+2. Verify Model contains only the selected provider's models and selects its
+   declared default, even when another model was used more recently. Choose a
+   different model; verify Thinking shows only its supported efforts.
+3. Navigate to an existing thread and back. Reload the page. Verify the selected
+   provider/model pair and its reasoning effort remain selected.
+4. Send a message with each provider and inspect `thread/start`: `modelProvider`
+   must be the selected provider ID and `model` the bare model ID. Open the
+   resulting threads: no provider selector is offered; cross-provider model
+   changes remain blocked by state validation.
+5. Repeat at 1280x900, 375x812, and 768x1024 in light and dark themes. Open the
+   provider menu; check menu colors, clipping, and control overflow.
+6. With one discovered provider, its selector and model list remain usable.
+   With no provider metadata, the legacy Model selector works without an
+   invented provider option.
+
+Expected: defaults, filtering, persistence, and start payloads follow the selected
+provider; established-thread restrictions remain intact. No extra discovery
+request is sent when opening or switching the provider dropdown.
+
+Automated fixture: `node scripts/test-new-thread-provider.cjs` against the current
+checkout on port 4173 mounts the real composer and preference state, checks
+navigation/refresh and all six viewport/theme combinations, and saves screenshots
+under `output/playwright/new-thread-provider-*.png`. Thread creation payloads are
+covered by `useDesktopState.modelPreferences.test.ts`; the browser fixture does
+not authenticate or create live server threads.
+
+Cleanup: archive disposable threads and restore the previous draft selection and
+connection profile. Retain unrelated server configuration and thread history.
