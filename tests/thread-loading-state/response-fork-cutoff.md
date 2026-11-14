@@ -101,7 +101,7 @@ verify original text is never stripped. Run the mocked browser matrix with
 Cleanup: archive the disposable destinations. No transcript migration or source
 history rewrite is required; this change only affects message presentation.
 
-## Provider defaults, scoped model lists and collapsed Skills
+## Provider defaults, scoped model lists and Skills-free Portable Fork
 
 Setup: configure providers P and Q with different defaults. Include a model ID
 shared by both providers, at least two models in Q, and an installed skill.
@@ -118,13 +118,13 @@ Q/C while also advertising Q/A, so accidental source-model inheritance fails.
 3. Choose another Q model and submit once. Expect that raw model ID and the
    existing destination provider; no re-fork or source model is retained. Repeat
    a server-confirmed provider change after a previous explicit model selection.
-4. Open the portable dialog with Skills collapsed. Expect no Skills manager
-   request until expansion. Expand, inspect/configure a skill through the
-   existing manager, then collapse and reopen. Expect the same configuration,
-   no configuration write on collapse, and no repeated manager read/remount.
-   Existing composer draft skill selections must remain intact.
+4. Open, cancel and reopen the portable dialog from both entry points. Expect
+   no Skills toggle, panel or manager, no `/skills-hub` requests, and no
+   `skills/config/write` calls from the dialog. Existing composer draft skill
+   selections must remain intact. Open the main Skills Hub separately and verify
+   its skill enable/disable controls and composer skill selection still work.
 5. Reload the destination and repeat model selection. Check the provider-only
-   dialog, expanded Skills manager, and model list in light and dark themes.
+   dialog and model list in light and dark themes.
    Repeat Native Fork to confirm its API, provider, and direct action are unchanged.
 
 Cleanup: restore any skill enable/disable changes made during this test and

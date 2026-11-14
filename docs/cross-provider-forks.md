@@ -50,7 +50,7 @@ awaits `thread/inject_items { threadId, items }`. It never calls native fork,
 instructions come from the destination app-server. Edit/retry/revert retain
 their existing native cutoff semantics.
 
-## Provider, model and Skills controls
+## Provider and model controls
 
 Portable Fork requires only a destination provider. The app resolves its model
 from provider-scoped default metadata and passes the resulting raw model and
@@ -69,11 +69,10 @@ internally. Switching context/provider recalculates the list; a model override
 from a previously confirmed provider is discarded. Users can change models
 within the destination provider after creation.
 
-The dialog's Skills section is collapsed by default. Expanding it lazily mounts
-the existing Skills manager, including its normal enable/disable configuration.
-Collapsing hides the manager without unmounting it or writing/clearing settings.
-These are the existing server-managed skill settings, not a new set of injected
-instructions. Existing composer draft skill selections are unchanged.
+The dialog contains no Skills controls and does not load the Skills manager or
+write skill configuration. Manage skills through the main Skills Hub and select
+skills in the chat composer as usual. Existing skill configuration and composer
+draft skill selections are unchanged.
 
 ## Portable history
 
@@ -182,8 +181,11 @@ was not measured for this presentation refinement.
 
 The provider/model UI uses the already loaded catalog, so provider selection and
 filtering add no catalog RPCs or request fanout. Catalog responses now retain
-small default-model fields; instruction templates remain excluded. The Skills
-manager loads only on first expansion, then stays mounted across collapse.
+small default-model fields; instruction templates remain excluded. Removing the
+embedded Skills manager eliminates its mount, reads and configuration writes
+from the dialog, along with its expansion state. The main Skills Hub and composer
+paths are unchanged. This removal adds no requests, blocking work, fanout, large
+payloads or cache invalidation.
 History conversion now excludes non-conversation items; injection retries and
 import caches are unchanged. Live provider
 continuation and large catalogs were not measured for this UI update.
