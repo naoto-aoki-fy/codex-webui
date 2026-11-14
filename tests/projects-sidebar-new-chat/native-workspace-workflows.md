@@ -20,3 +20,20 @@ Actions: select each directory, send a turn, switch projects, reload, and reopen
 Expected: cwd associations, empty saved folders, labels and ordering survive. No worktree creation or starting-branch UI appears. No branches or directories are created/deleted. Workspace UI preferences remain because Codex exposes conversation cwd, not a saved empty-folder registry.
 Cleanup: restore sidebar ordering and remove only test conversations if desired.
 Performance: workspace mutations no longer traverse identity-only path canonicalization promises; removed worktree branch requests and creation commands. No live timings measured.
+
+## Retired presentation styles
+
+Prerequisites: current build, a compatible test server, and a disposable browser
+profile. No workspace mutation is needed.
+
+1. Open home and the existing-folder picker. Check keyboard focus, loading/error
+   states and path controls in light/dark themes at desktop and narrow widths.
+2. Open `/` with hash route `#/skills`, expand MCP details and an installed skill.
+   Verify card text, enabled-state badges, details and buttons retain their theme.
+3. Confirm no retired runtime toggle, automatic-worktree progress or project
+   creation modal is displayed. Existing-folder selection and native management
+   entry points remain usable.
+
+Expected: only unreachable styles are removed; active folder-picker, Skills and
+MCP presentation remains. Cleanup: close the picker/details, restore the original
+theme and close the disposable profile. Do not delete any workspace or skill data.
