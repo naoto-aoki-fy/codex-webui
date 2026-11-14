@@ -7,14 +7,11 @@
   "author": "Pavel Voronin, Igor Levochkin",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vast-cow/friuns2-codexapp.git"
+    "url": "git+https://github.com/naoto-aoki-fy/codex-webui.git"
   },
-  "homepage": "https://github.com/vast-cow/friuns2-codexapp#readme",
+  "homepage": "https://github.com/naoto-aoki-fy/codex-webui#readme",
   "bugs": {
-    "url": "https://github.com/vast-cow/friuns2-codexapp/issues"
-  },
-  "publishConfig": {
-    "access": "public"
+    "url": "https://github.com/naoto-aoki-fy/codex-webui/issues"
   },
   "keywords": [
     "codex",
@@ -30,11 +27,6 @@
     "codexapp": "dist-cli/index.js",
     "codexui": "dist-cli/index.js"
   },
-  "files": [
-    "dist/",
-    "dist-cli/",
-    "scripts/dev.cjs"
-  ],
   "scripts": {
     "dev": "node scripts/dev.cjs",
     "dev:open": "pnpm run build:cli && sh -c 'pnpm run dev & VPID=$!; node dist-cli/index.js --open-project \"${1:-.}\"; wait $VPID' --",
@@ -43,7 +35,6 @@
     "build": "pnpm run build:frontend && pnpm run build:cli",
     "test:unit": "vitest run",
     "preview": "vite preview",
-    "prepublishOnly": "pnpm run build",
     "profile:browser": "node scripts/profile-browser-runtime.cjs",
     "profile:thread": "PROFILE_ROUTE='#/thread/019da7c0-4e12-7a91-837c-f7c11cc8ab6c' node scripts/profile-browser-runtime.cjs",
     "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
