@@ -36,9 +36,9 @@ beforeEach(async () => {
   snapshot = null
   events = []
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
-  const pager = new RemoteHistoryPager({ rpc: async (method, params) => nativeHistoryResponse(method, params, await rpc(method, params)), getConnectionGeneration: () => 1, readThreadForTurnPage: vi.fn() })
+  const pager = new RemoteHistoryPager({ rpc: async (method, params) => nativeHistoryResponse(method, params, await rpc(method, params)), getConnectionGeneration: () => 1 })
   scope.__codexRemoteSharedBridge__ = {
-    version: 'external-websocket-files-v2', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getLastThreadReadSnapshot: () => snapshot, getStreamEvents: () => events, readThreadForTurnPage: () => rpc('thread/read', {}), readThreadPage: pager.read.bind(pager) },
+    version: 'external-websocket-files-v2', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getLastThreadReadSnapshot: () => snapshot, getStreamEvents: () => events, readThreadPage: pager.read.bind(pager) },
     methodCatalog: {},
   }
 })
@@ -113,23 +113,6 @@ it('preserves buffered turn errors in normal and earlier-page reads', async () =
     expect(turn.status).toBe('failed')
     expect(turn.error.message).toBe('buffered failure')
   }
-})
-it('deduplicates concurrent earlier reads, caches results, and invalidates on notifications and snapshots', async () => {
-  const client = new AppServerClient()
-  const read = vi.spyOn(client, 'rpc').mockResolvedValue({ thread: { id: 'history-cache', turns: [] } })
-  try {
-    await Promise.all([client.readThreadForTurnPage('history-cache'), client.readThreadForTurnPage('history-cache')])
-    await client.readThreadForTurnPage('history-cache')
-    expect(read).toHaveBeenCalledTimes(1)
-    // Exercise the actual notification producer without connecting a transport.
-    ;(client as unknown as { emitNotification: (value: unknown) => void }).emitNotification({ method: 'item/completed', params: { threadId: 'history-cache', turnId: 't1', item: { id: 'cmd', type: 'commandExecution' } } })
-    await client.readThreadForTurnPage('history-cache')
-    expect(read).toHaveBeenCalledTimes(2)
-    expect(client.getStreamEvents('history-cache', 10)).toHaveLength(1)
-    client.storeThreadReadSnapshot('history-cache', {})
-    await client.readThreadForTurnPage('history-cache')
-    expect(read).toHaveBeenCalledTimes(3)
-  } finally { client.dispose() }
 })
 it.each(['normal', 'earlier'])('preserves timestamps, execution metadata, skills and inline media in %s history', async mode => {
   const timestamp = '2026-11-05T00:12:00Z'

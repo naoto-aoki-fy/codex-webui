@@ -52,7 +52,6 @@ type PendingServerRequest = {
 }
 
 export const STREAM_EVENT_BUFFER_LIMIT = 400
-const THREAD_TURN_PAGE_READ_CACHE_TTL_MS = 30_000
 
 export type StreamEventFrame = {
   method: string
@@ -107,8 +106,6 @@ export class AppServerClient {
 
   private readonly lastThreadReadSnapshotByThreadId = new Map<string, unknown>()
   private readonly snapshotBytesByThreadId = new Map<string, number>()
-  private readonly threadTurnPageReadCacheByThreadId = new Map<string, { result: unknown; expiresAt: number; bytes: number }>()
-  private readonly threadTurnPageReadPromiseByThreadId = new Map<string, Promise<unknown>>()
   private disposed = false
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private retryAttempt = 0
@@ -127,8 +124,6 @@ export class AppServerClient {
     this.streamEventsByThreadId.clear()
     this.lastThreadReadSnapshotByThreadId.clear()
     this.snapshotBytesByThreadId.clear()
-    this.threadTurnPageReadCacheByThreadId.clear()
-    this.threadTurnPageReadPromiseByThreadId.clear()
     this.emitNotification({ method: 'app-server/disconnected', params: { approvalRecovery: 'Pending approvals cannot be recovered automatically. Inspect the thread on the App Server host before continuing.' } })
     this.scheduleReconnect()
   })
@@ -186,7 +181,6 @@ export class AppServerClient {
     const nThreadId = this.extractThreadIdFromParams(notification.params)
     if (nThreadId && notification.method !== 'turn/generationMetadata') {
       this.historyPager.invalidate(nThreadId)
-      this.invalidateThreadTurnPageRead(nThreadId)
       if (notification.method === 'thread/reverted') {
         this.snapshotEpoch = {}
         this.lastThreadReadSnapshotByThreadId.delete(nThreadId)
@@ -263,60 +257,10 @@ export class AppServerClient {
       this.lastThreadReadSnapshotByThreadId.set(threadId, snapshot)
       this.snapshotBytesByThreadId.set(threadId, bytes)
     }
-    this.invalidateThreadTurnPageRead(threadId)
-  }
-
-  private invalidateThreadTurnPageRead(threadId: string): void {
-    this.threadTurnPageReadCacheByThreadId.delete(threadId)
-    // Detach the old read: its identity is the epoch token, without retained counters.
-    this.threadTurnPageReadPromiseByThreadId.delete(threadId)
   }
 
   getLastThreadReadSnapshot(threadId: string): unknown | null {
     return this.lastThreadReadSnapshotByThreadId.get(threadId) ?? null
-  }
-
-  async readThreadForTurnPage(threadId: string): Promise<unknown> {
-    const now = Date.now()
-    const cached = this.threadTurnPageReadCacheByThreadId.get(threadId)
-    if (cached && cached.expiresAt > now) return cached.result
-    if (cached) this.threadTurnPageReadCacheByThreadId.delete(threadId)
-
-    const pending = this.threadTurnPageReadPromiseByThreadId.get(threadId)
-    if (pending) return pending
-
-    if (this.threadTurnPageReadPromiseByThreadId.size >= 16) throw new Error('History reads are busy (16 concurrent reads). Retry shortly.')
-    const generation = this.connectionGeneration
-    const promise = this.rpc('thread/read', {
-      threadId,
-      includeTurns: true,
-    }).then((result) => {
-      if (generation !== this.connectionGeneration) throw new Error('Retired app-server history read')
-      if (generation === this.connectionGeneration && this.threadTurnPageReadPromiseByThreadId.get(threadId) === promise) {
-        const bytes = Buffer.byteLength(JSON.stringify(result))
-        for (const [id, entry] of this.threadTurnPageReadCacheByThreadId) {
-          if (entry.expiresAt <= Date.now()) this.threadTurnPageReadCacheByThreadId.delete(id)
-        }
-        while (this.threadTurnPageReadCacheByThreadId.size >= 16 || [...this.threadTurnPageReadCacheByThreadId.values()].reduce((sum, entry) => sum + (entry.bytes ?? 0), bytes) > 32 * 1024 * 1024) {
-          const first = this.threadTurnPageReadCacheByThreadId.keys().next().value
-          if (first === undefined) break
-          this.threadTurnPageReadCacheByThreadId.delete(first)
-        }
-        if (bytes <= 32 * 1024 * 1024) this.threadTurnPageReadCacheByThreadId.set(threadId, {
-          bytes,
-          result,
-          expiresAt: Date.now() + THREAD_TURN_PAGE_READ_CACHE_TTL_MS,
-        })
-      }
-      return result
-    }).finally(() => {
-      if (this.threadTurnPageReadPromiseByThreadId.get(threadId) === promise) {
-        this.threadTurnPageReadPromiseByThreadId.delete(threadId)
-      }
-    })
-
-    this.threadTurnPageReadPromiseByThreadId.set(threadId, promise)
-    return promise
   }
 
   private sendServerRequestReply(requestId: number | string, reply: ServerRequestReply): void {
@@ -441,7 +385,6 @@ export class AppServerClient {
     (params, deadline) => this.call('thread/resume', params, deadline),
     (threadId, state, attempt, error) => {
       this.lastThreadReadSnapshotByThreadId.delete(threadId)
-      this.invalidateThreadTurnPageRead(threadId)
       this.emitNotification({ method: 'app-server/subscriptionRecovery', params: { threadId, state, attempt, error } })
     },
   )
@@ -480,7 +423,6 @@ export class AppServerClient {
         const id = readNonEmptyString(asRecord(params)?.threadId)
         this.lastThreadReadSnapshotByThreadId.delete(id)
         this.streamEventsByThreadId.delete(id)
-        this.invalidateThreadTurnPageRead(id)
         this.historyPager.invalidate(id)
       }
       if (['thread/start', 'thread/resume', 'thread/fork'].includes(method)) {

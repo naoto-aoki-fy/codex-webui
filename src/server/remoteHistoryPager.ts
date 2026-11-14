@@ -12,7 +12,6 @@ function record(value: unknown): RecordValue | null {
 }
 type Client = {
   rpc(method: string, params: unknown): Promise<unknown>
-  readThreadForTurnPage(threadId: string): Promise<unknown>
   getConnectionGeneration(): number
 }
 type Index = { metadata: RecordValue; ids: string[]; cursors: Map<string, string>; bytes: number; entry: Entry }
