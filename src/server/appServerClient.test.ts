@@ -119,7 +119,7 @@ it('expires earlier-page reads after 30 seconds without expiring the fallback sn
   } finally { now.mockRestore(); client.dispose() }
 })
 
-it('uses injected stores for turn metadata without creating or connecting another runtime', async () => {
+it('uses the injected journal without recording turn metadata without creating or connecting another runtime', async () => {
   const { AppServerClient: ClientCore } = await import('./appServerClient')
   const call = vi.fn().mockResolvedValue({ turn: { id: 'turn' } })
   const threadIndex = { call: vi.fn(async (method, params, rpc) => rpc(method, params)) }
@@ -134,7 +134,8 @@ it('uses injected stores for turn metadata without creating or connecting anothe
     const result = await client.rpc('turn/start', params) as any
     expect(threadIndex.call).toHaveBeenCalledOnce()
     expect(call).toHaveBeenCalledExactlyOnceWith('turn/start', params)
-    expect(listener).toHaveBeenCalledWith({ method: 'turn/generationMetadata', params: { threadId: 'thread', turnId: 'turn', generationMetadata: result.turn.generationMetadata } })
+    expect(result.turn).not.toHaveProperty('generationMetadata')
+    expect(listener).not.toHaveBeenCalled()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try { await expect(client.rpc('turn/start', params)).resolves.toHaveProperty('turn.id', 'turn') }
     finally { warn.mockRestore() }

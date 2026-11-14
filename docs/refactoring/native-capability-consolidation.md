@@ -30,9 +30,9 @@ untouched but never read or written.
 Unused session history enrichment and local session metadata parsers are removed.
 History comes from native `thread/read`, with inline media sanitization and sparse
 attachment-only recovery retained. The native Turn schema alone cannot establish
-historical per-turn model/reasoning values. The current app-owned metadata store
+historical per-turn model/reasoning values. The retired app-owned metadata store
 preserves submitted values and execution evidence separately, including best-effort
-fork inheritance; see [generation metadata](../turn-generation-metadata.md). Legacy
+fork inheritance (both since removed); see [generation metadata](../turn-generation-metadata.md). Legacy
 files remain untouched unless explicitly enabled for compatible migration.
 
 The application no longer accepts --login, --no-login, --memories, --no-memories,

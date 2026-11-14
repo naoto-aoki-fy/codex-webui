@@ -5,7 +5,6 @@ import { stageRemoteUpload, inspectRemoteUploads } from './remoteUploads.js'
 import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
 export { refreshChatgptAuthTokensForExternalAuth } from './externalAuthRefresh.js'
-import { createGitWorkspaceRoutes } from './gitWorkspaceRoutes.js'
 import { normalizeStringArray, canonicalizeThreadListResponseForRead, readWorkspaceRootsState, applyWorkspaceRootsOperation, persistWorkspaceRoot } from './workspaceRootsStore.js'
 export { canonicalizeWorkspaceRootsState, canonicalizeWorkspaceRootsStateForRead, canonicalizeThreadListResponseForRead, writeWorkspaceRootsState } from './workspaceRootsStore.js'
 export type { WorkspaceRootsState } from './workspaceRootsStore.js'
@@ -34,7 +33,6 @@ type RpcProxyRequest = {
 }
 
 type RpcExecutor = {
-  forkWithMetadataSource?: (params: unknown, sourceTurns: unknown[]) => Promise<unknown>
   rpc: (method: string, params: unknown) => Promise<unknown>
 }
 
@@ -47,7 +45,7 @@ const DEFAULT_API_PERF_MS_THRESHOLD = 300
 const DEFAULT_API_PERF_BODY_MB_THRESHOLD = 1
 const MB_DIVISOR = 1024 * 1024
 
-const persistentThreadIndex = new PersistentThreadIndex(() => profileStateDirectory(getCodexHomeDir()), () => [])
+const persistentThreadIndex = new PersistentThreadIndex(() => profileStateDirectory(getCodexHomeDir()))
 
 function readEnvValueFromFile(filePath: string, key: string): string | null {
   try {
@@ -264,9 +262,7 @@ export async function forkThreadAtCutoff(appServer: RpcExecutor, params: Record<
   }
   if (expectedTurnId && expectedTurnId !== ids[cutoff]) throw new Error('Source history changed at the selected response. Refresh the thread.')
   const cutoffParams = { ...forkParams, lastTurnId: ids[cutoff] }
-  const result = appServer.forkWithMetadataSource
-    ? await appServer.forkWithMetadataSource(cutoffParams, prefix)
-    : await callRpcWithArchiveRecovery(appServer, 'thread/fork', cutoffParams)
+  const result = await callRpcWithArchiveRecovery(appServer, 'thread/fork', cutoffParams)
   const record = asRecord(result)
   const thread = asRecord(record?.thread)
   const id = readNonEmptyString(thread?.id)
@@ -524,7 +520,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   const { appServer, methodCatalog } = sharedState
   const transfers = createConversationTransfers((method, params) => appServer.rpc(method, params))
   const files = sharedState.files ?? new ProjectFileService(appServer)
-  const gitWorkspaceRoutes = createGitWorkspaceRoutes({ appServer })
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const requestStartNs = process.hrtime.bigint()
     const rawUrl = req.url ?? ''
@@ -820,7 +815,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       // Retired API: terminate here so SPA middleware cannot serve HTML.
-      if (['/codex-api/prompts', '/codex-api/thread-titles', '/codex-api/worktree/create', '/codex-api/worktree/branches', '/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion'].includes(url.pathname) || url.pathname.startsWith('/codex-api/telegram/') || url.pathname === '/codex-api/worktree/create-permanent' || url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
+      if (['/codex-api/git/repository-status', '/codex-api/prompts', '/codex-api/thread-titles', '/codex-api/worktree/create', '/codex-api/worktree/branches', '/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion'].includes(url.pathname) || url.pathname.startsWith('/codex-api/telegram/') || url.pathname === '/codex-api/worktree/create-permanent' || url.pathname === '/codex-api/thread-file-change-fallback' || url.pathname === '/codex-api/thread-live-state' || url.pathname === '/codex-api/thread-stream-events') {
         setJson(res, 404, { error: 'Not found' })
         return
       }
@@ -863,7 +858,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
-      if (await gitWorkspaceRoutes.handleWorktreeRoutes(req, res, url)) return
 
       if (req.method === 'PUT' && url.pathname === '/codex-api/workspace-roots-state') {
         setJson(res, 409, { error: 'Workspace updates have changed. Reload this tab before editing projects.' })

@@ -9,7 +9,7 @@ import { ProjectFileService } from './appServerFileSystem'
 import { getLocalDirectoryListing } from './localBrowseUi'
 
 vi.mock('node:child_process', () => ({ spawn: () => { throw new Error('Unexpected local execution') }, spawnSync: () => { throw new Error('Unexpected local execution') } }))
-it.each(['/only-on-B/repository', 'D:\\only-on-B\\repository'])('browses, registers, starts and queries Git in a remote-only workspace %s', async path => {
+it.each(['/only-on-B/repository', 'D:\\only-on-B\\repository'])('browses, registers, and starts threads in a remote-only workspace %s', async path => {
   const state = await mkdtemp(join(tmpdir(), 'ownership-state-'))
   const scope = globalThis as any
   const previous = scope.__codexRemoteSharedBridge__
@@ -38,7 +38,6 @@ it.each(['/only-on-B/repository', 'D:\\only-on-B\\repository'])('browses, regist
     expect((await getLocalDirectoryListing(path, files)).entries[0].path).toContain('child')
     expect((await request('/codex-api/project-root', { path })).data.path).toBe(path)
     expect((await request('/codex-api/rpc', { method: 'thread/start', params: { cwd: path } })).result.thread.cwd).toBe(path)
-    expect((await request('/codex-api/git/repository-status?cwd=' + encodeURIComponent(path))).data.gitRoot).toBe(path)
     await expect(access(path)).rejects.toThrow()
   } finally { scope.__codexRemoteSharedBridge__ = previous; vi.unstubAllEnvs(); await rm(state, { recursive: true }) }
 })

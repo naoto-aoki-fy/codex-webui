@@ -1,4 +1,3 @@
-import { ForkFirstTurn, forkRecoveryMessage } from './forkFirstTurn'
 import { profileStorageKey, reloadForConnectionProfile } from '../utils/browserConnectionProfile'
 import { modelSelectionKey, parseModelSelection, defaultModelForProvider } from '../api/modelCapabilities'
 import { markNativeThreadRead, refreshThreadGenerationMetadata } from '../api/codexGateway'
@@ -85,7 +84,6 @@ import {
   archiveThread,
   forkThread,
   forkThreadFromResponse,
-  configureFreshFork,
   getAvailableCollaborationModes,
   getAccountRateLimits,
   renameThread,
@@ -741,46 +739,10 @@ export function useDesktopState() {
   let legacyCatalogIds = new Set<string>()
   let legacyCatalogProvider = ''
   const effectiveThreadProviders = new Map<string, string>()
-  const configuringForks = new Set<string>()
-  const replacementThreadIds = new Map<string, string>()
   const blockedProviderContext = ref('')
   const blockedProviderNotice = ref('')
-  const supersededForkDrafts = new Map<string, string>()
-  const forkFirstTurns = new Map<string, ForkFirstTurn>()
-  // Recovery references survive failure; archive rights do not survive reuse.
-  const disposableForkOwners = new Map<string, string>() // prefix -> child
-  const archivingForkPrefixes = new Set<string>()
-  const forkAttemptTokens = new Map<string, symbol>()
-  const recoveryStorageOwners = new Map<string, symbol>()
-  const forkRecoveryErrors = new Map<string, string>()
-  const freshForkStorageKey = 'codex-web-local.fresh-forks.v1'
-  const freshForks = ref<Record<string, string>>((() => {
-    try {
-      const value = JSON.parse(window.localStorage.getItem(freshForkStorageKey) || '{}')
-      return value && typeof value === 'object' && !Array.isArray(value)
-        ? Object.fromEntries(Object.entries(value).filter(([, model]) => typeof model === 'string')) as Record<string, string> : {}
-    } catch { return {} }
-  })())
-  function markFreshFork(threadId: string, model: string | null): void {
-    if (model === null && !Object.prototype.hasOwnProperty.call(freshForks.value, threadId)) return
-    const next = { ...freshForks.value }
-    if (model === null) delete next[threadId]
-    else next[threadId] = model
-    freshForks.value = next
-    try { window.localStorage.setItem(freshForkStorageKey, JSON.stringify(next)) } catch { /* Storage is optional. */ }
-  }
-
-  const modelSelectionNotice = computed(() => {
-    if (blockedProviderContext.value === selectedThreadId.value && blockedProviderContext.value) {
-      return blockedProviderNotice.value
-    }
-    return Object.prototype.hasOwnProperty.call(freshForks.value, selectedThreadId.value)
-      ? 'Fresh fork: choose a provider and model before sending. After the first message, changing providers requires another fork. The app-server must support the selected provider and inherited history format; provider confirmation alone does not verify continuation compatibility.'
-      : ''
-  })
-  function resolveThreadReplacement(threadId: string): string {
-    return replacementThreadIds.get(threadId) || threadId
-  }
+  const modelSelectionNotice = computed(() => blockedProviderContext.value === selectedThreadId.value
+    ? blockedProviderNotice.value : '')
 
   function resolveSelectionProvider(model: string, threadProvider = ''): string {
     const selection = parseModelSelection(model)
@@ -842,7 +804,7 @@ export function useDesktopState() {
     const model = modelSelectionKey(requestedProvider, parseModelSelection(requested).model)
     const context = isNewThreadContextId(toThreadContextId(threadId)) ? NEW_THREAD_MODEL_CONTEXT : toThreadContextId(threadId)
     const next = cloneStringKeyedRecord(selectedModelIdByContext.value)
-    if (!isNewThreadContextId(toThreadContextId(threadId)) && !Object.prototype.hasOwnProperty.call(freshForks.value, threadId) && (!currentProvider || !requestedProvider || currentProvider !== requestedProvider)) {
+    if (!isNewThreadContextId(toThreadContextId(threadId)) && (!currentProvider || !requestedProvider || currentProvider !== requestedProvider)) {
       blockedProviderContext.value = threadId
       error.value = currentProvider && requestedProvider
         ? 'Fork this conversation with Portable Transfer to use a different model provider.'
@@ -959,7 +921,6 @@ export function useDesktopState() {
   }
 
   function clearPendingTurnRequest(threadId: string): void {
-    if (forkFirstTurns.has(threadId)) return
     if (!pendingTurnRequestByThreadId.value[threadId]) return
     pendingTurnRequestByThreadId.value = omitKey(pendingTurnRequestByThreadId.value, threadId)
   }
@@ -1507,7 +1468,7 @@ export function useDesktopState() {
     if (!threadId) return
 
     const previous = turnErrorByThreadId.value[threadId]
-    const normalizedMessage = forkRecoveryErrors.get(threadId) || (message ? normalizeMessageText(message) : '')
+    const normalizedMessage = message ? normalizeMessageText(message) : ''
     if (!normalizedMessage) {
       if (previous) {
         turnErrorByThreadId.value = omitKey(turnErrorByThreadId.value, threadId)
@@ -2299,26 +2260,6 @@ export function useDesktopState() {
       error.value = notificationErrorState.message
     }
 
-    if (notificationThreadId) {
-      const params = asRecord(notification.params)
-      const turn = asRecord(params?.turn)
-      const turnId = readString(turn?.id) || readString(params?.turnId)
-      if (notification.method === 'turn/completed') {
-        forkFirstTurns.get(notificationThreadId)?.complete(turnId,
-          turn?.status === 'completed' && !turnErrorMessage && !notificationErrorState,
-          turnErrorMessage || readString(asRecord(turn?.error)?.message))
-      } else if (notification.method === 'error' && notificationErrorState?.transient !== true) {
-        forkFirstTurns.get(notificationThreadId)?.complete(turnId, false, notificationErrorState?.message || turnErrorMessage || '')
-        const draftId = supersededForkDrafts.get(notificationThreadId)
-        if (!turnId && draftId) {
-          const message = forkRecoveryMessage(draftId, notificationErrorState?.message || turnErrorMessage || '')
-          forkRecoveryErrors.set(notificationThreadId, message)
-          setTurnErrorForThread(notificationThreadId, message)
-          replacementThreadIds.delete(draftId)
-        }
-      }
-    }
-
     const planUpdate = readPlanUpdate(notification)
     if (planUpdate) {
       upsertLivePlanMessage(planUpdate.threadId, planUpdate.message)
@@ -2770,7 +2711,7 @@ export function useDesktopState() {
     return run
   }
 
-  async function loadMessages(threadId: string, options: { silent?: boolean; force?: boolean; recoverForkOutcome?: boolean } = {}) {
+  async function loadMessages(threadId: string, options: { silent?: boolean; force?: boolean } = {}) {
     const generation = lifecycleGeneration
     if (!threadId) {
       return
@@ -2845,18 +2786,6 @@ export function useDesktopState() {
         resumedThreadById.value = {
           ...resumedThreadById.value,
           [threadId]: true,
-        }
-      }
-
-      const tracker = forkFirstTurns.get(threadId)
-      if (tracker && realtimeRevision === (realtimeRevisionByThreadId.get(threadId) ?? 0)) {
-        const outcome = detail.turnOutcomes?.[tracker.acceptedTurnId]
-        if (outcome && ['completed', 'failed', 'interrupted'].includes(outcome.status)) {
-          hasNewerTurnState = false
-          tracker.complete(tracker.acceptedTurnId, outcome.status === 'completed' && !outcome.error, outcome.error)
-        } else if (options.recoverForkOutcome === true && !detail.inProgress) {
-          unknownOutcomeByThreadId.value = { ...unknownOutcomeByThreadId.value, [threadId]: true }
-          tracker.unresolved('The first fork turn outcome could not be established from durable history. Inspect the thread and any tool effects before explicitly sending another request.')
         }
       }
 
@@ -3195,7 +3124,7 @@ export function useDesktopState() {
       const source = flattenThreads(sourceGroups.value).find(row => row.id === sourceId)
       insertOptimisticThread(result.threadId, result.cwd || source?.cwd || '', toForkedThreadTitle(source?.title || 'Forked conversation'))
       setThreadModelId(result.threadId, result.model || readModelIdForThread(sourceId), result.modelProvider)
-      // Native forks are ordinary existing threads. Never markFreshFork: the
+      // Native forks are ordinary existing threads; the
       // legacy send-time provider-switch workaround must not run for these IDs.
       setSelectedThreadId(result.threadId)
       await loadThreads()
@@ -3280,50 +3209,7 @@ export function useDesktopState() {
     if (persistedMessagesByThreadId.value[threadId]?.some(message => message.id === `import-status-${threadId}`)) {
       throw new Error('This conversation import is incomplete. Inspect the destination; do not replay injection.')
     }
-    if (archivingForkPrefixes.has(threadId)) {
-      error.value = 'This unused fork prefix is being archived. Continue in its completed child instead.'
-      setTurnErrorForThread(threadId, error.value)
-      throw new Error(error.value)
-    }
-    if (forkFirstTurns.has(threadId)) {
-      const message = 'Wait for the first fork turn outcome before sending again. If disconnected, inspect the thread before retrying.'
-      error.value = message
-      setTurnErrorForThread(threadId, message)
-      throw new Error(message)
-    }
     if (!threadId || (!nextText && imageUrls.length === 0 && fileAttachments.length === 0)) return
-    // Even an unsuccessful explicit reuse makes this prefix non-disposable.
-    disposableForkOwners.delete(threadId)
-
-    if (Object.prototype.hasOwnProperty.call(freshForks.value, threadId)
-      && resolveSelectionProvider(freshForks.value[threadId]!) !== resolveSelectionProvider(submissionContext.modelId)) {
-      const draftId = threadId
-      if (configuringForks.has(draftId)) throw new Error('The fork is being configured. Wait before sending again.')
-      configuringForks.add(draftId)
-      try {
-        const configured = await configureFreshFork(draftId, submissionContext.modelId)
-        if (generation !== lifecycleGeneration) throw new Error('Conversation changed while configuring fork; send again.')
-        const draft = flattenThreads(sourceGroups.value).find(row => row.id === draftId)
-        threadId = configured.threadId
-        replacementThreadIds.set(draftId, threadId)
-        insertOptimisticThread(threadId, draft?.cwd || '', draft?.title || 'Forked chat')
-        setPersistedMessagesForThread(threadId, persistedMessagesByThreadId.value[draftId] || [])
-        setThreadModelId(threadId, configured.model, configured.modelProvider)
-        explicitModelContexts.add(threadId)
-        markFreshFork(threadId, submissionContext.modelId)
-        resumedThreadById.value = { ...resumedThreadById.value, [threadId]: true }
-        if (selectedThreadId.value === draftId) setSelectedThreadId(threadId)
-        // Keep the exact prefix recoverable until inference completes successfully.
-        supersededForkDrafts.set(threadId, draftId)
-        disposableForkOwners.set(draftId, threadId)
-      } catch (failure) {
-        error.value = failure instanceof Error ? failure.message : String(failure)
-        setTurnErrorForThread(draftId, error.value)
-        throw failure
-      } finally {
-        configuringForks.delete(draftId)
-      }
-    }
 
     const submittedMode = collaborationModeOverride ?? selectedCollaborationMode.value
     if (await maybeReplyToPendingUserInputRequest(threadId, nextText, imageUrls, skills, fileAttachments)) {
@@ -3545,73 +3431,7 @@ export function useDesktopState() {
       collaborationMode,
     })
 
-    forkRecoveryErrors.delete(threadId)
-    const freshForkDefault = freshForks.value[threadId]
-    const draftId = supersededForkDrafts.get(threadId)
-    const disposablePrefix = draftId && disposableForkOwners.get(draftId) === threadId ? draftId : ''
-    const recoveryThreadId = disposablePrefix || threadId
-    const recoveryKey = profileStorageKey(`codex-web-local.thread-fork-recovery.v1.${recoveryThreadId}`)
-    const ownRecoveryKey = profileStorageKey(`codex-web-local.thread-fork-recovery.v1.${threadId}`)
-    const recoveryKeys = [...new Set([recoveryKey, ownRecoveryKey])]
-    const recoveryPayload = JSON.stringify({ text: normalizedText, imageUrls: normalizedImageUrls,
-      skills: normalizedSkills, fileAttachments: normalizedFileAttachments })
-    let hasRecovery = Boolean(draftId)
-    try { hasRecovery ||= Boolean(window.localStorage.getItem(recoveryKey)) } catch { /* Storage is optional. */ }
-    const attemptToken = Symbol('fork submission')
-    forkAttemptTokens.set(threadId, attemptToken)
-    const ownsAttempt = () => generation === lifecycleGeneration && forkAttemptTokens.get(threadId) === attemptToken
-    if (hasRecovery && ownsAttempt()) {
-      for (const key of recoveryKeys) {
-        recoveryStorageOwners.set(key, attemptToken)
-        try { window.localStorage.setItem(key, recoveryPayload) } catch { /* Storage is optional. */ }
-      }
-    }
-    const retainRecoveryPrompt = () => {
-      if (!hasRecovery || !ownsAttempt()) return
-      const target = recoveryStorageOwners.get(recoveryKey) === attemptToken ? recoveryThreadId : threadId
-      try {
-        const key = profileStorageKey(`codex-web-local.thread-draft.v1.${target}`)
-        if (!window.localStorage.getItem(key)) window.localStorage.setItem(key, recoveryPayload)
-      } catch { /* The server-side prefix survives browser storage failure. */ }
-    }
-    const describeRecoveryFailure = (detail: string) => disposablePrefix && disposableForkOwners.get(disposablePrefix) === threadId
-      ? forkRecoveryMessage(disposablePrefix, detail)
-      : `${detail || 'The recovery turn failed.'} The current attempt draft is preserved at #/thread/${encodeURIComponent(threadId)}. Inspect output and tool effects before explicitly retrying; nothing was automatically replayed.`
-    if (hasRecovery) {
-      forkFirstTurns.set(threadId, new ForkFirstTurn((success, detail) => {
-        if (!ownsAttempt()) return
-        forkFirstTurns.delete(threadId)
-        if (!success) {
-          retainRecoveryPrompt()
-          if (draftId) replacementThreadIds.delete(draftId)
-          const message = describeRecoveryFailure(detail)
-          forkRecoveryErrors.set(threadId, message)
-          setTurnErrorForThread(threadId, message)
-          if (selectedThreadId.value === threadId) error.value = message
-          return
-        }
-        clearPendingTurnRequest(threadId)
-        unknownOutcomeByThreadId.value = omitKey(unknownOutcomeByThreadId.value, threadId)
-        for (const key of recoveryKeys) {
-          try {
-            if (recoveryStorageOwners.get(key) === attemptToken && window.localStorage.getItem(key) === recoveryPayload) window.localStorage.removeItem(key)
-          } catch { /* Storage is optional. */ }
-        }
-        if (!draftId || disposableForkOwners.get(draftId) !== threadId) return
-        // Consume archive rights before the async operation. A newer attempt must
-        // never be cleaned up by this callback, even if archive is delayed.
-        disposableForkOwners.delete(draftId)
-        supersededForkDrafts.delete(threadId)
-        archivingForkPrefixes.add(draftId)
-        void archiveThread(draftId).then(() => {
-          if (generation !== lifecycleGeneration) return
-          markFreshFork(draftId, null)
-          removeArchivedThreadFromLoadedLists(draftId)
-        }).catch(() => { /* Keep the prefix if archive fails; never replay. */ })
-          .finally(() => archivingForkPrefixes.delete(draftId))
-      }))
-    }
-    const trackedFirstTurn = forkFirstTurns.get(threadId)
+    const ownsAttempt = () => generation === lifecycleGeneration
     let submissionAttempted = false
     let submissionAccepted = false
     try {
@@ -3634,7 +3454,6 @@ export function useDesktopState() {
       // Submit exactly once even if disposal occurred while resuming the server thread.
       if (generation === lifecycleGeneration) recordModelUsage(modelId)
       submissionAttempted = true
-      markFreshFork(threadId, null)
       const startedTurnId = await startThreadTurn(
         threadId,
         nextText,
@@ -3644,16 +3463,11 @@ export function useDesktopState() {
         skills.length > 0 ? skills : undefined,
         fileAttachments,
         collaborationMode,
-        (turnId, metadata) => {
-          if (generation !== lifecycleGeneration || !metadata) return
-          retainGenerationMetadata(threadId, turnId, metadata)
-        },
       )
 
       submissionAccepted = true
       if (!ownsAttempt()) return
-      if (startedTurnId) trackedFirstTurn?.accepted(startedTurnId)
-      if (startedTurnId && (!trackedFirstTurn || forkFirstTurns.has(threadId))) {
+      if (startedTurnId) {
         if (optimisticMessageId) {
           const messages = persistedMessagesByThreadId.value[threadId] ?? []
           setPersistedMessagesForThread(threadId, messages.map((message) => message.id === optimisticMessageId
@@ -3672,18 +3486,8 @@ export function useDesktopState() {
       if (generation === lifecycleGeneration) scheduleDelayedTurnSync(threadId)
     } catch (unknownError) {
       if (!ownsAttempt()) throw unknownError
-      retainRecoveryPrompt()
-      if (draftId && generation === lifecycleGeneration) replacementThreadIds.delete(draftId)
       const ambiguous = unknownError instanceof Error && /disconnected|outcome unknown/i.test(unknownError.message)
         || unknownError instanceof CodexApiError && (['network_error', 'invalid_response'].includes(unknownError.code) || (unknownError.status ?? 0) >= 500)
-      if (generation === lifecycleGeneration && !submissionAccepted && !ambiguous) {
-        forkFirstTurns.delete(threadId)
-        if (freshForkDefault !== undefined) markFreshFork(threadId, freshForkDefault)
-      }
-      if (draftId && generation === lifecycleGeneration) {
-        const message = describeRecoveryFailure(unknownError instanceof Error ? unknownError.message : String(unknownError))
-        forkRecoveryErrors.set(threadId, message)
-      }
       if (generation === lifecycleGeneration && submissionAttempted && !submissionAccepted && ambiguous) {
         unknownOutcomeByThreadId.value = { ...unknownOutcomeByThreadId.value, [threadId]: true }
       }
@@ -3761,7 +3565,6 @@ export function useDesktopState() {
         if (!threadId || threadId === sourceThreadId) throw new Error('Invalid fork destination')
         insertOptimisticThread(threadId, threadCwd, 'Forked chat')
         setThreadModelId(threadId, forked.model, forked.modelProvider)
-        markFreshFork(threadId, readModelIdForThread(threadId))
         stage = 'Validate fork target'
         await validateThreadRevert(threadId, turnId)
       }
@@ -3935,13 +3738,13 @@ export function useDesktopState() {
           if (id !== threadId && inProgressById.value[id]) void Promise.resolve(resumeThreadSubscription(id)).catch(() => {})
         }
       }
-      const recoveryIds = [...new Set([...(threadId ? [threadId] : []), ...forkFirstTurns.keys()])]
+      const recoveryIds = threadId ? [threadId] : []
       await Promise.allSettled([
         loadThreads({ force: true }),
         (async () => {
-          // Keep history recovery serial; many pending forks must not fan out.
+          // Recover only the selected conversation.
           for (const id of recoveryIds) {
-            try { await loadMessages(id, { silent: true, force: true, recoverForkOutcome: true }) } catch { /* Retain the tracker on read failure. */ }
+            try { await loadMessages(id, { silent: true, force: true }) } catch { /* Retry through ordinary history loading. */ }
           }
         })(),
       ])
@@ -4121,7 +3924,7 @@ export function useDesktopState() {
   }
 
   return {
-    modelSelectionNotice, resolveThreadReplacement,
+    modelSelectionNotice,
     transportState, selectedRecoveryState, selectedUnknownOutcome, selectedLostApproval,
     retrySelectedSubscription, reconcileSelectedHistory,
     projectGroups,

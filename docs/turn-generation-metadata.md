@@ -1,133 +1,71 @@
 # Per-turn generation metadata
 
-The web backend records the settings from an accepted `turn/start` response,
-keyed by thread ID and the returned turn ID. These are **submitted settings**,
-not proof of the model or reasoning effort that executed. The UI marks them
-`(sent setting)`. Execution evidence, when explicitly supplied with provenance,
-takes priority independently for each field. Missing values remain unknown;
-explicit null means unspecified, and `none` is an explicit effort value.
+Codex-generated rollout JSONL is the source of historical model and reasoning
+metadata. Parsed results are persistently cached on the App Server host. The
+application no longer records settings from turn submissions, RPC responses, or
+notifications into a separate persistent metadata store. It no longer copies
+metadata between source and forked conversations.
 
-## Storage and recovery
+## Read and write path
 
-Backend-local storage uses
-`$CODEX_HOME/codexapp-turn-metadata/<server-hash>/<thread-hash>.jsonl`
-(default local home: `~/.codex`). The server hash covers the normalized connection
-URL and the external server's documented initialization `codexHome` value. The
-remote home is identity data only: the backend never opens remote session paths
-on its own filesystem. Keep this local storage when restarting the web backend.
-A changed connection URL or remote home intentionally gets a separate namespace.
-The protocol provides no server instance UUID; replacing a server behind the same
-URL and home cannot be distinguished automatically.
+1. `AppServerClient.rpc` observes content-bearing `thread/read`, `thread/resume`,
+   `thread/fork` and `thread/turns/list` results. It starts optional asynchronous
+   recovery through `RolloutGenerationMetadata.recover(threadId)`.
+2. The reader calls `thread/read` with `includeTurns: false` to resolve the native
+   rollout path, checks that it is a normalized absolute path under the initialized
+   Codex home's `sessions/YYYY/MM/DD/`, and calls `fs/getMetadata`.
+3. It reads `<remote CODEX_HOME>/cache/model-history/v1/<sha256(threadId)>.json`
+   through `fs/readFile`. Version 1, source path, positive modification timestamp,
+   exact turn IDs and execution provenance must validate before reuse.
+4. On a miss or changed timestamp it reads the rollout through `fs/readFile` and
+   parses complete `turn_context` rows. Only exact `payload.turn_id` values are
+   used. Model and effort are independent; missing fields stay unknown, null
+   means unspecified, and `none` is a real effort value. Conflicting duplicates
+   suppress the conflicting field. A second source stat prevents caching a
+   snapshot observed changing during the read.
+5. `fs/createDirectory` and `fs/writeFile` persist only the compact parsed cache.
+   Original rollouts are never written, deleted or modified. Unknown timestamps
+   cannot validate or persist a cache. Explicit refresh bypasses cached data.
+6. The client emits `turn/generationMetadata` only for requested exact turn IDs.
+   `useDesktopState` merges this evidence into history/live messages; the V2
+   normalizer and `ThreadConversation` retain the per-response display. No
+   currently selected model or effort substitutes for missing history.
 
-Sidecars use the legacy `{turnId, metadata}` row shape. Writes are serialized
-within the process and locked across backend processes, append complete rows,
-and sync before returning the successful RPC. A storage failure emits a backend
-warning but never rejects or retries the accepted submission. Crashes between
-remote acceptance and local persistence remain a recovery gap; the protocol has
-no transaction spanning the two systems. Native Codex session logs are untouched.
+Missing paths, malformed rows, unsupported filesystem APIs, denied reads and cache
+write failures do not block conversation loading. A restart validates and reuses
+an unchanged persistent cache without transferring the original rollout again.
+The pinned metadata API exposes mtime but no file length: changes preserving the
+same timestamp require explicit refresh. This limitation is unchanged.
 
-History read/resume and older-page snapshots merge sidecar evidence by exact
-turn ID. Submitted-setting enrichment adds no RPCs. Remote rollout recovery is
-lazy and asynchronous. Forking reads the source once and copies
-metadata into the fork's sidecar (response-cutoff forks reuse the source snapshot
-already read for cutoff validation): exact turn IDs first, then unique item IDs,
-then unique complete text transcripts bounded to 256 KiB per turn. Ambiguous
-matches remain unknown. New fork turns have independent entries. Existing forks
-can recover their own rollout evidence by exact turn ID; undocumented parent
-fields are never used.
+## Forks and existing data
 
-## Legacy import
+Native Fork and Fork and Revert use each destination's own rollout/cache. No
+parent lookup, transcript matching or custom metadata inheritance remains. If
+native fork/revert output lacks inherited `turn_context` rows with matching IDs,
+those responses show unknown metadata; their content remains visible. Portable
+Fork and existing imported transcripts remain in `ConversationTransferService`;
+imported transcript attribution does not become execution metadata.
 
-Legacy unscoped sidecars have no server identity. They are ignored unless an
-operator explicitly binds them to the known original server with **both**:
+Old `$CODEX_HOME/codexapp-turn-metadata/` stores are left untouched. They are no
+longer read or written, and are never relabeled as rollout-derived cache entries.
+The shared metadata value/provenance/label helpers remain for normalization and
+UI compatibility. Old browser fresh-fork/recovery keys are not deleted. A legacy
+recovery draft can still be read by the composer, but new fresh-fork state is not
+created. Ordinary drafts and ambiguous-send protection remain active.
 
-- `CODEXUI_LEGACY_METADATA_SERVER_URL`: exact normalized URL (including trailing
-  slash for a WebSocket root, e.g. `ws://127.0.0.1:4500/`).
-- `CODEXUI_LEGACY_METADATA_CODEX_HOME`: exact remote initialization home value.
+## Performance and verification
 
-Keep these settings only for the intended legacy server. Legacy and current
-records merge field by field; execution evidence cannot be overwritten by settings.
-Historical recovery also works without these sidecars; see below.
+Recovery coalesces concurrent reads, serializes source transfers and admits at
+most 16 queued threads. Bounds remain 16 MiB per source, 2 MiB per cache, 10,000
+turn IDs and 512 characters per field. No session traversal, per-message RPC,
+source-to-fork history read, synchronous filesystem work or new request fanout is
+introduced. Native metadata-only pagination does not trigger rollout recovery.
+Notifications do not invalidate the history index merely to update labels.
 
-## Remote rollout execution evidence
-
-Requested history pages schedule recovery over the existing App Server transport.
-The backend calls `thread/read` with `includeTurns: false` and validates the
-returned absolute `thread.path`. Only normalized POSIX or Windows paths matching
-`sessions/YYYY/MM/DD/rollout-*.jsonl` are supported. The inferred remote home must
-match initialization `codexHome` when supplied. No local HOME/session lookup,
-SSH, command execution, additional connection, or startup-wide scan is used.
-
-`fs/getMetadata` and `fs/readFile` read that remote file. Complete JSONL rows of
-exactly `type: "turn_context"` supply `payload.turn_id`, `model`, and `effort`.
-Only exact nonempty turn IDs correlate; timestamps and nearby messages never do.
-Malformed and incomplete trailing rows are ignored. Identical duplicate fields
-agree; conflicting values suppress that field for the entire turn. Missing fields
-remain absent, null remains explicit unspecified, and `none` remains a value.
-Each recovered field has execution provenance and outranks submitted settings
-independently. No composer values are used. Existing metadata notifications update
-only requested turn IDs without reloading conversation items or adding UI labels.
-
-The separate remote cache is
-`<REMOTE_CODEX_HOME>/cache/model-history/v1/<sha256(threadId)>.json`.
-It contains only schema version, source path, source `modifiedAtMs`, and turn IDs
-with model/effort evidence. Reads/writes/directory creation use filesystem RPCs;
-original rollouts and backend-local sidecars are never modified by recovery.
-Every recovery checks the source mtime. A matching schema/path/positive finite
-mtime reuses the compact cache without reading the rollout. Changed sources,
-invalid caches, or explicit refresh regenerate it. Source metadata is checked
-again after a full read; a changed source is neither published nor persisted.
-Unknown/zero timestamps allow uncached evidence but never validate/persist a cache.
-**Refresh history** also forces regeneration via the backend-only
-`thread/generationMetadata/refresh` RPC. It is not forwarded to Codex.
-
-Concurrent thread requests coalesce. One recovery runs at a time with at most
-16 pending jobs, each scoped to the transport generation. Late results cannot
-cross a reconnect. Cache storage is on the remote host and survives backend
-restarts; no rollout contents are retained in memory after recovery. Unsupported
-methods, missing paths, permission/read errors quietly retain existing metadata;
-cache write errors still permit evidence for the current request. Concurrent
-backend processes may redundantly read/write the same cache; malformed partial
-cache writes are treated as misses on the next request.
-
-Limits: 16 MiB decoded source, 2 MiB compact cache, 10,000 turns, 256-character
-turn IDs, and 512-character field values. The pinned metadata API has no file
-size and `fs/readFile` returns the whole Base64 response. The transfer therefore
-cannot be bounded before receipt; over-budget responses are rejected before
-Base64 decoding. Large rollouts need upstream size/ranged-read support for
-bounded transfer. Initial source reads can hold the single worker until the
-existing RPC deadline; history loading itself does not wait. No automatic retry
-loop or per-message file fanout is introduced. Cache hits cost three RPCs
-(metadata-only thread read, source stat, compact cache read); cold successful
-recovery normally costs seven including the cache miss and write. Each page
-revalidates; native metadata-only index pages do not trigger recovery.
-
-## Bounds and performance
-
-A sidecar read allocates at most 4 MiB; larger files are ignored, and appends
-past that limit fail with a warning without failing the turn. Malformed and
-incomplete rows are ignored independently. At most eight parsed sidecars are
-cached; file inode/size/mtime/ctime invalidate them, including cross-process
-updates. There is no retained session text. History merging is linear in the
-returned turn count. Reads do not fan out across messages. Streaming deltas
-write nothing. Each accepted turn adds one locked append and file sync; a fork
-adds one source history request and one batched append.
-
-Automated tests in `src/server/turnGenerationMetadata.test.ts` measure cold
-2,000-turn enrichment and a cached page without network calls. Frontend state
-recreation tests cover completed and active refresh recovery; they are fixture
-checks, not authenticated browser or real Codex verification.
-
-Measured in this workspace: 2,000-turn cold enrichment took 20.08 ms and a cached
-10-turn page took 2.55 ms during the full suite; an isolated run measured
-12.05 ms / 1.82 ms. These are local fixture measurements, not live-server latency
-or browser rendering profiles. No extra RPCs were made in either enrichment path.
-
-Remote recovery fixture audit in this workspace: concurrent cold recovery plus a
-new service instance's cache hit took 4.01 ms for two turns. The source was 230
-UTF-8 bytes (308 Base64 bytes), compact cache 331 bytes (444 Base64 bytes), with
-one source read and ten total RPCs (seven cold, three warm). Assertions verify
-these counts and no history-index invalidation on metadata notifications. These
-are in-process fixtures, not WAN timing. Full suite and entry-point integration
-cover normal loading; authenticated two-host latency, actual large-rollout peak
-memory, filesystem API availability, and real per-turn IDs still need live checks.
+The fixture verifies seven cold RPCs and three warm/restarted RPCs, with exactly
+one source transfer across cold plus restart. It also covers append invalidation,
+explicit refresh, changing-source rejection, read failures, malformed records,
+thread isolation, revert-shaped replacement data and rejection of request-derived
+cache values. Run `pnpm exec vitest run src/server/rolloutGenerationMetadata.test.ts
+src/server/turnGenerationMetadata.test.ts`. These are protocol fixtures, not proof
+of live provider execution or fork rollout behavior on every server version.

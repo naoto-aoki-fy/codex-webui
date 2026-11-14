@@ -1,6 +1,5 @@
 import { readThreadTurnOutcomes, type ThreadTurnOutcomes } from './normalizers/threadMetadata'
 import { modelSelectionKey, parseModelSelection } from './modelCapabilities'
-import { readGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata'
 import { normalizeSkillsList, type SkillInfo, type SkillsListResponseEntry } from './normalizers/skills'
 export type { SkillInfo } from './normalizers/skills'
 import { normalizeWorkspaceRootsState, cloneWorkspaceRootsState, type WorkspaceRootsState } from './normalizers/workspaceRoots'
@@ -98,11 +97,6 @@ const DEFAULT_COLLABORATION_MODE_OPTIONS: CollaborationModeOption[] = [
 ]
 
 
-
-export type GitRepositoryStatus = {
-  isGitRepo: boolean
-  gitRoot: string
-}
 
 export type ThreadSearchResult = {
   threadIds: string[]
@@ -510,20 +504,6 @@ export async function forkThreadFromResponse(threadId: string, turnIndex: number
 
 // A loaded thread cannot reliably be reconfigured by thread/resume. Fork its
 // exact persisted prefix with supported overrides instead, before any new turn.
-export async function configureFreshFork(threadId: string, modelId: string): Promise<StartedThread> {
-  const selection = parseModelSelection(modelId)
-  if (!selection.provider || !selection.model) throw new Error('Select a configured provider and model for the fork.')
-  const payload = await callRpc<ThreadForkResponse>('thread/fork', {
-    threadId, model: selection.model, modelProvider: selection.provider, persistExtendedHistory: true,
-  })
-  const id = normalizeThreadIdFromPayload(payload)
-  const model = normalizeThreadModelFromPayload(payload)
-  const modelProvider = normalizeThreadModelProviderFromPayload(payload)
-  if (!id || id === threadId || model !== selection.model || modelProvider !== selection.provider) {
-    throw new Error('App-server did not confirm the selected fork provider and model. No message was sent; update the app-server to support thread/fork modelProvider overrides.')
-  }
-  return { threadId: id, model, modelProvider }
-}
 
 export async function forkThread(threadId: string): Promise<ForkedThread>
 export async function forkThread(threadId: string, cwd: string | undefined, model: string | undefined): Promise<StartedThread>
@@ -607,7 +587,6 @@ export async function startThreadTurn(
   skills?: Array<{ name: string; path: string }>,
   fileAttachments: FileAttachmentParam[] = [],
   collaborationMode?: CollaborationModeKind,
-  onAccepted?: (turnId: string, metadata?: TurnGenerationMetadata) => void,
 ): Promise<string> {
   try {
     const normalizedModel = model?.trim() ?? ''
@@ -635,7 +614,6 @@ export async function startThreadTurn(
     const payload = await callRpc<{ turn?: Turn }>('turn/start', params)
     invalidateResumeThread(threadId)
     const turnId = typeof payload?.turn?.id === 'string' ? payload.turn.id.trim() : ''
-    if (turnId) onAccepted?.(turnId, readGenerationMetadata((payload.turn as Turn & { generationMetadata?: unknown }).generationMetadata))
     return turnId
   } catch (error) {
     const normalized = normalizeCodexApiError(error, `Failed to start turn for thread ${threadId}`, 'turn/start')
@@ -962,26 +940,6 @@ function queueWorkspaceRootsMutation<T>(
   })
   workspaceRootsMutation = run.catch(() => undefined)
   return run
-}
-
-export async function getGitRepositoryStatus(cwd: string): Promise<GitRepositoryStatus> {
-  const normalizedCwd = cwd.trim()
-  if (!normalizedCwd) {
-    return { isGitRepo: false, gitRoot: '' }
-  }
-  const query = new URLSearchParams({ cwd: normalizedCwd })
-  const response = await fetch(`/codex-api/git/repository-status?${query.toString()}`)
-  const payload = (await response.json()) as { data?: unknown; error?: string }
-  if (!response.ok) {
-    throw new Error(payload.error || 'Failed to read Git repository status')
-  }
-  const record = payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
-    ? (payload.data as Record<string, unknown>)
-    : {}
-  return {
-    isGitRepo: record.isGitRepo === true,
-    gitRoot: typeof record.gitRoot === 'string' ? normalizePathForUi(record.gitRoot) : '',
-  }
 }
 
 export async function getHomeDirectory(): Promise<string> {

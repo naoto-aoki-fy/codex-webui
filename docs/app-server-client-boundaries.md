@@ -2,7 +2,7 @@
 
 `src/server/appServerClient.ts` owns one transport per client, monotonic RPC IDs,
 pending calls and approval handles, notification listeners, connection generations,
-reconnect, subscribed thread IDs, auth-refresh single-flight, stream buffers,
+reconnect, subscribed thread IDs, stream buffers,
 snapshots and earlier-page caching. Construction does not connect. The bridge's
 zero-argument `AppServerClient` subclass injects its attachment-only thread index;
 the core never imports the bridge.
@@ -28,10 +28,11 @@ stale RPC results from repopulating invalidated snapshots. Stream history is bou
 at 400 frames per thread, not globally. These buffers merge execution errors into
 history; they are not a browser replay API.
 
-Generation metadata is persisted by `turnGenerationMetadata.ts`, scoped to server
-endpoint and remote Codex home. Submitted values are distinguished from execution
-evidence; fork inheritance is best-effort. See [generation metadata](turn-generation-metadata.md)
-for provenance, legacy opt-in and storage compatibility.
+Historical generation metadata comes only from the rollout reader and persistent
+remote rollout cache. Runtime settings recording and source-to-fork inheritance
+are removed. Unsupported external token refresh returns an explicit protocol
+error; no credential read, refresh coordination or success lifecycle remains.
+See [generation metadata](turn-generation-metadata.md).
 
 Lifecycle tests live in `src/server/appServerClient*.test.ts`,
 `src/server/bridgeSse.test.ts`, and `src/server/sharedBridgeOwnership.test.ts`.
