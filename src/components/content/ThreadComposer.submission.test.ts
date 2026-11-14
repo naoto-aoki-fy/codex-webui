@@ -43,7 +43,7 @@ function mount(initial: Record<string, unknown> = {}) {
   new Function('exports', 'require', code)(exports, (path: string) => {
     if (path === 'vue') return vue
     if (path.endsWith('ComposerSearchDropdown.vue')) return { default: vue.defineComponent({ props: ['options', 'selectedValues', 'placeholder'], emits: ['toggle'], setup: (props, { emit }) => () => vue.h('skill-dropdown', { ...props, onToggle: (path: string, checked: boolean) => emit('toggle', path, checked) }) }) }
-    if (path.endsWith('ComposerDropdown.vue')) return { default: vue.defineComponent({ props: ['options', 'modelValue', 'placeholder'], setup: props => () => vue.h('dropdown', { options: props.options, modelValue: props.modelValue, placeholder: props.placeholder }) }) }
+    if (path.endsWith('ComposerDropdown.vue')) return { default: vue.defineComponent({ props: ['options', 'modelValue', 'placeholder'], emits: ['update:modelValue'], setup: (props, { emit }) => () => vue.h('dropdown', { options: props.options, modelValue: props.modelValue, placeholder: props.placeholder, 'onUpdate:modelValue': (value: string) => emit('update:modelValue', value) }) }) }
     if (path.endsWith('.vue')) return { default: { render: () => null } }
     if (path.includes('useMobile')) return { useMobile: () => ({ isMobile: vue.ref(false) }) }
     if (path.includes('useUiLanguage')) return { useUiLanguage: () => ({ t: (s: string) => s }) }
@@ -173,5 +173,44 @@ it('reactively filters models by provider and replaces a previous provider selec
     expect(c.props.selectedModel).toBe(key('Q', 'default'))
     expect(c.model().props.modelValue).toBe(key('Q', 'default'))
     expect(c.selectedModels).toHaveBeenCalledExactlyOnceWith(key('Q', 'default'))
+  } finally { gateway.reasoningCatalog.value = [] }
+})
+
+
+it('offers discovered providers only for new threads and selects their default before filtering models', async () => {
+  const key = (provider: string, model: string) => `provider-model:${JSON.stringify([provider, model])}`
+  gateway.reasoningCatalog.value = [
+    { id: 'first', modelProvider: 'cloud', providerDisplayName: 'Cloud display' },
+    { id: 'recent', modelProvider: 'local', providerDisplayName: 'Local display' },
+    { id: 'default', modelProvider: 'local', isDefault: true },
+    { id: 'missing', modelProvider: 'unavailable' },
+  ]
+  try {
+    const c = mount({ activeThreadId: '__new-thread__', selectedModel: key('cloud', 'first'),
+      models: [key('local', 'recent'), key('cloud', 'first'), key('local', 'default')] })
+    const provider = () => c.nodes().find(n => n.tag === 'dropdown' && n.props.placeholder === 'Model Provider')
+    expect(provider()!.props.options).toEqual([
+      { value: 'cloud', label: 'Cloud display' }, { value: 'local', label: 'Local display' },
+    ])
+    expect(c.nodes().indexOf(provider()!)).toBeLessThan(c.nodes().indexOf(c.model()))
+    provider()!.props['onUpdate:modelValue']('local')
+    await vue.nextTick()
+    expect(c.props.selectedModel).toBe(key('local', 'default'))
+    expect(provider()!.props.modelValue).toBe('local')
+    expect(c.model().props.options.map((o: any) => o.value)).toEqual([key('local', 'recent'), key('local', 'default')])
+    provider()!.props['onUpdate:modelValue']('unavailable')
+    expect(c.selectedModels).toHaveBeenCalledTimes(1)
+    c.props.activeThreadId = 'established'
+    await vue.nextTick()
+    expect(provider()).toBeUndefined()
+  } finally { gateway.reasoningCatalog.value = [] }
+})
+
+it('keeps legacy catalogs usable without inventing a provider', () => {
+  gateway.reasoningCatalog.value = [{ id: 'legacy' }]
+  try {
+    const c = mount({ activeThreadId: '__new-thread__', selectedModel: 'legacy', models: ['legacy'] })
+    expect(c.nodes().some(n => n.props.placeholder === 'Model Provider')).toBe(false)
+    expect(c.model().props.options).toEqual([{ value: 'legacy', label: 'legacy' }])
   } finally { gateway.reasoningCatalog.value = [] }
 })

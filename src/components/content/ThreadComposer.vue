@@ -228,6 +228,17 @@
         </div>
 
         <ComposerDropdown
+          v-if="isNewThread && providerOptions.length"
+          class="thread-composer-control"
+          :model-value="activeModelProvider"
+          :options="providerOptions"
+          :placeholder="t('Model Provider')"
+          open-direction="up"
+          :disabled="isComposerConfigDisabled"
+          @update:model-value="onProviderSelect"
+        />
+
+        <ComposerDropdown
           class="thread-composer-control"
           :model-value="displayedModel"
           :options="modelOptions"
@@ -480,6 +491,18 @@ let lastActiveThreadId = ''
 
 const reasoningOptions = computed(() => props.reasoningEffortOptions ?? [])
 const activeModelProvider = computed(() => props.modelProvider || parseModelSelection(props.selectedModel).provider)
+const isNewThread = computed(() => !props.activeThreadId || props.activeThreadId === '__new-thread__')
+const providerOptions = computed(() => {
+  const availableProviders = new Set(props.models.map(id => parseModelSelection(id).provider))
+  const providers = new Map<string, { value: string; label: string }>()
+  for (const entry of reasoningCatalog.value) {
+    const provider = entry.modelProvider?.trim()
+    if (!provider || providers.has(provider)) continue
+    if (!availableProviders.has(provider)) continue
+    providers.set(provider, { value: provider, label: entry.providerDisplayName || provider })
+  }
+  return [...providers.values()]
+})
 const modelOptions = computed(() => providerModelOptions(props.models, activeModelProvider.value, reasoningCatalog.value))
 const displayedModel = computed(() => modelOptions.value.some(option => option.value === props.selectedModel) ? props.selectedModel : '')
 watch([activeModelProvider, modelOptions, () => props.selectedModel], () => {
@@ -761,6 +784,15 @@ function toggleComposerExpanded(): void {
   isComposerExpanded.value = !isComposerExpanded.value
   queueComposerOverflowMeasurement()
   void nextTick(() => inputRef.value?.focus())
+}
+
+function onProviderSelect(provider: string): void {
+  if (!isNewThread.value || isComposerConfigDisabled.value || provider === activeModelProvider.value) return
+  if (!providerOptions.value.some(option => option.value === provider)) return
+  const options = providerModelOptions(props.models, provider, reasoningCatalog.value)
+  const preferred = modelSelectionKey(provider, defaultModelForProvider(reasoningCatalog.value, provider))
+  const model = options.find(option => option.value === preferred)?.value || options[0]?.value
+  if (model) emit('update:selected-model', model)
 }
 
 function onModelSelect(value: string): void {
