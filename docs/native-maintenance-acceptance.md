@@ -121,9 +121,8 @@ TTL, disconnect/invalidation guards and fork cutoffs were not changed in this
 audit. Adapter tests now use native pagination fixture replies and the real pager
 instead of relying on the removed branch. Metadata index sharing and notification
 invalidation are asserted through `AppServerClient.readThreadPage`.
-The retained full-reader cache/snapshot tests continue to exercise
-`readThreadForTurnPage` directly; snapshot caching is not silently redefined as
-native index invalidation.
+The unused full-history page cache has since been removed. Recovery snapshots
+remain separate from native index invalidation; pagination uses only the native pager.
 
 - `remoteHistoryPager.test.ts`: recent/older absolute positions, exact order,
   concurrent pages, reconnect, invalidation, malformed envelopes/repeated cursors,
@@ -135,9 +134,9 @@ native index invalidation.
   required for Portable Fork, including imported prefixes and incomplete receipts.
 - `useDesktopState.test.ts`: `executeThreadRevert`, old absolute-index targets,
   fork-and-revert stages, restoration and history invalidation remain covered.
-- `appServerClient.test.ts`: retained full-read cache isolation and reverted-thread
-  invalidation remain covered. Those full reads are not the unsupported-server
-  pagination fallback.
+- `appServerClient.test.ts`: recovery snapshot invalidation on revert and active
+  runtime replacement remain covered. Native cache/race coverage remains in
+  `remoteHistoryPager.test.ts` and `remoteTransfers.benchmark.test.ts`.
 
 ## 4. Deleted-test audit
 

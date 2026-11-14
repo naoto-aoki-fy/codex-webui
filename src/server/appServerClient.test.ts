@@ -61,13 +61,12 @@ it('correlates concurrent replies and colliding server IDs, clears pending calls
   }
 })
 
-it('reuses the current runtime across middleware instances and retires legacy workers on version replacement', async () => {
+it('reuses the current runtime across middleware instances and disposes the active client on version replacement', async () => {
   const { createCodexBridgeMiddleware } = await import('./codexAppServerBridge')
   const scope = globalThis as typeof globalThis & { __codexRemoteSharedBridge__?: any }
   const previous = scope.__codexRemoteSharedBridge__
   const client = new AppServerClient()
   const dispose = vi.spyOn(client, 'dispose')
-  const worker = { dispose: vi.fn(), scheduleThreadQueueDrain: vi.fn(), processThreadQueue: vi.fn(), startQueuedTurn: vi.fn() }
   const runtime = { version: 'external-websocket-files-v2', appServer: client, methodCatalog: {} }
   scope.__codexRemoteSharedBridge__ = runtime
   try {
@@ -82,11 +81,8 @@ it('reuses the current runtime across middleware instances and retires legacy wo
     first.dispose()
     expect(dispose).not.toHaveBeenCalled()
     expect(scope.__codexRemoteSharedBridge__).toBe(runtime)
-    Object.assign(runtime, { version: 'legacy', backendQueueProcessor: worker })
+    Object.assign(runtime, { version: 'legacy' })
     const replacement = createCodexBridgeMiddleware()
-    expect(worker.dispose).toHaveBeenCalledOnce()
-    await worker.startQueuedTurn()
-    await expect(client.rpc('test/event', {})).rejects.toThrow('Retired app-server bridge')
     expect(scope.__codexRemoteSharedBridge__.appServer).not.toBe(client)
     const replacementRuntime = scope.__codexRemoteSharedBridge__
     expect(dispose).toHaveBeenCalledOnce()
@@ -98,25 +94,6 @@ it('reuses the current runtime across middleware instances and retires legacy wo
     client.dispose()
     scope.__codexRemoteSharedBridge__ = previous
   }
-})
-
-it('expires earlier-page reads after 30 seconds without expiring the fallback snapshot', async () => {
-  const client = new AppServerClient()
-  const read = vi.spyOn(client, 'rpc').mockResolvedValue({ thread: { id: 'ttl' } })
-  const now = vi.spyOn(Date, 'now').mockReturnValue(1000)
-  try {
-    expect(client.getLastThreadReadSnapshot('ttl')).toBeNull()
-    const snapshot = { thread: { id: 'ttl', turns: [] } }
-    client.storeThreadReadSnapshot('ttl', snapshot)
-    await client.readThreadForTurnPage('ttl')
-    now.mockReturnValue(30_999)
-    await client.readThreadForTurnPage('ttl')
-    expect(read).toHaveBeenCalledOnce()
-    now.mockReturnValue(31_000)
-    await client.readThreadForTurnPage('ttl')
-    expect(read).toHaveBeenCalledTimes(2)
-    expect(client.getLastThreadReadSnapshot('ttl')).toBe(snapshot)
-  } finally { now.mockRestore(); client.dispose() }
 })
 
 it('uses the injected journal without recording turn metadata without creating or connecting another runtime', async () => {
@@ -142,134 +119,14 @@ it('uses the injected journal without recording turn metadata without creating o
   } finally { client.dispose() }
 })
 
-function deferredRead() {
-  let resolve!: (value: unknown) => void
-  let reject!: (reason: Error) => void
-  const promise = new Promise<unknown>((yes, no) => { resolve = yes; reject = no })
-  return { promise, resolve, reject }
-}
-
-for (const invalidation of ['notification', 'snapshot'] as const) {
-  it(`prevents stale pagination writes after ${invalidation} invalidation`, async () => {
-    const client = new AppServerClient()
-    const internal = client as any
-    const old = deferredRead()
-    const fresh = deferredRead()
-    const rpc = vi.spyOn(client, 'rpc').mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise)
-    const invalidate = () => invalidation === 'snapshot'
-      ? client.storeThreadReadSnapshot('race', { thread: { id: 'race' } })
-      : internal.emitNotification({ method: 'turn/started', params: { threadId: 'race' } })
-    try {
-      const first = client.readThreadForTurnPage('race')
-      invalidate()
-      old.resolve('old')
-      expect(await first).toBe('old')
-      expect(internal.threadTurnPageReadCacheByThreadId.size).toBe(0)
-      const second = client.readThreadForTurnPage('race')
-      expect(rpc).toHaveBeenCalledTimes(2)
-      fresh.resolve('fresh')
-      expect(await second).toBe('fresh')
-      expect(await client.readThreadForTurnPage('race')).toBe('fresh')
-      expect(rpc).toHaveBeenCalledTimes(2)
-    } finally { client.dispose() }
-  })
-
-  it(`detaches stale promises on repeated ${invalidation} invalidations without deleting replacement reads`, async () => {
-    const client = new AppServerClient()
-    const internal = client as any
-    const reads = [deferredRead(), deferredRead(), deferredRead(), deferredRead()]
-    const rpc = vi.spyOn(client, 'rpc')
-    for (const read of reads) rpc.mockReturnValueOnce(read.promise)
-    const invalidate = () => invalidation === 'snapshot'
-      ? client.storeThreadReadSnapshot('race', {})
-      : internal.emitNotification({ method: 'turn/started', params: { threadId: 'race' } })
-    try {
-      const old = client.readThreadForTurnPage('race')
-      const independent = client.readThreadForTurnPage('other')
-      invalidate()
-      const middle = client.readThreadForTurnPage('race')
-      invalidate()
-      const fresh = client.readThreadForTurnPage('race')
-      const joined = client.readThreadForTurnPage('race')
-      expect(rpc).toHaveBeenCalledTimes(4)
-      reads[0]!.resolve('old')
-      reads[2]!.resolve('middle')
-      expect(await old).toBe('old')
-      expect(await middle).toBe('middle')
-      const stillJoined = client.readThreadForTurnPage('race')
-      expect(rpc).toHaveBeenCalledTimes(4)
-      reads[3]!.resolve('fresh')
-      reads[1]!.resolve('other')
-      expect(await Promise.all([fresh, joined, stillJoined, independent])).toEqual(['fresh', 'fresh', 'fresh', 'other'])
-      expect(internal.threadTurnPageReadPromiseByThreadId.size).toBe(0)
-      expect(await client.readThreadForTurnPage('other')).toBe('other')
-      expect(rpc).toHaveBeenCalledTimes(4)
-    } finally { client.dispose() }
-  })
-}
-
-for (const outcome of ['resolve', 'reject'] as const) {
-  it(`isolates ${outcome} completion from a disconnected generation and cleans up replacement reads`, async () => {
-    const client = new AppServerClient()
-    const internal = client as any
-    const old = deferredRead()
-    const fresh = deferredRead()
-    const rpc = vi.spyOn(client, 'rpc').mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise)
-    try {
-      const first = client.readThreadForTurnPage('generation')
-      const firstResult = outcome === 'reject' ? expect(first).rejects.toThrow('disconnected') : expect(first).rejects.toThrow('Retired app-server history read')
-      const generation = internal.connectionGeneration
-      // Invoke the actual transport disconnect callback without network timing.
-      // Resolve before disconnect to cover a reply queued for the next microtask.
-      if (outcome === 'resolve') old.resolve('old')
-      else internal.pending.set(99, { resolve: vi.fn(), reject: old.reject })
-      internal.transport.disconnected()
-      expect(internal.connectionGeneration).toBe(generation + 1)
-      expect(internal.threadTurnPageReadPromiseByThreadId.size).toBe(0)
-      const second = client.readThreadForTurnPage('generation')
-      await firstResult
-      expect(internal.threadTurnPageReadCacheByThreadId.size).toBe(0)
-      const joined = client.readThreadForTurnPage('generation')
-      expect(rpc).toHaveBeenCalledTimes(2)
-      fresh.resolve('new connection')
-      expect(await Promise.all([second, joined])).toEqual(['new connection', 'new connection'])
-      expect(internal.threadTurnPageReadPromiseByThreadId.size).toBe(0)
-      expect(internal.pending.size).toBe(0)
-    } finally { client.dispose() }
-  })
-}
-
-it('retains no pagination epoch bookkeeping for invalidated threads or rejected reads', async () => {
+it('discards fallback snapshots and buffered events on thread/reverted', () => {
   const client = new AppServerClient()
-  const internal = client as any
-  const rpc = vi.spyOn(client, 'rpc').mockRejectedValue(new Error('read failed'))
-  try {
-    for (let i = 0; i < 100; i++) {
-      const threadId = `ephemeral-${i}`
-      await expect(client.readThreadForTurnPage(threadId)).rejects.toThrow('read failed')
-      client.storeThreadReadSnapshot(threadId, {})
-    }
-    expect(rpc).toHaveBeenCalledTimes(100)
-    expect(internal.threadTurnPageReadPromiseByThreadId.size).toBe(0)
-    expect(internal.threadTurnPageReadCacheByThreadId.size).toBe(0)
-  } finally { client.dispose() }
-})
-
-it('discards fallback snapshots, buffered events and pending pages on thread/reverted', async () => {
-  const client = new AppServerClient()
-  const internal = client as any
-  const old = deferredRead()
-  vi.spyOn(client, 'rpc').mockReturnValueOnce(old.promise)
   try {
     client.storeThreadReadSnapshot('reverted', { thread: { id: 'reverted', turns: ['deleted'] } })
     const epoch = client.getSnapshotEpoch()
-    const pending = client.readThreadForTurnPage('reverted')
-    internal.emitNotification({ method: 'thread/reverted', params: { threadId: 'reverted' } })
+    ;(client as any).emitNotification({ method: 'thread/reverted', params: { threadId: 'reverted' } })
     expect(client.getSnapshotEpoch()).not.toBe(epoch)
     expect(client.getLastThreadReadSnapshot('reverted')).toBeNull()
     expect(client.getStreamEvents('reverted', 100)).toEqual([])
-    old.resolve('deleted')
-    await pending
-    expect(internal.threadTurnPageReadCacheByThreadId.has('reverted')).toBe(false)
   } finally { client.dispose() }
 })

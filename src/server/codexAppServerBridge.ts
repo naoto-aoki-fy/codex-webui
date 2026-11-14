@@ -472,18 +472,6 @@ function getSharedBridgeState(): SharedBridgeState {
     if (existing.version === SHARED_BRIDGE_VERSION && !existing.retired) {
       return existing
     }
-    // Old workers may be awaiting disk/RPC work when hot reload replaces the bridge.
-    // Prevent those continuations from scheduling or submitting another prompt.
-    const legacyWorker = (existing as SharedBridgeState & {
-      backendQueueProcessor?: { dispose(): void } & Record<string, unknown>
-    }).backendQueueProcessor
-    if (legacyWorker) {
-      legacyWorker.dispose()
-      for (const method of ['scheduleThreadQueueDrain', 'processThreadQueue', 'startQueuedTurn']) {
-        legacyWorker[method] = async () => undefined
-      }
-      existing.appServer.rpc = async () => { throw new Error('Retired app-server bridge') }
-    }
     disposeSharedBridgeState(existing)
   }
 

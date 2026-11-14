@@ -43,7 +43,7 @@ it('reports before/after large-file and long-history transfer measurements', asy
   const historyBefore = await run(async () => {
     for (let i = 0; i < 4; i++) await rpc('thread/read', { threadId: 'thread', includeTurns: true })
   })
-  const pager = new RemoteHistoryPager({ rpc, readThreadForTurnPage: () => rpc('thread/read', { includeTurns: true }), getConnectionGeneration: () => 1 })
+  const pager = new RemoteHistoryPager({ rpc, getConnectionGeneration: () => 1 })
   const historyAfter = await run(async () => {
     await pager.read('thread')
     for (const before of ['turn-990', 'turn-980', 'turn-970']) await pager.read('thread', before, 10)

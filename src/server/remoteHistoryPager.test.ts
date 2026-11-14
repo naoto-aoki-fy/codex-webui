@@ -18,9 +18,8 @@ function fixture(count = 1000) {
     bytes += Buffer.byteLength(JSON.stringify(result))
     return result
   })
-  const legacy = vi.fn(() => rpc('thread/read', { threadId: 'thread', includeTurns: true }))
-  const client = { rpc, getConnectionGeneration: () => generation, readThreadForTurnPage: legacy }
-  return { turns, rpc, legacy, client, get bytes() { return bytes }, reconnect: () => generation++ }
+  const client = { rpc, getConnectionGeneration: () => generation }
+  return { turns, rpc, client, get bytes() { return bytes }, reconnect: () => generation++ }
 }
 
 it('uses real upstream turn pagination and keeps exact indices without full item hydration', async () => {
@@ -34,7 +33,7 @@ it('uses real upstream turn pagination and keeps exact indices without full item
   expect(f.rpc.mock.calls.map(([method, p]) => [method, (p as any).itemsView])).toEqual([
     ['thread/read', undefined], ['thread/turns/list', 'notLoaded'], ['thread/turns/list', 'full'], ['thread/turns/list', 'full'],
   ])
-  expect(f.legacy).not.toHaveBeenCalled()
+  expect(f.rpc.mock.calls.some(([method, params]) => method === 'thread/read' && (params as any).includeTurns === true)).toBe(false)
   expect(f.bytes).toBeLessThan(Buffer.byteLength(JSON.stringify({ thread: { turns: f.turns } })) / 10)
 })
 
@@ -48,17 +47,17 @@ it('reports missing native pagination without reading full history, including af
   const pager = new RemoteHistoryPager(f.client)
   await expect(pager.read('thread')).rejects.toThrow('Upgrade Codex')
   await expect(pager.read('thread', 'turn-10')).rejects.toThrow('Upgrade Codex')
-  expect(f.legacy).not.toHaveBeenCalled()
+  expect(f.rpc.mock.calls.some(([method, params]) => method === 'thread/read' && (params as any).includeTurns === true)).toBe(false)
   f.reconnect()
   await expect(pager.read('thread')).rejects.toThrow('Upgrade Codex')
-  expect(f.legacy).not.toHaveBeenCalled()
+  expect(f.rpc.mock.calls.some(([method, params]) => method === 'thread/read' && (params as any).includeTurns === true)).toBe(false)
 })
 
 it.each(['Permission denied', 'App-server disconnected', 'Timeout'])('does not classify %s as unsupported or silently fetch full history', async message => {
   const f = fixture()
   f.rpc.mockRejectedValue(new Error(message))
   await expect(new RemoteHistoryPager(f.client).read('thread')).rejects.toThrow(message)
-  expect(f.legacy).not.toHaveBeenCalled()
+  expect(f.rpc.mock.calls.some(([method, params]) => method === 'thread/read' && (params as any).includeTurns === true)).toBe(false)
 })
 
 it('invalidates on changed history and rejects oversized/malformed pages and repeated cursors', async () => {
@@ -95,7 +94,7 @@ it('caps simultaneous index scans and discards invalidated work before requestin
     if (method === 'thread/read') { await barrier; return { thread: { id: 'thread', turns: [] } } }
     return { data: [], nextCursor: null }
   })
-  const pager = new RemoteHistoryPager({ rpc, getConnectionGeneration: () => 1, readThreadForTurnPage: vi.fn() })
+  const pager = new RemoteHistoryPager({ rpc, getConnectionGeneration: () => 1 })
   const pending = Array.from({ length: 16 }, (_, i) => pager.read(`thread-${i}`).catch(error => error))
   await expect(pager.read('overflow')).rejects.toThrow('16 concurrent indexes')
   expect(pager.getCacheStats().pending).toBe(16)
