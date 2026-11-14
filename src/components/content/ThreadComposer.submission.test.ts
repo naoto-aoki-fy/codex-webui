@@ -42,6 +42,7 @@ function mount(initial: Record<string, unknown> = {}) {
   const exports = { default: undefined as any }
   new Function('exports', 'require', code)(exports, (path: string) => {
     if (path === 'vue') return vue
+    if (path.endsWith('ComposerSearchDropdown.vue')) return { default: vue.defineComponent({ props: ['options', 'selectedValues', 'placeholder'], emits: ['toggle'], setup: (props, { emit }) => () => vue.h('skill-dropdown', { ...props, onToggle: (path: string, checked: boolean) => emit('toggle', path, checked) }) }) }
     if (path.endsWith('ComposerDropdown.vue')) return { default: vue.defineComponent({ props: ['options', 'modelValue', 'placeholder'], setup: props => () => vue.h('dropdown', { options: props.options, modelValue: props.modelValue, placeholder: props.placeholder }) }) }
     if (path.endsWith('.vue')) return { default: { render: () => null } }
     if (path.includes('useMobile')) return { useMobile: () => ({ isMobile: vue.ref(false) }) }
@@ -62,9 +63,70 @@ function mount(initial: Record<string, unknown> = {}) {
   cleanup.push(() => app.unmount())
   function find(n: Node, tag: string): Node | undefined { return n.tag === tag ? n : n.children.map(child => find(child, tag)).find(Boolean) }
   function findModel(n: Node): Node | undefined { return n.tag === 'dropdown' && n.props.placeholder === 'Model' ? n : n.children.map(findModel).find(Boolean) }
-  return { storage, exposed, submitted, props, selectedModels, model: () => findModel(root)!, submit: () => find(root, 'form')!.props.onSubmit({ preventDefault() {} }) }
+  function all(n: Node): Node[] { return [n, ...n.children.flatMap(all)] }
+  return { storage, exposed, submitted, props, selectedModels, nodes: () => all(root), model: () => findModel(root)!, submit: () => find(root, 'form')!.props.onSubmit({ preventDefault() {} }) }
 }
 const payload = { text: 'follow-up', imageUrls: ['data:image/png;base64,abc'], fileAttachments: [{ label: 'file', path: '/file', fsPath: '/file' }], skills: [{ name: 'skill', path: '/skill' }] }
+it('hides the skills selector by default and toggles it without losing selected chips or submission skills', async () => {
+  const skill = { name: 'review', description: 'Review changes', path: '/skills/review' }
+  const c = mount({ skills: [skill], reasoningEffortOptions: [{ value: 'high', label: 'High' }] })
+  const dropdown = () => c.nodes().find(n => n.tag === 'skill-dropdown')
+  const button = (label: string) => c.nodes().find(n => n.props['aria-label'] === label)!
+  const toggle = async () => {
+    button('Add attachments and settings').props.onClick()
+    await vue.nextTick()
+    const setting = button('Skills')
+    expect(setting.props['aria-checked']).toBe(!!dropdown())
+    setting.props.onClick()
+    await vue.nextTick()
+    expect(c.nodes().some(n => n.props.class === 'thread-composer-attach-menu')).toBe(false)
+  }
+  expect(dropdown()).toBeUndefined()
+  expect(c.model()).toBeDefined()
+  expect(c.nodes().some(n => n.tag === 'dropdown' && n.props.placeholder === 'Thinking')).toBe(true)
+  await toggle()
+  expect(dropdown()!.props.options).toEqual([expect.objectContaining({ value: skill.path, label: skill.name })])
+  dropdown()!.props.onToggle(skill.path, true)
+  await vue.nextTick()
+  await toggle()
+  expect(dropdown()).toBeUndefined()
+  expect(button('Remove skill review')).toBeDefined()
+  c.exposed.appendTextToDraft('Please review')
+  await vue.nextTick()
+  c.submit()
+  expect(c.submitted.mock.calls[0]![0].skills).toEqual([{ name: skill.name, path: skill.path }])
+  c.submitted.mock.calls[0]![1](false)
+  await toggle()
+  expect(dropdown()!.props.selectedValues).toEqual([skill.path])
+  dropdown()!.props.onToggle(skill.path, false)
+  await vue.nextTick()
+  expect(button('Remove skill review')).toBeUndefined()
+  dropdown()!.props.onToggle(skill.path, true)
+  await vue.nextTick()
+  await toggle()
+  button('Remove skill review').props.onClick()
+  await vue.nextTick()
+  expect(button('Remove skill review')).toBeUndefined()
+  expect(dropdown()).toBeUndefined()
+})
+
+it('keeps slash skill selection available while the selector is hidden', async () => {
+  const c = mount({ skills: [{ name: 'review', description: 'Review changes', path: '/skills/review' }] })
+  c.exposed.appendTextToDraft('/review')
+  await vue.nextTick()
+  const input = c.nodes().find(n => n.tag === 'textarea')!
+  input.props.onInput()
+  await vue.nextTick()
+  const suggestion = c.nodes().find(n => n.props.class?.includes('thread-composer-file-mention-row'))!
+  suggestion.props.onMousedown({ preventDefault() {} })
+  await vue.nextTick()
+  expect(c.nodes().some(n => n.props['aria-label'] === 'Remove skill review')).toBe(true)
+  expect(c.nodes().some(n => n.tag === 'skill-dropdown')).toBe(false)
+  c.exposed.appendTextToDraft('Please review')
+  await vue.nextTick()
+  c.submit()
+  expect(c.submitted.mock.calls[0]![0].skills).toEqual([{ name: 'review', path: '/skills/review' }])
+})
 it('preserves text, images, files, skills and persisted draft when the app rejects a rendered submission', async () => {
   const c = mount()
   c.exposed.hydrateDraft(payload)
