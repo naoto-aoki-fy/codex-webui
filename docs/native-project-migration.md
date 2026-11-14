@@ -63,6 +63,19 @@ or cleanup here deletes or rewrites that data. Native listing's pre-existing
 injected-only import discovery limitation remains documented in
 [the maintenance evidence](maintenance-cleanup.md#portable-discoverability-acceptance-comparison).
 
+## Native pin operations
+
+Pins use `thread/section/move` with the built-in Pinned section ID
+`01984de2-8f74-7c91-a3b2-5c5e937cf318`; unpin sends `sectionId: null`.
+The old PUT contract is removed. New pins use `beforeThreadId` for top insertion.
+Acknowledged moves update the UI without a duplicate list request; section
+notifications and reconnect refresh native membership. Pinning replaces a
+thread's section, consistent with native single-section semantics.
+
+Pin reads paginate serially at 100 rows per request, with no separate writable
+pin store or background polling. Legacy moves belong only to the old migration
+revision described below; the current reader rejects unmigrated pins.
+
 ## Reproducible migration source and environment
 
 The exact migration source is Git commit

@@ -8,7 +8,6 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | [Existing workspace and native conversation workflows](native-workspace-workflows.md) |
-| [Existing workspace and native conversation workflows](native-workspace-workflows.md) |
 | --- |
 | [New-thread composer requires a folder](composer-requires-folder.md) |
 | [Explicit folders and removal of legacy Chats](remove-projectless-chats.md) |
