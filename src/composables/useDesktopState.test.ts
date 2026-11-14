@@ -1423,5 +1423,5 @@ it('preserves inactive legacy project preference data during startup', () => {
   for (const [key, value] of Object.entries(original)) expect(window.localStorage.getItem(key)).toBe(value)
   expect(window.localStorage.removeItem).not.toHaveBeenCalledWith('codex-web-local.project-order.v1')
   expect(window.localStorage.removeItem).not.toHaveBeenCalledWith('codex-web-local.project-display-name.v1')
-  state.dispose()
+  state.stopPolling()
 })

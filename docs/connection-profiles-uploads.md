@@ -4,6 +4,14 @@ Use `--connection-profile workstation-b` or `CODEXUI_CONNECTION_PROFILE=workstat
 
 The default profile is `legacy`. Existing workspace roots, labels, active roots, project ordering, pinned-thread migration state and application thread-index files remain in their original local state directory and belong only to this profile. Named profiles start empty under `CODEX_HOME/codexapp-profiles/<sha256-profile-id>/`. This migration is repeatable and performs no copying, renaming or deletion. Existing atomic replacement and interprocess file locking apply to named profile stores. Authentication session state stays global in A's local state directory; Codex authentication belongs to B. Global browser appearance and reasoning preferences remain shared. Remote browser context, selected threads, token usage, per-thread model/mode choices and composer drafts use profile-specific storage keys; legacy keys stay assigned only to `legacy`. On detecting a different profile in the notification ready frame, the UI reloads once to discard all remote caches and outstanding callbacks. A `connection-profile` URL query hint prevents reload loops when browser storage is disabled. Returning to a profile restores its saved drafts; drafts are never copied to another profile.
 
+Project identity, names, roots, positions and thread associations now belong to
+the connected App Server's native Projects registry. Local profile state retains
+legacy snapshots and the scoped migration receipt, not a parallel writable
+registry. Use distinct connection profiles when retargeting independent hosts;
+endpoint/home strings are not server instance UUIDs. See
+[native Project migration and compatibility](native-project-migration.md).
+
+
 ## Upload inventory and capacity
 
 Attachments are written on B under `<CODEXUI_REMOTE_UPLOAD_DIR or remote codexHome>/codexapp-uploads`. The 20 MiB per-file limit remains unchanged. Automatic deletion is disabled and retention is indefinite, including interrupted writes and uncertain submissions.
