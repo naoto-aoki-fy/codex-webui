@@ -459,10 +459,6 @@ export function useDesktopState() {
   const selectedReasoningEffort = computed(() => readReasoningEffortForThread(selectedThreadId.value))
   const selectedSpeedMode = ref<SpeedMode>('standard')
   const codexCliMissingError = ref('')
-  try {
-    window.localStorage.removeItem('codex-web-local.project-order.v1')
-    window.localStorage.removeItem('codex-web-local.project-display-name.v1')
-  } catch { /* Storage may be unavailable. */ }
   const projectDisplayNameById = ref<Record<string, string>>({})
   const workspaceRootsState = ref<WorkspaceRootsState | null>(null)
   const loadedVersionByThreadId = ref<Record<string, string>>({})

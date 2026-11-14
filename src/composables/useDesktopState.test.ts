@@ -1412,3 +1412,16 @@ describe('history discovery across pagination and workspace removal', () => {
     restored.stopPolling()
   })
 })
+
+it('preserves inactive legacy project preference data during startup', () => {
+  const original = {
+    'codex-web-local.project-order.v1': '["/old-b","/old-a"]',
+    'codex-web-local.project-display-name.v1': '{"/old-a":"Original project name"}',
+  }
+  installTestWindow(original)
+  const state = useDesktopState()
+  for (const [key, value] of Object.entries(original)) expect(window.localStorage.getItem(key)).toBe(value)
+  expect(window.localStorage.removeItem).not.toHaveBeenCalledWith('codex-web-local.project-order.v1')
+  expect(window.localStorage.removeItem).not.toHaveBeenCalledWith('codex-web-local.project-display-name.v1')
+  state.dispose()
+})
