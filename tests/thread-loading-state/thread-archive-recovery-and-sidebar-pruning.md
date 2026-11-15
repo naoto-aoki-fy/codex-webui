@@ -49,3 +49,17 @@ Cleanup: restore fixture state. No permanent deletion or archive index is added.
 Performance: zero startup archive calls; one 50-row RPC per requested page, serial
 requests and deduplicated rows. Restore uses one mutation and the existing forced
 active-list refresh; no new subscriptions or polling. Live latency was not measured.
+
+
+## Preserve post-restore native metadata
+
+Setup: fixture returning an unarchive response followed by a fresher active-list
+row with a different title and a native read-state revision.
+Actions: restore the conversation and finish the active-list refresh.
+Expected: the fresher title and native read receipt remain; an older restored row
+outside the returned first page still appears under its native project.
+Cleanup: reset fixture responses. Automated regression: `useDesktopState.test.ts`.
+Live limitation: an empty disposable thread on codex-web-local/0.169.0 restored
+successfully but was omitted by the native active list after refresh. Do not add
+a client index or generate a paid turn to conceal it; repeat normal-history
+acceptance with explicitly designated nonempty test history.

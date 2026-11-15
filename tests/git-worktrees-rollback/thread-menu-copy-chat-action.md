@@ -53,3 +53,14 @@ Cleanup: delete downloaded fixture files. Export does not mutate native history.
 Performance: no eager history reads; one initial normal detail read and one bounded
 10-turn page per iteration. A 1,000-page / 33,554,432-code-unit text safety ceiling fails rather
 than truncates. No new event listeners. Live large-history latency was not measured.
+
+
+## Large command-output Markdown fencing
+
+Setup: credential-free conversation fixture with a completed command whose visible
+output contains 150,000 separate backtick runs (300,000 characters total).
+Actions: export the conversation to Markdown.
+Expected: export succeeds without an argument-count/call-stack error; command
+output is preserved inside a fence longer than any contained backtick run.
+Cleanup: delete the fixture download. Automated reproduction and regression:
+`conversationExport.test.ts`; browser workload: `scripts/measure-conversation-tools.cjs`.
