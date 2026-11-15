@@ -236,3 +236,17 @@ it('renders native Fast availability and updates it on provider/model switching'
   expect(c.nodes().some(n => n.text === 'Fast mode availability is unknown')).toBe(true)
   expect(c.props.selectedSpeedMode).toBe('standard')
 })
+it('keeps unknown slash text as a normal submission and records only accepted prompt text', async()=>{
+ const c=mount();c.exposed.appendTextToDraft('/unknown-command');await vue.nextTick();c.submit()
+ expect(c.submitted.mock.calls[0]![0].text).toBe('/unknown-command')
+ expect(c.storage.has('codex-web-local.prompt-library.v1')).toBe(false)
+ c.submitted.mock.calls[0]![1](true)
+ expect(JSON.parse(c.storage.get('codex-web-local.prompt-library.v1')!).history).toEqual(['/unknown-command'])
+})
+it('opens command discovery without submitting or losing attachments',async()=>{
+ const c=mount();c.exposed.hydrateDraft({...payload,text:'/prompts'});await vue.nextTick();c.submit()
+ expect(c.submitted).not.toHaveBeenCalled();expect(c.nodes().some(n=>n.props['aria-label']==='Remove image')).toBe(false)
+ c.exposed.appendTextToDraft('after command');await vue.nextTick();c.submit()
+ expect(c.submitted.mock.calls[0]![0].fileAttachments).toEqual(payload.fileAttachments)
+ expect(c.submitted.mock.calls[0]![0].skills).toEqual(payload.skills)
+})

@@ -92,3 +92,16 @@ No shell/PTY/local process control or bulk clean API. `pnpm exec vitest run src/
 `node scripts/test-approved-processes.cjs`: lazy reads, native scope, missing output,
 explicit termination, empty/error, no model interrupt; 3 sizes × both themes passed.
 See manual test for performance bounds. Live NOT RUN; risk medium.
+
+## 25 validation
+
+Implemented profile-local text presets (create/edit/delete/clear), accepted-prompt
+history (deduplicated, delete/clear), editable draft population and supported slash
+discovery/aliases. Unknown slash text remains a normal prompt; installed skills
+retain suggestion precedence, including a skill named review. No replay/queue.
+`pnpm exec vitest run src/utils/promptLibrary.test.ts src/components/content/ThreadComposer.submission.test.ts`: 12 passed; typecheck passed.
+`node scripts/test-approved-prompts.cjs`: create/edit/reload/selection, history,
+unknown slash, action alias without mutation, explicit clear; all sizes/themes passed.
+Storage failures/credential-like and oversized prompt handling tested. Performance
+bounds in manual test. Live NOT RUN; risk medium. Browser profile is the scope;
+this is not a server-synchronized preset facility.

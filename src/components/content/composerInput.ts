@@ -1,3 +1,4 @@
+import { recordSubmittedPrompt } from '../../utils/promptLibrary'
 import type { Ref } from 'vue';
 import { computed, nextTick, ref } from 'vue';
 import { searchComposerFiles, type ComposerFileSuggestion } from '../../api/codexGateway';
@@ -10,12 +11,14 @@ import { createComposerSettings } from './composerSettings';
 export function createComposerInput(deps: {
     props: Readonly<ComposerProps>;
     settings: ReturnType<typeof createComposerSettings>;
-    emit: ((evt: "submit", payload: SubmitPayload, settle: (accepted: boolean) => void) => void) & ((evt: "interrupt") => void) & ((evt: "edit-goal") => void) & ((evt: "update:selected-collaboration-mode", mode: CollaborationModeKind) => void) & ((evt: "update:selected-model", modelId: string) => void) & ((evt: "update:selected-reasoning-effort", effort: string) => void) & ((evt: "update:selected-speed-mode", mode: SpeedMode) => void);
+    emit: ((evt: "submit", payload: SubmitPayload, settle: (accepted: boolean) => void) => void) & ((evt: "thread-action", action: string) => void) & ((evt: "interrupt") => void) & ((evt: "edit-goal") => void) & ((evt: "update:selected-collaboration-mode", mode: CollaborationModeKind) => void) & ((evt: "update:selected-model", modelId: string) => void) & ((evt: "update:selected-reasoning-effort", effort: string) => void) & ((evt: "update:selected-speed-mode", mode: SpeedMode) => void);
     attachments: ReturnType<typeof createComposerAttachments>;
     isAttachMenuOpen: Ref<boolean, boolean>;
     isMobile: Ref<boolean, boolean>;
 }) {
     const draft = ref('');
+    const promptLibraryOpen = ref(false);
+    const promptStorageNotice = ref('');
     const slashQuery = ref<string | null>(null);
     const slashStart = ref(0);
     const slashCursor = ref(0);
@@ -25,12 +28,17 @@ export function createComposerInput(deps: {
         const commands: SlashSuggestion[] = [
             { name: 'goal', description: 'Set or manage the goal for this thread' },
             { name: 'plan', description: 'Toggle plan mode for this thread' },
+            { name: 'prompts', description: 'Open editable text presets and recent prompts' },
+            { name: 'history', description: 'Open recent submitted prompts (editable, never auto-send)' },
+            { name: 'presets', description: 'Manage text presets' },
+            { name: 'help', description: 'Discover supported commands' },
+            ...(deps.props.activeThreadId === '__new-thread__' ? [] : ['review','compact','diff','processes'].map(name => ({name,description:`Open ${name} controls; does not execute automatically`}))),
         ].filter(item => item.name.includes(query));
         const skills = (deps.props.skills ?? []).filter(skill => skill.enabled !== false && skill.name.trim() && skill.path.trim())
             .map(skill => ({ name: skill.displayName || skill.name, description: skill.description, skill }))
             .filter(item => `${item.name} ${item.skill.name} ${item.description} ${item.skill.path}`.toLowerCase().includes(query))
             .sort((a, b) => Number(!a.name.toLowerCase().startsWith(query)) - Number(!b.name.toLowerCase().startsWith(query)) || a.name.localeCompare(b.name));
-        return [...commands, ...skills].slice(0, 20);
+        return [...skills, ...commands].slice(0, 20);
     });
     function updateSlashSuggestions() {
         const cursor = inputRef.value?.selectionStart ?? draft.value.length;
@@ -46,6 +54,10 @@ export function createComposerInput(deps: {
         if (item.skill) {
             if (!deps.settings.selectedSkills.value.some(skill => skill.path === item.skill!.path))
                 deps.settings.selectedSkills.value.push(item.skill);
+            draft.value = before + after;
+        }
+        else if (['prompts','history','presets','help','review','compact','diff','processes'].includes(item.name)) {
+            openCommand(item.name);
             draft.value = before + after;
         }
         else if (item.name === 'plan') {
@@ -100,10 +112,19 @@ export function createComposerInput(deps: {
     const hasSubmitContent = computed(() => draft.value.trim().length > 0 || deps.attachments.selectedImages.value.length > 0 || deps.attachments.fileAttachments.value.length > 0);
     const draftLineCount = computed(() => draft.value.split('\n').length);
     const hasExpandedComposerToggle = computed(() => isComposerExpanded.value || draftLineCount.value >= 6 || isDraftOverflowing.value);
+    function openCommand(name: string) {
+        if (['prompts','history','presets','help'].includes(name)) promptLibraryOpen.value = true;
+        else deps.emit('thread-action', name);
+    }
+    function populatePrompt(text: string) { draft.value = text; slashQuery.value = null; promptLibraryOpen.value = false; nextTick(() => inputRef.value?.focus()); }
     function onSubmit(): void {
         const text = draft.value.trim();
         if (!canSubmit.value)
             return;
+        if (/^\/(prompts|presets|history|help|review|compact|diff|processes)$/.test(text) &&
+            (!['/review','/compact','/diff','/processes'].includes(text) || deps.props.activeThreadId !== '__new-thread__')) {
+            openCommand(text.slice(1)); draft.value = ''; slashQuery.value = null; return;
+        }
         if (text === '/goal' && deps.props.activeThreadId !== '__new-thread__') {
             deps.emit('edit-goal');
             clearPersistedDraftForThread(deps.props.activeThreadId);
@@ -128,6 +149,7 @@ export function createComposerInput(deps: {
             isSubmitting.value = false;
             if (!accepted)
                 return;
+            promptStorageNotice.value = recordSubmittedPrompt(text);
             // Acceptance may arrive after a thread switch or after the user edits again.
             if (deps.props.activeThreadId !== threadId || JSON.stringify(getCurrentDraftPayload()) !== snapshot)
                 return;
@@ -418,6 +440,7 @@ export function createComposerInput(deps: {
         return ext === 'md' || ext === 'mdx';
     }
     return {
+promptLibraryOpen, promptStorageNotice, populatePrompt,
 draft,
 slashQuery,
 slashIndex,
