@@ -4,6 +4,7 @@ const {setup,assert}=require('./approved-fixture.cjs')
  const browser=await chromium.launch({headless:true})
  for(const width of [1280,375,768]){
   const page=await browser.newPage({viewport:{width,height:width===375?812:width===768?1024:900}})
+  await page.addInitScript(()=>Object.defineProperty(Crypto.prototype,'randomUUID',{value:undefined,configurable:true}))
   let pending=[],mode='ok',release
   const {calls,errors,emit}=await setup(page,async body=>{
    if(body.method==='thread/queue/list')return mode==='unsupported'?{status:502,json:{error:'Native queue unavailable'}}:{json:{result:{data:pending,nextCursor:null}}}
