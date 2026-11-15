@@ -687,7 +687,11 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
               return
             }
           }
-		          throw error
+          if (body.method === 'account/usage/read') {
+            setJson(res, 502, { error: getErrorMessage(error, 'Account usage unavailable'), ...(typeof asRecord(error)?.code === 'number' ? { rpcCode: asRecord(error)!.code } : {}) })
+            return
+          }
+          throw error
 		        }
         const trimmedResult = trimThreadTurnsInRpcResult(body.method, rpcResult)
         const errorMergedResult = THREAD_METHODS_WITH_TURNS.has(body.method)
@@ -884,7 +888,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
       const message = getErrorMessage(error, 'Unknown bridge error')
-      setJson(res, 502, { error: message, ...(typeof asRecord(error)?.code === 'number' ? { rpcCode: asRecord(error)!.code } : {}) })
+      setJson(res, 502, { error: message })
     }
   }
 
