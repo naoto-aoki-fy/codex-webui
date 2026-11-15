@@ -146,7 +146,7 @@ it('keeps the app-server thread list usable when SQLite history supplementation 
   await expectPreservedFiles()
 })
 
-it('explicitly rebuilds attachment-only history without sending or changing session logs', async () => {
+it('rejects retired index rebuild without sending or changing session logs', async () => {
   const text = '# Files mentioned by the user:\n\n## notes.txt: /uploads/notes.txt\n\n## My request for Codex:\n\n\n'
   rpc.mockImplementation(async (method) => method === 'thread/read' ? { thread: {
     id: 'historical-thread', cwd: project, path: sessionPath, source: 'cli', modelProvider: 'openai',
@@ -154,8 +154,8 @@ it('explicitly rebuilds attachment-only history without sending or changing sess
     turns: [{ id: 'accepted-turn', items: [{ type: 'userMessage', content: [{ type: 'text', text }] }] }],
   } } : { data: [], nextCursor: null })
   const rebuilt = await request('/codex-api/thread-index/rebuild', 'POST', {})
-  expect(rebuilt.res.statusCode).toBe(501)
-  expect(rebuilt.json.error).toContain('native App Server thread history')
+  expect(rebuilt.res.statusCode).toBe(404)
+  expect(rebuilt.json.error).toBe('Not found')
   expect(sqlite).not.toHaveBeenCalled()
   expect(rpc.mock.calls.some(([method]) => method === 'turn/start')).toBe(false)
   await expectPreservedFiles()

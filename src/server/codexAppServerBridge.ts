@@ -6,7 +6,6 @@ import { WORKFLOW_CAPABILITIES, classifyCapabilityError } from './remoteCapabili
 import { stageRemoteUpload, inspectRemoteUploads } from './remoteUploads.js'
 import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
-export { refreshChatgptAuthTokensForExternalAuth } from './externalAuthRefresh.js'
 import { normalizeStringArray } from './workspaceRootsStore.js'
 export type { WorkspaceRootsState } from './workspaceRootsStore.js'
 import { createThreadPresentationStore } from './threadPresentationStore.js'
@@ -545,17 +544,11 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
       const url = new URL(req.url, 'http://localhost')
 
-      if (await handleAccountRoutes(req, res, url, { appServer })) {
+      if (await handleAccountRoutes(req, res, url)) {
         return
       }
 
       if (await handleSkillsRoutes(req, res, url, { appServer, readJsonBody })) {
-        return
-      }
-
-      // Native history cannot be rebuilt by scanning this host.
-      if (req.method === 'POST' && url.pathname === '/codex-api/thread-index/rebuild') {
-        setJson(res, 501, { error: 'Local session scanning is unavailable. Use native App Server thread history.' })
         return
       }
 
