@@ -20,6 +20,13 @@ function server() {
 }
 beforeEach(() => { disk.state = {} })
 describe('portable conversation transfer', () => {
+  it('returns the source provider from the existing history read for destination preselection', async () => {
+    const rpc = server()
+    rpc.mockImplementationOnce(async () => ({ thread: { cwd: '/workspace', modelProvider: 'source-provider', turns: [turn(0)] } }))
+    const prepared = await createConversationTransfers(rpc).prepare('unselected-source')
+    expect(prepared.sourceModelProvider).toBe('source-provider')
+    expect(rpc.mock.calls).toEqual([['thread/read', { threadId: 'unselected-source', includeTurns: true }]])
+  })
   it('allowlists only ordinary user and assistant text, silently excluding all other content', () => {
     const history = [{ items: [
       ...turn(0).items,

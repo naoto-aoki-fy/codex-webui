@@ -67,7 +67,7 @@ export function createConversationTransfers(rpc: Rpc) {
       if (typeof thread.cwd !== 'string' || !thread.cwd.trim()) throw new Error('The source has no working directory. Select a source with an existing workspace before transferring.')
       const id = randomUUID()
       await save(id, { sourceId, cwd: thread.cwd, ...(thread.projectId ? { projectId: thread.projectId } : {}), messages, warnings, stage: 'prepared' })
-      return { id, warnings, messageCount: messages.length }
+      return { id, warnings, messageCount: messages.length, sourceModelProvider: typeof thread.modelProvider === 'string' ? thread.modelProvider : undefined }
     },
     async status(id: string) {
       const transfer = (await transfers())[id]

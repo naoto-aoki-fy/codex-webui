@@ -133,6 +133,36 @@ Q/C while also advertising Q/A, so accidental source-model inheritance fails.
 Cleanup: restore any skill enable/disable changes made during this test and
 archive disposable destinations. The dialog does not write provider defaults.
 
+## Portable Fork initial provider selection (CAP-002)
+
+Setup: use a stopped disposable source on provider A and an app-server with
+available providers in each order below. For credential-free coverage, start the
+current dev server on 4173 and run `node scripts/test-fork-methods.cjs`.
+
+1. Open Portable Fork from both the sidebar and a response. After history
+   preparation finishes, expect `[A]` to select A, `[A, B, C]` to select B, and
+   `[C, A, B]` to select C. Open the provider menu and verify its order is unchanged.
+2. Expect Create conversation to be enabled when the selected provider has a
+   valid default model. Merely opening the dialog must not create a destination
+   or generate a turn. With no available providers, confirmation stays disabled.
+3. Manually select A or another provider. Expect that choice to remain selected
+   until the dialog closes. Confirm once and verify creation uses that provider's
+   default model. The source history and draft must remain unchanged.
+4. Cancel and reopen from each entry point. Expect the initial selection to be
+   recalculated rather than reusing the previous manual choice. Repeat from a
+   sidebar source different from the open conversation; use the source provider.
+5. Cancel while history preparation is pending. Expect no destination, generation
+   or selection applied to a subsequently opened dialog. Verify the actual
+   provider picker and selection in light and dark themes.
+
+Cleanup: restore test provider configuration and archive disposable destinations.
+No provider defaults are persisted by the dialog; cancel creates no destination.
+
+Performance audit: preselection scans the existing provider options once (O(P))
+and uses the source provider returned by the existing history-preparation read.
+It adds no RPCs, history reads, timers, subscriptions or cache invalidation.
+Automated checks use mocked providers; live inference latency is not measured.
+
 ## Ordinary text-only transfer
 
 Setup: create a mixed-history source with user prompts, assistant replies,
