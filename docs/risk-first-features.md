@@ -671,3 +671,41 @@ The standalone read-only gate passed 1,480 unit tests/two skipped, type checks,
 production build, integration fixture and six browser views, including native
 identity/termination, output bounds/redaction, unknown outcomes and deletion/send
 barriers. No native command was executed against a real App Server.
+
+### 26 — supported POSIX standalone command workflow
+
+After the read-only gate, the native per-command `sandboxPolicy` contract was
+extended to explicit Full access. `CommandExecRequestProcessor` validates it via
+`permissions.set_legacy_sandbox_policy`; no thread/global policy is written.
+Fresh `configRequirements/read` must positively permit the built-in policy;
+unknown/managed-profile constraints withhold broader access. Each Full request
+requires exact cwd entry, command/scope confirmation and a fresh policy/context
+recheck. Read-only resets as the default after inspection. UI distinguishes the
+native full-access request from actual managed/OS restrictions and explicitly
+states that exit/timeout/termination cannot roll back effects.
+
+An existing chat draft is preserved and cannot steer while a command is pending.
+If another client starts a model turn, its separate Stop control remains available;
+a focused complete-composer test covers both disabled submission and interruption.
+The flag defaults off for every existing consumer. Native process termination and
+model interruption remain different operations, as required.
+
+Full risk 4/5/5/5=24. Full-access initial scope 4/5/5/4=23, residual 3/5/5/4=22:
+confirmation and exact native identity reduce accidental submission, but commands
+can irreversibly affect App Server resources. No live full-access command runs in
+validation. POSIX local contexts only; Windows sandbox process-control limitations
+are explicit in native `command_exec.rs` tests, and remote/mixed/unknown contexts
+are rejected rather than mapped onto similarly named local paths. No PTY, stdin,
+command scheduler, extra subscription, shell executable fallback or persisted
+execution history is added. Three lazy reads per inspection, three rechecks and
+one execution, one optional exact termination. Output/command previews retain at
+most 36,000 characters plus bounded metadata. Broader native shell/platform or
+out-of-band process-status contracts remain outside this delivered scope.
+
+The per-command Full-access gate passed 1,484 unit tests/two skipped, type checks,
+production build, integration fixture and CLI loading. Read-only and Full UI flows
+both passed light/dark at desktop/375×812/768×1024; Full views have separate
+screenshots. Native definition/source inspection, typed-cwd and changed-policy
+failure injection establish the grant boundary. The deletion browser gate passed
+again afterward. Screenshot review corrected stale read-only wording and retired
+process identity during a new inspection; both are regression-tested.
