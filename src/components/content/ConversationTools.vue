@@ -49,7 +49,7 @@ const reviewTargetOptions = [
                 <MemoryStatus :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" />
                 <SubagentsPanel :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" />
                 <HooksInspection :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" />
-                <ConfigInspection :cwd="cwd" :epoch="epoch" :disconnected="disconnected" />
+                <ConfigInspection :cwd="cwd" :epoch="epoch" :disconnected="disconnected" :blocked="inProgress||sending||incomplete||queue.writing.value||compaction.busy.value||review.busy.value" />
                 <ImportPreview :cwd="cwd" :epoch="epoch" :disconnected="disconnected" />
                 <PermissionsInspection :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" :security="security" :changes="permissionChanges" :blocked="inProgress||sending||incomplete||compaction.busy.value||review.busy.value||queue.writing.value" />
                 <DeniedActions :thread-id="threadId" :rows="deniedActions" />

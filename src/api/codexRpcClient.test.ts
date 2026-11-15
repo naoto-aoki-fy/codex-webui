@@ -12,3 +12,8 @@ describe('RPC error evidence', () => {
     await expect(rpcCall('thread/read')).resolves.toEqual({ ok: true })
   })
 })
+it('keeps config error detail opt-in and off unrelated/default consumers',async()=>{
+ const request=vi.fn().mockImplementation(async()=>new Response(JSON.stringify({result:{}})));vi.stubGlobal('fetch',request)
+ await rpcCall('config/value/write',{});await rpcCall('config/value/write',{}, {configWriteErrors:true});await rpcCall('thread/read',{}, {configWriteErrors:true})
+ expect(request.mock.calls[0]![1].headers).toEqual({'Content-Type':'application/json'});expect(request.mock.calls[1]![1].headers['X-Codex-Config-Write-Errors']).toBe('1');expect(request.mock.calls[2]![1].headers).toEqual({'Content-Type':'application/json'})
+})

@@ -159,3 +159,27 @@ Screenshots: `output/playwright/risk-03-changes-{1280,375,768}-{light,dark}.png`
 Performance: one native write, existing native settings event and no history
 reload for completion; one explicit requirements read, no additional connection,
 polling or startup calls. Live permission-effect verification NOT RUN.
+
+## 23 — Active user/profile model defaults
+
+Read configuration and expand Active user configuration model defaults. Confirm
+the server-supplied file, active profile (or explicit base-user scope) and version.
+Edit only a model identifier or low/medium/high default effort, then confirm.
+No legacy profile table, secret, unknown key, other file or experimental flag is
+edited. Model availability still follows the native catalog. A project layer can
+override the saved value; existing threads retain their overrides.
+
+Double-click: one write. CAS/version conflict is rejected with no replay. Lost
+response: outcome unknown, disable more writes, read actual configuration and
+explicitly acknowledge inspection. Verify saved-layer value after success and
+after refresh. Missing/ambiguous active layers disable writes. Change connection
+or project during reads/writes: discard stale results and report uncertainty.
+Cleanup: fixture config only; restore disposable fixture values if manual.
+
+Commands: `pnpm exec vitest run src/api/userConfigDefaults.test.ts src/api/configInspection.test.ts src/api/codexRpcClient.test.ts src/api/mcpConfiguration.test.ts`,
+`pnpm run typecheck`, `pnpm run build`, `pnpm run test:integration:fixture`,
+`PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-config-changes.cjs`.
+Screenshots: `output/playwright/risk-23-changes-{1280,375,768}-{light,dark}.png`.
+Performance: one targeted write and one post-write config read; no polling,
+automatic reload, thread resume or extra startup requests. Generic default config
+error responses remain unchanged, verified alongside the new opt-in response.

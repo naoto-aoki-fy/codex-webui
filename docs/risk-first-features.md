@@ -323,13 +323,15 @@ historical context provenance/persistence and project/environment transition wor
 a UI-only path swap or implicit Fork cannot preserve the required semantics.
 No cwd mutation is exposed. Full risk remains 23, shipped risk none, live NOT RUN.
 
-**21 trust/enablement withheld:** the supported release exposes `hooks/list`, not
-a Hook enablement/trust mutation. Hook keys include source/trust/hash provenance
-but are not documented writable config paths. Generic config writes cannot
-safely map every project/plugin/managed Hook to its trust store and preserve
-unrelated definitions/secrets. No trust-file editing, Hook execution or imported
-Hook trust workaround is added. Inspection remains PARTIAL; full risk 23,
-inspection residual 8, live NOT RUN.
+**21 initial mutation gate:** no dedicated Hook mutation API exists. Further
+inspection of the native config writer subsequently established the targeted
+`hooks.state.<native key>` format, hash splitting and field-by-field precedence
+(`config/hook_config.rs`, `hooks/config_rules.rs`, `config_manager_service.rs`).
+This supersedes the initial assumption that keys could not be safely addressed.
+Implementation is deferred until after the versioned targeted-config write gate
+(23); this sequence deviation is due to that verified technical dependency.
+Managed/plugin Hook ambiguity and loaded-thread versus saved-state behavior still
+require a narrower scope. No Hook has been executed or trusted during validation.
 
 ### 03 — PARTIAL, explicit thread permission mutations delivered
 
@@ -361,3 +363,34 @@ restrictions, rejection, unknown/reconciliation and send blocking. RPC-code
 preservation is scoped to this new write and generic errors remain unchanged.
 One native write per confirmation, no additional startup reads or subscriptions.
 Live **NOT RUN**; no real thread permissions were changed.
+
+### 23 — PARTIAL, targeted native model-default writes delivered
+
+Only `model` and `model_reasoning_effort` (low/medium/high subset) can be edited,
+with an explicit exact-file/profile/scope confirmation and native expected-version
+CAS. The native active user/profile layer is selected from supplied identity;
+ambiguous/missing identities disable writing. Unknown keys/secrets are never
+round-tripped. Other files and excluded feature settings are untouched.
+
+The supported release **rejects legacy `profiles.*` writes**
+(`config_rpc.rs::config_batch_write_rejects_legacy_profile_tables`), whereas
+`config_manager_service_tests.rs::write_value_defaults_to_selected_user_config_path`
+verifies writes to the selected profile-v2 file. The implementation uses that
+active file, not legacy tables, and separately displays saved and effective
+project settings. Existing thread overrides are not changed. Broader profile
+lifecycle/switching and experimental-feature mutation remain withheld; no runtime
+upgrade, reload, generic editor or blocked-feature workaround is added.
+
+Requested/acknowledged/verified/rejected/unknown states are distinct. Fresh read
+and explicit acknowledgment are required after unknown writes. A config-error
+header opt-in preserves native numeric errors for this new consumer only;
+ordinary config callers (including existing MCP/Speed) retain their generic HTTP
+contract. Both paths are asserted by the external-server fixture.
+
+Full risk 24; limited pre-safeguard 3/4/3/4 = **18**, residual 2/4/3/4 = **17**.
+Eleven focused tests (including previous MCP behavior), type checks, production
+build, fixture and six browser views passed. Browser checks cover profile-file
+identity, one-key preservation, version rejection, saved/effective mismatch,
+refresh persistence and unknown reconciliation. Performance: two explicit reads,
+one write and one verification config read; no new startup calls/subscriptions.
+Live **NOT RUN**; only test configuration data was mutated.
