@@ -45,3 +45,8 @@ Automation: `PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/t
 Screenshots: `output/playwright/risk-07-management-{1280,375,768}-{light,dark}.png`.
 The integration fixture checks all five queue writes preserve native RPC codes
 while unrelated generic errors retain their established body shape.
+
+HTTP browser compatibility: disable `crypto.randomUUID` while retaining native
+`getRandomValues`, then submit and reconcile a queued prompt. A UUID v4 correlation
+ID is still generated. If both APIs are unavailable, fail before a queue write.
+`src/utils/clientMessageId.test.ts` and the queue browser suite cover this path.

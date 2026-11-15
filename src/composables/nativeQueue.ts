@@ -3,6 +3,7 @@ import {rpcCall,type RpcNotification} from '../api/codexRpcClient'
 import {queueEntry,queuePage,queuedInput,type QueueEntry} from '../api/nativeQueue'
 import type {SubmitPayload} from '../components/content/composerContracts'
 import {nativeWriteRejected,nativeWriteError} from '../api/nativeWriteOutcome'
+import {clientMessageId} from '../utils/clientMessageId'
 export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;ready:()=>boolean;blocked:()=>boolean;active?:()=>boolean;refreshHistory?:(id:string)=>Promise<void>},request:typeof rpcCall=rpcCall){
  const rows=ref<QueueEntry[]>([]),cursor=ref<string|null>(null),loaded=ref(false),stale=ref(false),reading=ref(false),writing=ref(false),status=ref(''),readError=ref(''),operationThread=ref(''),uncertainByThread=ref<Record<string,string>>({})
  const uncertain=computed(()=>uncertainByThread.value[deps.selected.value]??'')
@@ -25,7 +26,7 @@ export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;r
  async function add(payload:SubmitPayload){
   if(writing.value||!available.value||deps.blocked())throw new Error('Read the native queue and resolve pending actions before queuing')
   if(Object.keys(uncertainByThread.value).length>=20)throw new Error('Resolve uncertain queue operations before submitting more')
-  const id=deps.selected.value,token=++writeJob,clientId=crypto.randomUUID(),input=queuedInput(payload)
+  const id=deps.selected.value,token=++writeJob,clientId=clientMessageId(),input=queuedInput(payload)
   writing.value=true;operationThread.value=id;status.value='Requesting native queue submission…'
   try{const result=await request<{queuedSubmission:unknown}>('thread/queue/add',{threadId:id,input,clientUserMessageId:clientId});if(token!==writeJob)throw new Error('Queue outcome unknown after connection change')
    const row=queueEntry(result?.queuedSubmission);if(row.clientId!==clientId)throw new Error('Queue acknowledgment identity mismatch')

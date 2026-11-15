@@ -471,3 +471,14 @@ residual 1/2/1/2 = **8**. Three focused units, type checks and six browser views
 passed, including malformed/unknown/empty/unset/error and delayed disconnect.
 Two lazy reads initially, one per additional catalog page; twenty models/page,
 100 retained models, no histories, polling or subscriptions. Live **NOT RUN**.
+
+### Queue browser-runtime correction
+
+HTTP LAN browsers may expose `getRandomValues` without secure-context-only
+`randomUUID`. Queue correlation IDs now use either native UUID generation or
+128 strong random bits formatted as UUID v4. Missing randomness rejects before
+submission; no timestamp/random-text approximation or dependency is introduced.
+Two compatibility units plus nine queue tests, type checks and the six-view
+queue browser suite with `randomUUID` disabled passed. Performance: sixteen random
+bytes per explicit submission, no startup request/storage/subscription change.
+Native queue IDs remain opaque correlation strings, not credentials.
