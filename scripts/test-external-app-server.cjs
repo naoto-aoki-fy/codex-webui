@@ -25,7 +25,7 @@ async function run() {
     socket.on('message', raw => {
       const frame = JSON.parse(String(raw)); frames.push(frame)
       if (!frame.method || frame.method === 'initialized') return
-      if (frame.method === 'account/usage/read' || frame.method === 'account/login/start' || frame.method === 'account/login/cancel' || frame.method === 'thread/compact/start' || frame.method === 'thread/delete' || frame.method === 'review/start' || frame.method.startsWith('thread/queue/') || frame.method === 'thread/settings/update' || frame.method === 'config/value/write' || frame.method === 'maintenance/unknown' || frame.method === 'generate-thread-title') {
+      if (frame.method === 'command/exec' || frame.method === 'command/exec/terminate' || frame.method === 'account/usage/read' || frame.method === 'account/login/start' || frame.method === 'account/login/cancel' || frame.method === 'thread/compact/start' || frame.method === 'thread/delete' || frame.method === 'review/start' || frame.method.startsWith('thread/queue/') || frame.method === 'thread/settings/update' || frame.method === 'config/value/write' || frame.method === 'maintenance/unknown' || frame.method === 'generate-thread-title') {
         socket.send(JSON.stringify({ id: frame.id, error: { code: -32601, message: 'Method not found' } }))
         return
       }
@@ -89,9 +89,9 @@ async function run() {
           assert.match(missing.headers.get('content-type'), /application\/json/)
           if (method !== 'HEAD') assert.deepEqual(await missing.json(), { error: 'Not found' })
         }
-        const call = async (method, configWriteErrors=false) => {
+        const call = async (method, configWriteErrors=false, commandErrors=false) => {
           const response = await fetch(url + '/codex-api/rpc', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', ...(configWriteErrors?{'X-Codex-Config-Write-Errors':'1'}:{}) },
+            method: 'POST', headers: { 'Content-Type': 'application/json', ...(configWriteErrors?{'X-Codex-Config-Write-Errors':'1'}:{}), ...(commandErrors?{'X-Codex-Command-Errors':'1'}:{}) },
             body: JSON.stringify({ method, params: method === 'getAuthStatus' ? { includeToken: true } : { threadId: 'fixture', name: 'Native title' } }),
           })
           return { status: response.status, body: await response.json() }
@@ -104,6 +104,7 @@ async function run() {
         }
         assert.deepEqual(await call('config/value/write'),{status:502,body:{error:'Method not found'}})
         assert.deepEqual(await call('config/value/write',true),{status:502,body:{error:'Method not found',rpcCode:-32601}})
+        for(const method of ['command/exec','command/exec/terminate']){assert.deepEqual(await call(method),{status:502,body:{error:'Method not found'}});assert.deepEqual(await call(method,false,true),{status:502,body:{error:'Method not found',rpcCode:-32601}})}
         assert.equal(active.status, 200)
         assert.deepEqual(await call('generate-thread-title'), { status: 502, body: { error: 'Method not found' } })
         const auth = await call('getAuthStatus')
@@ -145,7 +146,8 @@ async function run() {
         assert(server.address(), 'fixture listener survives web shutdown')
       }
     }
-    assert(!frames.some(f => f.method === 'command/exec' || f.method === 'model/providerCatalog'))
+    assert(!frames.some(f => f.method === 'model/providerCatalog'))
+    assert(frames.filter(f=>f.method==='command/exec').every(f=>!f.params?.command),'Command error-contract fixtures never execute commands')
     assert.equal(frames.filter(f => f.method === 'initialize').length, connections)
     console.log('PASS initialization count:', connections, '; independent fixture listener survives both shutdowns')
   } finally {

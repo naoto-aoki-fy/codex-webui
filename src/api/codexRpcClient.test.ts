@@ -17,3 +17,8 @@ it('keeps config error detail opt-in and off unrelated/default consumers',async(
  await rpcCall('config/value/write',{});await rpcCall('config/value/write',{}, {configWriteErrors:true});await rpcCall('thread/read',{}, {configWriteErrors:true})
  expect(request.mock.calls[0]![1].headers).toEqual({'Content-Type':'application/json'});expect(request.mock.calls[1]![1].headers['X-Codex-Config-Write-Errors']).toBe('1');expect(request.mock.calls[2]![1].headers).toEqual({'Content-Type':'application/json'})
 })
+it('opts native standalone command errors in without changing ordinary command callers',async()=>{
+ const fetch=vi.fn(async(_url:unknown,_init?:RequestInit)=>new Response(JSON.stringify({result:{}}),{status:200}));vi.stubGlobal('fetch',fetch)
+ await rpcCall('command/exec',{command:['git','status']});expect(fetch.mock.calls[0]?.[1]?.headers).toEqual({'Content-Type':'application/json'})
+ await rpcCall('command/exec',{command:['/bin/sh','-c','pwd']},{commandErrors:true});expect(fetch.mock.calls[1]?.[1]?.headers).toEqual({'Content-Type':'application/json','X-Codex-Command-Errors':'1'})
+})

@@ -42,7 +42,7 @@ estimates are recorded with delivered results. These are engineering judgments.
 | 07 | 20 | 4/4/4/4 = 20 | Explicit native queue add/list, preserving structured inputs; 3/3/2/3 = 14 | Native persistence only; immediate steering remains default, no uncertain write replay. |
 | 13 | 22 | 4/5/4/4 = 22 | One explicit remote worktree creation; 3/4/3/4 = 18 | Existing remote fixed-argv Git, no force/reset/cleanup; disposable repository and reconciliation fixtures. |
 | 14 | 23 | 5/5/4/4 = 23 | Verify thread settings persistence and historical cwd identity | Native future-cwd update alone does not preserve historical relative file references or project membership. |
-| 26 | 24 | 5/5/5/4 = 24 | Deliberate bounded native user-shell request after lifecycle verification | Native shell can be unsandboxed; never execute on WebUI host, never imply thread sandbox guarantees. |
+| 26 | 24 | 4/5/5/5 = 24 | Deliberate bounded native user-shell request after lifecycle verification | Native shell can be unsandboxed; never execute on WebUI host, never imply thread sandbox guarantees. |
 | 10 | 21 | 5/5/5/5 = 25 | Exact native deletion impact and confirmation, last | Native subtree deletion, imported history, active work and event-confirmed completion must be accounted for. |
 | 33 | Unassessed | 3/4/3/4 = 18 | Native Daybreak preference/status inspection; 2/2/1/2 = 9 | Release includes daybreakEnabled and access-program tests. Preference is not account entitlement or a security scan service. |
 
@@ -636,3 +636,38 @@ A focused regression verifies zero requests for the replacement conversation.
 The existing per-request write guards were already present. This changes no
 startup requests, subscriptions, retained state or mutation semantics; successful
 preview still uses three reads. The final verification pass includes this fix.
+
+### 26 — PARTIAL milestone, verified standalone read-only command path
+
+This supersedes the initial blocker for the distinct thread-shell escape hatch.
+A final alternative-contract check established `command/exec` with caller-supplied
+connection-scoped process ID, final buffered response only after process exit, and
+exact `command/exec/terminate`. Native `command_exec_processor.rs` enforces the
+local environment and explicit sandbox policy through native managed permissions.
+No argv convention is guessed: POSIX sh/bash/zsh use their supported `-c` form,
+with the exact native shell path returned by `environment/info {local}`. Thread
+metadata must positively identify a single local environment/cwd; absent/mixed/
+remote-only contexts are withheld. No WebUI-host executable, PTY or stdin session.
+
+The initial path requires confirmation, rechecks thread/shell/cwd, applies native
+read-only/no-network permissions, 30-second timeout and 64 KiB capture/stream.
+The final RPC establishes actual exit; termination acknowledgment alone cannot.
+Output is escaped/redacted/bounded to 12,000 chars per stream and held in memory,
+not appended to chat or persistent history. There is no extra event subscription.
+Internal/transport errors remain unknown; no replay or cross-connection control.
+Known pending commands block conflicting chat/Fork/Revert/queue/settings/auth and
+deletion work. Native command error codes are opt-in; ordinary Git RPC consumers
+retain their exact generic error contract.
+
+Initial limited risk 4/4/3/4=19, residual 3/4/3/4=18; full risk remains 24. Native
+source and focused tests establish lifecycle/identity/sandbox parameters. Reads
+are two per inspection, two rechecks, then one execution and optional explicit
+termination; retained output ≤24,000 chars, no startup requests/polling. Live
+NOT RUN. This lower-risk alternative was discovered after the original deletion
+implementation: the ordering deviation is explicit, and the deletion conflict
+guard/acceptance gate is rerun last before completion.
+
+The standalone read-only gate passed 1,480 unit tests/two skipped, type checks,
+production build, integration fixture and six browser views, including native
+identity/termination, output bounds/redaction, unknown outcomes and deletion/send
+barriers. No native command was executed against a real App Server.
