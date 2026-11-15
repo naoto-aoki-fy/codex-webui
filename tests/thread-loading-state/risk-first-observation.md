@@ -191,3 +191,28 @@ Only verified validation/method errors are definitive rejections. Inject a very
 large error containing credential assignments: at most 2,000 characters are
 processed/rendered and recognizable credentials are redacted. Generic RPC error
 objects remain unchanged for unrelated consumers.
+
+## 21 — Future-load Hook policy changes
+
+Read loaded Hooks, then Read saved Hook policies. Only complete user/project
+command/MCP definitions expose actions. Check actual loaded state separately from
+the selected user/profile file's saved overrides. Prepare enable/disable or trust
+approval; review the exact definition, origin, hash, file and effects, then confirm.
+One native key/field is saved with expected-version CAS. Saving trust preserves
+enablement; disabling preserves trust. Other Hooks/config/secrets remain intact.
+
+No reload or execution is requested. Loaded threads can retain their prior state;
+do not claim they were disabled immediately. Managed/plugin Hooks and revocation
+remain outside this limited editor. Change the loaded hash during preflight:
+reject before writing. Reject CAS; lose a persisted-write response; emit disconnect
+or navigate during preflight. Never send a later write to a replacement owner.
+Read saved state and explicitly acknowledge unknown outcomes before further edits.
+The UI never calls cwd-based Hook listing, whose native plugin discovery can
+migrate legacy trust. Cleanup: fixture policies only; no real Hook executes.
+
+Commands: `pnpm exec vitest run src/api/hookPolicy.test.ts src/api/hooksInspection.test.ts`,
+`pnpm run typecheck`, `pnpm run build`, `pnpm run test:integration:fixture`,
+`PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-hook-policies.cjs`.
+Screenshots: `output/playwright/risk-21-policies-{1280,375,768}-{light,dark}.png`.
+Performance: at most 100 loaded declarations, one policy config read and three
+calls per save (native preflight/write/saved verification), no scans or listeners.

@@ -412,3 +412,36 @@ permission/queue/config browser matrices passed. Config browser failure injectio
 uses a coded internal error **after** a simulated persisted write. No replay or
 false rejection occurs. Performance: bounded error processing, no additional RPC,
 polling, persistence or subscription. Live evidence remains NOT RUN.
+
+### 21 — PARTIAL, future-load policy management delivered
+
+The official TUI (`tui/src/hooks_rpc.rs::write_hook_trusts`) and native
+`hooks_list.rs::config_batch_write_toggles_user_hook` establish targeted
+`hooks.state` upserts. The UI now saves enable/disable or exact-definition trust
+approval for reviewed **user/project** command/MCP Hook definitions, with native
+file identity/version CAS and one native key/field per write. Unrelated enablement,
+trust and configuration remain untouched. Managed/plugin/unknown/oversized or
+incompletely described definitions stay read-only. Trust revocation is withheld:
+removing an override can expose inherited trust and no verified explicit
+revocation/tombstone contract is used.
+
+The scope deliberately saves policy for future native loads. Loaded-thread
+enabled/trust state remains separately visible; saving never claims immediate
+runtime disablement. No automatic global reload or Hook execution occurs.
+Native cwd-based plugin catalog discovery can migrate legacy plugin trust
+baselines (`hooks/engine/discovery.rs`, `plugin_trust.rs`), so this UI **only**
+uses the loaded-thread Hook inventory and safe config reads, not that catalog.
+Before writing it rechecks the exact loaded key/hash and discards stale ownership.
+Approval shows definition, origin, hash and affected user/profile file, then
+requires explicit confirmation. Unknown writes require a fresh saved-state read
+and explicit acknowledgment, with no replay.
+
+This follow-up occurs after 23 because its native config identity/version/error
+contract is a prerequisite. Full risk 23; initial limited scope 3/5/3/4 = **20**,
+residual 2/5/3/4 = **19**. Eight focused tests, full working-tree suite (1,445
+passed), type checks, production build, integration fixture and six browser views
+passed. Tests cover exact identity/hash, changed definitions, policy preservation,
+saved-versus-loaded differences, confirmation, coded internal unknowns and no
+reload/execution. One saved-policy read, one preflight thread inventory read, one
+targeted write and one saved verification read per action; no startup request,
+polling, extra subscription or project/plugin scan. Live **NOT RUN**.
