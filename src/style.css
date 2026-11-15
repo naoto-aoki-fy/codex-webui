@@ -1302,3 +1302,8 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .working-tree-panel button { margin: .2rem; text-align: left; }
 .working-tree-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20rem; overflow: auto; }
 :root.dark .feature-panel { background: #18181b; color: #d4d4d8; border-color: #3f3f46; }
+
+.native-thread-actions { max-height: 40vh; overflow: auto; overflow-wrap: anywhere; }
+.native-thread-actions textarea { width: 100%; min-height: 4rem; color: inherit; background: transparent; border: 1px solid currentColor; }
+.feature-panel button { border: 1px solid #a1a1aa; border-radius: .4rem; padding: .2rem .5rem; margin: .15rem; }
+.feature-panel button:disabled { opacity: .5; }

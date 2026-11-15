@@ -1,3 +1,4 @@
+import { createThreadReview } from './threadReview'
 import { createThreadCompaction } from './threadCompaction'
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
 import { appendDiagnosticWarning, type DiagnosticWarning } from '../diagnostics'
@@ -234,8 +235,14 @@ export function useDesktopState() {
 
   const diagnosticWarnings = ref<DiagnosticWarning[]>([])
   const operationEpoch = ref(0)
+  const review = createThreadReview({ epoch: operationEpoch, selected: selectedThreadId,
+    blocked: () => inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value ||
+      history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
+    ready: () => transportState.value !== 'disconnected',
+    interrupt: () => turns.interruptSelectedThreadTurn(),
+  })
   const compaction = createThreadCompaction({ epoch: operationEpoch, selected: selectedThreadId,
-    blocked: () => inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value ||
+    blocked: () => inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || review.busy.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
     refresh: id => history.loadMessages(id, { force: true }),
@@ -1646,6 +1653,7 @@ export function useDesktopState() {
   }
 
   function applyRealtimeUpdates(notification: RpcNotification): void {
+    review.observe(notification)
     compaction.observe(notification)
     if (notification.method === 'warning') diagnosticWarnings.value = appendDiagnosticWarning(diagnosticWarnings.value, notification.params, notification.atIso)
     if (notification.method === 'turn/completed' || notification.method === 'error') {
@@ -2746,7 +2754,7 @@ export function useDesktopState() {
     archiveThreadById,
     restoreThreadById,
     operationEpoch,
-    compaction,
+    compaction, review,
     diagnosticWarnings,
     renameThreadById,
     forkThreadById,
@@ -2755,7 +2763,7 @@ export function useDesktopState() {
     executeThreadRevert,
 
     sendMessageToSelectedThread: (...args: Parameters<typeof turns.sendMessageToSelectedThread>) => {
-      if (compaction.selectedBusy.value) return Promise.reject(new Error('Wait for native compaction to finish.'))
+      if (compaction.selectedBusy.value || review.selectedBusy.value) return Promise.reject(new Error('Wait for the native conversation action to finish.'))
       return turns.sendMessageToSelectedThread(...args)
     },
     sendMessageToNewThread: turns.sendMessageToNewThread,

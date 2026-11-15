@@ -687,7 +687,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
               return
             }
           }
-          if (['account/usage/read', 'thread/compact/start'].includes(body.method)) {
+          if (['account/usage/read', 'thread/compact/start', 'review/start'].includes(body.method)) {
             setJson(res, 502, { error: getErrorMessage(error, 'Account usage unavailable'), ...(typeof asRecord(error)?.code === 'number' ? { rpcCode: asRecord(error)!.code } : {}) })
             return
           }

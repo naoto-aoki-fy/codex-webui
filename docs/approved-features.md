@@ -70,3 +70,16 @@ is added for compaction only; unrelated generic errors retain their contract.
 `node scripts/test-approved-compaction.cjs`: acknowledgment/completion, duplicate
 and sending guards, unsupported, active-turn guard; 3 sizes × both themes passed.
 See manual test for code-path performance audit. Live NOT RUN; risk medium.
+
+## 01 validation
+
+Implemented four native inline review targets, submission/progress, bounded native
+entry/result history rows, and explicit existing turn interruption. Active turns,
+compaction, incomplete imports and disconnects block submission; pending review
+blocks overlapping composer input. Generation metadata remains native evidence.
+`pnpm exec vitest run src/composables/threadReview.test.ts src/composables/threadCompaction.test.ts src/api/normalizers/executionDetails.test.ts src/composables/useDesktopState.test.ts`: 68 passed.
+Typecheck passed. `node scripts/test-approved-review.cjs`: target/progress/results,
+interruption, reopened history, unsupported; all sizes/themes passed. Compaction
+browser rerun passed after allowing fixture readiness before action. A late failed
+compaction history refresh is now epoch-guarded. See manual test for performance.
+Live NOT RUN; risk medium. Only inline delivery is supported at 0.169.0.
