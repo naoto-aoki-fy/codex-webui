@@ -55,8 +55,18 @@ and bundled method metadata do not guarantee UI support or live server capabilit
 | Limited | Web-search mode control is not exposed: scoped effective-setting evidence is not validated; see [conversation tools](docs/conversation-tools.md) |
 | Removed | OpenRouter/Zen/custom provider proxies, local Codex process management and automatic authentication |
 | Removed | Automation management, deferred prompt queue, built-in tunnels, Open Terminal action, ZIP import/export, external skill catalog/install UI, Telegram integration |
-| Not surfaced | Dedicated code-review workflow (`review/start`); generic RPC and protocol definitions remain |
+| Implemented | Idle-only native inline code review and manual context compaction, with observed lifecycle outcomes |
+| Implemented | Collapsed MCP/Web search execution details, remote working-tree snapshots and bounded lazy patches, native background-process list/exact termination |
+| Implemented | Profile-scoped text presets/recent accepted prompts, supported command discovery/aliases, native structured App references |
+| Partial | Native memory readiness/selected summary; base-user MCP enablement scalar editing; vertical-only curated plugin browser; Remote Control status/registered clients |
+| Blocked in approved scope | Isolated side chat; additional skill roots/installation/removal without safe native ownership |
 | Implemented | Split-host project filesystem, Git, uploads and previews through App Server APIs; no shared filesystem required |
+
+The optional conversation tools, Apps picker, prompt library and Remote Control view
+load through existing async-component boundaries when opened. Reads remain manual;
+no new startup RPCs or polling are added. Review/compaction use the existing desktop
+notification owner; unknown mutation outcomes are never automatically replayed.
+See [approved feature scopes, evidence and verification](docs/approved-features.md).
 
 The Skills route manages already installed skills; installation is external.
 See [installed skills](docs/installed-skills.md). Removed UI does not imply removal

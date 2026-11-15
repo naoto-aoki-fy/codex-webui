@@ -8,6 +8,8 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
+| [Current remote Git working tree](current-working-tree.md) |
+| [Dedicated native inline review](native-review.md) |
 | [Header branch management removed](start-new-thread-header-git-branch-dropdown.md) |
 | [Retired branch dropdown checks](header-git-branch-dropdown-with-commit-reset.md) |
 | [Feature: Rollback API/UI no longer requires turn index in rollback payload](rollback-api-ui-no-longer-requires-turn-index-in-rollback-payload.md) |
