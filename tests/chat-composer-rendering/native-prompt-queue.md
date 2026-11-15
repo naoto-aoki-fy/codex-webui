@@ -30,3 +30,18 @@ Automation: `pnpm exec vitest run src/composables/nativeQueue.test.ts src/compon
 Screenshots: `output/playwright/risk-07-{1280,375,768}-{light,dark}.png`.
 Performance audit is recorded in `docs/risk-first-features.md`; native long-running
 queue execution has not been measured live.
+
+Management gate: edit the first plain-text input and confirm image/Skill/App
+references remain exact. Rich-span/unknown input editing must be disabled. Move
+the second pending entry up only after the full list is loaded. Confirm removing
+one exact entry; false deletion means already absent, not cancellation of running
+work. Confirm starting an entry only while idle and inspect its returned native
+turn identity and normal lifecycle. Native rejection disables stale actions;
+transport loss remains unknown with no replay. Test selection/disconnect while
+mutations are pending. Native concurrent edits have no CAS revision contract;
+do not promise conflict-free multi-client editing.
+
+Automation: `PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-queue-management.cjs`.
+Screenshots: `output/playwright/risk-07-management-{1280,375,768}-{light,dark}.png`.
+The integration fixture checks all five queue writes preserve native RPC codes
+while unrelated generic errors retain their established body shape.

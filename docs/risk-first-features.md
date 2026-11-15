@@ -246,3 +246,25 @@ read, one write and one reconciliation read per accepted add; 20 rows/page,
 100 displayed rows, bounded previews/attachment retention. Residual initial
 scope 2/3/2/3 = **13**. Editing/deletion/reordering/start follow separately.
 Live **NOT RUN**; only synthetic queued prompts were used.
+
+### 07 — IMPLEMENTED within the native queue contract
+
+Native plain-text editing (other structured input preserved), confirmed exact-ID
+removal, complete-list move-up reordering and confirmed idle-thread start are now
+delivered. Rich text elements/unknown inputs and oversized retained input are
+previewable but cannot be lossily edited. Reorder requires the entire bounded
+native list; the server independently requires every queued ID exactly once.
+Start reports the native turn identity and reconciles through existing history
+ownership; normal events establish completion. No model turn is started during
+development. Concurrent native changes invalidate editing/action snapshots.
+
+Native coded rejections are distinct from unknown transport outcomes. RPC code
+preservation was extended only to these five new queue writes; unrelated generic
+RPC error bodies remain unchanged and are verified in the external-server fixture.
+Residual risk 2/3/3/3 = **14**. Native update has no revision/CAS field: simultaneous
+external-client edits are subject to native semantics; stale observed snapshots
+are disabled, not silently merged. Queue state is never replaced with a browser
+registry. Eight queue unit tests, eleven composer regressions, type checks,
+production build, integration fixture and six management browser views passed.
+No new persistent connection/subscription; actions use one write and one lazy
+queue reconciliation read (start also reconciles history once). Live **NOT RUN**.

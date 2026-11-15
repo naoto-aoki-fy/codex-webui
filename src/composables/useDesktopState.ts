@@ -257,6 +257,8 @@ export function useDesktopState() {
     refresh: id => history.loadMessages(id, { force: true }),
   })
   const nativeQueue = createNativeQueue({epoch:operationEpoch,selected:selectedThreadId,
+    active:()=>inProgressById.value[selectedThreadId.value]===true,
+    refreshHistory:id=>history.loadMessages(id,{force:true}),
     ready:()=>transportState.value!=='disconnected',
     blocked:()=>isRollingBack.value||compaction.busy.value||review.busy.value||turns.isSendingMessage.value||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
