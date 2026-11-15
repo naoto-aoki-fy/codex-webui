@@ -1,3 +1,4 @@
+import { createThreadCompaction } from './threadCompaction'
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
 import { appendDiagnosticWarning, type DiagnosticWarning } from '../diagnostics'
 import { createDesktopConnection } from './desktopConnection'
@@ -233,6 +234,13 @@ export function useDesktopState() {
 
   const diagnosticWarnings = ref<DiagnosticWarning[]>([])
   const operationEpoch = ref(0)
+  const compaction = createThreadCompaction({ epoch: operationEpoch, selected: selectedThreadId,
+    blocked: () => inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value ||
+      history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
+    ready: () => transportState.value !== 'disconnected',
+    refresh: id => history.loadMessages(id, { force: true }),
+  })
+
   const connection = createDesktopConnection({
     invalidateReadJobs() { operationEpoch.value++; diagnosticWarnings.value = [] },
     get history() { return history; },
@@ -1638,6 +1646,7 @@ export function useDesktopState() {
   }
 
   function applyRealtimeUpdates(notification: RpcNotification): void {
+    compaction.observe(notification)
     if (notification.method === 'warning') diagnosticWarnings.value = appendDiagnosticWarning(diagnosticWarnings.value, notification.params, notification.atIso)
     if (notification.method === 'turn/completed' || notification.method === 'error') {
       const params = asRecord(notification.params)
@@ -2737,6 +2746,7 @@ export function useDesktopState() {
     archiveThreadById,
     restoreThreadById,
     operationEpoch,
+    compaction,
     diagnosticWarnings,
     renameThreadById,
     forkThreadById,
@@ -2744,7 +2754,10 @@ export function useDesktopState() {
     forkThreadFromTurn,
     executeThreadRevert,
 
-    sendMessageToSelectedThread: turns.sendMessageToSelectedThread,
+    sendMessageToSelectedThread: (...args: Parameters<typeof turns.sendMessageToSelectedThread>) => {
+      if (compaction.selectedBusy.value) return Promise.reject(new Error('Wait for native compaction to finish.'))
+      return turns.sendMessageToSelectedThread(...args)
+    },
     sendMessageToNewThread: turns.sendMessageToNewThread,
     interruptSelectedThreadTurn: turns.interruptSelectedThreadTurn,
     setSelectedCollaborationMode,

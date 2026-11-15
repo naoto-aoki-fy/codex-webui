@@ -263,6 +263,12 @@
               </div>
 
               <div class="composer-container">
+                <details class="feature-panel native-thread-actions">
+                  <summary>Conversation actions</summary>
+                  <button type="button" :disabled="compaction.busy.value || isSelectedThreadInProgress || isSendingMessage || isSelectedThreadImportIncomplete || transportState === 'disconnected'" @click="compaction.run">Compact conversation</button>
+                  <p>Manual native context compaction. Available while idle; visible and imported history is retained.</p>
+                  <p v-if="compaction.thread.value === selectedThreadId" role="status">{{ compaction.status.value }}</p>
+                </details>
                 <WorkingTreePanel :cwd="composerCwd" :epoch="operationEpoch" />
                 <ThreadGoalPanel
                   ref="threadGoalPanelRef"
@@ -279,7 +285,7 @@
                 <ThreadComposer
                   v-if="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
-                  :disabled="isSelectedThreadImportIncomplete"
+                  :disabled="isSelectedThreadImportIncomplete || compaction.selectedBusy.value"
                   :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
                   :collaboration-modes="availableCollaborationModes"
@@ -434,6 +440,7 @@ const {
   archiveThreadById,
   restoreThreadById,
   operationEpoch,
+  compaction,
   diagnosticWarnings,
   forkThreadById,
   forkNativeThreadById,
