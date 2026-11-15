@@ -22,3 +22,13 @@ it('clones native project roots and metadata before sharing cached state', () =>
   expect(state.nativeProjects![0]!.roots[0]!.path).toBe('/a')
   expect(copy.nativeProjects![0]!.metadata).not.toBe(state.nativeProjects![0]!.metadata)
 })
+
+it.each([undefined, null, false, 42, 'root', [], {}, { order: null }])('defaults missing or malformed root data in %j', payload => {
+  expect(normalizeWorkspaceRootsState(payload)).toEqual({ order: [] })
+})
+
+it('deduplicates exact roots before normalizing paths and preserves ordering and case', () => {
+  const order = [' /b ', '/a', '/b', '/a', '', null, 42, ' ', 'C:\\Root', 'c:\\root', '\\\\?\\C:\\Root']
+  const expected = ['/b', '/a', '/b', '', 'C:\\Root', 'c:\\root', 'C:\\Root']
+  expect(normalizeWorkspaceRootsState({ order }).order).toEqual(expected)
+})
