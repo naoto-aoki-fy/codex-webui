@@ -70,5 +70,6 @@ const reviewTargetOptions = [
                 </fieldset>
                 <NativeShellPanel :thread-id="threadId" :epoch="epoch" :shell="shell" :ensure-shell="ensureShell" :blocked="disconnected||inProgress||sending||incomplete||compaction.busy.value||review.busy.value||queue.writing.value" />
                 </fieldset>
-                <PermanentDeletion :thread-id="threadId" :epoch="epoch" :deletion="deletion" :ensure-deletion="ensureDeletion" :has-draft="hasDraft" :blocked="disconnected||inProgress||sending||incomplete||compaction.busy.value||review.busy.value||queue.writing.value||!!shell?.selectedBlocking.value" />
+                <p v-if="shell?.blocking.value" class="feature-panel" role="status">Permanent deletion waits while a standalone command is pending or uncertain. Inspect its Standalone native command controls first.</p>
+                <PermanentDeletion :thread-id="threadId" :epoch="epoch" :deletion="deletion" :ensure-deletion="ensureDeletion" :has-draft="hasDraft" :blocked="disconnected||inProgress||sending||incomplete||compaction.busy.value||review.busy.value||queue.writing.value||!!shell?.blocking.value" />
 </template>

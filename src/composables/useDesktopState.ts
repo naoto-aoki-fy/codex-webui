@@ -251,7 +251,7 @@ export function useDesktopState() {
   }
   const nativeDeletion=shallowRef<import('./threadDeletion').ThreadDeletion|null>(null)
   async function ensureNativeDeletion(){const epoch=operationEpoch.value,owner=connection.lifecycleGeneration,module=await import('./threadDeletion');if(epoch!==operationEpoch.value||owner!==connection.lifecycleGeneration)return null
-    if(!nativeDeletion.value)nativeDeletion.value=module.createThreadDeletion({epoch:operationEpoch,selected:selectedThreadId,ready:()=>transportState.value!=='disconnected',blocked:()=>nativeShell.value?.selectedBlocking.value||nativeAuthenticationBlocked.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||turns.isSendingMessage.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.blocking.value||(approvals.pendingServerRequestsByThreadId.value[selectedThreadId.value]?.length??0)>0})
+    if(!nativeDeletion.value)nativeDeletion.value=module.createThreadDeletion({epoch:operationEpoch,selected:selectedThreadId,ready:()=>transportState.value!=='disconnected',blocked:()=>nativeShell.value?.blocking.value||nativeAuthenticationBlocked.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||turns.isSendingMessage.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.blocking.value||(approvals.pendingServerRequestsByThreadId.value[selectedThreadId.value]?.length??0)>0})
     return nativeDeletion.value
   }
   const nativeAuthentication=shallowRef<import('./nativeAuthentication').NativeAuthentication|null>(null)
