@@ -1296,3 +1296,9 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 
 .execution-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
 .execution-details summary { cursor: pointer; overflow-wrap: anywhere; }
+
+.working-tree-panel { max-height: 45vh; overflow: auto; }
+.working-tree-panel p, .working-tree-panel li { overflow-wrap: anywhere; }
+.working-tree-panel button { margin: .2rem; text-align: left; }
+.working-tree-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20rem; overflow: auto; }
+:root.dark .feature-panel { background: #18181b; color: #d4d4d8; border-color: #3f3f46; }
