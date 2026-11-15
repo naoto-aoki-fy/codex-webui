@@ -220,3 +220,7 @@ order remains authoritative. The reproducing desktop-state test and focused
 bounds object-key traversal without allocating an unbounded key array.
 Browser execution matrix rerun passed with explicit tool → command → agent ordering,
 one execution row, and zero item-driven history reloads. Typecheck passed.
+
+Compaction follow-up: failed-turn completion is now correlated to the observed
+native compaction turn. An obsolete failed turn cannot retire a pending new
+compaction. Four focused controller tests passed; no new requests or state store.

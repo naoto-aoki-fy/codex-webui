@@ -16,3 +16,11 @@ it('does not retry unknown outcomes or let stale acknowledgments mark success',a
 it('distinguishes explicit unsupported from permission rejection and unknown transport failure',async()=>{
  const s=setup();for(const [error,state] of [[{rpcCode:-32601},'unsupported'],[{rpcCode:-32000},'failed'],[new Error('disconnect'),'unknown']] as const){s.request.mockRejectedValueOnce(error);await s.action.run();expect(s.action.state.value).toBe(state)}
 })
+it('ignores an older failed turn while the compaction turn is pending',async()=>{
+ const s=setup();await s.action.run()
+ s.action.observe({method:'item/started',params:{threadId:'t',turnId:'compact-turn',item:{type:'contextCompaction',id:'c'}},atIso:''})
+ s.action.observe({method:'turn/completed',params:{threadId:'t',turn:{id:'older-turn',status:'failed'}},atIso:''})
+ expect(s.action.state.value).toBe('pending')
+ s.action.observe({method:'turn/completed',params:{threadId:'t',turn:{id:'compact-turn',status:'failed',error:{message:'native failure'}}},atIso:''})
+ expect(s.action.state.value).toBe('failed');expect(s.action.status.value).toContain('native failure')
+})
