@@ -267,6 +267,7 @@
                   <summary>Conversation tools</summary>
                   <ConversationTools v-if="areConversationToolsLoaded" :thread-id="selectedThreadId" :cwd="composerCwd"
                     :security="securityObservation.snapshots.value[selectedThreadId] ?? null"
+                    :denied-actions="deniedActions.rows.value"
                     :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
                     :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage" :incomplete="isSelectedThreadImportIncomplete"
                     :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
@@ -449,6 +450,7 @@ const {
   restoreThreadById,
   operationEpoch,
   securityObservation,
+  deniedActions,
   compaction, review,
   diagnosticWarnings,
   forkThreadById,

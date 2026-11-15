@@ -100,3 +100,19 @@ Performance: zero extra resume/startup requests, one lazy restrictions read,
 100 bounded transient snapshots, one existing event owner, no persistence or
 subscription. Native ordering/stale-resume and eviction are unit-tested.
 Cleanup: close; all controls are read-only in this scope. Live NOT RUN.
+
+## 04 — Denied-action observation
+
+Open Denied-action inspection. Emit a fixture native completed auto-review with
+`review.status=denied`, exact thread/turn/review/item IDs and a public action.
+Check identities and collapsed escaped/redacted action details. Repeat the event:
+one row remains. An unrelated thread must stay invisible. Approved/non-denial
+updates remove the matching denial; disconnect clears all observations. Missing
+history is stated. No retry is available without the original native event and
+eligibility contract. No command is reconstructed or executed. Cleanup: close.
+
+Automation: `pnpm exec vitest run src/composables/deniedActionObservation.test.ts`,
+`pnpm run typecheck`, `PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-denials.cjs`.
+Screenshots: `output/playwright/risk-04-{1280,375,768}-{light,dark}.png`.
+Performance: zero RPCs and zero extra subscriptions; at most fifty bounded
+transient rows globally, 12,000-character action details, no history reload.
