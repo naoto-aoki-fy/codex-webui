@@ -15,13 +15,15 @@ export class CodexApiError extends Error {
   code: CodexErrorCode
   method?: string
   status?: number
+  rpcCode?: number
 
-  constructor(message: string, options: { code: CodexErrorCode; method?: string; status?: number }) {
+  constructor(message: string, options: { code: CodexErrorCode; method?: string; status?: number; rpcCode?: number }) {
     super(message)
     this.name = 'CodexApiError'
     this.code = options.code
     this.method = options.method
     this.status = options.status
+    this.rpcCode = options.rpcCode
   }
 }
 

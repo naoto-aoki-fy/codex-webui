@@ -884,7 +884,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
       const message = getErrorMessage(error, 'Unknown bridge error')
-      setJson(res, 502, { error: message })
+      setJson(res, 502, { error: message, ...(typeof asRecord(error)?.code === 'number' ? { rpcCode: asRecord(error)!.code } : {}) })
     }
   }
 

@@ -64,6 +64,7 @@ export async function rpcCall<T>(method: string, params?: unknown): Promise<T> {
         code: 'http_error',
         method,
         status: response.status,
+        rpcCode: typeof asRecord(payload)?.rpcCode === 'number' ? asRecord(payload)!.rpcCode as number : undefined,
       },
     )
   }

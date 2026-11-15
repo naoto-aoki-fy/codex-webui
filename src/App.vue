@@ -93,7 +93,7 @@
               class="sidebar-settings-panel"
               @click.stop
             >
-              <AccountSettingsPanel
+              <AccountSettingsPanel :epoch="operationEpoch"
                 :auth-available="codexAuthAvailable"
                 :refreshing="isRefreshingCodexAuth"
                 :change-blocked="isCodexAuthChangeBlocked"
