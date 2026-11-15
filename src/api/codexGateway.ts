@@ -1047,8 +1047,11 @@ export function updateWorkspaceRootsState(operation: WorkspaceRootsOperation): P
   return queueWorkspaceRootsMutation(() => updateWorkspaceRootsStateRequest(operation), (state) => state)
 }
 
-export function openProjectRootSelection(path: string): Promise<{ path: string; projectId?: string }> {
-  return queueWorkspaceRootsMutation(() => openProjectRootRequest(path))
+export function openProjectRootSelection(path: string, isCurrent?:()=>boolean): Promise<{ path: string; projectId?: string }> {
+  return queueWorkspaceRootsMutation(() => {
+    if(isCurrent&&!isCurrent())throw new Error('Connection changed before project registration; no request was sent')
+    return openProjectRootRequest(path)
+  })
 }
 
 async function updateWorkspaceRootsStateRequest(operation: WorkspaceRootsOperation): Promise<WorkspaceRootsState> {

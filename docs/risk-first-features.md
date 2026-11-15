@@ -268,3 +268,38 @@ registry. Eight queue unit tests, eleven composer regressions, type checks,
 production build, integration fixture and six management browser views passed.
 No new persistent connection/subscription; actions use one write and one lazy
 queue reconciliation read (start also reconciles history once). Live **NOT RUN**.
+
+### 13 — IMPLEMENTED for POSIX remote Git repositories
+
+Explicit fixed-argv `command/exec` reuses the established remote Git abstraction,
+not WebUI-host Git. Preview resolves the remote repository, validates a new branch
+and pins HEAD. Confirmation identifies repository/commit/branch/destination.
+Creation rechecks HEAD, rejects reused worktree identities, invokes native
+`git -c core.hooksPath=/dev/null worktree add --no-track -b … <pinned HEAD>`,
+then verifies native worktree-list and destination identity. No force/reset,
+fetch/push, destructive migration or cleanup is present. Windows/relative paths,
+nested destinations and dot segments are explicitly unsupported.
+
+Failures after submission are potentially partial/unknown, never replayed;
+on-demand exact reconciliation is available. Connection/project/teardown guards
+apply before every chained RPC, including before the write. The separately
+invoked new-conversation setup uses existing native project registration, guarded
+again when queued and before routing. It sends no prompt and leaves parent
+history/draft intact. Residual risk 2/4/3/3 = **16** (full estimate 22).
+
+Four disposable-repository tests plus existing remote-Git/gateway tests (**44
+tests**) passed, as did type checks and six browser views with unknown-result
+reconciliation, native project setup and parent draft restoration. Preview uses
+three bounded native reads; confirmed creation seven calls including one write
+and verification, no polling/subscriptions. Real large-repository latency NOT RUN.
+Live acceptance **NOT RUN**; real user repositories were not mutated.
+
+## Phase 2 gate
+
+Queue submission `972cf59` and management `e61cba7` passed focused tests and
+the six-view UI matrices. Worktree creation passed the same matrix and disposable
+Git checks. Full suite **1,427 passed / two skipped**, production build and
+credential-free external-server integration fixture passed. Existing composer,
+Git, native history, Fork/Revert and historical metadata regressions passed. No
+paid voice session or real repository/conversation/configuration mutation was
+performed. Voice is blocked; queue and POSIX worktree scopes can proceed.

@@ -269,6 +269,7 @@
                     :security="securityObservation.snapshots.value[selectedThreadId] ?? null"
                     :denied-actions="deniedActions.rows.value"
                     :queue="nativeQueue"
+                    :open-created-worktree="openCreatedWorktree"
                     :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
                     :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage" :incomplete="isSelectedThreadImportIncomplete"
                     :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
@@ -1140,6 +1141,17 @@ async function onConfirmExistingFolder(path = resolvedExistingFolderPath.value):
   } finally {
     isOpeningExistingFolder.value = false
   }
+}
+async function openCreatedWorktree(path:string):Promise<void>{
+  const epoch=operationEpoch.value,isCurrent=()=>operationEpoch.value===epoch
+  const selection=await openProjectRootSelection(path,isCurrent)
+  if(!isCurrent())throw new Error('Connection changed; project registration outcome must be inspected on the original App Server')
+  if(selection.path!==path)throw new Error('Registered project path differs from the verified worktree')
+  newThreadCwd.value=selection.path
+  await router.push({name:'home',query:{cwd:selection.path,...(selection.projectId?{projectId:selection.projectId}:{})}})
+  if(!isCurrent())return
+  await loadWorkspaceRootOptionsState()
+  if(isCurrent())await refreshAll({includeSelectedThreadMessages:false,forceThreadRefresh:true})
 }
 
 async function applyLaunchProjectPathFromUrl(): Promise<boolean> {
