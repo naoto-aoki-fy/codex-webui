@@ -1,3 +1,4 @@
+import { sessionCodexHome } from './codexHomeResolver.js'
 import { createHash } from 'node:crypto'
 import { projectPath } from './appServerFileSystem.js'
 import { readGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata.js'
@@ -39,9 +40,8 @@ export function rolloutCacheLocation(path: unknown, home?: string) {
   if (typeof path !== 'string' || path.length > 4096 || /[\x00-\x1f]/u.test(path)) return undefined
   const rules = projectPath(path)
   if (!rules.isAbsolute(path) || rules.normalize(path) !== path) return undefined
-  const match = path.replace(/\\/gu, '/').match(/^(.*)\/sessions\/\d{4}\/\d{2}\/\d{2}\/rollout-[^/]+\.jsonl$/u)
-  if (!match?.[1]) return undefined
-  const inferred = rules.dirname(rules.dirname(rules.dirname(rules.dirname(rules.dirname(path)))))
+  const inferred = sessionCodexHome(path)
+  if (!inferred) return undefined
   if (home && rules.relative(rules.normalize(home), inferred) !== '') return undefined
   return rules.join(inferred, 'cache', 'model-history', 'v1')
 }
@@ -49,7 +49,7 @@ export function rolloutCacheLocation(path: unknown, home?: string) {
 type Client = {
   rpc(method: string, params: unknown): Promise<unknown>
   generation(): number
-  home(): string | undefined
+  home(): string | undefined | Promise<string>
 }
 
 /** One full-file transfer at a time, at most 16 queued/coalesced threads.
@@ -87,7 +87,9 @@ export class RolloutGenerationMetadata {
     }
     const thread = await rpc('thread/read', { threadId, includeTurns: false })
     const path = thread?.thread?.path
-    const dir = rolloutCacheLocation(path, this.client.home())
+    const home = await this.client.home()
+    if (generation !== this.client.generation() || !home) return new Map<string, TurnGenerationMetadata>()
+    const dir = rolloutCacheLocation(path, home)
     if (!dir) return new Map<string, TurnGenerationMetadata>()
     const cachePath = projectPath(path).join(dir, createHash('sha256').update(threadId).digest('hex') + '.json')
     const before = await rpc('fs/getMetadata', { path })

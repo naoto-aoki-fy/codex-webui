@@ -40,6 +40,7 @@ it('validates remote POSIX/Windows paths and initialization home without local H
   expect(rolloutCacheLocation('C:\\Codex\\sessions\\2026\\11\\14\\rollout-x.jsonl', 'C:\\Codex')).toBe('C:\\Codex\\cache\\model-history\\v1')
   for (const bad of [null, 1, 'relative.jsonl', '/tmp/x.jsonl', '/x/../remote/.codex/sessions/2026/11/14/rollout-x.jsonl', 'file://' + path]) expect(rolloutCacheLocation(bad)).toBeUndefined()
   expect(rolloutCacheLocation(path, '/different')).toBeUndefined()
+  expect(rolloutCacheLocation('/custom/archived_sessions/rollout-x.jsonl', '/custom')).toBe('/custom/cache/model-history/v1')
 })
 
 it('coalesces concurrent requests, caches minimal evidence, and survives backend restart with no source transfer', async () => {
@@ -109,8 +110,7 @@ it('updates only requested exact turn IDs through existing notifications, includ
     ? { data: [{ id: p.cursor === 'older' ? 'old' : 'new', items: [] }, { id: 'unrelated', items: [] }] }
     : { thread: { id: 't', path, turns: [{ id: 'new', items: [] }] } } } })
   vi.spyOn(instance as any, 'ensureInitialized').mockResolvedValue(undefined)
-  vi.spyOn(instance as any, 'call').mockImplementation((m: any, p: any) => f.rpc(m, p))
-  vi.spyOn(instance, 'getInitializationMetadata').mockReturnValue({ codexHome: '/remote/.codex' } as any)
+  vi.spyOn(instance as any, 'callObserved').mockImplementation((m: any, p: any) => f.rpc(m, p))
   const invalidate = vi.spyOn((instance as any).historyPager, 'invalidate')
   const notify = vi.fn(); instance.onNotification(notify)
   try {

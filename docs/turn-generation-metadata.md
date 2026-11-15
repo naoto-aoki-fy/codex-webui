@@ -15,8 +15,8 @@ metadata between source and forked conversations.
    `thread/fork` and `thread/turns/list` results. It starts optional asynchronous
    recovery through `RolloutGenerationMetadata.recover(threadId)`.
 2. The reader calls `thread/read` with `includeTurns: false` to resolve the native
-   rollout path, checks that it is a normalized absolute path under the initialized
-   Codex home's `sessions/YYYY/MM/DD/`, and calls `fs/getMetadata`.
+   rollout path, checks that it is a normalized absolute path under the resolved
+   Codex home's `sessions/YYYY/MM/DD/` or `archived_sessions/`, and calls `fs/getMetadata`.
 3. It reads `<remote CODEX_HOME>/cache/model-history/v1/<sha256(threadId)>.json`
    through `fs/readFile`. Version 1, source path, positive modification timestamp,
    exact turn IDs and execution provenance must validate before reuse.
@@ -72,3 +72,21 @@ thread isolation, revert-shaped replacement data and rejection of request-derive
 cache values. Run `pnpm exec vitest run src/server/rolloutGenerationMetadata.test.ts
 src/server/turnGenerationMetadata.test.ts`. These are protocol fixtures, not proof
 of live provider execution or fork rollout behavior on every server version.
+
+## Remote home discovery
+
+The connection/profile-scoped resolver starts with trimmed `CODEX_HOME` or an
+unresolved empty value. Successful existing `thread/read` responses can supply
+its home from native session/archive paths, including custom directory names.
+When a consumer still needs an unresolved home, concurrent demands share one
+`config/read` with `includeLayers: true`. Only the base user layer (null or
+legacy omitted profile) supplies its config file's parent directory; no local
+file existence check is performed. POSIX, Windows and UNC rules follow the
+remote path. Unsuccessful discovery can retry on later demand.
+
+The first resolved value survives for the connection/profile lifetime, including
+when a thread response wins a race with configuration discovery. Reconnection or
+profile changes reset the cache from `CODEX_HOME` and retire in-flight results.
+Uploads share this resolver unless `CODEXUI_REMOTE_UPLOAD_DIR` explicitly overrides
+the destination. WebUI-local state storage remains separate. See the
+[discovery checks](../tests/website-docs-misc/codex-home-discovery.md).

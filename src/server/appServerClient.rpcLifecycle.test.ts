@@ -268,3 +268,31 @@ it.each([false, true])('recovers a failed restored subscription (persistent=%s) 
     expect(fresh.frames.some((f: any) => f.method === 'turn/start')).toBe(false)
   } finally { client.dispose() }
 })
+
+it('shares home discovery across demands, learns existing reads, and resets on reconnect', async () => {
+  vi.stubEnv('CODEX_HOME', '')
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  try {
+    const read = client.rpc('thread/read', { threadId: 't', includeTurns: false })
+    await flush()
+    const old = wire.sockets[0]!
+    const frame = old.frames.find((f: any) => f.method === 'thread/read')
+    old.reply(frame.id, { thread: { id: 't', path: '/custom/sessions/2026/11/15/rollout-t.jsonl' } })
+    await read
+    expect(await client.resolveCodexHome()).toBe('/custom')
+    expect(old.frames.filter((f: any) => f.method === 'config/read')).toHaveLength(0)
+    expect(old.frames.filter((f: any) => f.method === 'thread/read')).toHaveLength(1)
+    await client.reconnect()
+    const a = client.resolveCodexHome(), b = client.resolveCodexHome()
+    await flush()
+    const fresh = wire.sockets[1]!
+    const configs = fresh.frames.filter((f: any) => f.method === 'config/read')
+    expect(configs).toHaveLength(1)
+    expect(configs[0].params).toEqual({ includeLayers: true })
+    fresh.reply(configs[0].id, { layers: [{ name: { type: 'user', profile: null, file: 'C:\\custom\\config.toml' } }] })
+    expect(await a).toBe('C:\\custom')
+    expect(await b).toBe('C:\\custom')
+    expect(await client.resolveCodexHome()).toBe('C:\\custom')
+    expect(fresh.frames.filter((f: any) => f.method === 'config/read')).toHaveLength(1)
+  } finally { client.dispose(); vi.unstubAllEnvs() }
+})

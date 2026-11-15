@@ -1,3 +1,5 @@
+import { CodexHomeResolver } from './codexHomeResolver.js'
+import { getConnectionProfileId } from './connectionProfile.js'
 import { RemoteHistoryPager } from './remoteHistoryPager.js'
 import { RemoteCapabilities } from './remoteCapabilities.js'
 import { SubscriptionRecovery } from './subscriptionRecovery.js'
@@ -64,10 +66,17 @@ export class AppServerClient {
 
   getInitializationMetadata() { return this.transport.getInitializationMetadata() }
 
+  private connectionGeneration = 0
+  private readonly codexHome = new CodexHomeResolver(
+    (method, params) => this.call(method, params),
+    () => `${this.getConnectionGeneration()}:${getConnectionProfileId()}`,
+  )
+  resolveCodexHome(): Promise<string> { return this.codexHome.resolve() }
+
   private readonly rolloutMetadata = new RolloutGenerationMetadata({
     rpc: (method, params) => this.call(method, params),
     generation: () => this.getConnectionGeneration(),
-    home: () => this.getInitializationMetadata()?.codexHome,
+    home: () => this.resolveCodexHome(),
   })
   private readonly rolloutRequests = new Map<string, Set<string> | null>()
   private recoverRolloutMetadata(threadId: string, turns: unknown[] | null, force = false): void {
@@ -109,11 +118,11 @@ export class AppServerClient {
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private retryAttempt = 0
   private nextApprovalId = randomInt(2 ** 40)
-  private connectionGeneration = 0
   private reconnectPromise: Promise<void> | null = null
   private readonly subscribedThreads = new Set<string>()
   private transport = new AppServerWebSocketClient((frame) => this.handleLine(frame), () => {
     this.connectionGeneration++
+    this.codexHome.reset()
     this.historyPager.invalidate()
     this.capabilities.reset()
     this.recovery.cancel()
@@ -328,8 +337,10 @@ export class AppServerClient {
 
   private async call(method: string, params: unknown, deadlineMs?: number): Promise<unknown> {
     const generation = this.connectionGeneration
+    const homeToken = this.codexHome.token()
     try {
       const result = await this.callObserved(method, params, deadlineMs)
+      if (method === 'thread/read') this.codexHome.observeThreadRead(result, homeToken)
       if (generation === this.connectionGeneration) this.capabilities.observe(method, result)
       return result
     } catch (error) {
@@ -383,6 +394,7 @@ export class AppServerClient {
   }
 
   async rpc(method: string, params: unknown): Promise<unknown> {
+    const homeToken = this.codexHome.token()
     await this.ensureInitialized()
     if (method === 'thread/generationMetadata/refresh') {
       this.recoverRolloutMetadata(readNonEmptyString(asRecord(params)?.threadId), null, true)
@@ -397,6 +409,7 @@ export class AppServerClient {
         : method === 'thread/list' ? await this.call(method, params)
         : await this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, (m, p) => this.call(m, p))
       if (joiningBackgroundRecovery) result = await this.call('thread/read', { threadId: resumeId, includeTurns: true })
+      if (method === 'thread/read') this.codexHome.observeThreadRead(result, homeToken)
       const record = asRecord(result)
       if (method === 'thread/turns/list' && Array.isArray(record?.data)) {
         if (record.data.length && asRecord(params)?.itemsView !== 'notLoaded') this.recoverRolloutMetadata(resumeId, record.data)
