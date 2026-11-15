@@ -116,3 +116,19 @@ Automation: `pnpm exec vitest run src/composables/deniedActionObservation.test.t
 Screenshots: `output/playwright/risk-04-{1280,375,768}-{light,dark}.png`.
 Performance: zero RPCs and zero extra subscriptions; at most fifty bounded
 transient rows globally, 12,000-character action details, no history reload.
+
+## 29 — Authentication inspection
+
+Open Settings → Native authentication details → Read authentication details.
+Check native provider/account/email/workspace and server-allowed methods.
+Signed out, unknown account, empty policy and unavailable restrictions remain
+distinct. No credentials/token/routing blob is shown. No login/refresh-token
+request is initiated. Delay a read across disconnect/profile change: the old
+account must not reappear. Test both themes and all three supported viewports.
+Cleanup: close; no authentication state changed.
+
+Automation: `pnpm exec vitest run src/api/authInspection.test.ts`,
+`pnpm run typecheck`, `PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-auth.cjs`.
+Screenshots: `output/playwright/risk-29-{1280,375,768}-{light,dark}.png`.
+Performance: two explicit lazy native reads, fixed small account projection,
+twenty method identifiers maximum, no poll/listener. Live acceptance NOT RUN.

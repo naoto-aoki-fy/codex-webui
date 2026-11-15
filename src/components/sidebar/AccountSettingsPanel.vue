@@ -2,6 +2,7 @@
 import type { DiagnosticWarning } from '../../diagnostics'
 import {defineAsyncComponent} from 'vue'
 const RemoteControlStatus = defineAsyncComponent(() => import('./RemoteControlStatus.vue'))
+const AuthInspection = defineAsyncComponent(() => import('./AuthInspection.vue'))
 import AccountUsage from './AccountUsage.vue'
 import ConnectionDiagnostics from './ConnectionDiagnostics.vue'
 
@@ -30,6 +31,7 @@ const emit = defineEmits<{
     <p class="sidebar-settings-account-empty">{{ authAvailable === true ? ('Signed in to Codex') : authAvailable === false ? ('Authentication is managed by the external Codex app-server. Sign in there, then reconnect.') : ('External Codex authentication status unavailable. Check the app-server connection.') }}</p>
     <div v-if="error" class="sidebar-settings-account-error">{{ error }}</div>
     <RemoteControlStatus :epoch="epoch" />
+    <AuthInspection :epoch="epoch" />
     <AccountUsage :epoch="epoch" />
     <ConnectionDiagnostics :epoch="epoch" :warnings="warnings" />
     <div class="sidebar-settings-account-login">

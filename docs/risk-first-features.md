@@ -179,3 +179,18 @@ Three focused unit tests, type checks and six browser views passed, including
 duplicates, other-thread identity, credential omission and disconnect cleanup.
 Zero new requests or subscriptions. Live acceptance **NOT RUN**. Retry contract
 and staleness validation remain a Phase 3 gate.
+
+### 29 — PARTIAL (authentication inspection delivered)
+
+`account/read {refreshToken:false}` reads actual server-owned account state;
+`configRequirements/read.requirements.allowed_login_methods` reports effective
+login policy, including an explicit empty list. Missing policy stays unknown.
+The 0.169.0 account processor implements browser/device ChatGPT workflows and
+validates restrictions/external-token ownership before initiation. Inspection
+does not start login, refresh credentials or expose opaque account routing/tokens.
+The WebUI password remains separate. Residual inspection risk 1/2/1/2 = **8**.
+
+Two focused unit tests, type checks and six browser views passed: native account,
+allowed methods, secrets, signed out/no allowed method, errors and disconnect.
+Two lazy reads per explicit action; no startup read, polling or subscription.
+Native login lifecycle remains pending Phase 3. Live acceptance **NOT RUN**.
