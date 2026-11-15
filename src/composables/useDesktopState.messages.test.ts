@@ -2506,3 +2506,22 @@ it('keeps standalone native commands separate and blocks conflicting chat and hi
  shell!.thread.value='another-thread';await deletion?.prepare();expect(deletion?.state.value).toBe('idle')
  expect(fetch).not.toHaveBeenCalled();expect(gateway.startThreadTurn).not.toHaveBeenCalled()
 })
+it('invalidates account views and preserves the sending/queue barrier across document recreation',async()=>{
+ const state=await loadState();const epoch=state.operationEpoch.value
+ notify({method:'account/updated',params:{authMode:'chatgpt'}})
+ expect(state.operationEpoch.value).toBe(epoch+1);expect(state.nativeAuthenticationBlocked.value).toBe(true);expect(state.availableModelIds.value).toEqual([])
+ await expect(state.sendMessageToSelectedThread('blocked')).rejects.toThrow();await expect(state.sendMessageToNewThread('/remote','blocked')).rejects.toThrow('authentication')
+ await expect(state.nativeQueue.add({text:'blocked',imageUrls:[],fileAttachments:[],skills:[]})).rejects.toThrow()
+ expect(gateway.startThreadTurn).not.toHaveBeenCalled()
+ const restored=createState();expect(restored.nativeAuthenticationBlocked.value).toBe(true)
+ const auth=await restored.ensureNativeAuthentication();expect(auth?.state.value).toBe('unknown');expect(auth?.needsRefresh.value).toBe(true)
+ notify({method:'app-server/disconnected',params:{}});notify({method:'app-server/reconnected',params:{}})
+ expect(restored.nativeAuthenticationBlocked.value).toBe(true);expect(gateway.startThreadTurn).not.toHaveBeenCalled()
+})
+it('discards an old account rate-limit response after an account update',async()=>{
+ const state=await loadState(),rates=deferred<any>();gateway.getAccountRateLimits.mockReturnValueOnce(rates.promise)
+ const refresh=state.refreshAll({includeSelectedThreadMessages:false,awaitAncillaryRefreshes:true})
+ await vi.advanceTimersByTimeAsync(0);notify({method:'account/updated',params:{authMode:'chatgpt'}})
+ rates.resolve({limitId:'old-account',limitName:'Old',planType:null,primary:null,secondary:null,credits:null,raw:{}});await refresh
+ expect(state.accountRateLimitSnapshots.value).toEqual([]);expect(state.codexQuota.value).toBeNull()
+})

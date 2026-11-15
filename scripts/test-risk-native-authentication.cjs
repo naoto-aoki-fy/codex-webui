@@ -5,7 +5,8 @@ const {setup,assert}=require('./approved-fixture.cjs')
  for(const width of [1280,375,768]){
   const page=await browser.newPage({viewport:{width,height:width===375?812:width===768?1024:900}})
   let signedIn=false,id=0,cancelStatus='canceled'
-  const {calls,errors,emit}=await setup(page,async body=>{
+  const {calls,errors,emit}=await setup(page,async(body,_,url)=>{
+   if(url.pathname==='/codex-api/reconnect')return {json:{ok:true}}
    if(body.method==='account/read')return {json:{result:{account:signedIn?{type:'chatgpt',email:'native@example.invalid',planType:'plus'}:null,requiresOpenaiAuth:true}}}
    if(body.method==='configRequirements/read')return {json:{result:{requirements:{allowed_login_methods:['chatgpt']}}}}
    if(body.method==='thread/loaded/list')return {json:{result:{data:['approved-fixture'],nextCursor:null}}}
@@ -28,6 +29,23 @@ const {setup,assert}=require('./approved-fixture.cjs')
   signedIn=true;emit('account/login/completed',{loginId:'fixture-2',success:true});await page.getByText(/Native sign-in completed and ChatGPT account state verified/).waitFor();assert.equal(await page.getByText('FIXTURE-DEVICE-CODE',{exact:true}).count(),0)
   assert.equal(await page.getByRole('button',{name:'Reconnect and reload account data'}).isEnabled(),true)
   assert.equal(await page.locator('.native-auth-barrier').count(),1)
+  emit('account/updated',{authMode:'chatgpt'});await page.getByText(/Earlier account reads and sign-in preparation are invalid/).waitFor()
+  await page.reload();await page.getByText('Fixture answer',{exact:true}).waitFor()
+  assert.equal(await page.locator('.native-auth-barrier').count(),1)
+  assert.equal(await page.locator('.thread-composer-input').isDisabled(),true)
+  assert.equal(await page.getByRole('button',{name:'Send message',exact:true}).isDisabled(),true)
+  const reopenedExpand=page.getByRole('button',{name:'Expand sidebar',exact:true});if(await reopenedExpand.count())await reopenedExpand.click()
+  await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByText('Native Codex sign-in',{exact:true}).click()
+  await page.getByRole('button',{name:'Open native authentication recovery controls',exact:true}).click();await page.getByText(/An earlier native authentication operation or account change needs reconciliation/).waitFor()
+  for(const theme of ['light','dark']){await page.evaluate(d=>document.documentElement.classList.toggle('dark',d),theme==='dark');await page.locator('.native-authentication').scrollIntoViewIfNeeded();await page.waitForTimeout(2200);await page.screenshot({path:`output/playwright/evidence-29-recovery-${width}-${theme}.png`})}
+  assert.equal(calls.filter(c=>c.method==='account/login/start').length,2)
+  const pendingMarker=await page.evaluate(()=>localStorage.getItem('codex-web-local.native-authentication-pending.v1'));assert.equal(pendingMarker,'1')
+  await page.getByRole('button',{name:'Inspect current native account',exact:true}).click();await page.getByText(/Actual account: chatgpt/).waitFor()
+  await page.getByRole('checkbox',{name:/I inspected the account and understand/}).check()
+  await Promise.all([page.waitForEvent('load'),page.getByRole('button',{name:'Reconnect and reload account data',exact:true}).click()])
+  await page.getByText('Fixture answer',{exact:true}).waitFor();assert.equal(await page.locator('.native-auth-barrier').count(),0)
+  assert.equal(await page.evaluate(()=>localStorage.getItem('codex-web-local.native-authentication-pending.v1')),null)
+  assert.equal(calls.filter(c=>c.method==='account/login/start').length,2);assert.equal(calls.some(c=>c.method==='turn/start'||c.method==='turn/steer'||c.method==='thread/queue/add'),false)
   assert.deepEqual(errors,[]);await page.close()
  }
  await browser.close();console.log('PASS native authentication: lazy reads, explicit browser/device login, exact cancellation/completion, memory-only code, cache barrier; six views')

@@ -245,7 +245,7 @@ start browser or device-code sign-in. Cancel the identified attempt, then simula
 matching completion and actual account change. Inject an unrelated completion,
 expiry, cancellation/completion race, internal error and disconnect during start.
 
-Expected: no login on opening/preparing; all loaded activity is checked without
+Expected: no login on opening/preparing; every listed loaded thread is checked without
 resume/history reads. Only explicit confirmation starts native login. Cancellation
 uses the exact ID. Codes/URLs remain in memory and clear on completion/cancel or
 connection change. Unrelated completion is ignored; success requires matching
@@ -253,6 +253,30 @@ native completion and account read. Sending stays paused until explicit reconnec
 and page reload invalidate account caches. Unknown writes never replay. Existing
 signed-in accounts, unknown policy, external credentials and excess inventory are
 rejected by this limited workflow. Check all three viewports in both themes.
+
+Account-isolation regression: delay a start preflight or account read and emit
+`account/updated` before releasing the stale reply. No stale account may populate
+the view or authorize login. Deliver the native completion-then-account-update
+sequence: the account update retires earlier account evidence, pauses sending,
+clears account-scoped views, and requires fresh inspection/reconnect. Reload
+while sign-in or reconciliation is pending: the profile-scoped boolean recovery
+barrier must survive without retaining codes, URLs or account identity. Open
+the recovery controls, inspect actual account state and explicitly reconnect/
+reload. Neither queued submissions nor ordinary sending may bypass the barrier.
+Truncated/missing cursors, duplicate/malformed loaded IDs and unknown/failed
+metadata reads must reject preparation. A failed metadata-only thread read must
+never be satisfied by an earlier cached idle snapshot. This inventory covers
+native listed loaded threads, not an atomic guarantee about all clients or
+standalone processes; another client or native queue can start work afterward.
+
+Performance audit for the isolation correction: one profile-scoped boolean read
+at desktop construction; one marker write before login, removed after verified
+cancellation or an explicit reconnect acknowledgment immediately before reload.
+Account notifications invalidate the existing epoch and model/rate-limit read
+owners without extra RPCs or subscriptions. No recurring scan or history read is
+added. Metadata-only failures now fail closed instead of reusing cached status;
+ordinary history fallback is unchanged. Storage loss/removal and account changes
+that occur while this client is absent cannot be reconciled from the marker.
 
 Cleanup: close fixture browser contexts; no live account mutation. A real pending
 attempt remains server-owned; closing a panel is not a cancellation guarantee.

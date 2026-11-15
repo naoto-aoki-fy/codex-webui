@@ -51,3 +51,24 @@ it('native completion winning a cancellation race cannot be reported as successf
 it('invalidates prepared authentication when another native account change is observed',async()=>{
  const f=fixture();await f.owner.prepare();f.owner.observe({method:'account/updated',params:{authMode:'chatgpt'},atIso:'x'});await f.owner.start('chatgpt',true);expect(f.owner.preparation.value).toBe(null);expect(f.request.mock.calls.some(([m])=>m==='account/login/start')).toBe(false)
 })
+it('rejects incomplete/malformed idle inventories instead of inferring no active work',async()=>{
+ for(const loaded of [{data:[],nextCursor:'more'},{data:[]},{data:['t','t'],nextCursor:null},{data:['t',null],nextCursor:null}]){
+  const f=fixture(m=>m==='thread/loaded/list'?Promise.resolve(loaded):undefined);await f.owner.prepare();expect(f.owner.state.value).toBe('rejected');expect(f.request.mock.calls.some(([m])=>m==='account/login/start')).toBe(false)
+ }
+ const f=fixture(m=>m==='thread/read'?Promise.resolve({thread:{id:'t'}}):undefined);await f.owner.prepare();expect(f.owner.state.value).toBe('rejected')
+})
+it('invalidates a start preflight and delayed account reads on an account change',async()=>{
+ const f=fixture();await f.owner.prepare();let release!:(value:any)=>void
+ f.request.mockImplementationOnce(()=>new Promise(resolve=>release=resolve))
+ const starting=f.owner.start('chatgpt',true);f.owner.observe({method:'account/updated',params:{authMode:'chatgpt'},atIso:'x'})
+ release({account:null,requiresOpenaiAuth:true});await starting;expect(f.owner.state.value).toBe('unknown');expect(f.request.mock.calls.some(([m])=>m==='account/login/start')).toBe(false)
+ f.request.mockImplementationOnce(()=>new Promise(resolve=>release=resolve));const reading=f.owner.inspect()
+ f.owner.observe({method:'account/updated',params:{authMode:'chatgpt'},atIso:'y'});release({account:{type:'chatgpt',email:'STALE@example.invalid'},requiresOpenaiAuth:true});await reading
+ expect(f.owner.account.value).toBeNull();expect(f.owner.blocking.value).toBe(true)
+})
+it('does not complete the idle check while a listed thread inspection is still unresolved',async()=>{
+ let release!:(value:any)=>void,reads=0
+ const f=fixture(m=>m==='thread/loaded/list'?Promise.resolve({data:['t','last'],nextCursor:null}):m==='thread/read'&&++reads===2?new Promise(resolve=>release=resolve):undefined)
+ const pending=f.owner.prepare();await vi.waitFor(()=>expect(release).toBeTypeOf('function'));expect(f.owner.state.value).toBe('preparing')
+ release({thread:{id:'last',status:{type:'active'}}});await pending;expect(f.owner.state.value).toBe('rejected');expect(f.request.mock.calls.some(([m])=>m==='account/login/start')).toBe(false)
+})

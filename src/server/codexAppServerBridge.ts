@@ -663,7 +663,9 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 	            setJson(res, 200, { result: null })
 	            return
 	          }
-		          if (body.method === 'thread/read' && isEmptyThreadReadError(error)) {
+		          // Metadata-only reads authorize safety-sensitive actions. A cached
+		          // idle snapshot is not current activity evidence after a read failure.
+		          if (body.method === 'thread/read' && asRecord(body.params)?.includeTurns !== false && isEmptyThreadReadError(error)) {
 		            const params = asRecord(body.params)
 		            const threadId = typeof params?.threadId === 'string' ? params.threadId.trim() : ''
 		            const snapshot = threadId ? appServer.getLastThreadReadSnapshot(threadId) : null
