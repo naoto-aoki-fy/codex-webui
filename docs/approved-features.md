@@ -83,3 +83,12 @@ interruption, reopened history, unsupported; all sizes/themes passed. Compaction
 browser rerun passed after allowing fixture readiness before action. A late failed
 compaction history refresh is now epoch-guarded. See manual test for performance.
 Live NOT RUN; risk medium. Only inline delivery is supported at 0.169.0.
+
+## 08 validation
+
+Implemented on-demand native manageable-process pages, snapshot identity, bounded
+loaded-item output, exact-ID confirmation/termination with true/false/error states.
+No shell/PTY/local process control or bulk clean API. `pnpm exec vitest run src/api/backgroundTerminals.test.ts src/composables/threadReview.test.ts src/composables/threadCompaction.test.ts`: 7 passed. Typecheck passed.
+`node scripts/test-approved-processes.cjs`: lazy reads, native scope, missing output,
+explicit termination, empty/error, no model interrupt; 3 sizes × both themes passed.
+See manual test for performance bounds. Live NOT RUN; risk medium.

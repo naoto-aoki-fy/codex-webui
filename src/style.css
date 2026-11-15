@@ -1307,3 +1307,6 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .native-thread-actions textarea { width: 100%; min-height: 4rem; color: inherit; background: transparent; border: 1px solid currentColor; }
 .feature-panel button { border: 1px solid #a1a1aa; border-radius: .4rem; padding: .2rem .5rem; margin: .15rem; }
 .feature-panel button:disabled { opacity: .5; }
+
+.background-terminals { max-height: 40vh; overflow: auto; overflow-wrap: anywhere; }
+.background-terminals pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
