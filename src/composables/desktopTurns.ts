@@ -423,17 +423,13 @@ export function createDesktopTurns(deps: {
         }
     }
     return {
-        unknownOutcomeByThreadId,
-        pendingTurnRequestByThreadId,
-        isSendingMessage,
-        isInterruptingTurn,
-        setPendingTurnRequest,
-        clearPendingTurnRequest,
-        buildPendingTurnDetails,
-        maybeReplyToPendingUserInputRequest,
-        sendMessageToSelectedThread,
-        sendMessageToNewThread,
-        startTurnForThread,
-        interruptSelectedThreadTurn
-    };
+unknownOutcomeByThreadId,
+pendingTurnRequestByThreadId,
+isSendingMessage,
+isInterruptingTurn,
+clearPendingTurnRequest,
+sendMessageToSelectedThread,
+sendMessageToNewThread,
+interruptSelectedThreadTurn
+};
 }

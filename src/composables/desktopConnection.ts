@@ -263,19 +263,24 @@ export function createDesktopConnection(deps: {
         });
     }
     return {
-        get backendInstanceId() { return backendInstanceId; }, set backendInstanceId(value) { backendInstanceId = value; },
-        isPolling,
-        get lifecycleGeneration() { return lifecycleGeneration; }, set lifecycleGeneration(value) { lifecycleGeneration = value; },
-        get stopNotificationStream() { return stopNotificationStream; }, set stopNotificationStream(value) { stopNotificationStream = value; },
-        get eventSyncTimer() { return eventSyncTimer; }, set eventSyncTimer(value) { eventSyncTimer = value; },
-        get eventSyncGeneration() { return eventSyncGeneration; }, set eventSyncGeneration(value) { eventSyncGeneration = value; },
-        get pendingThreadsRefresh() { return pendingThreadsRefresh; }, set pendingThreadsRefresh(value) { pendingThreadsRefresh = value; },
-        get pendingThreadsRefreshForce() { return pendingThreadsRefreshForce; }, set pendingThreadsRefreshForce(value) { pendingThreadsRefreshForce = value; },
-        pendingThreadMessageRefresh,
-        queueEventDrivenSync,
-        syncFromNotifications,
-        invalidateDisconnectedReads,
-        recoverBridgeState,
-        startPolling
-    };
+get backendInstanceId() { return backendInstanceId; },
+set backendInstanceId(value) { backendInstanceId = value; },
+isPolling,
+get lifecycleGeneration() { return lifecycleGeneration; },
+set lifecycleGeneration(value) { lifecycleGeneration = value; },
+get stopNotificationStream() { return stopNotificationStream; },
+set stopNotificationStream(value) { stopNotificationStream = value; },
+get eventSyncTimer() { return eventSyncTimer; },
+set eventSyncTimer(value) { eventSyncTimer = value; },
+get eventSyncGeneration() { return eventSyncGeneration; },
+set eventSyncGeneration(value) { eventSyncGeneration = value; },
+get pendingThreadsRefresh() { return pendingThreadsRefresh; },
+set pendingThreadsRefresh(value) { pendingThreadsRefresh = value; },
+get pendingThreadsRefreshForce() { return pendingThreadsRefreshForce; },
+set pendingThreadsRefreshForce(value) { pendingThreadsRefreshForce = value; },
+pendingThreadMessageRefresh,
+syncFromNotifications,
+recoverBridgeState,
+startPolling
+};
 }

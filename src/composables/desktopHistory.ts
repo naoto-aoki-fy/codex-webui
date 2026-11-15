@@ -344,24 +344,23 @@ export function createDesktopHistory(deps: {
         await loadMessages(threadId, options);
     }
     return {
-        persistedMessagesByThreadId,
-        loadedVersionByThreadId,
-        loadedMessagesByThreadId,
-        hasMoreOlderMessagesByThreadId,
-        loadingOlderMessagesByThreadId,
-        isLoadingMessages,
-        visibleMessageLoads,
-        syncMessageLoading,
-        loadMessagePromiseByThreadId,
-        reconnectingThreadHistory,
-        historyReadOwnerByThreadId,
-        historyReadOwner,
-        invalidateThreadHistory,
-        lastMessageLoadAtByThreadId,
-        lastMessageLoadFailureAtByThreadId,
-        getFirstPersistedTurnId,
-        loadMessages,
-        loadOlderMessages,
-        ensureThreadMessagesLoaded
-    };
+persistedMessagesByThreadId,
+loadedVersionByThreadId,
+loadedMessagesByThreadId,
+hasMoreOlderMessagesByThreadId,
+loadingOlderMessagesByThreadId,
+isLoadingMessages,
+visibleMessageLoads,
+syncMessageLoading,
+loadMessagePromiseByThreadId,
+reconnectingThreadHistory,
+historyReadOwnerByThreadId,
+historyReadOwner,
+invalidateThreadHistory,
+lastMessageLoadAtByThreadId,
+lastMessageLoadFailureAtByThreadId,
+loadMessages,
+loadOlderMessages,
+ensureThreadMessagesLoaded
+};
 }

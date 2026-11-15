@@ -4,141 +4,21 @@ import { createDesktopHistory } from './desktopHistory'
 import { createDesktopApprovals } from './desktopApprovals'
 import { pruneThreadStateMap, removeThreadFromGroups, mergeThreadGroups, mergeIncomingWithLocalThreads } from './threadListReconciliation'
 export { removeThreadFromGroups } from './threadListReconciliation'
-import { profileStorageKey, reloadForConnectionProfile } from '../utils/browserConnectionProfile'
+
 import { fastModeAvailability, modelSelectionKey, parseModelSelection, defaultModelForProvider } from '../api/modelCapabilities'
 import { markNativeThreadRead, refreshThreadGenerationMetadata } from '../api/codexGateway'
 import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
-import {
-  getWorkspaceProjectId,
-  filterGroupsByWorkspaceRoots,
-} from '../utils/desktopProjectGroups'
-import {
-  readPlanUpdate,
-  asRecord,
-  readString,
-  readNumber,
-  readThreadTokenUsageUpdate,
-  extractThreadIdFromNotification,
-  readTurnErrorMessage,
-  readNotificationErrorState,
-  normalizePendingServerRequestMethod,
-  readTurnActivity,
-  liveReasoningMessageId,
-  readReasoningStartedItemId,
-  readReasoningDelta,
-  readReasoningSectionBreakMessageId,
-  readReasoningCompletedId,
-  readAgentMessageStartedId,
-  readAgentMessageDelta,
-  readAgentMessageCompleted,
-  readCompletedImageView,
-  readCommandOutputDelta,
-  isAgentContentEvent,
-  type TurnActivityState,
-} from './desktopNotificationReaders'
-import {
-  MODEL_USAGE_STORAGE_KEY,
-  loadModelUsageOrder,
-  REASONING_BY_MODEL_STORAGE_KEY,
-  NEW_THREAD_COLLABORATION_MODE_CONTEXT,
-  NEW_THREAD_MODEL_CONTEXT,
-  normalizeStoredModelId,
-  createStringKeyedRecord,
-  cloneStringKeyedRecord,
-  omitStringKeyedRecordKey,
-  pruneThreadContextStateMap,
-  isNewThreadContextId,
-  toThreadContextId,
-  loadSelectedModelMap,
-  readSelectedModel,
-  saveSelectedModelMap,
-  loadReasoningPreferences,
-  loadSelectedCollaborationModeMap,
-  readSelectedCollaborationMode,
-  writeSelectedCollaborationModeForContext,
-  saveSelectedCollaborationModeMap,
-  loadThreadTokenUsageMap,
-  saveThreadTokenUsageMap,
-  loadSelectedThreadId,
-  saveSelectedThreadId,
-} from './desktopStatePersistence'
-import {
-  areStringArraysEqual,
-  areMessageArraysEqual,
-  mergeMessages,
-  normalizeMessageText,
-  isOptimisticUserMessage,
-  hasOptimisticUserMessages,
-  removeRedundantLiveAgentMessages,
-  upsertMessage,
-} from '../utils/desktopMessageReconciliation'
+import { getWorkspaceProjectId, filterGroupsByWorkspaceRoots } from '../utils/desktopProjectGroups'
+import { readPlanUpdate, asRecord, readString, readNumber, readThreadTokenUsageUpdate, extractThreadIdFromNotification, readTurnErrorMessage, readNotificationErrorState, readTurnActivity, liveReasoningMessageId, readReasoningStartedItemId, readReasoningDelta, readReasoningSectionBreakMessageId, readReasoningCompletedId, readAgentMessageStartedId, readAgentMessageDelta, readAgentMessageCompleted, readCompletedImageView, readCommandOutputDelta, isAgentContentEvent, type TurnActivityState } from './desktopNotificationReaders'
+import { MODEL_USAGE_STORAGE_KEY, loadModelUsageOrder, REASONING_BY_MODEL_STORAGE_KEY, NEW_THREAD_MODEL_CONTEXT, normalizeStoredModelId, createStringKeyedRecord, cloneStringKeyedRecord, omitStringKeyedRecordKey, pruneThreadContextStateMap, isNewThreadContextId, toThreadContextId, loadSelectedModelMap, readSelectedModel, saveSelectedModelMap, loadReasoningPreferences, loadSelectedCollaborationModeMap, readSelectedCollaborationMode, writeSelectedCollaborationModeForContext, saveSelectedCollaborationModeMap, loadThreadTokenUsageMap, saveThreadTokenUsageMap, loadSelectedThreadId, saveSelectedThreadId } from './desktopStatePersistence'
+import { areStringArraysEqual, areMessageArraysEqual, normalizeMessageText, isOptimisticUserMessage, upsertMessage } from '../utils/desktopMessageReconciliation'
 import { computed, ref, watch } from 'vue'
 import { formatTurnDuration, parseIsoTimestamp } from '../utils/turnTiming'
-import {
-
-  createConversationTransfer,
-  archiveThread,
-  forkThread,
-  forkThreadFromResponse,
-  getAvailableCollaborationModes,
-  getAccountRateLimits,
-  renameThread,
-  getAvailableModelIds,
-  acquireReasoningCatalog,
-  reasoningCatalog,
-  reasoningOptions,
-  resolveReasoningEffort,
-  findReasoningModel,
-  getCurrentModelConfig,
-  getPendingServerRequests,
-  getSkillsList,
-  getThreadDetail,
-  getOlderThreadMessages,
-  getBackgroundThreadListLimit,
-  interruptThreadTurn,
-  pickCodexRateLimitSnapshot,
-  replyToServerRequest,
-  revertThreadHistory,
-  validateThreadRevert,
-  getThreadDetailForRevert,
-  invalidateResumeThread,
-  resumeThreadSubscription,
-  getThreadGroupsPage,
-  getWorkspaceRootsState,
-  getWorkspaceRootsStateGeneration,
-  setCodexSpeedMode,
-  updateWorkspaceRootsState,
-  invalidateWorkspaceRootsStateCache,
-  resumeThread,
-
-  startThread,
-  subscribeCodexNotifications,
-  startThreadTurn,
-  type RpcNotification,
-  type SkillInfo,
-  type WorkspaceRootsState,
-} from '../api/codexGateway'
+import { createConversationTransfer, archiveThread, forkThread, forkThreadFromResponse, getAvailableCollaborationModes, getAccountRateLimits, renameThread, getAvailableModelIds, acquireReasoningCatalog, reasoningCatalog, reasoningOptions, resolveReasoningEffort, findReasoningModel, getCurrentModelConfig, getSkillsList, getBackgroundThreadListLimit, pickCodexRateLimitSnapshot, revertThreadHistory, validateThreadRevert, getThreadDetailForRevert, invalidateResumeThread, resumeThreadSubscription, getThreadGroupsPage, getWorkspaceRootsState, getWorkspaceRootsStateGeneration, setCodexSpeedMode, updateWorkspaceRootsState, invalidateWorkspaceRootsStateCache, type RpcNotification, type SkillInfo, type WorkspaceRootsState } from '../api/codexGateway'
 import { CodexApiError } from '../api/codexErrors'
 import { normalizeFileChangeStatus, toUiFileChanges } from '../api/normalizers/v2'
 import { readGenerationMetadata, mergeGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata'
-import type {
-  CollaborationModeKind,
-  CollaborationModeOption,
-  CommandExecutionData,
-  UiPendingRequestState,
-  ReasoningEffort,
-  SpeedMode,
-  UiFileChange,
-  UiLiveOverlay,
-  UiMessage,
-  UiPlanData,
-  UiProjectGroup,
-  UiRateLimitSnapshot,
-  UiServerRequest,
-  UiServerRequestReply,
-  UiThreadTokenUsage,
-  UiThread,
-} from '../types/codex'
+import type { CollaborationModeKind, CollaborationModeOption, CommandExecutionData, ReasoningEffort, SpeedMode, UiLiveOverlay, UiMessage, UiPlanData, UiProjectGroup, UiRateLimitSnapshot, UiServerRequest, UiThreadTokenUsage, UiThread } from '../types/codex'
 import { normalizePathForUi } from '../pathUtils.js'
 
 function flattenThreads(groups: UiProjectGroup[]): UiThread[] {
@@ -269,35 +149,35 @@ export function useDesktopState() {
   const sourceGroups = ref<UiProjectGroup[]>([])
   const selectedThreadId = ref(loadSelectedThreadId())
   const history = createDesktopHistory({
-get selectedThreadId() { return selectedThreadId },
-get turnIndexByTurnIdByThreadId() { return turnIndexByTurnIdByThreadId },
-get lifecycleGeneration() { return connection.lifecycleGeneration }, set lifecycleGeneration(value) { connection.lifecycleGeneration = value },
-get turnErrorByThreadId() { return turnErrorByThreadId },
-get currentThreadVersion() { return currentThreadVersion },
-get sourceGroups() { return sourceGroups },
-get inProgressById() { return inProgressById },
-get resumedThreadById() { return resumedThreadById },
-get markThreadAsRead() { return markThreadAsRead },
-get realtimeRevisionByThreadId() { return realtimeRevisionByThreadId },
-get applyThreadFlags() { return applyThreadFlags },
-get activeTurnIdByThreadId() { return activeTurnIdByThreadId },
-get pendingTurnRequestByThreadId() { return turns.pendingTurnRequestByThreadId },
-get setThreadModelId() { return setThreadModelId },
-get markThreadMessagesPersisted() { return markThreadMessagesPersisted },
-get replaceTurnIndexLookupForThread() { return replaceTurnIndexLookupForThread },
-get rebindLiveFileChangeTurnIndices() { return rebindLiveFileChangeTurnIndices },
-get setPersistedMessagesForThread() { return setPersistedMessagesForThread },
-get liveAgentMessagesByThreadId() { return liveAgentMessagesByThreadId },
-get setLiveAgentMessagesForThread() { return setLiveAgentMessagesForThread },
-get removeLiveCommandsPersistedIn() { return removeLiveCommandsPersistedIn },
-get removeLiveFileChangesPersistedIn() { return removeLiveFileChangesPersistedIn },
-get error() { return error },
-get connectionErrorMessage() { return connectionErrorMessage },
-get setThreadInProgress() { return setThreadInProgress },
-get clearTransientTurnErrorForThread() { return clearTransientTurnErrorForThread },
-get clearCompletedTurnLiveState() { return clearCompletedTurnLiveState },
-get setTurnErrorForThread() { return setTurnErrorForThread }
-})
+    get selectedThreadId() { return selectedThreadId; },
+    get turnIndexByTurnIdByThreadId() { return turnIndexByTurnIdByThreadId; },
+    get lifecycleGeneration() { return connection.lifecycleGeneration; }, set lifecycleGeneration(value) { connection.lifecycleGeneration = value; },
+    get turnErrorByThreadId() { return turnErrorByThreadId; },
+    get currentThreadVersion() { return currentThreadVersion; },
+    get sourceGroups() { return sourceGroups; },
+    get inProgressById() { return inProgressById; },
+    get resumedThreadById() { return resumedThreadById; },
+    get markThreadAsRead() { return markThreadAsRead; },
+    get realtimeRevisionByThreadId() { return realtimeRevisionByThreadId; },
+    get applyThreadFlags() { return applyThreadFlags; },
+    get activeTurnIdByThreadId() { return activeTurnIdByThreadId; },
+    get pendingTurnRequestByThreadId() { return turns.pendingTurnRequestByThreadId; },
+    get setThreadModelId() { return setThreadModelId; },
+    get markThreadMessagesPersisted() { return markThreadMessagesPersisted; },
+    get replaceTurnIndexLookupForThread() { return replaceTurnIndexLookupForThread; },
+    get rebindLiveFileChangeTurnIndices() { return rebindLiveFileChangeTurnIndices; },
+    get setPersistedMessagesForThread() { return setPersistedMessagesForThread; },
+    get liveAgentMessagesByThreadId() { return liveAgentMessagesByThreadId; },
+    get setLiveAgentMessagesForThread() { return setLiveAgentMessagesForThread; },
+    get removeLiveCommandsPersistedIn() { return removeLiveCommandsPersistedIn; },
+    get removeLiveFileChangesPersistedIn() { return removeLiveFileChangesPersistedIn; },
+    get error() { return error; },
+    get connectionErrorMessage() { return connectionErrorMessage; },
+    get setThreadInProgress() { return setThreadInProgress; },
+    get clearTransientTurnErrorForThread() { return clearTransientTurnErrorForThread; },
+    get clearCompletedTurnLiveState() { return clearCompletedTurnLiveState; },
+    get setTurnErrorForThread() { return setTurnErrorForThread; }
+  })
   const livePlanMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveAgentMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveReasoningTextByThreadId = ref<Record<string, string>>({})
@@ -350,66 +230,66 @@ get setTurnErrorForThread() { return setTurnErrorForThread }
   const workspaceRootsState = ref<WorkspaceRootsState | null>(null)
 
   const connection = createDesktopConnection({
-get history() { return history },
-get setLiveAgentMessagesForThread() { return setLiveAgentMessagesForThread },
-get clearLiveReasoningForThread() { return clearLiveReasoningForThread },
-get liveCommandsByThreadId() { return liveCommandsByThreadId },
-get setTurnSummaryForThread() { return setTurnSummaryForThread },
-get setTurnActivityForThread() { return setTurnActivityForThread },
-get setTurnErrorForThread() { return setTurnErrorForThread },
-get loadThreads() { return loadThreads },
-get selectedThreadId() { return selectedThreadId },
-get inProgressById() { return inProgressById },
-get currentThreadVersion() { return currentThreadVersion },
-get threadListLoadGeneration() { return threadListLoadGeneration }, set threadListLoadGeneration(value) { threadListLoadGeneration = value },
-get invalidateThreadListGeneration() { return invalidateThreadListGeneration },
-get loadThreadsPromise() { return loadThreadsPromise }, set loadThreadsPromise(value) { loadThreadsPromise = value },
-get pendingForcedThreadLoad() { return pendingForcedThreadLoad }, set pendingForcedThreadLoad(value) { pendingForcedThreadLoad = value },
-get approvals() { return approvals },
-get hasLoadedThreads() { return hasLoadedThreads },
-get ensureCatalogOwnership() { return ensureCatalogOwnership },
-get resumedThreadById() { return resumedThreadById },
-get applyRealtimeUpdates() { return applyRealtimeUpdates }
-})
+    get history() { return history; },
+    get setLiveAgentMessagesForThread() { return setLiveAgentMessagesForThread; },
+    get clearLiveReasoningForThread() { return clearLiveReasoningForThread; },
+    get liveCommandsByThreadId() { return liveCommandsByThreadId; },
+    get setTurnSummaryForThread() { return setTurnSummaryForThread; },
+    get setTurnActivityForThread() { return setTurnActivityForThread; },
+    get setTurnErrorForThread() { return setTurnErrorForThread; },
+    get loadThreads() { return loadThreads; },
+    get selectedThreadId() { return selectedThreadId; },
+    get inProgressById() { return inProgressById; },
+    get currentThreadVersion() { return currentThreadVersion; },
+    get threadListLoadGeneration() { return threadListLoadGeneration; }, set threadListLoadGeneration(value) { threadListLoadGeneration = value; },
+    get invalidateThreadListGeneration() { return invalidateThreadListGeneration; },
+    get loadThreadsPromise() { return loadThreadsPromise; }, set loadThreadsPromise(value) { loadThreadsPromise = value; },
+    get pendingForcedThreadLoad() { return pendingForcedThreadLoad; }, set pendingForcedThreadLoad(value) { pendingForcedThreadLoad = value; },
+    get approvals() { return approvals; },
+    get hasLoadedThreads() { return hasLoadedThreads; },
+    get ensureCatalogOwnership() { return ensureCatalogOwnership; },
+    get resumedThreadById() { return resumedThreadById; },
+    get applyRealtimeUpdates() { return applyRealtimeUpdates; }
+  })
   const connectionErrorMessage = 'App-server disconnected. Reconnect and inspect the thread before resending a turn.'
   const transportState = ref('connected')
   const recoveryByThreadId = ref<Record<string, string>>({})
   const recoveryDismissTimerByThreadId = new Map<string, ReturnType<typeof setTimeout>>()
   const turns = createDesktopTurns({
-get selectedCollaborationMode() { return selectedCollaborationMode },
-get selectedSpeedMode() { return selectedSpeedMode },
-get approvals() { return approvals },
-get lifecycleGeneration() { return connection.lifecycleGeneration }, set lifecycleGeneration(value) { connection.lifecycleGeneration = value },
-get readModelIdForThread() { return readModelIdForThread },
-get selectedThreadId() { return selectedThreadId },
-get selectedReasoningEffort() { return selectedReasoningEffort },
-get isUpdatingSpeedMode() { return isUpdatingSpeedMode },
-get history() { return history },
-get inProgressById() { return inProgressById },
-get appendOptimisticUserMessage() { return appendOptimisticUserMessage },
-get setTurnErrorForThread() { return setTurnErrorForThread },
-get error() { return error },
-get setTurnSummaryForThread() { return setTurnSummaryForThread },
-get setTurnActivityForThread() { return setTurnActivityForThread },
-get setThreadInProgress() { return setThreadInProgress },
-get activeTurnIdByThreadId() { return activeTurnIdByThreadId },
-get readReasoningEffortForThread() { return readReasoningEffortForThread },
-get setThreadModelId() { return setThreadModelId },
-get setSelectedCollaborationModeForThread() { return setSelectedCollaborationModeForThread },
-get insertOptimisticThread() { return insertOptimisticThread },
-get blockInterruptUntilThreadIsPersisted() { return blockInterruptUntilThreadIsPersisted },
-get resumedThreadById() { return resumedThreadById },
-get setSelectedThreadId() { return setSelectedThreadId },
-get realtimeRevisionByThreadId() { return realtimeRevisionByThreadId },
-get recordModelUsage() { return recordModelUsage },
-get setPersistedMessagesForThread() { return setPersistedMessagesForThread },
-get maybeUnblockInterruptForActiveTurn() { return maybeUnblockInterruptForActiveTurn },
-get pendingThreadMessageRefresh() { return connection.pendingThreadMessageRefresh },
-get syncFromNotifications() { return connection.syncFromNotifications },
-get scheduleDelayedTurnSync() { return scheduleDelayedTurnSync },
-get interruptBlockedUntilPersistedByThreadId() { return interruptBlockedUntilPersistedByThreadId },
-get pendingThreadsRefresh() { return connection.pendingThreadsRefresh }, set pendingThreadsRefresh(value) { connection.pendingThreadsRefresh = value }
-})
+    get selectedCollaborationMode() { return selectedCollaborationMode; },
+    get selectedSpeedMode() { return selectedSpeedMode; },
+    get approvals() { return approvals; },
+    get lifecycleGeneration() { return connection.lifecycleGeneration; }, set lifecycleGeneration(value) { connection.lifecycleGeneration = value; },
+    get readModelIdForThread() { return readModelIdForThread; },
+    get selectedThreadId() { return selectedThreadId; },
+    get selectedReasoningEffort() { return selectedReasoningEffort; },
+    get isUpdatingSpeedMode() { return isUpdatingSpeedMode; },
+    get history() { return history; },
+    get inProgressById() { return inProgressById; },
+    get appendOptimisticUserMessage() { return appendOptimisticUserMessage; },
+    get setTurnErrorForThread() { return setTurnErrorForThread; },
+    get error() { return error; },
+    get setTurnSummaryForThread() { return setTurnSummaryForThread; },
+    get setTurnActivityForThread() { return setTurnActivityForThread; },
+    get setThreadInProgress() { return setThreadInProgress; },
+    get activeTurnIdByThreadId() { return activeTurnIdByThreadId; },
+    get readReasoningEffortForThread() { return readReasoningEffortForThread; },
+    get setThreadModelId() { return setThreadModelId; },
+    get setSelectedCollaborationModeForThread() { return setSelectedCollaborationModeForThread; },
+    get insertOptimisticThread() { return insertOptimisticThread; },
+    get blockInterruptUntilThreadIsPersisted() { return blockInterruptUntilThreadIsPersisted; },
+    get resumedThreadById() { return resumedThreadById; },
+    get setSelectedThreadId() { return setSelectedThreadId; },
+    get realtimeRevisionByThreadId() { return realtimeRevisionByThreadId; },
+    get recordModelUsage() { return recordModelUsage; },
+    get setPersistedMessagesForThread() { return setPersistedMessagesForThread; },
+    get maybeUnblockInterruptForActiveTurn() { return maybeUnblockInterruptForActiveTurn; },
+    get pendingThreadMessageRefresh() { return connection.pendingThreadMessageRefresh; },
+    get syncFromNotifications() { return connection.syncFromNotifications; },
+    get scheduleDelayedTurnSync() { return scheduleDelayedTurnSync; },
+    get interruptBlockedUntilPersistedByThreadId() { return interruptBlockedUntilPersistedByThreadId; },
+    get pendingThreadsRefresh() { return connection.pendingThreadsRefresh; }, set pendingThreadsRefresh(value) { connection.pendingThreadsRefresh = value; }
+  })
   const lostApprovalByThreadId = ref<Record<string, boolean>>({})
   const selectedRecoveryState = computed(() => recoveryByThreadId.value[selectedThreadId.value] ?? '')
   const selectedUnknownOutcome = computed(() => turns.unknownOutcomeByThreadId.value[selectedThreadId.value] === true)
@@ -437,11 +317,11 @@ get pendingThreadsRefresh() { return connection.pendingThreadsRefresh }, set pen
   let localThreadReconciliationTimer: number | null = null
   const persistedUserMessageByThreadId = ref<Record<string, boolean>>({})
   const approvals = createDesktopApprovals({
-get applyThreadFlags() { return applyThreadFlags },
-get lifecycleGeneration() { return connection.lifecycleGeneration }, set lifecycleGeneration(value) { connection.lifecycleGeneration = value },
-get error() { return error }
-})
-  
+    get applyThreadFlags() { return applyThreadFlags; },
+    get lifecycleGeneration() { return connection.lifecycleGeneration; }, set lifecycleGeneration(value) { connection.lifecycleGeneration = value; },
+    get error() { return error; }
+  })
+
   const codexRateLimit = ref<UiRateLimitSnapshot | null>(null)
   const threadTokenUsageByThreadId = ref<Record<string, UiThreadTokenUsage>>(loadThreadTokenUsageMap())
 
@@ -449,7 +329,7 @@ get error() { return error }
   const accountRateLimitSnapshots = ref<UiRateLimitSnapshot[]>([])
 
   const isLoadingThreads = ref(false)
-  
+
   // Only non-silent initial reads own the selected conversation's indicator.
 
   watch(selectedThreadId, history.syncMessageLoading, { flush: 'sync' })
@@ -459,11 +339,11 @@ get error() { return error }
   const isRollingBack = ref(false)
 
   const error = ref('')
-  
+
   const hasLoadedThreads = ref(false)
 
   // Work may begin before polling starts; only stop invalidates its ownership.
-  
+
   let catalogOwnership: ReturnType<typeof acquireReasoningCatalog> | null = null
   function ensureCatalogOwnership() {
     return catalogOwnership ??= acquireReasoningCatalog()

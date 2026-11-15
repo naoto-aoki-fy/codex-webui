@@ -174,18 +174,12 @@ export function createDesktopApprovals(deps: {
         }
     }
     return {
-        pendingServerRequestsByThreadId,
-        get pendingServerRequestsVersion() { return pendingServerRequestsVersion; }, set pendingServerRequestsVersion(value) { pendingServerRequestsVersion = value; },
-        getThreadPendingRequests,
-        isApprovalRequestMethod,
-        readPendingRequestState,
-        normalizeServerRequest,
-        readToolRequestUserInputQuestionIds,
-        upsertPendingServerRequest,
-        removePendingServerRequestById,
-        replacePendingServerRequests,
-        handleServerRequestNotification,
-        loadPendingServerRequestsFromBridge,
-        respondToPendingServerRequest
-    };
+pendingServerRequestsByThreadId,
+getThreadPendingRequests,
+readPendingRequestState,
+readToolRequestUserInputQuestionIds,
+handleServerRequestNotification,
+loadPendingServerRequestsFromBridge,
+respondToPendingServerRequest
+};
 }
