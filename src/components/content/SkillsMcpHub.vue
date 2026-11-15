@@ -13,6 +13,7 @@
     </div>
 
     <div v-if="toast" class="directory-toast" :class="{ 'is-error': toast.type === 'error' }">{{ toast.text }}</div>
+    <CuratedPlugins :epoch="props.epoch ?? 0" />
     <McpConfiguration :epoch="props.epoch ?? 0" />
     <section class="directory-section">
       <SkillsHub
@@ -77,6 +78,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getMethodCatalog, listDirectoryMcpServers, reloadDirectoryMcpServers, startDirectoryMcpLogin, type DirectoryMcpServerStatus } from '../../api/codexGateway'
+import CuratedPlugins from './CuratedPlugins.vue'
 import McpConfiguration from './McpConfiguration.vue'
 import SkillsHub from './SkillsHub.vue'
 const props = defineProps<{ epoch?: number }>()

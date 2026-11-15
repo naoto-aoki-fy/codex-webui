@@ -159,3 +159,51 @@ require broader edit ownership and conflict handling. Scalar edits remain useful
 existing JS library target. `node scripts/test-approved-mcp.cjs`: lazy read, exact
 version/file/scalar, confirmation, no secrets/reload and conflicts; all sizes/themes
 passed. Performance in manual test. Live NOT RUN; narrow scope medium risk.
+
+## 17 validation and scope limitation
+
+Partial: working read-only native vertical-collection browser with local filtering
+and expandable returned source/version/installed/enabled/developer/description.
+In floor request_processors/plugins.rs: plugin_list_response starts background
+bundle work for local/default/shared/created-by-me or remote refresh scopes;
+plugin_installed_response unconditionally calls maybe_start_remote_installed_plugin_bundle_sync.
+Explicit `{marketplaceKinds:["vertical"],forceRefetch:false}` avoids those branches
+and reads the curated collection only when the native configuration exposes it
+(the floor's RemotePlugin-enabled branch may return an empty collection).
+No flags are enabled and no registry is fabricated. Broader catalog/lifecycle
+scope is blocked: even nominal reads can change installed bundles; native install/
+uninstall method names are not proof of safe ownership/removal/reload semantics
+for this repository. These methods are not falsely described as experimental merely
+because this iteration does not enable them.
+`pnpm exec vitest run src/api/curatedPlugins.test.ts src/components/content/SkillsMcpHub.navigation.test.ts`: 3 passed. Typecheck passed. Browser matrix passed lazy
+vertical-only reads, filtering/details/state, empty/error, no install/sync calls.
+Performance in manual test. Live NOT RUN; read subset low risk, lifecycle high.
+
+## Blocked individual features
+
+- **15 — Side chat:** floor thread/fork supports ephemeral storage but inherits
+  workspace/tools; sandbox read-only constrains command filesystem access, not a
+  guarantee against MCP/connector side effects. No verified native read-only
+  question-only contract was found. Prediction-mode restrictions are not a supported
+  side-chat product contract. The current desktop state has a single selected-thread
+  live renderer; an independent simultaneous side viewer would also need new event/
+  lifecycle ownership. Ordinary Fork is retained and is not relabeled side chat.
+  Reassessed risk high for promised isolation; no mutation probe or placeholder.
+- **19 — Skills extensions:** floor plugin.rs exposes skills/extraRoots/set with
+  a complete extraRoots list. catalog_processor.rs replaces the shared service's
+  roots and notifies all clients; no getter or incremental add/remove contract is
+  exposed. A client-owned list could overwrite another client's roots. Standalone
+  skill install/removal has no native exact-resource API. Plugin uninstall is a
+  broader resource mutation, and plugin/installed can synchronize bundles. Existing
+  installed skill source/details/enable/disable/composer selection remain; no second
+  installer/registry, arbitrary URL/script or shared-root deletion. Reassessed risk
+  high for new mutations. No useful safe management extension established.
+
+Authoritative floor source links:
+
+- [Thread contract](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server-protocol/src/protocol/v2/thread.rs)
+- [Review targets](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server-protocol/src/protocol/v2/review.rs)
+- [Thread implementation](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server/src/request_processors/thread_processor.rs)
+- [Plugin list side effects and vertical branch](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server/src/request_processors/plugins.rs)
+- [Shared skills roots setter](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server/src/request_processors/catalog_processor.rs)
+- [Config layers and versioned writes](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server-protocol/src/protocol/v2/config.rs)
