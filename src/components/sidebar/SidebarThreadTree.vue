@@ -335,17 +335,16 @@
 </template>
 
 <script setup lang="ts">
+import type { SidebarProps } from "./sidebarContracts"
+import { createSidebarMenus } from './sidebarMenus'
+import { createSidebarThreads } from './sidebarThreads'
+
 import ForkSplitButton from '../content/ForkSplitButton.vue'
 import type { ForkMethod } from '../../types/codex'
 import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  getPinnedThreadState,
-  getThreadSummary,
-  setThreadPinned,
-  subscribeCodexNotifications,
-} from '../../api/codexGateway'
+
 import type { UiProjectGroup, UiThread } from '../../types/codex'
 import IconTablerChevronDown from '../icons/IconTablerChevronDown.vue'
 import IconTablerChevronRight from '../icons/IconTablerChevronRight.vue'
@@ -353,27 +352,13 @@ import IconTablerDots from '../icons/IconTablerDots.vue'
 import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerFolder from '../icons/IconTablerFolder.vue'
 import IconTablerFolderOpen from '../icons/IconTablerFolderOpen.vue'
-import IconTablerTrash from '../icons/IconTablerTrash.vue'
+
 import SidebarMenuRow from './SidebarMenuRow.vue'
 import SidebarThreadRow from './SidebarThreadRow.vue'
-import { filterSidebarGroups, collectChronologicalThreads } from './threadVisibility'
-import { compareThreads, sortThreadGroups, type ThreadSortMode } from './threadSorting'
 
 const router = useRouter()
 
-const props = defineProps<{
-  isForkDisabled?: boolean
-  groups: UiProjectGroup[]
-  removableProjectIds?: string[]
-  projectDisplayNameById: Record<string, string>
-  selectedThreadId: string
-  activeProjectName: string | null
-  isLoading: boolean
-  isThreadListFullyLoaded: boolean
-  searchQuery: string
-  searchMatchedThreadIds: string[] | null
-}>()
-
+const props = defineProps<SidebarProps>()
 
 const emit = defineEmits<{
   select: [threadId: string]
@@ -385,47 +370,121 @@ const emit = defineEmits<{
   'fork-thread': [payload: { threadId: string; method: ForkMethod }]
 }>()
 
-type MenuDirection = 'up' | 'down'
 const PROJECT_GROUP_EXPANDED_GAP_PX = 6
 const SECTION_EXPANSION_STORAGE_KEY = 'codex-web-local.sidebar-section-expansion.v1'
-const expandedProjects = ref<Record<string, boolean>>({})
+const THREAD_VIEW_MODE_STORAGE_KEY = 'codex-web-local.thread-view-mode.v1'
+const CHAT_SORT_MODE_STORAGE_KEY = 'codex-web-local.chat-sort-mode.v1'
+const threads = createSidebarThreads({
+  get CHAT_SORT_MODE_STORAGE_KEY() { return CHAT_SORT_MODE_STORAGE_KEY; },
+  get props() { return props; },
+  get THREAD_VIEW_MODE_STORAGE_KEY() { return THREAD_VIEW_MODE_STORAGE_KEY; },
+  get isPinned() { return isPinned; },
+  get isCollapsed() { return isCollapsed; }
+})
+const {
+  hasLoadedPinnedThreadState,
+  pinnedThreadIds,
+  optimisticallyArchivedThreadIds,
+  chatSortMode,
+  sortedGroups,
+  threadViewMode,
+  isSearchActive,
+  pinnedThreadIdSet,
+  optimisticallyArchivedThreadIdSet,
+  filteredGroups,
+  isChronologicalView,
+  globalThreads,
+  threadById,
+  hydrateMissingPinnedThreads,
+  pinStateError,
+  refreshPinnedThreadState,
+  unsubscribeSections,
+  threadProjectNameById,
+  unpinnedThreadsByProjectName,
+  threadTimestampById,
+  pinnedThreads,
+  togglePin,
+  isExpanded,
+  toggleProjectExpansion,
+  visibleThreads,
+  hasHiddenThreads,
+  hasThreads,
+} = threads
+
 const collapsedProjects = ref<Record<string, boolean>>({})
 const isPinnedSectionExpanded = ref(true)
 const isProjectsSectionExpanded = ref(true)
-let hasLoadedPinnedThreadState = false
-const pinnedThreadIds = ref<string[]>([])
-const hydratedPinnedThreadById = ref<Record<string, UiThread>>({})
-const inlineDeleteConfirmThreadId = ref('')
-const optimisticallyArchivedThreadIds = ref<string[]>([])
-const openProjectMenuId = ref('')
-const openThreadMenuId = ref('')
-const projectMenuDirectionById = ref<Record<string, MenuDirection>>({})
-const threadMenuDirectionById = ref<Record<string, MenuDirection>>({})
-const openThreadMenuStyle = ref<Record<string, string>>({})
-const renameThreadDialogVisible = ref(false)
-const renameThreadDialogThreadId = ref('')
-const renameThreadDraft = ref('')
-const renameThreadInputRef = ref<HTMLInputElement | null>(null)
-const deleteThreadDialogVisible = ref(false)
-const deleteThreadDialogThreadId = ref('')
-const deleteThreadTitle = ref('')
+
+const menus = createSidebarMenus({
+  get threads() { return threads; },
+  get emit() { return emit; },
+  get props() { return props; },
+  get getProjectDisplayName() { return getProjectDisplayName; },
+  get router() { return router; }
+})
+const {
+  openProjectMenuId,
+  openThreadMenuId,
+  projectMenuDirectionById,
+  openThreadMenuStyle,
+  renameThreadDialogVisible,
+  renameThreadDraft,
+  renameThreadInputRef,
+  deleteThreadDialogVisible,
+  deleteThreadTitle,
+  projectMenuWrapElementByName,
+  organizeMenuWrapRef,
+  openThreadMenuPanelRef,
+  isOrganizeMenuOpen,
+  openThreadMenuThread,
+  onTogglePinFromMenu,
+  onSelect,
+  onCopyThreadChat,
+  onForkThread,
+  getNewThreadButtonAriaLabel,
+  onStartNewThread,
+  onCopyThreadPath,
+  onThreadRowLeave,
+  isThreadMenuOpen,
+  toggleThreadMenu,
+  onThreadRowContextMenu,
+  onOpenThreadInNewTab,
+  openRenameThreadDialog,
+  closeRenameThreadDialog,
+  submitRenameThread,
+  openDeleteThreadDialog,
+  closeDeleteThreadDialog,
+  submitDeleteThread,
+  isInlineDeleteConfirming,
+  onInlineDeleteClick,
+  canRemoveProject,
+  isProjectMenuOpen,
+  toggleOrganizeMenu,
+  setThreadViewMode,
+  toggleProjectMenu,
+  openProjectContextMenu,
+  onRemoveProject,
+  setProjectMenuWrapRef,
+  setThreadMenuWrapRef,
+  getThreadMenuDirection,
+  updateOpenThreadMenuPlacement,
+  bindThreadMenuPositionListeners,
+  unbindThreadMenuPositionListeners,
+  bindProjectMenuDismissListeners,
+  unbindProjectMenuDismissListeners,
+  hasOpenDismissableMenu,
+} = menus
+
 const groupsContainerRef = ref<HTMLElement | null>(null)
 const measuredHeightByProject = ref<Record<string, number>>({})
 const projectGroupElementByName = new Map<string, HTMLElement>()
-const projectMenuWrapElementByName = new Map<string, HTMLElement>()
-const threadMenuWrapElementById = new Map<string, HTMLElement>()
+
 const projectNameByElement = new WeakMap<HTMLElement, string>()
-const organizeMenuWrapRef = ref<HTMLElement | null>(null)
-const openThreadMenuPanelRef = ref<HTMLElement | null>(null)
-const isOrganizeMenuOpen = ref(false)
-const THREAD_VIEW_MODE_STORAGE_KEY = 'codex-web-local.thread-view-mode.v1'
-const CHAT_SORT_MODE_STORAGE_KEY = 'codex-web-local.chat-sort-mode.v1'
-const chatSortMode = ref<ThreadSortMode>(typeof window !== 'undefined' && window.localStorage.getItem(CHAT_SORT_MODE_STORAGE_KEY) === 'created' ? 'created' : 'updated')
-watch(chatSortMode, value => {
+
+watch(threads.chatSortMode, value => {
   if (typeof window !== 'undefined') window.localStorage.setItem(CHAT_SORT_MODE_STORAGE_KEY, value)
 })
-const sortedGroups = computed(() => sortThreadGroups(props.groups, chatSortMode.value))
-const threadViewMode = ref<'project' | 'chronological'>(loadThreadViewMode())
+
 const projectGroupResizeObserver =
   typeof window !== 'undefined'
     ? new ResizeObserver((entries) => {
@@ -451,13 +510,6 @@ function loadCollapsedState(): Record<string, boolean> {
   } catch {
     return {}
   }
-}
-
-function loadThreadViewMode(): 'project' | 'chronological' {
-  if (typeof window === 'undefined') return 'project'
-
-  const raw = window.localStorage.getItem(THREAD_VIEW_MODE_STORAGE_KEY)
-  return raw === 'chronological' ? 'chronological' : 'project'
 }
 
 collapsedProjects.value = loadCollapsedState()
@@ -499,146 +551,20 @@ watch(
   { deep: true },
 )
 
-watch(threadViewMode, (value) => {
+watch(threads.threadViewMode, (value) => {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(THREAD_VIEW_MODE_STORAGE_KEY, value)
 })
 
 watch([isPinnedSectionExpanded, isProjectsSectionExpanded], persistSectionExpansionState)
 
-const normalizedSearchQuery = computed(() => props.searchQuery.trim().toLowerCase())
-
-const isSearchActive = computed(() => normalizedSearchQuery.value.length > 0)
-const matchedThreadIdSet = computed(() => {
-  if (!props.searchMatchedThreadIds) return null
-  return new Set(props.searchMatchedThreadIds)
-})
-const pinnedThreadIdSet = computed(() => new Set(pinnedThreadIds.value))
-const optimisticallyArchivedThreadIdSet = computed(() => new Set(optimisticallyArchivedThreadIds.value))
-
-function threadMatchesSearch(thread: UiThread): boolean {
-  if (optimisticallyArchivedThreadIdSet.value.has(thread.id)) return false
-  if (!isSearchActive.value) return true
-  if (matchedThreadIdSet.value?.has(thread.id)) {
-    return true
-  }
-  const q = normalizedSearchQuery.value
-  return thread.title.toLowerCase().includes(q) || thread.preview.toLowerCase().includes(q)
-}
-
-const filteredGroups = computed(() => filterSidebarGroups(
-  sortedGroups.value, threadMatchesSearch, isSearchActive.value, props.activeProjectName,
-))
-
-const isChronologicalView = computed(() => threadViewMode.value === 'chronological')
-
-const globalThreads = computed(() => collectChronologicalThreads(
-  props.groups, threadMatchesSearch, pinnedThreadIdSet.value,
-).sort(compareThreads(chatSortMode.value)))
-
-const threadById = computed(() => {
-  const map = new Map<string, UiThread>()
-
-  for (const group of props.groups) {
-    for (const thread of group.threads) {
-      if (optimisticallyArchivedThreadIdSet.value.has(thread.id)) continue
-      map.set(thread.id, thread)
-    }
-  }
-
-  return map
+watch([threads.pinnedThreadIds, threads.threadById, () => props.isLoading], () => {
+  if (!threads.hasLoadedPinnedThreadState) return
+  void threads.hydrateMissingPinnedThreads()
 })
 
-let pinnedThreadHydrationVersion = 0
-
-async function hydrateMissingPinnedThreads(): Promise<void> {
-  if (props.isLoading) return
-  const missingThreadIds = pinnedThreadIds.value.filter((threadId) => !threadById.value.has(threadId) && !hydratedPinnedThreadById.value[threadId])
-  if (missingThreadIds.length === 0) return
-
-  const version = (pinnedThreadHydrationVersion += 1)
-  const loadedThreads = await Promise.all(
-    missingThreadIds.map(async (threadId) => {
-      try {
-        return await getThreadSummary(threadId)
-      } catch {
-        return null
-      }
-    }),
-  )
-  if (version !== pinnedThreadHydrationVersion) return
-
-  const next = { ...hydratedPinnedThreadById.value }
-  for (const thread of loadedThreads) {
-    if (thread) next[thread.id] = thread
-  }
-  hydratedPinnedThreadById.value = next
-}
-
-watch([pinnedThreadIds, threadById, () => props.isLoading], () => {
-  if (!hasLoadedPinnedThreadState) return
-  void hydrateMissingPinnedThreads()
-})
-
-const pinStateError = ref('')
-async function refreshPinnedThreadState(): Promise<void> {
-  try {
-    const { threadIds } = await getPinnedThreadState()
-    pinnedThreadIds.value = [...new Set(threadIds.map(id => id.trim()).filter(Boolean))]
-    pinStateError.value = ''
-    hasLoadedPinnedThreadState = true
-    void hydrateMissingPinnedThreads()
-  } catch (error) {
-    pinStateError.value = error instanceof Error ? error.message : 'Failed to load native pins'
-  }
-}
-const unsubscribeSections = subscribeCodexNotifications(notification => {
-  if (notification.method === 'thread/section/changed' || notification.method === 'app-server/reconnected') {
-    void refreshPinnedThreadState()
-  }
-})
-onUnmounted(unsubscribeSections)
-onMounted(refreshPinnedThreadState)
-
-const threadProjectNameById = computed(() => {
-  const map = new Map<string, string>()
-  for (const group of props.groups) {
-    for (const thread of group.threads) {
-      map.set(thread.id, group.projectName)
-    }
-  }
-  return map
-})
-const unpinnedThreadsByProjectName = computed(() => {
-  const map = new Map<string, UiThread[]>()
-  for (const group of filteredGroups.value) {
-    const rows = group.threads.filter((thread) => !pinnedThreadIdSet.value.has(thread.id) && !optimisticallyArchivedThreadIdSet.value.has(thread.id))
-    map.set(group.projectName, rows)
-  }
-  return map
-})
-const threadTimestampById = computed(() => {
-  const map = new Map<string, number>()
-  for (const group of props.groups) {
-    for (const thread of group.threads) {
-      const timestamp = new Date(thread.updatedAtIso || thread.createdAtIso).getTime()
-      map.set(thread.id, timestamp)
-    }
-  }
-  return map
-})
-
-const openThreadMenuThread = computed(() => {
-  const threadId = openThreadMenuId.value
-  return threadId ? (threadById.value.get(threadId) ?? null) : null
-})
-
-const pinnedThreads = computed(() =>
-  pinnedThreadIds.value
-    .map((threadId) => threadById.value.get(threadId) ?? hydratedPinnedThreadById.value[threadId] ?? null)
-    .filter((thread): thread is UiThread => thread !== null)
-    .filter(threadMatchesSearch),
-)
+onUnmounted(threads.unsubscribeSections)
+onMounted(threads.refreshPinnedThreadState)
 
 function togglePinnedSection(): void {
   isPinnedSectionExpanded.value = !isPinnedSectionExpanded.value
@@ -648,7 +574,7 @@ function toggleProjectsSection(): void {
   isProjectsSectionExpanded.value = !isProjectsSectionExpanded.value
 }
 
-const layoutProjectOrder = computed(() => filteredGroups.value.map(group => group.projectName))
+const layoutProjectOrder = computed(() => threads.filteredGroups.value.map(group => group.projectName))
 
 const layoutTopByProject = computed<Record<string, number>>(() => {
   const topByProject: Record<string, number> = {}
@@ -690,7 +616,7 @@ function formatRelative(timestamp: number): string {
 }
 
 function formatRelativeThread(thread: UiThread): string {
-  const timestamp = threadTimestampById.value.get(thread.id)
+  const timestamp = threads.threadTimestampById.value.get(thread.id)
   if (typeof timestamp === 'number') {
     return formatRelative(timestamp)
   }
@@ -698,179 +624,7 @@ function formatRelativeThread(thread: UiThread): string {
 }
 
 function isPinned(threadId: string): boolean {
-  return pinnedThreadIdSet.value.has(threadId)
-}
-
-async function togglePin(threadId: string): Promise<void> {
-  if (pinStateError.value) return
-  try {
-    const pinned = !isPinned(threadId)
-    await setThreadPinned(threadId, pinned, pinnedThreadIds.value[0])
-    // Apply the acknowledged move; the native notification refreshes other-client
-    // changes. Avoid issuing a second list request for our own notification.
-    const remaining = pinnedThreadIds.value.filter(id => id !== threadId)
-    pinnedThreadIds.value = pinned ? [threadId, ...remaining] : remaining
-  } catch (error) {
-    console.error('Unable to change native thread section', error)
-  }
-}
-
-function onTogglePinFromMenu(threadId: string): void {
-  togglePin(threadId)
-  closeThreadMenu()
-}
-
-function onSelect(threadId: string): void {
-  inlineDeleteConfirmThreadId.value = ''
-  emit('select', threadId)
-}
-
-function onCopyThreadChat(threadId: string): void {
-  if (threadId !== props.selectedThreadId) return
-  emit('copy-thread-chat', threadId)
-  closeThreadMenu()
-}
-
-function onForkThread(threadId: string, method: ForkMethod): void {
-  if (props.isForkDisabled) return
-  emit('fork-thread', { threadId, method })
-  closeThreadMenu()
-}
-
-function getNewThreadButtonAriaLabel(projectName: string): string {
-  return `start new thread ${getProjectDisplayName(projectName)}`
-}
-
-function onStartNewThread(projectName: string): void {
-  emit('start-new-thread', projectName)
-}
-
-async function onCopyThreadPath(threadId: string): Promise<void> {
-  const path = threadById.value.get(threadId)?.cwd?.trim() ?? ''
-  closeThreadMenu()
-  if (!path || typeof navigator === 'undefined' || !navigator.clipboard) return
-  try {
-    await navigator.clipboard.writeText(path)
-  } catch {
-    // Clipboard writes can be blocked by browser permissions; the menu action is best-effort.
-  }
-}
-
-function onThreadRowLeave(threadId: string, event?: MouseEvent): void {
-  if (openThreadMenuId.value !== threadId) return
-  if (event) {
-    const relatedTarget = event.relatedTarget
-    const panelElement = openThreadMenuPanelRef.value
-    if (relatedTarget instanceof Node && panelElement && panelElement.contains(relatedTarget)) return
-  }
-  closeThreadMenu()
-}
-
-function isThreadMenuOpen(threadId: string): boolean {
-  return openThreadMenuId.value === threadId
-}
-
-function closeThreadMenu(): void {
-  openThreadMenuId.value = ''
-  openThreadMenuStyle.value = {}
-}
-
-function toggleThreadMenu(threadId: string): void {
-  inlineDeleteConfirmThreadId.value = ''
-  if (openThreadMenuId.value === threadId) {
-    closeThreadMenu()
-    return
-  }
-
-  closeProjectMenu()
-  isOrganizeMenuOpen.value = false
-  openThreadMenuId.value = threadId
-  nextTick(() => {
-    updateOpenThreadMenuPlacement(threadId)
-  })
-}
-
-function onThreadRowContextMenu(event: MouseEvent, threadId: string): void {
-  event.preventDefault()
-  inlineDeleteConfirmThreadId.value = ''
-  openThreadMenuId.value = threadId
-}
-
-function onOpenThreadInNewTab(threadId: string): void {
-  const { href } = router.resolve({ name: 'thread', params: { threadId } })
-  window.open(href, '_blank', 'noopener,noreferrer')
-  closeThreadMenu()
-}
-
-function openRenameThreadDialog(threadId: string, currentTitle: string): void {
-  renameThreadDialogThreadId.value = threadId
-  renameThreadDraft.value = currentTitle
-  renameThreadDialogVisible.value = true
-  closeThreadMenu()
-  nextTick(() => {
-    renameThreadInputRef.value?.focus()
-    renameThreadInputRef.value?.select()
-  })
-}
-
-function closeRenameThreadDialog(): void {
-  renameThreadDialogVisible.value = false
-  renameThreadDialogThreadId.value = ''
-  renameThreadDraft.value = ''
-}
-
-function submitRenameThread(): void {
-  const threadId = renameThreadDialogThreadId.value
-  const title = renameThreadDraft.value.trim()
-  if (!threadId || !title) return
-  emit('rename-thread', { threadId, title })
-  closeRenameThreadDialog()
-}
-
-function openDeleteThreadDialog(threadId: string, currentTitle: string): void {
-  inlineDeleteConfirmThreadId.value = ''
-  deleteThreadDialogThreadId.value = threadId
-  deleteThreadTitle.value = currentTitle
-  deleteThreadDialogVisible.value = true
-  closeThreadMenu()
-}
-
-function closeDeleteThreadDialog(): void {
-  deleteThreadDialogVisible.value = false
-  deleteThreadDialogThreadId.value = ''
-  deleteThreadTitle.value = ''
-}
-
-async function submitDeleteThread(): Promise<void> {
-  const threadId = deleteThreadDialogThreadId.value
-  if (!threadId) return
-  deleteThreadById(threadId)
-  closeDeleteThreadDialog()
-}
-
-function isInlineDeleteConfirming(threadId: string): boolean {
-  return inlineDeleteConfirmThreadId.value === threadId
-}
-
-function onInlineDeleteClick(threadId: string): void {
-  if (inlineDeleteConfirmThreadId.value !== threadId) {
-    inlineDeleteConfirmThreadId.value = threadId
-    closeThreadMenu()
-    return
-  }
-
-  deleteThreadById(threadId)
-  inlineDeleteConfirmThreadId.value = ''
-}
-
-function deleteThreadById(threadId: string): void {
-  if (!optimisticallyArchivedThreadIdSet.value.has(threadId)) {
-    optimisticallyArchivedThreadIds.value = [threadId, ...optimisticallyArchivedThreadIds.value]
-  }
-  inlineDeleteConfirmThreadId.value = ''
-  closeThreadMenu()
-  pinnedThreadIds.value = pinnedThreadIds.value.filter((id) => id !== threadId)
-  emit('archive', threadId)
+  return threads.pinnedThreadIdSet.value.has(threadId)
 }
 
 function getProjectDisplayName(projectName: string): string {
@@ -885,80 +639,8 @@ function getProjectVisibleName(group: UiProjectGroup): string {
   return getProjectDisplayName(group.projectName)
 }
 
-const removableProjectIdSet = computed(() => new Set(props.removableProjectIds ?? []))
-
-function canRemoveProject(projectName: string): boolean {
-  return removableProjectIdSet.value.has(projectName)
-}
-
-function isProjectMenuOpen(projectName: string): boolean {
-  return canRemoveProject(projectName) && openProjectMenuId.value === projectName
-}
-
-function closeProjectMenu(): void {
-  openProjectMenuId.value = ''
-}
-
-function toggleOrganizeMenu(): void {
-  const nextValue = !isOrganizeMenuOpen.value
-  if (nextValue) {
-    closeProjectMenu()
-    closeThreadMenu()
-  }
-  isOrganizeMenuOpen.value = nextValue
-}
-
-function setThreadViewMode(mode: 'project' | 'chronological'): void {
-  threadViewMode.value = mode
-  isOrganizeMenuOpen.value = false
-}
-
-function scheduleProjectMenuDirection(projectName: string): void {
-  nextTick(() => {
-    updateProjectMenuDirection(projectName)
-  })
-}
-
-function toggleProjectMenu(projectName: string): void {
-  if (!canRemoveProject(projectName)) return
-  if (openProjectMenuId.value === projectName) {
-    closeProjectMenu()
-    return
-  }
-
-  closeThreadMenu()
-  isOrganizeMenuOpen.value = false
-  openProjectMenuId.value = projectName
-  scheduleProjectMenuDirection(projectName)
-}
-
-function openProjectContextMenu(projectName: string): void {
-  if (!canRemoveProject(projectName)) return
-  closeThreadMenu()
-  isOrganizeMenuOpen.value = false
-  openProjectMenuId.value = projectName
-  scheduleProjectMenuDirection(projectName)
-}
-
-function onRemoveProject(projectName: string): void {
-  if (!canRemoveProject(projectName)) return
-  emit('remove-project', projectName)
-  closeProjectMenu()
-}
-
-function isExpanded(projectName: string): boolean {
-  return expandedProjects.value[projectName] === true
-}
-
 function isCollapsed(projectName: string): boolean {
   return collapsedProjects.value[projectName] === true
-}
-
-function toggleProjectExpansion(projectName: string): void {
-  expandedProjects.value = {
-    ...expandedProjects.value,
-    [projectName]: !isExpanded(projectName),
-  }
 }
 
 function toggleProjectCollapse(projectName: string): void {
@@ -974,228 +656,6 @@ function getProjectOuterHeight(projectName: string): number {
   const baseHeight = measuredHeight
   const gap = isCollapsed(projectName) ? 0 : PROJECT_GROUP_EXPANDED_GAP_PX
   return Math.max(0, baseHeight + gap)
-}
-
-function setProjectMenuWrapRef(projectName: string, element: Element | ComponentPublicInstance | null): void {
-  const htmlElement =
-    element instanceof HTMLElement
-      ? element
-      : element && '$el' in element && element.$el instanceof HTMLElement
-        ? element.$el
-        : null
-
-  if (htmlElement) {
-    projectMenuWrapElementByName.set(projectName, htmlElement)
-    return
-  }
-
-  projectMenuWrapElementByName.delete(projectName)
-}
-
-function setThreadMenuWrapRef(threadId: string, element: Element | ComponentPublicInstance | null): void {
-  const htmlElement =
-    element instanceof HTMLElement
-      ? element
-      : element && '$el' in element && element.$el instanceof HTMLElement
-        ? element.$el
-        : null
-
-  if (htmlElement) {
-    threadMenuWrapElementById.set(threadId, htmlElement)
-    return
-  }
-
-  threadMenuWrapElementById.delete(threadId)
-}
-
-function findMenuBoundaryRect(element: HTMLElement): DOMRect {
-  let parent: HTMLElement | null = element.parentElement
-  while (parent) {
-    const styles = window.getComputedStyle(parent)
-    const overflowY = styles.overflowY || styles.overflow
-    if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'hidden' || overflowY === 'clip') {
-      return parent.getBoundingClientRect()
-    }
-    parent = parent.parentElement
-  }
-
-  return new DOMRect(0, 0, window.innerWidth, window.innerHeight)
-}
-
-function resolveMenuDirection(menuWrapElement: HTMLElement, panelHeight: number): MenuDirection {
-  const wrapRect = menuWrapElement.getBoundingClientRect()
-  const boundaryRect = findMenuBoundaryRect(menuWrapElement)
-  const panelGap = 6
-  const spaceBelow = boundaryRect.bottom - wrapRect.bottom
-  const spaceAbove = wrapRect.top - boundaryRect.top
-
-  if (spaceBelow >= panelHeight + panelGap) return 'down'
-  if (spaceAbove > spaceBelow) return 'up'
-  return 'down'
-}
-
-function updateThreadMenuDirection(threadId: string, panelHeight: number): MenuDirection {
-  const menuWrapElement = threadMenuWrapElementById.get(threadId)
-  if (!menuWrapElement) return 'down'
-
-  const direction = resolveMenuDirection(menuWrapElement, panelHeight)
-
-  threadMenuDirectionById.value = {
-    ...threadMenuDirectionById.value,
-    [threadId]: direction,
-  }
-  return direction
-}
-
-function getThreadMenuDirection(threadId: string): MenuDirection {
-  return threadMenuDirectionById.value[threadId] ?? 'down'
-}
-
-function updateProjectMenuDirection(projectName: string): void {
-  const menuWrapElement = projectMenuWrapElementByName.get(projectName)
-  if (!menuWrapElement) return
-  const menuPanelElement = menuWrapElement.querySelector<HTMLElement>('.project-menu-panel')
-  const panelHeight = menuPanelElement?.getBoundingClientRect().height ?? 0
-
-  projectMenuDirectionById.value = {
-    ...projectMenuDirectionById.value,
-    [projectName]: resolveMenuDirection(menuWrapElement, panelHeight),
-  }
-}
-
-function clamp(value: number, minValue: number, maxValue: number): number {
-  return Math.min(Math.max(value, minValue), maxValue)
-}
-
-function updateOpenThreadMenuPlacement(threadId: string): void {
-  const menuWrapElement = threadMenuWrapElementById.get(threadId)
-  if (!menuWrapElement) return
-
-  const panelElement = openThreadMenuPanelRef.value
-  const panelRect = panelElement?.getBoundingClientRect()
-  const panelHeight = panelRect?.height || panelElement?.offsetHeight || 112
-  const panelWidth = panelRect?.width || panelElement?.offsetWidth || 160
-  const direction = updateThreadMenuDirection(threadId, panelHeight)
-  const wrapRect = menuWrapElement.getBoundingClientRect()
-  const viewportGap = 8
-  const offset = 4
-  const maxLeft = Math.max(viewportGap, window.innerWidth - panelWidth - viewportGap)
-  const left = clamp(wrapRect.right - panelWidth, viewportGap, maxLeft)
-  const top =
-    direction === 'up'
-      ? clamp(wrapRect.top - panelHeight - offset, viewportGap, Math.max(viewportGap, window.innerHeight - panelHeight - viewportGap))
-      : clamp(wrapRect.bottom + offset, viewportGap, Math.max(viewportGap, window.innerHeight - panelHeight - viewportGap))
-
-  openThreadMenuStyle.value = {
-    left: `${Math.round(left)}px`,
-    top: `${Math.round(top)}px`,
-  }
-}
-
-function onThreadMenuViewportChange(): void {
-  const threadId = openThreadMenuId.value
-  if (!threadId) return
-  updateOpenThreadMenuPlacement(threadId)
-}
-
-function bindThreadMenuPositionListeners(): void {
-  window.addEventListener('resize', onThreadMenuViewportChange)
-  document.addEventListener('scroll', onThreadMenuViewportChange, true)
-}
-
-function unbindThreadMenuPositionListeners(): void {
-  window.removeEventListener('resize', onThreadMenuViewportChange)
-  document.removeEventListener('scroll', onThreadMenuViewportChange, true)
-}
-
-function isEventInsideOpenProjectMenu(event: Event): boolean {
-  const projectName = openProjectMenuId.value
-  if (!projectName) return false
-
-  const openMenuWrapElement = projectMenuWrapElementByName.get(projectName)
-  if (!openMenuWrapElement) return false
-
-  const eventPath = typeof event.composedPath === 'function' ? event.composedPath() : []
-  if (eventPath.includes(openMenuWrapElement)) return true
-
-  const target = event.target
-  return target instanceof Node ? openMenuWrapElement.contains(target) : false
-}
-
-function isEventInsideOpenThreadMenu(event: Event): boolean {
-  const threadId = openThreadMenuId.value
-  if (!threadId) return false
-
-  const openMenuWrapElement = threadMenuWrapElementById.get(threadId)
-  if (!openMenuWrapElement) return false
-
-  const eventPath = typeof event.composedPath === 'function' ? event.composedPath() : []
-  if (eventPath.includes(openMenuWrapElement)) return true
-
-  const panelElement = openThreadMenuPanelRef.value
-  if (panelElement && eventPath.includes(panelElement)) return true
-
-  const target = event.target
-  if (!(target instanceof Node)) return false
-  if (openMenuWrapElement.contains(target)) return true
-  if (panelElement && panelElement.contains(target)) return true
-  return false
-}
-
-function onProjectMenuPointerDown(event: PointerEvent): void {
-  if (isOrganizeMenuOpen.value) {
-    const organizeElement = organizeMenuWrapRef.value
-    const eventPath = typeof event.composedPath === 'function' ? event.composedPath() : []
-    const isInsideOrganizeMenu =
-      !!organizeElement &&
-      (eventPath.includes(organizeElement) || (event.target instanceof Node && organizeElement.contains(event.target)))
-
-    if (!isInsideOrganizeMenu) {
-      isOrganizeMenuOpen.value = false
-    }
-  }
-
-  if (!openProjectMenuId.value) return
-  if (!isEventInsideOpenProjectMenu(event)) {
-    closeProjectMenu()
-  }
-
-  if (!openThreadMenuId.value) return
-  if (isEventInsideOpenThreadMenu(event)) return
-  closeThreadMenu()
-}
-
-function onProjectMenuFocusIn(event: FocusEvent): void {
-  if (openProjectMenuId.value && !isEventInsideOpenProjectMenu(event)) {
-    closeProjectMenu()
-  }
-  if (openThreadMenuId.value && !isEventInsideOpenThreadMenu(event)) {
-    closeThreadMenu()
-  }
-}
-
-function onWindowBlurForProjectMenu(): void {
-  if (isOrganizeMenuOpen.value) {
-    isOrganizeMenuOpen.value = false
-  }
-  if (openProjectMenuId.value) {
-    closeProjectMenu()
-  }
-  if (openThreadMenuId.value) {
-    closeThreadMenu()
-  }
-}
-
-function bindProjectMenuDismissListeners(): void {
-  window.addEventListener('pointerdown', onProjectMenuPointerDown, { capture: true })
-  window.addEventListener('focusin', onProjectMenuFocusIn, { capture: true })
-  window.addEventListener('blur', onWindowBlurForProjectMenu)
-}
-
-function unbindProjectMenuDismissListeners(): void {
-  window.removeEventListener('pointerdown', onProjectMenuPointerDown, { capture: true })
-  window.removeEventListener('focusin', onProjectMenuFocusIn, { capture: true })
-  window.removeEventListener('blur', onWindowBlurForProjectMenu)
 }
 
 function updateMeasuredProjectHeight(projectName: string, element: HTMLElement): void {
@@ -1243,11 +703,11 @@ function setProjectGroupRef(projectName: string, element: Element | ComponentPub
 
 function projectGroupStyle(projectName: string): Record<string, string> | undefined {
   const targetTop = layoutTopByProject.value[projectName] ?? 0
-  const openThreadMenuProjectName = openThreadMenuId.value
-    ? (threadProjectNameById.value.get(openThreadMenuId.value) ?? '')
+  const openThreadMenuProjectName = menus.openThreadMenuId.value
+    ? (threads.threadProjectNameById.value.get(menus.openThreadMenuId.value) ?? '')
     : ''
   const shouldElevateForMenu =
-    openProjectMenuId.value === projectName || openThreadMenuProjectName === projectName
+    menus.openProjectMenuId.value === projectName || openThreadMenuProjectName === projectName
 
   return {
       position: 'absolute',
@@ -1259,27 +719,6 @@ function projectGroupStyle(projectName: string): Record<string, string> | undefi
       willChange: 'transform',
       transition: 'transform 180ms ease',
   }
-}
-
-function projectThreads(group: UiProjectGroup): UiThread[] {
-  return unpinnedThreadsByProjectName.value.get(group.projectName) ?? []
-}
-
-function visibleThreads(group: UiProjectGroup): UiThread[] {
-  if (isSearchActive.value) return projectThreads(group)
-  if (isCollapsed(group.projectName)) return []
-
-  const rows = projectThreads(group)
-  return isExpanded(group.projectName) ? rows : rows.slice(0, 10)
-}
-
-function hasHiddenThreads(group: UiProjectGroup): boolean {
-  if (isSearchActive.value) return false
-  return !isCollapsed(group.projectName) && projectThreads(group).length > 10
-}
-
-function hasThreads(group: UiProjectGroup): boolean {
-  return projectThreads(group).length > 0
 }
 
 watch(
@@ -1297,28 +736,24 @@ watch(
   },
 )
 
-const hasOpenDismissableMenu = computed(
-  () => isOrganizeMenuOpen.value || openProjectMenuId.value !== '' || openThreadMenuId.value !== '',
-)
-
-watch(hasOpenDismissableMenu, (isOpen) => {
+watch(menus.hasOpenDismissableMenu, (isOpen) => {
   if (isOpen) {
-    bindProjectMenuDismissListeners()
+    menus.bindProjectMenuDismissListeners()
     return
   }
 
-  unbindProjectMenuDismissListeners()
+  menus.unbindProjectMenuDismissListeners()
 })
 
-watch(openThreadMenuId, (threadId) => {
+watch(menus.openThreadMenuId, (threadId) => {
   if (!threadId) {
-    unbindThreadMenuPositionListeners()
+    menus.unbindThreadMenuPositionListeners()
     return
   }
 
-  bindThreadMenuPositionListeners()
+  menus.bindThreadMenuPositionListeners()
   nextTick(() => {
-    updateOpenThreadMenuPlacement(threadId)
+    menus.updateOpenThreadMenuPlacement(threadId)
   })
 })
 
@@ -1327,9 +762,9 @@ onBeforeUnmount(() => {
     projectGroupResizeObserver?.unobserve(element)
   }
   projectGroupElementByName.clear()
-  projectMenuWrapElementByName.clear()
-  unbindThreadMenuPositionListeners()
-  unbindProjectMenuDismissListeners()
+  menus.projectMenuWrapElementByName.clear()
+  menus.unbindThreadMenuPositionListeners()
+  menus.unbindProjectMenuDismissListeners()
 })
 </script>
 
