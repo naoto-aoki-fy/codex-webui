@@ -8,6 +8,7 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
+| [Management dialogs and send-mode selection](management-dialogs-send-modes.md) |
 | [Explicit standalone native commands](native-shell.md) |
 | [Native deferred prompt queue](native-prompt-queue.md) |
 | [Optional conversation controls load on demand](optional-tools-loading.md) |

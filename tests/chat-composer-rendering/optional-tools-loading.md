@@ -1,9 +1,12 @@
 # Optional tools load on demand
 
+Current access and layout/state checks: [management dialogs and send modes](../chat-composer-rendering/management-dialogs-send-modes.md). Detailed tools use the conversation header menu; composer selection uses +; account and connection management use Settings.
+
+
 Setup: fresh browser context and the built production fixture. Open a conversation.
-Only the Conversation tools and Apps / Connectors summaries should appear. Their
+Only compact header/composer entry points should appear. Their
 optional UI chunks, the prompt library, and Remote Control view must not be fetched
-at startup. Open each summary/editor/Settings explicitly: its actual controls must
+at startup. Open each header/composer entry or Settings explicitly: its actual controls must
 load, but native reads still require the read/refresh buttons. /review, /compact,
 /diff and /processes must open the lazy tools group and the corresponding panel
 without sending or performing a mutation. Close/reopen and navigate threads: no
