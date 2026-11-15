@@ -101,3 +101,14 @@ The fixture also opens the actual Skills management route at desktop size in
 both themes, reads SKILL.md details and asserts disable/enable RPC payloads and
 native paths. Expected additional artifacts: maintenance-skills-light.png and
 maintenance-skills-dark.png. No live Skills configuration is written.
+
+## Desktop controller ownership regression
+
+Prerequisites: installed dependencies; no live server or credentials required.
+Run `pnpm exec vitest run src/composables/useDesktopState.test.ts src/composables/useDesktopState.messages.test.ts`.
+These fixtures exercise the composed approvals, history, turns and connection
+controllers: deferred reads across stop/restart, reconnect during pending approval,
+stream repair, uncertain sends, pagination and fork/revert stage boundaries.
+Expected: one notification owner, stale reads do not publish, destructive requests
+are not replayed, and all cases pass. Test scopes stop polling and clear timers;
+no user-state cleanup is required. This is mocked lifecycle verification.
