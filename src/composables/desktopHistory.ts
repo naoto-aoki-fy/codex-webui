@@ -39,6 +39,7 @@ type PendingTurnRequest = {
 };
 /** Owns persisted history, page/read ownership, pending read promises and loading indicators. stopPolling clears these resources; disconnect recovery detaches read ownership without replaying mutations. */
 export function createDesktopHistory(deps: {
+    securityObservation?: ReturnType<typeof import('./threadSecurityObservation').createThreadSecurityObservation>;
     selectedThreadId: Ref<string, string>;
     turnIndexByTurnIdByThreadId: Ref<Record<string, Record<string, number>>, Record<string, Record<string, number>>>;
     lifecycleGeneration: number;
@@ -165,9 +166,11 @@ export function createDesktopHistory(deps: {
                 const observedReadRevision = flattenThreads(deps.sourceGroups.value).find(row => row.id === threadId)?.nativeReadState?.revision;
                 const needsResume = deps.resumedThreadById.value[threadId] !== true;
                 const realtimeRevision = deps.realtimeRevisionByThreadId.get(threadId) ?? 0;
+                const securityRevision = deps.securityObservation?.revision(threadId);
                 const resumedThread = needsResume ? await resumeThread(threadId) : null;
                 if (!isCurrent())
                     return;
+                if (resumedThread && securityRevision !== undefined) deps.securityObservation?.accept(threadId,securityRevision,resumedThread.security ?? null);
                 const detail = resumedThread ?? await getThreadDetail(threadId);
                 if (!isCurrent())
                     return;

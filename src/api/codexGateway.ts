@@ -1,4 +1,5 @@
 import { readThreadTurnOutcomes, type ThreadTurnOutcomes } from './normalizers/threadMetadata'
+import {threadSecurity} from './threadSecurity'
 import { fastModeAvailability, modelSelectionKey, parseModelSelection } from './modelCapabilities'
 import { normalizeSkillsList, type SkillInfo, type SkillsListResponseEntry } from './normalizers/skills'
 export type { SkillInfo } from './normalizers/skills'
@@ -338,6 +339,7 @@ export async function getAccountRateLimits(): Promise<UiRateLimitSnapshot | null
 }
 
 export type ResumedThread = {
+  security?: import('./threadSecurity').ThreadSecurity | null
   turnOutcomes?: ThreadTurnOutcomes
   nativeReadState?: import('../types/codex').NativeThreadReadState
   model: string
@@ -366,6 +368,7 @@ export async function resumeThread(threadId: string): Promise<ResumedThread> {
     const startTurnIndex = readThreadTurnStartIndex(payload)
     const messages = normalizeThreadMessagesV2(payload, startTurnIndex)
     return {
+      security: threadSecurity(payload),
       model: normalizeThreadModelFromPayload(payload),
       modelProvider: normalizeThreadModelProviderFromPayload(payload),
       messages,

@@ -266,6 +266,7 @@
                 <details id="conversation-tools" class="feature-panel conversation-tools" @toggle="onConversationToolsToggle">
                   <summary>Conversation tools</summary>
                   <ConversationTools v-if="areConversationToolsLoaded" :thread-id="selectedThreadId" :cwd="composerCwd"
+                    :security="securityObservation.snapshots.value[selectedThreadId] ?? null"
                     :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
                     :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage" :incomplete="isSelectedThreadImportIncomplete"
                     :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
@@ -447,6 +448,7 @@ const {
   archiveThreadById,
   restoreThreadById,
   operationEpoch,
+  securityObservation,
   compaction, review,
   diagnosticWarnings,
   forkThreadById,

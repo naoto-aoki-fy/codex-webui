@@ -82,3 +82,21 @@ Screenshots: `output/playwright/risk-28-{1280,375,768}-{light,dark}.png`.
 Performance: one lazy detect RPC per action; 100 manifest rows, twenty identities
 per resource class, bounded/collapsed details. Native repository scan timing was
 not measured live. No repeated subscriptions or client filesystem recursion.
+
+## 03 — Effective permission inspection
+
+Open Permissions inspection. A normally resumed thread displays its observed
+approval policy/reviewer, sandbox, writable roots and active-profile provenance.
+Absent native evidence must show Unknown; config defaults are not substituted.
+Read permission restrictions explicitly and check managed restrictions. A native
+settings update supersedes an older in-flight resume response. Other-thread
+events must not alter the selected snapshot. Disconnect/profile change clears
+snapshots; no resume or write is issued just to inspect permissions.
+
+Automation: `pnpm run test:unit`, `pnpm run typecheck`,
+`PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-permissions.cjs`.
+Screenshots: `output/playwright/risk-03-{1280,375,768}-{light,dark}.png`.
+Performance: zero extra resume/startup requests, one lazy restrictions read,
+100 bounded transient snapshots, one existing event owner, no persistence or
+subscription. Native ordering/stale-resume and eviction are unit-tested.
+Cleanup: close; all controls are read-only in this scope. Live NOT RUN.
