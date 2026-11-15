@@ -224,3 +224,9 @@ one execution row, and zero item-driven history reloads. Typecheck passed.
 Compaction follow-up: failed-turn completion is now correlated to the observed
 native compaction turn. An obsolete failed turn cannot retire a pending new
 compaction. Four focused controller tests passed; no new requests or state store.
+
+Git follow-up: global --literal-pathspecs prevents a status-supplied filename such
+as `:(glob)*` from broadening a selected tracked preview. The disposable real-Git
+fixture verifies staged/unstaged, rename/delete, binary, literal filenames, and
+64 KiB bounded large untracked patches. `pnpm exec vitest run src/api/workingTree.test.ts src/api/workingTree.fixture.test.ts`: 3 tests passed. No real repository or
+user resources are mutated by that fixture; it creates and removes its own tmpdir.

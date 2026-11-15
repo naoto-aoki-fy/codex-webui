@@ -10,7 +10,7 @@ const {mkdirSync}=require('node:fs')
   const {calls,errors}=await setup(page,body=>{
    if(body.method==='command/exec'){
     assert.equal(body.params.cwd,'/remote/project');const args=body.params.command
-    assert.deepEqual(args.slice(0,5),['git','--no-pager','--no-optional-locks','-c','core.fsmonitor=false'])
+    assert.deepEqual(args.slice(0,6),['git','--literal-pathspecs','--no-pager','--no-optional-locks','-c','core.fsmonitor=false'])
     return {json:{result:gitFailure?{exitCode:128,stdout:'',stderr:'Not a repository fixture'}:{exitCode:args.includes('--no-index')?1:0,stdout:args.includes('status')?'MM both.txt\0R  renamed.txt\0old.txt\0 D deleted.txt\0?? new.txt\0':'diff --git a/both.txt b/both.txt\n-old\n+new\n',stderr:''}}}
    }
   })

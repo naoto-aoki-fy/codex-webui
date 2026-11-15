@@ -4,7 +4,7 @@ export type GitRow = { path: string; oldPath?: string; index: string; worktree: 
 type Rpc = (method: string, params: unknown) => Promise<unknown>
 export async function remoteGit(cwd: string, args: string[], rpc: Rpc = rpcCall): Promise<{text:string; bounded:boolean}> {
  if (!cwd.trim()) throw new Error('Select a remote project first.')
- const value = await rpc('command/exec', { command: ['git','--no-pager','--no-optional-locks','-c','core.fsmonitor=false',...args], cwd, timeoutMs:10_000, outputBytesCap:GIT_PREVIEW_CAP }) as Record<string,unknown>
+ const value = await rpc('command/exec', { command: ['git','--literal-pathspecs','--no-pager','--no-optional-locks','-c','core.fsmonitor=false',...args], cwd, timeoutMs:10_000, outputBytesCap:GIT_PREVIEW_CAP }) as Record<string,unknown>
  if (typeof value?.exitCode !== 'number' || typeof value.stdout !== 'string' || typeof value.stderr !== 'string') throw new Error('Incompatible remote Git response')
  if (value.exitCode !== 0 && !(args.includes('--no-index') && value.exitCode === 1)) throw new Error(value.stderr.slice(0,2000) || `Remote Git exited ${value.exitCode}`)
  return {text:value.stdout.slice(0,GIT_PREVIEW_CAP), bounded:new TextEncoder().encode(value.stdout).length >= GIT_PREVIEW_CAP}
