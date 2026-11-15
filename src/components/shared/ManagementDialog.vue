@@ -21,7 +21,7 @@ watch(() => props.open, async open => {
   }
 }, { immediate: true, flush: 'post' })
 function backdrop(event: MouseEvent) {
-  if (event.target !== dialog.value) return
+  if (!dialog.value || event.target !== dialog.value) return
   const box = dialog.value.getBoundingClientRect()
   if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) emit('close')
 }
