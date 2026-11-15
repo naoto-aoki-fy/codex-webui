@@ -445,3 +445,29 @@ saved-versus-loaded differences, confirmation, coded internal unknowns and no
 reload/execution. One saved-policy read, one preflight thread inventory read, one
 targeted write and one saved verification read per action; no startup request,
 polling, extra subscription or project/plugin scan. Live **NOT RUN**.
+
+### 33 — PARTIAL, verified native Daybreak inspection
+
+Daybreak is present in the official release, not a similarly named substitute:
+`v2/thread_data.rs` supplies saved `daybreakEnabled`, `v2/model.rs` supplies
+caller-specific `availableAccessPrograms.cyber`, and `v2/turn.rs` defines
+`standard`/`daybreakBlue`/`daybreakRed`. Native `cyber_access_program.rs` and
+`daybreak_access.rs` tests enforce program/model/account/provenance restrictions.
+The new lazy view displays actual saved thread choice and paginated native
+advertised model programs. Missing metadata, unset choice, false, and an empty
+program list remain distinct. Model names are never used to infer access.
+
+This is inspection only: a saved preference does not select a turn program or
+grant access. No paid turn, flag, plugin installation or security-scan product is
+introduced. The intended full Daybreak scope was not defined in the supplied
+inventory beyond its name; an asynchronous clarification asks whether per-prompt
+program selection or inspection was intended. This milestone is not full program
+workflow completion. It is inserted before further account/shell/deletion work
+because 33 has no specified position in the phase lists and its read-only scope
+is lower risk.
+
+Full initial estimate 3/4/3/4 = **18**, initial inspection 2/2/1/2 = **9**,
+residual 1/2/1/2 = **8**. Three focused units, type checks and six browser views
+passed, including malformed/unknown/empty/unset/error and delayed disconnect.
+Two lazy reads initially, one per additional catalog page; twenty models/page,
+100 retained models, no histories, polling or subscriptions. Live **NOT RUN**.

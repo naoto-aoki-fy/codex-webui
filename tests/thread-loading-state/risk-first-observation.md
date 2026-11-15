@@ -216,3 +216,19 @@ Commands: `pnpm exec vitest run src/api/hookPolicy.test.ts src/api/hooksInspecti
 Screenshots: `output/playwright/risk-21-policies-{1280,375,768}-{light,dark}.png`.
 Performance: at most 100 loaded declarations, one policy config read and three
 calls per save (native preflight/write/saved verification), no scans or listeners.
+
+## 33 — Native Daybreak inspection
+
+Open Native Daybreak status → Read native Daybreak status. Check exact thread
+choice (false/unset/missing remain distinct) and the default provider's native
+caller-advertised model programs. A model name containing Daybreak does not prove
+access; missing metadata differs from an explicitly empty list. Page lazily up
+to 100 rows. No preference/program/flag changes and no turn is started. Delayed
+reads cannot populate a replacement connection/thread. Check themes and sizes.
+Cleanup: close; no server state changed. This is separate from security scans.
+
+Commands: `pnpm exec vitest run src/api/daybreakStatus.test.ts`,
+`pnpm run typecheck`, `PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-daybreak.cjs`.
+Screenshots: `output/playwright/risk-33-{1280,375,768}-{light,dark}.png`.
+Performance: zero startup calls; two initial reads, one per explicit additional
+catalog page; twenty rows/page, 100 retained rows, no new subscriptions/history.
