@@ -5,6 +5,7 @@ import BackgroundTerminals from './BackgroundTerminals.vue'
 import WorkingTreePanel from './WorkingTreePanel.vue'
 import SubagentsPanel from './SubagentsPanel.vue'
 import HooksInspection from './HooksInspection.vue'
+import ConfigInspection from './ConfigInspection.vue'
 import type {createThreadCompaction} from '../../composables/threadCompaction'
 import type {createThreadReview} from '../../composables/threadReview'
 import type {UiMessage} from '../../types/codex'
@@ -34,6 +35,7 @@ const reviewTargetOptions = [
                 <MemoryStatus :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" />
                 <SubagentsPanel :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" />
                 <HooksInspection :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" />
+                <ConfigInspection :cwd="cwd" :epoch="epoch" :disconnected="disconnected" />
                 <BackgroundTerminals :thread-id="threadId" :epoch="epoch" :messages="messages" :disconnected="disconnected" />
                 <WorkingTreePanel :cwd="cwd" :epoch="epoch" />
 </template>

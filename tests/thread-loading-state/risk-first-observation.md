@@ -46,3 +46,22 @@ Screenshots: `output/playwright/risk-21-{1280,375,768}-{light,dark}.png`.
 Performance: zero reads before use, one thread-scoped `hooks/list` per refresh,
 100 rendered definitions total, ten bounded warnings/errors per scope, no new
 subscription, polling or resume. No live timing was measured.
+
+## 23 — Configuration inspection
+
+Open Configuration inspection → Read configuration. Expand setting origins,
+layers, named profiles and managed restrictions. The remote project cwd must be
+shown. Thread overrides can differ from these project defaults. Only selected
+public settings are displayed; arbitrary keys, secrets and internal instructions
+must not appear in any layer or profile view. Test null requirements, omitted
+layers, empty profiles, malformed results, API failure and delayed disconnect.
+Changing project/connection clears all results. No setting is changed. Cleanup:
+close the panel.
+
+Automation: `pnpm exec vitest run src/api/configInspection.test.ts`,
+`pnpm run typecheck`, `PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-config.cjs`.
+Screenshots: `output/playwright/risk-23-{1280,375,768}-{light,dark}.png`.
+Performance: no startup reads; exactly two requests per explicit refresh,
+independently handled failures; 40 layers/100 profile names/12,000 characters per
+projected value, collapsed layer/profile details; no subscriptions or polling.
+Large fixture projection is unit-tested. Live performance NOT RUN.
