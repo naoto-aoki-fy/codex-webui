@@ -268,6 +268,7 @@
                   <ConversationTools v-if="areConversationToolsLoaded" :thread-id="selectedThreadId" :cwd="composerCwd"
                     :security="securityObservation.snapshots.value[selectedThreadId] ?? null"
                     :denied-actions="deniedActions.rows.value"
+                    :queue="nativeQueue"
                     :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
                     :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage" :incomplete="isSelectedThreadImportIncomplete"
                     :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
@@ -289,6 +290,7 @@
                   ref="threadComposerRef"
                   :disabled="isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value"
                   :active-thread-id="composerThreadContextId"
+                  :queue-ready="nativeQueue.available.value"
                   :cwd="composerCwd"
                   :connection-epoch="operationEpoch"
                   :collaboration-modes="availableCollaborationModes"
@@ -451,6 +453,7 @@ const {
   operationEpoch,
   securityObservation,
   deniedActions,
+  nativeQueue,
   compaction, review,
   diagnosticWarnings,
   forkThreadById,
@@ -1056,22 +1059,28 @@ function scheduleWorkspaceRootsResume(): void {
 }
 
 async function onOpenThreadAction(action: string) {
+  const ownerThread=selectedThreadId.value,ownerEpoch=operationEpoch.value
   areConversationToolsLoaded.value = true
   const tools = document.getElementById('conversation-tools') as HTMLDetailsElement | null
   if (tools) tools.open = true
   await import('./components/content/ConversationTools.vue')
   await nextTick()
-  const id = action === 'diff' ? 'current-working-tree' : action === 'processes' ? 'native-background-processes' : 'native-conversation-actions'
+  await new Promise<void>(resolve=>window.requestAnimationFrame(()=>resolve()))
+  if(selectedThreadId.value!==ownerThread||operationEpoch.value!==ownerEpoch)return
+  const id = action === 'queue' ? 'native-prompt-queue' : action === 'diff' ? 'current-working-tree' : action === 'processes' ? 'native-background-processes' : 'native-conversation-actions'
   const panel = document.getElementById(id) as HTMLDetailsElement | null
   if (panel) { panel.open = true; panel.scrollIntoView({ block: 'nearest' }) }
+  if(action==='queue')await nativeQueue.refresh()
 }
 
 function onSubmitThreadMessage(
-  payload: { apps?: import('./api/apps').AppReference[]; text: string; imageUrls: string[]; fileAttachments: Array<{ label: string; path: string; fsPath: string }>; skills: Array<{ name: string; path: string }> },
+  payload: { queue?:boolean; apps?: import('./api/apps').AppReference[]; text: string; imageUrls: string[]; fileAttachments: Array<{ label: string; path: string; fsPath: string }>; skills: Array<{ name: string; path: string }> },
   settle: (accepted: boolean) => void,
 ): void {
   scheduleMobileConversationJumpToLatest()
-  const submission = isHomeRoute.value
+  const submission = payload.queue
+    ? isHomeRoute.value ? Promise.reject(new Error('Select an existing native thread before queuing')) : nativeQueue.add(payload)
+    : isHomeRoute.value
     ? routing.submitFirstMessageForNewThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments)
     : sendMessageToSelectedThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments, undefined, payload.apps).then(() => true)
   void submission.then(accepted => settle(accepted), failure => {

@@ -17,6 +17,7 @@ export function createComposerInput(deps: {
     isMobile: Ref<boolean, boolean>;
 }) {
     const appsUnavailable = ref(false);
+    const queueMode = ref(false);
     const selectedApps = ref<import('../../api/apps').AppReference[]>([]);
     const draft = ref('');
     const promptLibraryOpen = ref(false);
@@ -87,6 +88,7 @@ export function createComposerInput(deps: {
     const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
     const isSubmitting = ref(false);
     const canSubmit = computed(() => {
+        if(queueMode.value&&!deps.props.queueReady)return false;
         if (appsUnavailable.value) return false;
         if (isSubmitting.value)
             return false;
@@ -145,7 +147,7 @@ export function createComposerInput(deps: {
         const snapshot = JSON.stringify(payload);
         isSubmitting.value = true;
         let settled = false;
-        deps.emit('submit', { ...payload, text }, (accepted) => {
+        deps.emit('submit', { ...payload, text, ...(queueMode.value?{queue:true}:{}) }, (accepted) => {
             if (settled)
                 return;
             settled = true;
@@ -445,7 +447,7 @@ export function createComposerInput(deps: {
         return ext === 'md' || ext === 'mdx';
     }
     return {
-appsUnavailable, selectedApps, promptLibraryOpen, promptStorageNotice, populatePrompt,
+queueMode, appsUnavailable, selectedApps, promptLibraryOpen, promptStorageNotice, populatePrompt,
 draft,
 slashQuery,
 slashIndex,
