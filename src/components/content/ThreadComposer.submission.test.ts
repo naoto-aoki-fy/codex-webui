@@ -304,6 +304,8 @@ it('allows Queue selection before thread creation while sending the initial mess
   await vue.nextTick()
   c.nodes().filter(n => n.props.role === 'radio')[1]!.props.onClick()
   await vue.nextTick()
+  expect(c.nodes().some(n => n.props['aria-label'] === 'Queue prompt')).toBe(false)
+  expect(c.nodes().some(n => n.props['aria-label'] === 'Send message')).toBe(true)
   c.exposed.appendTextToDraft('create conversation')
   await vue.nextTick()
   c.submit()
