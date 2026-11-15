@@ -25,7 +25,7 @@ async function run() {
     socket.on('message', raw => {
       const frame = JSON.parse(String(raw)); frames.push(frame)
       if (!frame.method || frame.method === 'initialized') return
-      if (frame.method === 'maintenance/unknown' || frame.method === 'generate-thread-title') {
+      if (frame.method === 'account/usage/read' || frame.method === 'maintenance/unknown' || frame.method === 'generate-thread-title') {
         socket.send(JSON.stringify({ id: frame.id, error: { code: -32601, message: 'Method not found' } }))
         return
       }
@@ -99,6 +99,7 @@ async function run() {
         const [unknown, active] = await Promise.all([call('maintenance/unknown'), call('account/read')])
         assert.equal(unknown.status, 502)
         assert.deepEqual(unknown.body, { error: 'Method not found' })
+        assert.deepEqual(await call('account/usage/read'), { status: 502, body: { error: 'Method not found', rpcCode: -32601 } })
         assert.equal(active.status, 200)
         assert.deepEqual(await call('generate-thread-title'), { status: 502, body: { error: 'Method not found' } })
         const auth = await call('getAuthStatus')
