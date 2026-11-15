@@ -6,7 +6,7 @@ const props=defineProps<{threadId:string;epoch:number;blocked:boolean;deletion:T
 const typed=ref(''),confirmed=ref(false),error=ref('');let alive=true
 onUnmounted(()=>{alive=false})
 watch(()=>[props.threadId,props.epoch,props.deletion?.state.value],()=>{typed.value='';confirmed.value=false;error.value=''})
-async function prepare(){error.value='';if(props.hasDraft()){error.value='Save or clear the editable draft before preparing permanent deletion.';return}try{await(await props.ensureDeletion())?.prepare()}catch(e){error.value=nativeWriteError(e)}}
+async function prepare(){error.value='';if(props.hasDraft()){error.value='Save or clear the editable draft before preparing permanent deletion.';return}const id=props.threadId,epoch=props.epoch;try{const controller=await props.ensureDeletion();if(!alive||id!==props.threadId||epoch!==props.epoch||props.blocked||props.hasDraft())return;await controller?.prepare(id)}catch(e){if(alive&&id===props.threadId&&epoch===props.epoch)error.value=nativeWriteError(e)}}
 function run(){if(props.hasDraft()){error.value='Save or clear the editable draft before deleting.';return}const id=props.threadId,epoch=props.epoch;void props.deletion?.run(typed.value,confirmed.value,()=>alive&&id===props.threadId&&epoch===props.epoch&&!props.blocked&&!props.hasDraft())}
 </script>
 <template><details class="feature-panel permanent-deletion"><summary>Permanent native conversation deletion</summary>

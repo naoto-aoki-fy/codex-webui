@@ -625,3 +625,14 @@ Type checks, full units (1,471 passed/two skipped), build and integration fixtur
 pass on the final product source. Performance: four static CSS rules, no new
 JavaScript, request, subscription or persistence path. Final bundle comparison
 records the resulting CSS/build conditions.
+
+### Final ownership correction: lazy deletion preview
+
+An inspection click could await first-use module loading and then read the new
+selection after navigation. The panel now retains its clicked thread/epoch,
+checks teardown/draft/activity after loading, and passes the captured identity to
+the controller. The controller refuses a mismatched selection before any read.
+A focused regression verifies zero requests for the replacement conversation.
+The existing per-request write guards were already present. This changes no
+startup requests, subscriptions, retained state or mutation semantics; successful
+preview still uses three reads. The final verification pass includes this fix.

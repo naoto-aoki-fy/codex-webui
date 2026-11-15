@@ -39,3 +39,8 @@ Input visibility regression: in both themes, inspect the empty exact-ID field
 before typing. Expect a visible one-pixel border, theme-appropriate background,
 readable text and keyboard focus outline. Worktree destination/branch and model
 configuration text inputs use the same scoped styling. No native select is added.
+
+Lazy-loading ownership: delay the first deletion-controller module, click Inspect
+on conversation A, then navigate before releasing the module. No preview request
+may be sent for replacement conversation B on behalf of the old click. A fresh
+explicit Inspect on B must work. Controller tests also enforce captured identity.
