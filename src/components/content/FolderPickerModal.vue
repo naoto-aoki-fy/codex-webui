@@ -1,22 +1,22 @@
 <template>
   <Teleport to="body">
     <div class="new-thread-open-folder-overlay" @click.self="emit('close')">
-      <div class="new-thread-open-folder" role="dialog" aria-modal="true" :aria-label="t('Select folder')" @keydown.esc.prevent="emit('close')">
+      <div class="new-thread-open-folder" role="dialog" aria-modal="true" :aria-label="('Select folder')" @keydown.esc.prevent="emit('close')">
         <div class="new-thread-open-folder-header">
-          <p class="new-thread-open-folder-title">{{ t('Select folder') }}</p>
+          <p class="new-thread-open-folder-title">{{ ('Select folder') }}</p>
           <button class="new-thread-open-folder-close" type="button" @click="emit('close')">
-            {{ t('Cancel') }}
+            {{ ('Cancel') }}
           </button>
         </div>
-        <p class="new-thread-open-folder-label">{{ t('Current folder') }}</p>
+        <p class="new-thread-open-folder-label">{{ ('Current folder') }}</p>
         <div class="new-thread-open-folder-current">
           <input
             ref="existingFolderPathInputRef"
             v-model="existingFolderPathDraftModel"
             class="new-thread-open-folder-path"
             type="text"
-            :placeholder="t('Current folder')"
-            :title="existingFolderPathDraft || t('Unavailable')"
+            :placeholder="('Current folder')"
+            :title="existingFolderPathDraft || ('Unavailable')"
             :disabled="isExistingFolderLoading || isOpeningExistingFolder"
             @keydown.enter.prevent="emit('retry')"
             @keydown.esc.prevent="emit('close')"
@@ -29,7 +29,7 @@
             :disabled="!resolvedExistingFolderPath || isExistingFolderLoading || isOpeningExistingFolder"
             @click="emit('retry')"
           >
-            {{ t('Browse') }}
+            {{ ('Browse') }}
           </button>
           <button
             class="new-thread-folder-action new-thread-folder-action-primary"
@@ -37,7 +37,7 @@
             :disabled="!resolvedExistingFolderPath || isExistingFolderLoading || isOpeningExistingFolder"
             @click="emit('confirm')"
           >
-            {{ isOpeningExistingFolder ? t('Opening…') : t('Select') }}
+            {{ isOpeningExistingFolder ? ('Opening…') : ('Select') }}
           </button>
         </div>
         <div class="new-thread-open-folder-actions">
@@ -48,7 +48,7 @@
               type="checkbox"
               @change="emit('toggleHidden')"
             />
-            <span>{{ t('Show hidden folders') }}</span>
+            <span>{{ ('Show hidden folders') }}</span>
           </label>
 
         </div>
@@ -56,7 +56,7 @@
             v-model="existingFolderFilterModel"
           class="new-thread-open-folder-filter"
           type="text"
-          :placeholder="t('Filter folders...')"
+          :placeholder="('Filter folders...')"
           @keydown.esc.prevent="emit('close')"
         />
         <div v-if="existingFolderError" class="new-thread-open-folder-error-actions">
@@ -69,12 +69,12 @@
             :disabled="isExistingFolderLoading || isOpeningExistingFolder"
             @click="emit('retry')"
           >
-            {{ t('Retry') }}
+            {{ ('Retry') }}
           </button>
         </div>
-        <p v-if="isExistingFolderLoading" class="new-thread-open-folder-status">{{ t('Loading folders…') }}</p>
+        <p v-if="isExistingFolderLoading" class="new-thread-open-folder-status">{{ ('Loading folders…') }}</p>
         <p v-else-if="!existingFolderError && existingFolderFilteredEntries.length === 0" class="new-thread-open-folder-status">
-          {{ existingFolderFilter.trim() ? t('No folders match this filter.') : t('No subfolders found here.') }}
+          {{ existingFolderFilter.trim() ? ('No folders match this filter.') : ('No subfolders found here.') }}
         </p>
         <ul v-else-if="existingFolderFilteredEntries.length > 0" class="new-thread-open-folder-list">
           <li v-for="entry in existingFolderFilteredEntries" :key="entry.key" class="new-thread-open-folder-item">
@@ -94,7 +94,7 @@
               :disabled="isExistingFolderLoading || isOpeningExistingFolder"
               @click="emit('confirm', entry.path)"
             >
-              {{ t('Select') }}
+              {{ ('Select') }}
             </button>
           </li>
         </ul>
@@ -105,7 +105,6 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { t } from '../../composables/useUiLanguage'
 
 const props = defineProps<{
   existingFolderPathDraft: string

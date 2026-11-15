@@ -21,7 +21,7 @@ async function route(path: string, body?: unknown) {
   req.method = body === undefined ? 'GET' : 'POST'
   let payload: any
   const res = { statusCode: 0, setHeader: vi.fn(), end: (raw: string) => { payload = JSON.parse(raw) } }
-  const handled = await handleAccountRoutes(req, res as unknown as ServerResponse, new URL(path, 'http://localhost'), { appServer })
+  const handled = await handleAccountRoutes(req, res as unknown as ServerResponse, new URL(path, 'http://localhost'))
   return { status: res.statusCode, payload, handled }
 }
 it.each([['GET', ''], ['GET', '/active'], ['POST', '/refresh'], ['POST', '/switch'], ['POST', '/remove']])('removes stored-account %s %s without changing credentials or snapshots', async (method, suffix) => {

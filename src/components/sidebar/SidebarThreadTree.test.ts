@@ -59,8 +59,7 @@ async function mountNativeSidebar() {
   const groups = filterGroupsByWorkspaceRoots(normalizeThreadGroupsV2({ data: [
     row('a-old', 'Alpha', 10, 10), row('a-new', 'Alpha', 60, 20),
     row('z-old', 'Zulu', 20, 30), row('z-new', 'Zulu', 30, 50),
-  ] }), { projectMode: 'native', order: [], active: [], labels: {},
-    projectOrder: nativeProjects.map(project => project.id), nativeProjects })
+  ] }), { projectMode: 'native', order: [], nativeProjects })
   const props = reactive({ groups, projectDisplayNameById: {}, selectedThreadId: '',
     activeProjectName: null, isLoading: false, isThreadListFullyLoaded: false,
     searchQuery: '', searchMatchedThreadIds: null,

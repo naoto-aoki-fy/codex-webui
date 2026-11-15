@@ -16,7 +16,7 @@ function history() {
 
 describe('history visibility through normalization, workspace union and sidebar', () => {
   it.each([[], ['/unrelated/empty'], [cwd, '/unrelated/empty']].map(order => ({ order })))('shows dated and missing-cwd rows with roots $order', ({ order }) => {
-    const groups = filterGroupsByWorkspaceRoots(history(), { order, active: order, projectOrder: [], labels: {} })
+    const groups = filterGroupsByWorkspaceRoots(history(), { order })
     const matches = (thread: { id: string }) => thread.id !== 'archiving'
     const projects = filterSidebarGroups(groups, matches, false, '__codexapp_unassigned__')
     expect(projects.find(group => group.projectName === '__codexapp_unassigned__')?.threads.map(thread => thread.id)).toEqual(['dated', 'pinned', 'missing', 'blank'])

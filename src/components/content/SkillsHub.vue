@@ -1,8 +1,8 @@
 <template>
   <div class="skills-hub">
     <div class="skills-hub-header">
-      <h2 class="skills-hub-title">{{ t('Skills Hub') }}</h2>
-      <p class="skills-hub-subtitle">{{ t('Install and manage skills outside this web app. Reload this page after installing skills.') }}</p>
+      <h2 class="skills-hub-title">{{ ('Skills Hub') }}</h2>
+      <p class="skills-hub-subtitle">{{ ('Install and manage skills outside this web app. Reload this page after installing skills.') }}</p>
     </div>
 
     <div v-if="toast" class="skills-hub-toast" :class="toastClass">{{ toast.text }}</div>
@@ -11,7 +11,7 @@
 
     <div v-if="installedSkills.length > 0" class="skills-hub-section">
       <button class="skills-hub-section-toggle" type="button" @click="isInstalledOpen = !isInstalledOpen">
-        <span class="skills-hub-section-title">{{ t('Installed skills ({count})', { count: installedSkills.length }) }}</span>
+        <span class="skills-hub-section-title">{{ 'Installed skills (' + installedSkills.length + ')' }}</span>
         <IconTablerChevronRight class="skills-hub-section-chevron" :class="{ 'is-open': isInstalledOpen }" />
       </button>
       <div v-if="isInstalledOpen" class="skills-hub-grid">
@@ -25,11 +25,11 @@
     </div>
 
     <div class="skills-hub-section">
-      <div v-if="isLoading" class="skills-hub-loading">{{ t('Loading skills...') }}</div>
+      <div v-if="isLoading" class="skills-hub-loading">{{ ('Loading skills...') }}</div>
       <div v-else-if="error" class="skills-hub-error">
         <span>{{ error }}</span>
       </div>
-      <div v-else-if="installedSkills.length === 0" class="skills-hub-empty">{{ t('No installed skills found. Install skills outside this web app, then reload this page.') }}</div>
+      <div v-else-if="installedSkills.length === 0" class="skills-hub-empty">{{ ('No installed skills found. Install skills outside this web app, then reload this page.') }}</div>
     </div>
 
     <SkillDetailModal
@@ -47,7 +47,6 @@ import IconTablerChevronRight from '../icons/IconTablerChevronRight.vue'
 import SkillCard from './SkillCard.vue'
 import SkillDetailModal from './SkillDetailModal.vue'
 import type { LocalSkill } from '../../types/skills'
-import { useUiLanguage } from '../../composables/useUiLanguage'
 
 const EMPTY_SKILL: LocalSkill = { name: '', description: '' }
 type SkillsHubPayload = { installed?: LocalSkill[] }
@@ -60,7 +59,6 @@ const isDetailOpen = ref(false)
 const detailSkill = ref<LocalSkill>(EMPTY_SKILL)
 const toast = ref<{ text: string; type: 'success' | 'error' } | null>(null)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
-const { t } = useUiLanguage()
 
 const emit = defineEmits<{
   'skills-changed': []

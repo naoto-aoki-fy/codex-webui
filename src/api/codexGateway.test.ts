@@ -326,7 +326,7 @@ describe('response fork operation support', () => {
 // Keep workspace coordination coverage at the public gateway boundary.
 
 describe('workspace roots cache coordination', () => {
-  const state: WorkspaceRootsState = { order: ['/a'], active: ['/a'], projectOrder: ['remote'], labels: { '/a': 'A' }, remoteProjects: [{ id: 'remote', hostId: 'host', remotePath: '/remote', label: 'R' }] }
+  const state: WorkspaceRootsState = { order: ['/a'], projectMode: 'native', nativeProjects: [] }
   const response = () => new Response(JSON.stringify({ data: state }))
   function deferred() {
     let resolve!: (response: Response) => void
@@ -351,10 +351,7 @@ describe('workspace roots cache coordination', () => {
     const [a, b] = await Promise.all([first, second])
     expect(a).toEqual(state)
     a.order.push('/changed')
-    a.active.length = 0
-    a.projectOrder.push('changed')
-    a.labels['/a'] = 'changed'
-    a.remoteProjects![0]!.label = 'changed'
+    a.nativeProjects!.push({ id: 'test', name: 'Changed', roots: [], metadata: {}, position: 0, createdAt: 0, updatedAt: 0, recencyAt: null })
     expect(b).toEqual(state)
     expect(await getWorkspaceRootsState()).toEqual(state)
     expect(fetch).toHaveBeenCalledTimes(1)
@@ -393,8 +390,7 @@ describe('workspace roots cache coordination', () => {
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
     second.resolve(response())
     const result = await updated
-    result.labels['/a'] = 'changed'
-    result.remoteProjects![0]!.label = 'changed'
+    result.order.push('/changed')
     expect(await read).toEqual(state)
     expect(await getWorkspaceRootsState()).toEqual(state)
     expect(fetch.mock.calls.map((call) => call[1].method)).toEqual(['PATCH', 'PATCH'])

@@ -18,7 +18,7 @@ const imports: Record<string, unknown> = {}
 for (const node of ts.createSourceFile('composer.ts', script.content, ts.ScriptTarget.Latest, true).statements) {
   if (!ts.isImportDeclaration(node) || node.importClause?.isTypeOnly) continue
   const path = (node.moduleSpecifier as ts.StringLiteral).text
-  if (path === 'vue' || path.endsWith('.vue') || path.includes('useMobile') || path.includes('useUiLanguage') || path.includes('codexGateway')) continue
+  if (path === 'vue' || path.endsWith('.vue') || path.includes('useMobile') || path.includes('codexGateway')) continue
   imports[path] = await import(/* @vite-ignore */ resolve('src/components/content', path))
 }
 type Node = { tag: string; props: Record<string, any>; children: Node[]; parent?: Node; text?: string }
