@@ -14,7 +14,7 @@ const {setup,assert}=require('./approved-fixture.cjs')
   if(kind==='process'){
    await page.getByText('Background processes',{exact:true}).click();await page.getByRole('button',{name:'Refresh background processes',exact:true}).click();await page.getByRole('button',{name:'Terminate process 42',exact:true}).click();await page.getByRole('button',{name:'Confirm termination 42',exact:true}).click()
   }else{
-   await page.getByRole('button',{name:'Skills',exact:true}).click();await page.getByText('MCP configuration switches',{exact:true}).click();await page.getByRole('button',{name:'Read MCP configuration',exact:true}).click();await page.getByRole('button',{name:'Save disabled for demo',exact:true}).click();await page.getByRole('button',{name:'Confirm MCP setting',exact:true}).click()
+   await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('button',{name:'Apps / Connectors',exact:true}).click();await page.getByText('MCP configuration switches',{exact:true}).click();await page.getByRole('button',{name:'Read MCP configuration',exact:true}).click();await page.getByRole('button',{name:'Save disabled for demo',exact:true}).click();await page.getByRole('button',{name:'Confirm MCP setting',exact:true}).click()
   }
   for(let i=0;!began&&i<100;i++)await page.waitForTimeout(20);assert.ok(began)
   emit('app-server/disconnected',{});await page.waitForTimeout(200);release();await page.waitForTimeout(500)

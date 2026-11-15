@@ -1,5 +1,5 @@
 const {chromium}=require('playwright')
-const {setup,assert,thread}=require('./approved-fixture.cjs')
+const {setup,assert,thread,openToolsDialog}=require('./approved-fixture.cjs')
 ;(async()=>{
  const browser=await chromium.launch({headless:true})
  for(const width of [1280,375,768]){
@@ -23,7 +23,7 @@ const {setup,assert,thread}=require('./approved-fixture.cjs')
    await inspect.click();await requested;await page.evaluate(()=>location.hash='#/');await page.waitForURL(/#\/$/);releaseModule();await page.waitForTimeout(400);await page.unroute('**/assets/threadDeletion-*.js')
    assert.equal(calls.filter(c=>c.method==='thread/read'&&c.params.includeTurns===false).length,before)
    assert.equal(calls.some(c=>c.method==='thread/delete'),false)
-   await page.evaluate(()=>location.hash='#/thread/approved-fixture');await page.getByText('Fixture answer',{exact:true}).waitFor();await page.getByText('Conversation tools',{exact:true}).click();await page.getByText('Permanent native conversation deletion',{exact:true}).click()
+   await page.evaluate(()=>location.hash='#/thread/approved-fixture');await page.getByText('Fixture answer',{exact:true}).waitFor();await openToolsDialog(page);if(!await page.locator('.permanent-deletion').evaluate(el=>el.open))await page.getByText('Permanent native conversation deletion',{exact:true}).click()
   }
   mode='imported';await inspect.click();await page.getByText(/Permanent deletion of Portable imported history is withheld/).waitFor()
   mode='children';await inspect.click();await page.getByText(/has native child agents/).waitFor()

@@ -1,5 +1,5 @@
 const {chromium}=require('playwright')
-const {setup,assert}=require('./approved-fixture.cjs')
+const {setup,assert,openToolsDialog,openComposerEntry}=require('./approved-fixture.cjs')
 ;(async()=>{
  const browser=await chromium.launch({headless:true})
  for(const width of [1280,375,768]){
@@ -14,18 +14,18 @@ const {setup,assert}=require('./approved-fixture.cjs')
     const queuedSubmission={id:'queued-fixture',input:body.params.input,clientUserMessageId:body.params.clientUserMessageId};pending.push(queuedSubmission);return {json:{result:{queuedSubmission}}}
    }
    if(body.method==='turn/steer')return {json:{result:{turnId:'active'}}}
-  })
+  },false)
   assert.equal(calls.some(c=>c.method?.startsWith('thread/queue/')),false)
   const draft=page.locator('.thread-composer-input');await draft.fill('Queue fixture prompt')
-  await page.getByRole('button',{name:'Immediate mode',exact:true}).click();await page.getByText('No pending prompts returned.',{exact:true}).waitFor();await page.getByRole('button',{name:'Queue prompt',exact:true}).click()
+  await openComposerEntry(page,'Queue mode');await openToolsDialog(page);await page.getByText('Native deferred prompt queue',{exact:true}).click();await page.getByText('No pending prompts returned.',{exact:true}).waitFor();await page.keyboard.press('Escape');await page.getByRole('button',{name:'Queue prompt',exact:true}).click();await openToolsDialog(page)
   await page.getByText('queued-fixture · Client message:',{exact:false}).waitFor();assert.equal(await draft.inputValue(),'');assert.equal(calls.some(c=>c.method==='turn/start'||c.method==='turn/steer'),false)
   await page.getByText('Pending prompt preview (first 8,000 characters)',{exact:true}).click();await page.getByText('Queue fixture prompt',{exact:true}).waitFor()
   for(const theme of ['light','dark']){await page.evaluate(d=>document.documentElement.classList.toggle('dark',d),theme==='dark');await page.waitForTimeout(2200);await page.screenshot({path:`output/playwright/risk-07-${width}-${theme}.png`})}
-  await page.reload();await page.getByText('Fixture answer',{exact:true}).waitFor();await page.getByRole('button',{name:'Immediate mode',exact:true}).click();await page.getByText('queued-fixture · Client message:',{exact:false}).waitFor()
-  mode='delayed';await draft.fill('Delayed queue fixture');await page.getByRole('button',{name:'Queue prompt',exact:true}).click();await page.waitForTimeout(150);await page.getByRole('button',{name:'Queue prompt',exact:true}).evaluate(el=>el.click());assert.equal(calls.filter(c=>c.method==='thread/queue/add').length,2);release();await page.waitForTimeout(200)
+  await page.reload();await page.getByText('Fixture answer',{exact:true}).waitFor();await openComposerEntry(page,'Queue mode');await openToolsDialog(page);await page.getByText('Native deferred prompt queue',{exact:true}).click();await page.getByText('queued-fixture · Client message:',{exact:false}).waitFor()
+  await page.keyboard.press('Escape');mode='delayed';await draft.fill('Delayed queue fixture');await page.getByRole('button',{name:'Queue prompt',exact:true}).click();await page.waitForTimeout(150);await page.getByRole('button',{name:'Queue prompt',exact:true}).evaluate(el=>el.click());assert.equal(calls.filter(c=>c.method==='thread/queue/add').length,2);release();await page.waitForTimeout(200)
   mode='lost';await draft.fill('Uncertain queue fixture');await page.getByRole('button',{name:'Queue prompt',exact:true}).click();await page.getByRole('alert').filter({hasText:'Queue outcome unknown'}).waitFor();assert.equal(await draft.inputValue(),'Uncertain queue fixture');assert.equal(await page.getByRole('button',{name:'Queue prompt',exact:true}).isDisabled(),true)
   const count=calls.filter(c=>c.method==='thread/queue/add').length;emit('app-server/disconnected',{});await page.waitForTimeout(200);assert.equal(calls.filter(c=>c.method==='thread/queue/add').length,count)
-  await page.reload();await page.getByText('Fixture answer',{exact:true}).waitFor();await page.getByRole('button',{name:'Immediate mode',exact:true}).click();await page.getByText('lost-reply-fixture · Client message:',{exact:false}).waitFor();assert.equal(await page.getByRole('button',{name:'Queue prompt',exact:true}).isDisabled(),true);assert.equal(calls.filter(c=>c.method==='thread/queue/add').length,count)
+  await page.reload();await page.getByText('Fixture answer',{exact:true}).waitFor();await openComposerEntry(page,'Queue mode');await openToolsDialog(page);await page.getByText('Native deferred prompt queue',{exact:true}).click();await page.getByText('lost-reply-fixture · Client message:',{exact:false}).waitFor();await page.keyboard.press('Escape');assert.equal(await page.getByRole('button',{name:'Queue prompt',exact:true}).isDisabled(),true);assert.equal(calls.filter(c=>c.method==='thread/queue/add').length,count)
   const recovery=await page.evaluate(()=>localStorage.getItem('codex-web-local.queue-submissions.v1'));assert(recovery);assert.equal(recovery.includes('Uncertain queue fixture'),false)
   assert.deepEqual(errors,[]);await page.close()
  }

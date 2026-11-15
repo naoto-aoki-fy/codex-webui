@@ -1,5 +1,5 @@
 const {chromium}=require('playwright')
-const {setup,assert,thread}=require('./approved-fixture.cjs')
+const {setup,assert,thread,openToolsDialog}=require('./approved-fixture.cjs')
 ;(async()=>{
  const browser=await chromium.launch({headless:true})
  for(const width of [1280,375,768]){
@@ -18,7 +18,7 @@ const {setup,assert,thread}=require('./approved-fixture.cjs')
    }
    if(body.method==='command/exec/terminate')return {json:{result:{}}}
   })
-  await page.locator('.thread-composer-input').fill('Parent chat draft must survive commands');await page.getByText('Standalone native command',{exact:true}).click()
+  await page.keyboard.press('Escape');await page.locator('.thread-composer-input').fill('Parent chat draft must survive commands');await openToolsDialog(page);await page.getByText('Standalone native command',{exact:true}).click()
   const inspect=page.getByRole('button',{name:'Inspect native command context',exact:true}),run=page.getByRole('button',{name:'Execute confirmed native command',exact:true})
   mode='remote';await inspect.click();await page.getByText(/Exact local App Server environment\/cwd is unavailable/).waitFor();assert.equal(calls.some(c=>c.method==='command/exec'),false)
   mode='local';await inspect.click();await page.getByLabel('Standalone native shell command',{exact:true}).fill('printf fixture');assert.equal(await run.isDisabled(),true)
@@ -27,8 +27,8 @@ const {setup,assert,thread}=require('./approved-fixture.cjs')
   await confirm();await page.getByText(/Requested native read-only command/).waitFor();assert.equal(calls.filter(c=>c.method==='command/exec').length,1)
   const params=calls.find(c=>c.method==='command/exec').params;assert.deepEqual(params.sandboxPolicy,{type:'readOnly',networkAccess:false});assert.deepEqual(params.command,['/bin/sh','-c','printf fixture']);assert.equal(params.cwd,'/remote/project');assert.equal(params.timeoutMs,30000);assert.equal(params.outputBytesCap,65536)
   assert.equal(await page.getByRole('button',{name:'Send message',exact:true}).isDisabled(),true);assert.equal(await page.getByRole('button',{name:'Inspect permanent deletion scope',exact:true,includeHidden:true}).isDisabled(),true)
-  await page.evaluate(()=>location.hash='#/thread/other-fixture');await page.getByText('Other fixture answer',{exact:true}).waitFor();const tools=page.getByText('Conversation tools',{exact:true});if(!await tools.evaluate(el=>el.parentElement.open))await tools.click();await page.getByText('Permanent deletion waits while a standalone command is pending or uncertain. Inspect its Standalone native command controls first.',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Inspect permanent deletion scope',exact:true,includeHidden:true}).isDisabled(),true)
-  await page.evaluate(()=>location.hash='#/thread/approved-fixture');await page.getByText('Fixture answer',{exact:true}).waitFor();if(!await tools.evaluate(el=>el.parentElement.open))await tools.click();const shellSummary=page.getByText('Standalone native command',{exact:true});if(!await shellSummary.evaluate(el=>el.parentElement.open))await shellSummary.click()
+  await page.evaluate(()=>location.hash='#/thread/other-fixture');await page.getByText('Other fixture answer',{exact:true}).waitFor();await openToolsDialog(page);await page.getByText('Permanent deletion waits while a standalone command is pending or uncertain. Inspect its Standalone native command controls first.',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Inspect permanent deletion scope',exact:true,includeHidden:true}).isDisabled(),true)
+  await page.evaluate(()=>location.hash='#/thread/approved-fixture');await page.getByText('Fixture answer',{exact:true}).waitFor();await openToolsDialog(page);const shellSummary=page.getByText('Standalone native command',{exact:true});if(!await shellSummary.evaluate(el=>el.parentElement.open))await shellSummary.click()
   emit('turn/started',{threadId:thread.id,turn:{id:'concurrent-model',status:'inProgress'}});await page.getByRole('button',{name:'Stop',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Stop',exact:true}).isEnabled(),true)
   await page.getByRole('button',{name:'Terminate this standalone native process',exact:true}).click();await page.getByText(/Native termination requested for this exact/).waitFor();assert.deepEqual(calls.find(c=>c.method==='command/exec/terminate').params,{processId:params.processId})
   finish({json:{result:{exitCode:143,stdout:'<script>window.BAD=true</script> token=SECRET\n'+'x'.repeat(90000),stderr:''}}});await page.getByText(/Native process exited with code 143/).waitFor();await page.getByText('Native stdout preview',{exact:true}).click();assert.equal(await page.evaluate(()=>window.BAD),undefined);assert.equal((await page.locator('.native-shell').textContent()).includes('SECRET'),false)

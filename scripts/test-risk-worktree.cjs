@@ -1,5 +1,5 @@
 const {chromium}=require('playwright')
-const {setup,assert}=require('./approved-fixture.cjs')
+const {setup,assert,openToolsDialog}=require('./approved-fixture.cjs')
 ;(async()=>{
  const browser=await chromium.launch({headless:true}),head='a'.repeat(40)
  for(const width of [1280,375,768]){
@@ -18,7 +18,7 @@ const {setup,assert}=require('./approved-fixture.cjs')
    return {json:{result:{exitCode:0,stdout,stderr:''}}}
   })
   assert.equal(calls.some(c=>c.method==='command/exec'),false)
-  await page.locator('.thread-composer-input').fill('Parent draft must survive');await page.getByText('Create remote Git worktree',{exact:true}).click();await page.getByRole('textbox',{name:'Worktree destination'}).fill('/remote/fixture-tree');await page.getByRole('textbox',{name:'Worktree new branch'}).fill('fixture-branch');await page.getByRole('button',{name:'Preview worktree creation'}).click();await page.getByText('Repository: /remote/project',{exact:false}).waitFor()
+  await page.keyboard.press('Escape');await page.locator('.thread-composer-input').fill('Parent draft must survive');await openToolsDialog(page);await page.getByText('Create remote Git worktree',{exact:true}).click();await page.getByRole('textbox',{name:'Worktree destination'}).fill('/remote/fixture-tree');await page.getByRole('textbox',{name:'Worktree new branch'}).fill('fixture-branch');await page.getByRole('button',{name:'Preview worktree creation'}).click();await page.getByText('Repository: /remote/project',{exact:false}).waitFor()
   assert.equal(calls.some(c=>c.params?.command?.includes('add')),false);assert.equal(await page.getByRole('button',{name:'Create confirmed worktree'}).isDisabled(),true)
   for(const theme of ['light','dark']){await page.evaluate(d=>document.documentElement.classList.toggle('dark',d),theme==='dark');await page.waitForTimeout(2200);await page.screenshot({path:`output/playwright/risk-13-${width}-${theme}.png`})}
   await page.getByRole('checkbox',{name:'I confirm this remote repository, new branch and destination.'}).check();mode='lost';await page.getByRole('button',{name:'Create confirmed worktree'}).click();await page.getByText('Failed or partial/unknown creation.',{exact:false}).waitFor();assert.equal(calls.filter(c=>c.params?.command?.includes('add')).length,1)
