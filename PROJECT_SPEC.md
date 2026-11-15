@@ -51,6 +51,8 @@ and bundled method metadata do not guarantee UI support or live server capabilit
 | Implemented | Official Codex model catalog, per-context model/reasoning choices and collaboration modes; effort choices follow model capabilities |
 | Implemented | Existing project/worktree folder selection, file attachments/search, installed skills, MCP status/authentication |
 | Implemented | External account status/quotas, optional web password, responsive light/dark UI |
+| Implemented | On-demand archived conversation browser/restore, complete available Markdown export, account usage reads, bounded warnings and sanitized diagnostic report copying |
+| Limited | Web-search mode control is not exposed: scoped effective-setting evidence is not validated; see [conversation tools](docs/conversation-tools.md) |
 | Removed | OpenRouter/Zen/custom provider proxies, local Codex process management and automatic authentication |
 | Removed | Automation management, deferred prompt queue, built-in tunnels, Open Terminal action, ZIP import/export, external skill catalog/install UI, Telegram integration |
 | Not surfaced | Dedicated code-review workflow (`review/start`); generic RPC and protocol definitions remain |

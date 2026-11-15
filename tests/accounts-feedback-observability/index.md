@@ -14,6 +14,8 @@ Return to the [manual test index](../../tests.md).
 | [Browser runtime profiling with Playwright](browser-runtime-profiling-with-playwright.md) |
 | [External Codex authentication](accounts-panel-codex-login-callback-modal.md) |
 | [Startup profiler request dedupe](startup-profiler-request-dedupe.md) |
+| [Account usage history](account-usage-history.md) |
+| [Read-only warnings and sanitized diagnostics](sanitized-diagnostics.md) |
 
 ## Historical references (excluded from acceptance)
 
