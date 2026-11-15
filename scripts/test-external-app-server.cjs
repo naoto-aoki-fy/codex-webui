@@ -22,9 +22,14 @@ async function run() {
   let connections = 0
   server.on('connection', socket => {
     connections++
+    let metadataFixtureRead=false
     socket.on('message', raw => {
       const frame = JSON.parse(String(raw)); frames.push(frame)
       if (!frame.method || frame.method === 'initialized') return
+      if(frame.method==='thread/read'&&frame.params?.threadId==='metadata-status-fixture'){
+        const reply=metadataFixtureRead?{error:{code:-32603,message:'failed to read thread: rollout at /fixture/rollout.jsonl is empty'}}:{result:{thread:{id:'metadata-status-fixture',cwd:'/fixture',status:{type:'idle'},turns:[]}}}
+        metadataFixtureRead=true;socket.send(JSON.stringify({id:frame.id,...reply}));return
+      }
       if (frame.method === 'command/exec' || frame.method === 'command/exec/terminate' || frame.method === 'account/usage/read' || frame.method === 'account/login/start' || frame.method === 'account/login/cancel' || frame.method === 'thread/compact/start' || frame.method === 'thread/delete' || frame.method === 'review/start' || frame.method.startsWith('thread/queue/') || frame.method === 'thread/settings/update' || frame.method === 'config/value/write' || frame.method === 'maintenance/unknown' || frame.method === 'generate-thread-title') {
         socket.send(JSON.stringify({ id: frame.id, error: { code: -32601, message: 'Method not found' } }))
         return
@@ -111,6 +116,15 @@ async function run() {
         assert.equal(auth.status, 200)
         assert.equal(auth.body.result.authToken, null)
         assert.deepEqual(await call('thread/name/set'), { status: 200, body: { result: {} } })
+        const metadataRead=async(includeTurns)=>{
+          const response=await fetch(url+'/codex-api/rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({method:'thread/read',params:{threadId:'metadata-status-fixture',...(includeTurns===undefined?{}:{includeTurns})}})})
+          return {status:response.status,body:await response.json()}
+        }
+        assert.equal((await metadataRead(false)).status,200)
+        const failedMetadata=await metadataRead(false)
+        assert.equal(failedMetadata.status,502);assert.equal(failedMetadata.body.result,undefined)
+        assert.equal((await metadataRead()).status,200,'ordinary history reads retain their existing empty-rollout snapshot fallback')
+        console.log('PASS',dev?'pnpm run dev':'built CLI','failed activity inspection never receives a cached idle snapshot')
         console.log('PASS', dev ? 'pnpm run dev' : 'built CLI', 'API misses, correlated RPC errors, auth redaction and native titles')
         for (const method of ['account/read', 'modelProvider/list', 'model/list', 'thread/list']) {
           const response = await fetch(url + '/codex-api/rpc', {

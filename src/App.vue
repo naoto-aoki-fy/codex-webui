@@ -1370,13 +1370,17 @@ function cycleChatWidth(): void {
 }
 
 async function loadCodexAuthStatus(): Promise<void> {
+  const epoch=operationEpoch.value
   try {
     const status = await getCodexAuthenticationStatus()
+    if(epoch!==operationEpoch.value)return
     if (typeof status === 'boolean') codexAuthAvailable.value = status
   } catch (error) {
+    if(epoch!==operationEpoch.value)return
     accountActionError.value = error instanceof Error ? error.message : 'Unable to read Codex authentication status.'
   }
 }
+watch(operationEpoch,()=>{codexAuthAvailable.value=null;accountActionError.value=''},{flush:'sync'})
 
 function applyDarkMode(): void {
   const root = document.documentElement

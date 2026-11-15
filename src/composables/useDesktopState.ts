@@ -5,6 +5,7 @@ import {createThreadSecurityObservation} from './threadSecurityObservation'
 import {createDeniedActionObservation} from './deniedActionObservation'
 import {createNativeQueue} from './nativeQueue'
 import {createThreadPermissions} from './threadPermissions'
+import {hasPendingNativeAuthentication,persistNativeAuthenticationPending} from '../utils/nativeAuthenticationPending'
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
 import { appendDiagnosticWarning, type DiagnosticWarning } from '../diagnostics'
 import { createDesktopConnection } from './desktopConnection'
@@ -255,14 +256,18 @@ export function useDesktopState() {
     return nativeDeletion.value
   }
   const nativeAuthentication=shallowRef<import('./nativeAuthentication').NativeAuthentication|null>(null)
-  const nativeAuthenticationBlocked=computed(()=>nativeAuthentication.value?.blocking.value??false)
+  const pendingNativeAccount=ref(hasPendingNativeAuthentication())
+  const nativeAuthenticationBlocked=computed(()=>pendingNativeAccount.value||nativeAuthentication.value?.blocking.value||false)
   const nativeAccountChangeBlocked=computed(()=>nativeShell.value?.blocking.value||nativeDeletion.value?.blocking.value||hasActiveInProgressThreads()||turns.isSendingMessage.value||turns.isInterruptingTurn.value||isRollingBack.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.busy.value||permissionChanges.state.value==='unknown'||Object.values(approvals.pendingServerRequestsByThreadId.value).some(rows=>rows.length>0))
   async function ensureNativeAuthentication(){
     const epoch=operationEpoch.value,owner=connection.lifecycleGeneration,module=await import('./nativeAuthentication')
     if(epoch!==operationEpoch.value||owner!==connection.lifecycleGeneration)return null
     if(!nativeAuthentication.value)nativeAuthentication.value=module.createNativeAuthentication({epoch:operationEpoch,ready:()=>transportState.value!=='disconnected',
       blocked:()=>nativeAccountChangeBlocked.value,
-      reconnectAndReload:async()=>{const current=nativeAuthentication.value;const result=await fetch('/codex-api/reconnect',{method:'POST'});if(!result.ok||(await result.json()).ok!==true)throw new Error('Native connection refresh was not acknowledged');if(nativeAuthentication.value===current&&typeof window!=='undefined')window.location.reload()},
+      initiallyUncertain:pendingNativeAccount.value,
+      holdAccountState:()=>{persistNativeAuthenticationPending(true);pendingNativeAccount.value=true},
+      releaseAccountState:()=>{persistNativeAuthenticationPending(false);pendingNativeAccount.value=false},
+      reconnectAndReload:async()=>{const current=nativeAuthentication.value;const result=await fetch('/codex-api/reconnect',{method:'POST'});if(!result.ok||(await result.json()).ok!==true)throw new Error('Native connection refresh was not acknowledged');if(nativeAuthentication.value===current&&typeof window!=='undefined'){persistNativeAuthenticationPending(false);window.location.reload()}},
     })
     return nativeAuthentication.value
   }
@@ -859,6 +864,7 @@ export function useDesktopState() {
 
   async function refreshRateLimits(): Promise<void> {
     const generation = connection.lifecycleGeneration
+    const epoch = operationEpoch.value
     if (rateLimitRefreshPromise) {
       await rateLimitRefreshPromise
       return
@@ -867,13 +873,13 @@ export function useDesktopState() {
     rateLimitRefreshPromise = (async () => {
       try {
         const snapshot = await getAccountRateLimits()
-        if (generation !== connection.lifecycleGeneration) return
+        if (generation !== connection.lifecycleGeneration || epoch !== operationEpoch.value) return
         setCodexRateLimit(snapshot)
         accountRateLimitSnapshots.value = snapshot ? [snapshot] : []
       } catch {
         // Keep the last known rate-limit state if the endpoint is temporarily unavailable.
       } finally {
-        if (generation === connection.lifecycleGeneration) rateLimitRefreshPromise = null
+        if (generation === connection.lifecycleGeneration && epoch === operationEpoch.value) rateLimitRefreshPromise = null
       }
     })()
 
@@ -1704,6 +1710,14 @@ export function useDesktopState() {
   function applyRealtimeUpdates(notification: RpcNotification): void {
     securityObservation.observe(notification)
     permissionChanges.observe(notification)
+    if(notification.method==='account/updated'){
+      pendingNativeAccount.value=true
+      if(!nativeAuthentication.value)try{persistNativeAuthenticationPending(true)}catch{/* The current document remains blocked even if storage fails. */}
+      operationEpoch.value++;modelRefreshVersion++;rateLimitRefreshPromise=null
+      accountRateLimitSnapshots.value=[];setCodexRateLimit(null);availableModelIds.value=[]
+      nativeAuthentication.value?.observe(notification)
+      return
+    }
     nativeAuthentication.value?.observe(notification)
     nativeDeletion.value?.observe(notification)
     if(notification.method==='thread/deleted'){
