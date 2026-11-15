@@ -1,5 +1,7 @@
 # Manual native compaction (02)
 
+Open **Conversation tools** in the selected conversation before expanding the feature panel.
+
 Setup: disposable idle loaded thread on supported server, or intercepted browser
 fixture `node scripts/test-approved-compaction.cjs`.
 Expand Conversation actions, click Compact conversation. Expect one request,

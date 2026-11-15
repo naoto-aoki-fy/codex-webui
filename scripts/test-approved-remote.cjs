@@ -5,7 +5,7 @@ const {setup,assert}=require('./approved-fixture.cjs')
  for(const width of [1280,375,768]){
   const page=await browser.newPage({viewport:{width,height:width===375?812:width===768?1024:900}})
   let failure=false
-  const {calls,errors}=await setup(page,body=>body.method==='remoteControl/status/read'?failure?{status:502,json:{error:'Remote management unavailable'}}:{json:{result:{status:'connected',serverName:'Fixture server',environmentId:'env'}}}:body.method==='remoteControl/client/list'?{json:{result:{data:[{clientId:'device',displayName:'Fixture client',platform:'mobile',lastSeenAt:123}],nextCursor:null}}}:undefined)
+  const {calls,errors}=await setup(page,body=>body.method==='remoteControl/status/read'?failure?{status:502,json:{error:'Remote management unavailable'}}:{json:{result:{status:'connected',serverName:'Fixture server',environmentId:'env'}}}:body.method==='remoteControl/client/list'?{json:{result:{data:[{clientId:'device',displayName:'Fixture client',platform:'mobile',lastSeenAt:123}],nextCursor:null}}}:undefined,false)
   await page.waitForTimeout(700);const expand=page.getByRole('button',{name:'Expand sidebar',exact:true});if(await expand.count())await expand.click()
   await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByText('Codex Remote Control status',{exact:true}).click()
   assert.equal(calls.some(c=>c.method?.startsWith('remoteControl/')),false)

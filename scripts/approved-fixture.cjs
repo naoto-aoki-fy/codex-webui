@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const thread = {id:'approved-fixture',name:'Approved fixture',cwd:'/remote/project',projectId:'p',preview:'fixture',createdAt:1,updatedAt:1,status:{type:'idle'}}
-async function setup(page, handle = () => undefined) {
+async function setup(page, handle = () => undefined, openTools = true) {
  const calls=[], sockets=new Set(), errors=[]
  const items=[{type:'userMessage',id:'u',content:[{type:'text',text:'Fixture request'}]}, {type:'agentMessage',id:'a',text:'Fixture answer'},
  {type:'mcpToolCall',id:'m',server:'fixture',tool:'lookup',status:'completed',arguments:{q:'safe'},result:{content:[{type:'text',text:'<script>window.BAD=true</script> token=secret'}],_meta:{hidden:'HIDDEN_META'}}},
@@ -28,6 +28,7 @@ async function setup(page, handle = () => undefined) {
  const emit=(method,params)=>{for(const ws of sockets)ws.send(JSON.stringify({method,params,atIso:new Date().toISOString()}))}
  await page.goto('http://127.0.0.1:4173/#/thread/approved-fixture')
  await page.getByText('Fixture answer',{exact:true}).waitFor()
+ if(openTools){await page.getByText('Conversation tools',{exact:true}).click();await page.getByText('Conversation actions',{exact:true}).waitFor()}
  return {calls,emit,errors,items,thread}
 }
 module.exports={setup,thread,assert}

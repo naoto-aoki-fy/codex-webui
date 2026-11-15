@@ -1,5 +1,7 @@
 # Native background processes (08)
 
+Open **Conversation tools** in the selected conversation before expanding the feature panel.
+
 Setup: supported loaded disposable thread or `node scripts/test-approved-processes.cjs`.
 Expand Background processes and Refresh. Expect native process/item identity,
 command/cwd, snapshot time, and bounded recent command output only if the matching

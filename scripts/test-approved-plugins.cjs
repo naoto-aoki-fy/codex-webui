@@ -10,7 +10,7 @@ const {setup,assert}=require('./approved-fixture.cjs')
     assert.deepEqual(body.params,{marketplaceKinds:['vertical'],forceRefetch:false})
     return kind==='error'?{status:502,json:{error:'Collection unsupported'}}:{json:{result:{marketplaces:kind==='empty'?[]:[{name:'native-vertical',plugins:[{id:'demo',name:'Demo plugin',version:'2',localVersion:'1',installed:true,enabled:false,source:{type:'remote',token:'SECRET'},interface:{developerName:'Fixture developer',shortDescription:'Fixture description'}}]}],marketplaceLoadErrors:[]}}}
    }
-  })
+  },false)
   await page.waitForTimeout(700);const expand=page.getByRole('button',{name:'Expand sidebar',exact:true});if(await expand.count())await expand.click()
   await page.getByRole('button',{name:'Skills',exact:true}).click();await page.getByText('Curated plugin collection',{exact:true}).click()
   assert.equal(calls.some(c=>c.method==='plugin/list'),false)
