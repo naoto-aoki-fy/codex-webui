@@ -285,12 +285,12 @@
           class="thread-composer-actions"
         >
           <button
-            v-if="isTurnInProgress && !hasSubmitContent"
+            v-if="isTurnInProgress && (!hasSubmitContent || (disabled && allowInterruptWhenDisabled))"
             class="thread-composer-stop"
             type="button"
             :aria-label="isStopPending ? ('Saving thread before stop is available') : ('Stop')"
             :title="isStopPending ? ('Saving thread before stop is available') : ('Stop')"
-            :disabled="disabled || !activeThreadId || isInterruptingTurn || isStopPending"
+            :disabled="(disabled && !allowInterruptWhenDisabled) || !activeThreadId || isInterruptingTurn || isStopPending"
             @click="onInterrupt"
           >
             <span v-if="isStopPending" class="thread-composer-stop-spinner" aria-hidden="true" />

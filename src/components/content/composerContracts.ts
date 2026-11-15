@@ -23,6 +23,7 @@ export type ComposerProps = {
     isInterruptingTurn?: boolean;
     isUpdatingSpeedMode?: boolean;
     disabled?: boolean;
+    allowInterruptWhenDisabled?: boolean;
     sendWithEnter?: boolean;
 };
 export type SkillSourceBadge = {

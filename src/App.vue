@@ -296,6 +296,7 @@
                   v-if="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
                   :disabled="nativeShell?.selectedBlocking.value || nativeDeletion?.selectedBlocking.value || nativeAuthenticationBlocked || isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
+                  :allow-interrupt-when-disabled="nativeShell?.selectedBlocking.value===true && !nativeDeletion?.selectedBlocking.value && !nativeAuthenticationBlocked && !isSelectedThreadImportIncomplete && !compaction.selectedBusy.value && !review.selectedBusy.value && !permissionChanges.blocking.value"
                   :active-thread-id="composerThreadContextId"
                   :queue-ready="nativeQueue.available.value"
                   :cwd="composerCwd"

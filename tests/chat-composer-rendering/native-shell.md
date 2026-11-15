@@ -35,3 +35,19 @@ explicitly designated. No live resource is designated for this implementation.
 Cleanup: close fixture contexts and discard simulated process responses. No
 actual command, login, paid turn or resource mutation is required. Native commands
 are standalone processes, not a terminal/PTY or a persisted conversation turn.
+
+Full-access extension: only a fresh known managed-policy allowance offers the
+custom Full access option. Select it, review irreversible filesystem/network
+consequences and type the exact native cwd. A wrong cwd or unchecked confirmation
+must prevent submission. Recheck policy before execution; changed/unknown managed
+constraints must withhold Full access. The request changes only this process's
+sandbox policy, never global/thread defaults. After exit, Inspect defaults back
+to read-only. Verify both Full and read-only views in both themes/three sizes.
+Use harmless fixture commands such as `printf full-fixture`; do not run real
+full-access commands for acceptance. A native nonzero exit may follow partial
+side effects; exit, timeout and termination do not imply rollback.
+
+While a standalone process is pending, simulate a model turn arriving from another
+client with an existing chat draft. The model Stop control must remain available
+without enabling sending/steering or clearing the draft. Native process termination
+must still use `command/exec/terminate` and must not interrupt that model turn.
