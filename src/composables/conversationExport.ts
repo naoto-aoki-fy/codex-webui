@@ -11,7 +11,7 @@ function fence(text: string, language = 'text'): string {
 }
 export function safeExportFilename(title: string): string {
   const stem = title.replace(/[^\p{L}\p{N}_ -]/gu, '_').trim().slice(0, 100) || 'conversation'
-  return `${stem}.md`
+  return `conversation-${stem}.md`
 }
 export function conversationMarkdown(title: string, id: string, messages: UiMessage[], excludedActiveTurn: boolean): string {
   const lines = [`# ${title.replace(/[\r\n]/g, ' ')}`, '', `Thread ID: ${id}`, '',
@@ -28,10 +28,13 @@ export function conversationMarkdown(title: string, id: string, messages: UiMess
     if (message.text) lines.push(message.text, '')
     if (message.commandExecution) {
       const command = message.commandExecution
-      lines.push(fence(`command: ${command.command}\nstatus: ${command.status}\n${command.aggregatedOutput}`), '')
+      const details = [`command: ${command.command}`, `status: ${command.status}`]
+      if (command.cwd) details.push(`cwd: ${command.cwd}`)
+      if (command.exitCode !== null) details.push(`exitCode: ${command.exitCode}`)
+      lines.push(fence([...details, command.aggregatedOutput].join('\n')), '')
     }
     if (message.plan) lines.push(...message.plan.steps.map(step => `- [${step.status === 'completed' ? 'x' : ' '}] ${step.step}`), '')
-    for (const change of message.fileChanges || []) lines.push(`File: ${change.path} (${change.operation})`, '', fence(change.diff, 'diff'), '')
+    for (const change of message.fileChanges || []) lines.push(`File: ${change.path} (${change.operation})${change.movedToPath ? ` → ${change.movedToPath}` : ''}`, '', fence(change.diff, 'diff'), '')
     for (const attachment of message.fileAttachments || []) lines.push(`Attachment: ${attachment.label} — ${attachment.path}`, '')
     for (const image of message.images || []) lines.push(`Image: ${image}`, '')
     for (const skill of message.skills || []) lines.push(`Skill: ${skill.name} — ${skill.path}`, '')
@@ -70,7 +73,7 @@ export function createConversationExport(deps: {
       let characters = 0
       const account = (messages: UiMessage[]) => {
         characters += JSON.stringify(messages).length
-        if (characters > MAX_TEXT_CHARS) throw new Error('Conversation exceeds the safe export size limit (32 MiB). No file was saved.')
+        if (characters > MAX_TEXT_CHARS) throw new Error('Conversation exceeds the export text safety limit. No file was saved.')
       }
       account(snapshot.messages)
       let more = snapshot.hasMoreOlder

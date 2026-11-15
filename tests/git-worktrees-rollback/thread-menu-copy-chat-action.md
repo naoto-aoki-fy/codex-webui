@@ -51,5 +51,5 @@ model/effort/timestamps, Markdown/code, attachments, and controllable page error
 
 Cleanup: delete downloaded fixture files. Export does not mutate native history.
 Performance: no eager history reads; one initial normal detail read and one bounded
-10-turn page per iteration. A 1,000-page / 32 MiB text safety ceiling fails rather
+10-turn page per iteration. A 1,000-page / 33,554,432-code-unit text safety ceiling fails rather
 than truncates. No new event listeners. Live large-history latency was not measured.
