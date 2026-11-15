@@ -18,9 +18,9 @@
     <section class="directory-section">
 
           <div class="skills-embedded-section">
-            <button class="skills-embedded-toggle" type="button" @click="isMcpSectionOpen = !isMcpSectionOpen">
+            <button class="skills-embedded-toggle" type="button" :aria-expanded="isMcpSectionOpen" @click="isMcpSectionOpen = !isMcpSectionOpen">
               <span class="skills-embedded-title">MCPs({{ visibleMcpServers.length }})</span>
-              <span class="skills-embedded-chevron" :class="{ 'is-open': isMcpSectionOpen }">›</span>
+              <IconTablerChevronRight class="skills-embedded-chevron" :class="{ 'is-open': isMcpSectionOpen }" />
             </button>
             <div v-if="isMcpSectionOpen" class="skills-embedded-body">
               <p class="directory-empty">OAuth callbacks run on the App Server host. If browser login cannot connect to localhost, forward the callback port separately or run <code>codex mcp login &lt;name&gt;</code> on that host, then reload MCPs. Forwarding the WebSocket port alone is insufficient.</p>
@@ -32,7 +32,7 @@
               <div v-else-if="visibleMcpServers.length === 0" class="directory-empty">No MCP servers configured.</div>
               <div v-else class="mcp-skill-grid">
                 <article v-for="server in visibleMcpServers" :key="server.name">
-                  <button class="mcp-skill-card skill-card" type="button" @click="toggleMcpExpanded(server.name)">
+                  <button class="mcp-skill-card skill-card" type="button" :aria-expanded="expandedMcpNames.has(server.name)" @click="toggleMcpExpanded(server.name)">
                     <div class="mcp-skill-card-top">
                       <div class="mcp-skill-avatar-fallback">{{ server.name.charAt(0) }}</div>
                       <div class="mcp-skill-info">
@@ -42,7 +42,7 @@
                         </div>
                         <span class="mcp-skill-owner">mcp</span>
                       </div>
-                      <span class="mcp-skill-chevron" :class="{ 'is-open': expandedMcpNames.has(server.name) }">›</span>
+                      <IconTablerChevronRight class="mcp-skill-chevron" :class="{ 'is-open': expandedMcpNames.has(server.name) }" />
                     </div>
                     <p class="mcp-skill-meta">{{ server.tools.length }} tools · {{ server.resources.length + server.resourceTemplates.length }} resources</p>
                     <div v-if="expandedMcpNames.has(server.name)" class="directory-mcp-detail">
@@ -74,6 +74,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getMethodCatalog, listDirectoryMcpServers, reloadDirectoryMcpServers, startDirectoryMcpLogin, type DirectoryMcpServerStatus } from '../../api/codexGateway'
+import IconTablerChevronRight from '../icons/IconTablerChevronRight.vue'
 import CuratedPlugins from './CuratedPlugins.vue'
 import McpConfiguration from './McpConfiguration.vue'
 const props = defineProps<{ epoch?: number }>()

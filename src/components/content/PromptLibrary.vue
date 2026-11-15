@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import {onMounted,ref} from 'vue'
+import {onMounted,ref,watch} from 'vue'
 import {loadPromptLibrary,savePromptLibrary,containsCredential,PROMPT_TEXT_LIMIT,type PromptLibrary} from '../../utils/promptLibrary'
+const props=defineProps<{open?:boolean}>()
+watch(()=>props.open,open=>{if(open)load()})
 const emit=defineEmits<{choose:[text:string];close:[]}>()
 const library=ref<PromptLibrary>({presets:[],history:[]}),error=ref(''),name=ref(''),text=ref(''),editing=ref('')
 function onNameKeydown(event:KeyboardEvent){if(event.key==='Enter'&&!event.isComposing){event.preventDefault();event.stopPropagation()}}

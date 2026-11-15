@@ -6,7 +6,7 @@
       <AppsPicker :thread-id="activeThreadId" :epoch="connectionEpoch ?? 0" :selected="selectedApps" :disabled="isInteractionDisabled" @change="selectedApps=$event" @unavailable="input.appsUnavailable.value=$event" />
     </div>
     <ManagementDialog :open="promptLibraryOpen" title="Prompts & commands" @close="promptLibraryOpen=false">
-      <PromptLibrary v-if="promptLibraryLoaded" @close="promptLibraryOpen=false" @choose="populatePrompt" />
+      <PromptLibrary v-if="promptLibraryLoaded" :open="promptLibraryOpen" @close="promptLibraryOpen=false" @choose="populatePrompt" />
     </ManagementDialog>
     <p v-if="promptStorageNotice" role="status">{{ promptStorageNotice }}</p>
 
