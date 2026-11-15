@@ -602,3 +602,14 @@ including post-refresh native absence. Three bounded lazy reads per preview and
 three rechecks before one write; child presence rejects immediately, no recursive
 walk or polling. Existing event coalescing handles list refresh; no new stream or
 subscription. Live **NOT RUN**; no real conversation was deleted.
+
+### Final audit correction: total named-profile bound
+
+Disjoint configuration layers could exceed the documented 100-profile display
+limit; the former limit was per layer. The projection now retains at most 100
+profiles **in total**, preserves the first (highest-priority native layer)
+definition, avoids reprocessing duplicate definitions, and visibly reports the
+bound. A disjoint-layer regression test covers the defect. This limits public
+profile projections to 100 rather than up to 4,000; no request, write, subscription
+or persistence changes. The existing four configuration projection tests and
+frontend/server type checks pass. Live performance is not measured.

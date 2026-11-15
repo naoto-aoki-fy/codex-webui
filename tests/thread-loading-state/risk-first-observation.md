@@ -256,3 +256,8 @@ rejected by this limited workflow. Check all three viewports in both themes.
 
 Cleanup: close fixture browser contexts; no live account mutation. A real pending
 attempt remains server-owned; closing a panel is not a cancellation guarantee.
+
+Configuration bound regression: supply disjoint profiles in several returned
+layers, plus duplicate names with differing model values. Expect at most 100 total
+profiles, an explicit display-bound notice, and the highest-priority definition
+for duplicates. No additional reads or writes. Cleanup: discard fixture responses.

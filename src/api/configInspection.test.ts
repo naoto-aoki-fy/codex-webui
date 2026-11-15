@@ -13,3 +13,9 @@ it('bounds layers, profiles and text even for hostile large data',()=>{
  const result=configInspection({config:{},layers:Array(41).fill({name:{type:'user'},config:{profiles}})})
  expect(result.layers).toHaveLength(40);expect(result.profiles).toHaveLength(100);expect(result.profiles[0]?.settings.model?.length).toBeLessThanOrEqual(12000);expect(result.bounded).toBe(true)
 })
+it('bounds distinct profiles across disjoint layers and retains the highest-priority definition',()=>{
+ const layers=Array.from({length:4},(_,i)=>({name:{type:'user'},config:{profiles:{shared:{model:'priority-'+i},...Object.fromEntries(Array.from({length:60},(_,j)=>['layer-'+i+'-profile-'+j,{model:'m'}]))}}}))
+ const result=configInspection({config:{},layers})
+ expect(result.profiles).toHaveLength(100);expect(result.profilesBounded).toBe(true)
+ expect(result.profiles.find(row=>row.name==='shared')?.settings.model).toBe('priority-0')
+})
