@@ -159,9 +159,9 @@ export type ThreadTurnPage = {
   turnIndexByTurnId: ThreadTurnIndexById
 }
 
-async function getThreadGroupsPageV2(cursor: string | null, limit: number): Promise<ThreadGroupsPage> {
+async function getThreadGroupsPageV2(cursor: string | null, limit: number, archived = false): Promise<ThreadGroupsPage> {
   const payload = await callRpc<ThreadListResponse>('thread/list', {
-    archived: false,
+    archived,
     limit,
     sortKey: 'updated_at',
     modelProviders: [],
@@ -252,6 +252,17 @@ export async function getThreadGroupsPage(
   } catch (error) {
     throw normalizeCodexApiError(error, 'Failed to load thread groups', 'thread/list')
   }
+}
+
+/** Native archived state; fetched only by the archive browser. */
+export async function getArchivedThreadGroupsPage(cursor: string | null = null): Promise<ThreadGroupsPage> {
+  return getThreadGroupsPageV2(cursor, INITIAL_THREAD_LIST_LIMIT, true)
+}
+
+export async function unarchiveThread(threadId: string): Promise<UiThread> {
+  const result = await callRpc<ThreadReadResponse>('thread/unarchive', { threadId })
+  if (result?.thread?.id !== threadId) throw new Error('Invalid thread/unarchive response; inspect the archive before retrying.')
+  return normalizeThreadSummaryV2(result)
 }
 
 export function getBackgroundThreadListLimit(): number {
