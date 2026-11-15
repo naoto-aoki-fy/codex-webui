@@ -44,3 +44,14 @@ it('invalidates queued timers and late results on another disconnect', async () 
   expect(status).not.toHaveBeenCalledWith('a', 'recovered', 1)
   expect(vi.getTimerCount()).toBe(0)
 })
+it('forgets only a deleted thread and ignores its late completion without replacing a newer job',async()=>{
+ let release!:(value:unknown)=>void
+ const status=vi.fn(),call=vi.fn().mockImplementationOnce(()=>new Promise(resolve=>release=resolve)).mockResolvedValue('new')
+ const recovery=new SubscriptionRecovery(call,status),old=recovery.request('deleted',{})
+ const rejected=expect(old).rejects.toThrow('native thread deletion')
+ recovery.forget('deleted');await rejected
+ await expect(recovery.request('other',{})).resolves.toBe('new')
+ await expect(recovery.request('deleted',{})).resolves.toBe('new')
+ release('obsolete');await flush()
+ expect(status.mock.calls.filter(row=>row[0]==='deleted'&&row[1]==='recovered')).toHaveLength(1)
+})

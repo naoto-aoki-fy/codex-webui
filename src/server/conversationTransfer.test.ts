@@ -205,3 +205,12 @@ it('converts a 2000-turn history in one bounded linear pass', () => {
   expect(result.messages).toHaveLength(4000)
   console.log(`Transfer audit: 2000 turns, ${bytes} bytes, ${(performance.now() - start).toFixed(2)}ms; zero RPCs during conversion`)
 })
+it('protects every imported prefix stage from native deletion without modifying receipts or native resources',async()=>{
+ for(const stage of ['ready','injecting','starting']){
+  disk.state={'conversation-transfers-v1':{fixture:{destinationId:'imported',sourceId:'source',cwd:'/r',messages:[{role:'user',text:'keep',source:'fixture'}],stage}}}
+  const rpc=server(),transfers=createConversationTransfers(rpc),before=structuredClone(disk.state)
+  await expect(transfers.assertNativeDeletion('imported')).rejects.toMatchObject({code:-32600})
+  await expect(transfers.assertNativeDeletion('ordinary')).resolves.toBeUndefined()
+  expect(disk.state).toEqual(before);expect(rpc).not.toHaveBeenCalled()
+ }
+})

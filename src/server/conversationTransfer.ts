@@ -117,6 +117,13 @@ export function createConversationTransfers(rpc: Rpc) {
       const transfer = Object.values(await transfers()).find(t => t.destinationId === threadId)
       if (transfer && transfer.stage !== 'ready') throw new Error(`Incomplete imported conversation ${threadId} (${transfer.stage}). Inspect it; automatic replay is disabled.`)
     },
+    async assertNativeDeletion(threadId: string) {
+      // A native delete cannot remove the separately persisted imported prefix.
+      // Keep both halves intact; archiving remains supported for imported threads.
+      if(Object.values(await transfers()).some(row=>row.destinationId===threadId)){
+        throw Object.assign(new Error('Permanent deletion of Portable imported history is withheld; archive this conversation instead.'),{code:-32600})
+      }
+    },
     async decorate(result: any) {
       const id = result?.thread?.id
       if (!id) return result

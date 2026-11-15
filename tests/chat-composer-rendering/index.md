@@ -8,6 +8,7 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
+| [Native deferred prompt queue](native-prompt-queue.md) |
 | [Optional conversation controls load on demand](optional-tools-loading.md) |
 | [MCP and Web search execution details](approved-execution-details.md) |
 | [Text presets, recent prompts and command aliases](prompt-library.md) |

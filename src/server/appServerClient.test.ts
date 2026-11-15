@@ -150,3 +150,13 @@ it('discards fallback snapshots and buffered events on thread/reverted', () => {
     expect(client.getStreamEvents('reverted', 100)).toEqual([])
   } finally { client.dispose() }
 })
+it('forgets native deleted thread snapshots subscriptions and stream events without clearing another thread',()=>{
+ const client=new AppServerClient()
+ try{
+  client.storeThreadReadSnapshot('deleted',{thread:{id:'deleted',turns:[]}});client.storeThreadReadSnapshot('keep',{thread:{id:'keep',turns:[]}})
+  ;(client as any).subscribedThreads.add('deleted');(client as any).subscribedThreads.add('keep')
+  ;(client as any).emitNotification({method:'thread/deleted',params:{threadId:'deleted'}})
+  expect(client.getLastThreadReadSnapshot('deleted')).toBeNull();expect(client.getStreamEvents('deleted',100)).toEqual([])
+  expect((client as any).subscribedThreads.has('deleted')).toBe(false);expect((client as any).subscribedThreads.has('keep')).toBe(true);expect(client.getLastThreadReadSnapshot('keep')).not.toBeNull()
+ }finally{client.dispose()}
+})

@@ -8,6 +8,7 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
+| [Explicit native remote worktree creation](native-worktree-creation.md) |
 | [Current remote Git working tree](current-working-tree.md) |
 | [Dedicated native inline review](native-review.md) |
 | [Header branch management removed](start-new-thread-header-git-branch-dropdown.md) |

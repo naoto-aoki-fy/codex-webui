@@ -20,6 +20,14 @@ export class SubscriptionRecovery {
     return promise
   }
   parameters(id: string): unknown { return this.jobs.get(id)?.params }
+  forget(id: string): void {
+    const job=this.jobs.get(id)
+    if(!job)return
+    clearTimeout(job.timer)
+    this.jobs.delete(id)
+    this.queue=this.queue.filter(row=>row!==job)
+    job.reject(new Error('Subscription recovery invalidated by native thread deletion'))
+  }
   cancel(): void {
     this.epoch++
     for (const job of this.jobs.values()) {
@@ -45,12 +53,12 @@ export class SubscriptionRecovery {
       this.active++
       this.status(job.id, 'recovering', ++job.attempt)
       void this.call(job.params, Math.min(RECOVERY_DEFAULTS.deadlineMs, Math.max(1, RECOVERY_DEFAULTS.budgetMs - (Date.now() - job.started)))).then(result => {
-        if (epoch !== this.epoch) return
+        if (epoch !== this.epoch || this.jobs.get(job.id)!==job) return
         this.jobs.delete(job.id)
         this.status(job.id, 'recovered', job.attempt)
         job.resolve(result)
       }, error => {
-        if (epoch !== this.epoch) return
+        if (epoch !== this.epoch || this.jobs.get(job.id)!==job) return
         const message = error instanceof Error ? error.message : String(error)
         const delay = RECOVERY_DEFAULTS.backoffMs * 2 ** (job.attempt - 1)
         if (job.attempt >= RECOVERY_DEFAULTS.attempts || Date.now() - job.started + delay >= RECOVERY_DEFAULTS.budgetMs) {
