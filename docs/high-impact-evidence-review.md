@@ -28,12 +28,12 @@ modeled contract; neither independently proves enforcement on a deployed server.
 
 Application locations:
 
-- [Preview validation](../src/api/threadDeletion.ts:5): requires exact native idle
+- [Preview validation](../src/api/threadDeletion.ts#L5): requires exact native idle
   metadata and complete empty active/archived direct-child pages.
-- [Submission](../src/composables/threadDeletion.ts:14): repeats those reads, then
+- [Submission](../src/composables/threadDeletion.ts#L14): repeats those reads, then
   sends only `thread/delete {threadId}`. There is an interval after the last read
   before native execution. Typed ID and confirmation do not close it.
-- [Scope disclosure](../src/components/content/PermanentDeletion.vue:17): expressly
+- [Scope disclosure](../src/components/content/PermanentDeletion.vue#L17): expressly
   describes possible owned-child deletion and activity after preflight.
 - [Portable import guard](../src/server/conversationTransfer.ts): the native
   deletion route rejects persisted imported destinations. It is not a descendant
@@ -77,21 +77,21 @@ review documents the gap; it does not add a substitute native deletion contract.
 
 Application submission path:
 
-- [inspectShell / shellParameters](../src/api/nativeShell.ts:10) requires an idle
+- [inspectShell / shellParameters](../src/api/nativeShell.ts#L10) requires an idle
   native thread with exactly one `local` environment whose cwd matches the
   thread's absolute POSIX cwd. `environment/info {environmentId:'local'}` must
   supply an absolute configured `sh`, `bash` or `zsh` executable; no fallback is
   guessed. Remote-only/mixed/unknown environments and Windows paths are rejected.
-- [run](../src/composables/nativeShell.ts:17) requires explicit confirmation,
+- [run](../src/composables/nativeShell.ts#L17) requires explicit confirmation,
   matching selection/connection, and fresh context. Full access additionally
   requires exact typed cwd and fresh managed-policy permission. Each chained read
   and the final write checks ownership/conflicts. Actual argv is the observed
   shell path plus `-c` and user text; cwd is sent explicitly.
-- [shellParameters](../src/api/nativeShell.ts:23) sends
+- [shellParameters](../src/api/nativeShell.ts#L23) sends
   `sandboxPolicy:{type:'readOnly',networkAccess:false}` or an explicitly confirmed
   `dangerFullAccess` policy, a 30-second timeout and 65,536-byte stream caps.
   This is a real native execution parameter, not a display-only label.
-- [terminate](../src/composables/nativeShell.ts:24) takes no user-entered process
+- [terminate](../src/composables/nativeShell.ts#L24) takes no user-entered process
   identifier: it sends the captured process ID from this operation. Epoch changes
   retire it and prevent termination/replay through the replacement connection.
   A termination acknowledgment is not treated as process completion.
@@ -131,7 +131,7 @@ cover `isolates stale replies and never replays on %s` and caller deadlines.
 
 ## 3. Authentication and account isolation
 
-[prepareAuthentication](../src/api/nativeAuthentication.ts:9) requires a positive
+[prepareAuthentication](../src/api/nativeAuthentication.ts#L9) requires a positive
 signed-out/default-provider account and known login policy. It requests 21 loaded
 IDs and rejects more than 20, a non-null/missing cursor, malformed/duplicate IDs,
 unknown status, identity mismatch or any failed read. It awaits every metadata
@@ -142,21 +142,21 @@ system processes or all persisted queues.
 
 Concrete defects corrected in `5fcf321`:
 
-- [Bridge metadata failures](../src/server/codexAppServerBridge.ts:666) no longer
+- [Bridge metadata failures](../src/server/codexAppServerBridge.ts#L666) no longer
   return a cached idle snapshot to `thread/read {includeTurns:false}`. Ordinary
   history's empty-rollout fallback is preserved. The integration fixture models
   a cached idle read followed by a native failure and checks both paths.
-- [Authentication controller](../src/composables/nativeAuthentication.ts:53)
+- [Authentication controller](../src/composables/nativeAuthentication.ts#L53)
   invalidates preparation, start preflight, delayed inspection and account data
   on **every** account-update event, including idle/starting/settling states.
   A later account-update event also retires evidence from an earlier matching
   completion. Fresh inspection/reconnect is required; success is not inferred.
-- [Desktop account barrier](../src/composables/useDesktopState.ts:258) is set
+- [Desktop account barrier](../src/composables/useDesktopState.ts#L258) is set
   before requesting login, persists only a profile-scoped boolean, and survives
   ordinary reload. It is cleared after verified cancellation, definitive
   pre-execution rejection, or explicit reconnect acknowledgment immediately
   before full reload. No credential, URL, code or account identity is persisted.
-- [Account updates](../src/composables/useDesktopState.ts:1713) advance the existing
+- [Account updates](../src/composables/useDesktopState.ts#L1713) advance the existing
   operation epoch, retire pending feature reads, clear account quotas/model
   availability and invalidate earlier model/rate-limit publication. The basic
   account-status UI also checks its captured epoch before publishing.
@@ -192,7 +192,7 @@ repeating login or sending queued/ordinary input.
 
 ## 4. Queue recovery and duplicate prevention
 
-[Queue add](../src/composables/nativeQueue.ts:30) uses a fresh client message ID,
+[Queue add](../src/composables/nativeQueue.ts#L30) uses a fresh client message ID,
 checks the acknowledged ID and never automatically retries. Prior evidence only
 guarded an uncertain add in the existing in-memory owner. Recreating the page lost
 that guard while retaining the draft: native persistence could already contain
