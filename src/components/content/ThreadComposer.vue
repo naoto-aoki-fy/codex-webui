@@ -315,25 +315,19 @@
 </template>
 
 <script setup lang="ts">
-import { fastModeAvailability, findReasoningModel as findModelCapabilities } from '../../api/modelCapabilities'
+import type { ComposerProps, SubmitPayload, ThreadComposerExposed } from "./composerContracts"
+import { createComposerInput } from './composerInput'
+import { createComposerSettings } from './composerSettings'
+import { createComposerAttachments } from './composerAttachments'
+
 import { loadPersistedDraftForThread, persistDraftForThread, type FileAttachment, type ComposerDraftPayload } from '../../utils/composerDraftStorage'
-import { findReasoningModel, reasoningCatalog } from '../../api/codexGateway'
-import { parseModelSelection, defaultModelForProvider, modelSelectionKey, providerModelOptions } from '../../api/modelCapabilities'
-import { normalizeSkillMarkdownPath } from '../../api/normalizers/skills'
-import { toBrowseUrl } from '../../utils/conversationLinks'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type {
-  CollaborationModeKind,
-  CollaborationModeOption,
-  ReasoningEffort,
-  SpeedMode,
-} from '../../types/codex'
+import { reasoningCatalog } from '../../api/codexGateway'
+import { parseModelSelection, defaultModelForProvider, modelSelectionKey } from '../../api/modelCapabilities'
+
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { CollaborationModeKind, ReasoningEffort, SpeedMode } from '../../types/codex'
 import { useMobile } from '../../composables/useMobile'
-import {
-  searchComposerFiles,
-  uploadFile,
-  type ComposerFileSuggestion,
-} from '../../api/codexGateway'
+
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
 import IconTablerBolt from '../icons/IconTablerBolt.vue'
 import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
@@ -343,47 +337,9 @@ import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
 import ComposerSearchDropdown from './ComposerSearchDropdown.vue'
 
-type SkillSourceBadge = {
-  badge: string
-  badgeLabel: string
-  badgeTone: 'repo' | 'system' | 'plugin' | 'user'
-}
-
-type SkillItem = { name: string; displayName?: string; description: string; path: string; scope?: string; enabled?: boolean }
-
-const props = defineProps<{
-  activeThreadId: string
-  cwd?: string
-  collaborationModes?: CollaborationModeOption[]
-  selectedCollaborationMode: CollaborationModeKind
-  modelProvider?: string
-  models: string[]
-  selectedModel: string
-  selectedReasoningEffort: ReasoningEffort | ''
-  reasoningEffortOptions?: Array<{ value: ReasoningEffort; label: string; description?: string }>
-  selectedSpeedMode: SpeedMode
-  skills?: SkillItem[]
-  isTurnInProgress?: boolean
-  isStopPending?: boolean
-  isInterruptingTurn?: boolean
-  isUpdatingSpeedMode?: boolean
-  disabled?: boolean
-  sendWithEnter?: boolean
-}>()
+const props = defineProps<ComposerProps>()
 
 export type { FileAttachment, ComposerDraftPayload } from '../../utils/composerDraftStorage'
-export type SubmitPayload = {
-  text: string
-  imageUrls: string[]
-  fileAttachments: FileAttachment[]
-  skills: Array<{ name: string; path: string }>
-}
-
-export type ThreadComposerExposed = {
-  hydrateDraft: (payload: ComposerDraftPayload) => void
-  appendTextToDraft: (text: string) => void
-  hasUnsavedDraft: () => boolean
-}
 
 const emit = defineEmits<{
   submit: [payload: SubmitPayload, settle: (accepted: boolean) => void]
@@ -395,811 +351,139 @@ const emit = defineEmits<{
   'update:selected-speed-mode': [mode: SpeedMode]
 }>()
 
-type SelectedImage = {
-  id: string
-  name: string
-  url: string
-}
-
-type AttachmentBatchStats = {
-  total: number
-  succeeded: number
-  failed: number
-}
-
-
-const draft = ref('')
-type SlashSuggestion = { name: string; description: string; skill?: SkillItem }
-const slashQuery = ref<string | null>(null)
-const slashStart = ref(0)
-const slashCursor = ref(0)
-const slashIndex = ref(0)
-const slashSuggestions = computed<SlashSuggestion[]>(() => {
-  const query = (slashQuery.value ?? '').toLowerCase()
-  const commands: SlashSuggestion[] = [
-    { name: 'goal', description: 'Set or manage the goal for this thread' },
-    { name: 'plan', description: 'Toggle plan mode for this thread' },
-  ].filter(item => item.name.includes(query))
-  const skills = (props.skills ?? []).filter(skill => skill.enabled !== false && skill.name.trim() && skill.path.trim())
-    .map(skill => ({ name: skill.displayName || skill.name, description: skill.description, skill }))
-    .filter(item => `${item.name} ${item.skill.name} ${item.description} ${item.skill.path}`.toLowerCase().includes(query))
-    .sort((a, b) => Number(!a.name.toLowerCase().startsWith(query)) - Number(!b.name.toLowerCase().startsWith(query)) || a.name.localeCompare(b.name))
-  return [...commands, ...skills].slice(0, 20)
+const input = createComposerInput({
+  get props() { return props; },
+  get settings() { return settings; },
+  get emit() { return emit; },
+  get attachments() { return attachments; },
+  get isAttachMenuOpen() { return isAttachMenuOpen; },
+  get isMobile() { return isMobile; }
 })
-function updateSlashSuggestions() {
-  const cursor = inputRef.value?.selectionStart ?? draft.value.length
-  const match = /(?:^|\s)\/([^\s/]*)$/.exec(draft.value.slice(0, cursor))
-  slashQuery.value = match?.[1] ?? null
-  slashCursor.value = cursor
-  slashStart.value = match ? cursor - match[1]!.length - 1 : cursor
-  slashIndex.value = 0
-}
-function applySlashSuggestion(item: SlashSuggestion) {
-  const before = draft.value.slice(0, slashStart.value)
-  const after = draft.value.slice(slashCursor.value)
-  if (item.skill) {
-    if (!selectedSkills.value.some(skill => skill.path === item.skill!.path)) selectedSkills.value.push(item.skill)
-    draft.value = before + after
-  } else if (item.name === 'plan') {
-    emit('update:selected-collaboration-mode', isPlanModeSelected.value ? 'default' : 'plan')
-    draft.value = before + after
-  } else {
-    draft.value = before + '/goal ' + after
-  }
-  slashQuery.value = null
-  nextTick(() => inputRef.value?.focus())
-}
+const {
+  draft,
+  slashQuery,
+  slashIndex,
+  slashSuggestions,
+  applySlashSuggestion,
+  inputRef,
+  fileMentionSuggestions,
+  isFileMentionOpen,
+  fileMentionHighlightedIndex,
+  isComposerExpanded,
+  fileMentionDebounceTimer,
+  canSubmit,
+  hasUnsavedDraft,
+  isInteractionDisabled,
+  placeholderText,
+  hasSubmitContent,
+  hasExpandedComposerToggle,
+  onSubmit,
+  replaceDraftState,
+  clearDraftState,
+  getCurrentDraftPayload,
+  onInterrupt,
+  queueComposerOverflowMeasurement,
+  toggleComposerExpanded,
+  onInputChange,
+  onInputKeydown,
+  closeFileMention,
+  queueFileMentionSearch,
+  applyFileMention,
+  hydrateDraft,
+  appendTextToDraft,
+  getMentionFileName,
+  getMentionDirName,
+  getMentionBadgeText,
+  getMentionBadgeClass,
+  isMarkdownFile,
+} = input
 
-const selectedImages = ref<SelectedImage[]>([])
-const selectedSkills = ref<SkillItem[]>([])
-const fileAttachments = ref<FileAttachment[]>([])
-const pendingAttachmentCount = ref(0)
-const attachmentBatchStats = ref<AttachmentBatchStats | null>(null)
-const isDragActive = ref(false)
+const attachments = createComposerAttachments({
+  get isAttachMenuOpen() { return isAttachMenuOpen; },
+  get closeFileMention() { return input.closeFileMention; },
+  get isInteractionDisabled() { return input.isInteractionDisabled; }
+})
+const {
+  selectedImages,
+  fileAttachments,
+  pendingAttachmentCount,
+  attachmentBatchStats,
+  isDragActive,
+  photoLibraryInputRef,
+  attachmentSessionToken,
+  removeImage,
+  removeFileAttachment,
+  addFileAttachment,
+  attachIncomingFiles,
+  onPhotoLibraryChange,
+  onInputDragEnter,
+  onInputDragOver,
+  onInputDragLeave,
+  onInputDrop,
+  onWindowDragCleanup,
+  onInputPaste,
+} = attachments
+
+const settings = createComposerSettings({
+  get props() { return props; },
+  get isInteractionDisabled() { return input.isInteractionDisabled; },
+  get emit() { return emit; }
+})
+const {
+  selectedSkills,
+  reasoningOptions,
+  activeModelProvider,
+  isNewThread,
+  providerOptions,
+  modelOptions,
+  displayedModel,
+  isPlanModeSelected,
+  isPlanModeWaitingForModel,
+  selectedSkillPaths,
+  skillDropdownOptions,
+  isComposerConfigDisabled,
+  showFastModeModelIcon,
+  isSpeedToggleDisabled,
+  speedModeDescription,
+  onProviderSelect,
+  onModelSelect,
+  toggleCollaborationMode,
+  onReasoningEffortSelect,
+  onToggleSpeedMode,
+  removeSkill,
+  skillMarkdownPath,
+  openSkillMarkdown,
+  onSkillDropdownToggle,
+} = settings
+
 const attachMenuRootRef = ref<HTMLElement | null>(null)
-const photoLibraryInputRef = ref<HTMLInputElement | null>(null)
-const inputRef = ref<HTMLTextAreaElement | null>(null)
+
 const { isMobile } = useMobile()
 const isAttachMenuOpen = ref(false)
 const isSkillsSelectorVisible = ref(false)
-const mentionStartIndex = ref<number | null>(null)
-const mentionQuery = ref('')
-const fileMentionSuggestions = ref<ComposerFileSuggestion[]>([])
-const isFileMentionOpen = ref(false)
-const fileMentionHighlightedIndex = ref(0)
-const isComposerExpanded = ref(false)
-const isDraftOverflowing = ref(false)
-let composerOverflowMeasurementQueued = false
-const draftGeneration = ref(0)
-let fileMentionSearchToken = 0
-let fileMentionDebounceTimer: ReturnType<typeof setTimeout> | null = null
-let dragDepth = 0
-let attachmentSessionToken = 0
-const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
+
 let lastActiveThreadId = ''
 
-const reasoningOptions = computed(() => props.reasoningEffortOptions ?? [])
-const activeModelProvider = computed(() => props.modelProvider || parseModelSelection(props.selectedModel).provider)
-const isNewThread = computed(() => !props.activeThreadId || props.activeThreadId === '__new-thread__')
-const providerOptions = computed(() => {
-  const availableProviders = new Set(props.models.map(id => parseModelSelection(id).provider))
-  const providers = new Map<string, { value: string; label: string }>()
-  for (const entry of reasoningCatalog.value) {
-    const provider = entry.modelProvider?.trim()
-    if (!provider || providers.has(provider)) continue
-    if (!availableProviders.has(provider)) continue
-    providers.set(provider, { value: provider, label: entry.providerDisplayName || provider })
-  }
-  return [...providers.values()]
-})
-const modelOptions = computed(() => providerModelOptions(props.models, activeModelProvider.value, reasoningCatalog.value))
-const displayedModel = computed(() => modelOptions.value.some(option => option.value === props.selectedModel) ? props.selectedModel : '')
-watch([activeModelProvider, modelOptions, () => props.selectedModel], () => {
+watch([settings.activeModelProvider, settings.modelOptions, () => props.selectedModel], () => {
   if (!props.modelProvider || !props.selectedModel || parseModelSelection(props.selectedModel).provider === props.modelProvider) return
   const fallback = modelSelectionKey(props.modelProvider, defaultModelForProvider(reasoningCatalog.value, props.modelProvider))
-  const next = modelOptions.value.find(option => option.value === fallback)?.value || modelOptions.value[0]?.value || ''
+  const next = settings.modelOptions.value.find(option => option.value === fallback)?.value || settings.modelOptions.value[0]?.value || ''
   emit('update:selected-model', next)
 }, { immediate: true })
-const isPlanModeSelected = computed(() => props.selectedCollaborationMode === 'plan')
-
-const isPlanModeWaitingForModel = computed(() =>
-  props.selectedCollaborationMode === 'plan' && props.selectedModel.trim().length === 0,
-)
-
-const selectedSkillPaths = computed(() => selectedSkills.value.map((s) => s.path))
-const skillDropdownOptions = computed(() =>
-  [
-    ...(props.skills ?? []).map((s) => {
-      const source = skillSourceBadge(s)
-      return {
-        value: s.path,
-        label: s.name,
-        description: s.description,
-        badge: source.badge,
-        badgeLabel: source.badgeLabel,
-        badgeTone: source.badgeTone,
-      }
-    }),
-  ],
-)
-
-const isSubmitting = ref(false)
-const canSubmit = computed(() => {
-  if (isSubmitting.value) return false
-  if (props.disabled) return false
-  if (props.isUpdatingSpeedMode) return false
-  if (!props.activeThreadId) return false
-  if (isPlanModeWaitingForModel.value) return false
-  if (pendingAttachmentCount.value > 0) return false
-  return draft.value.trim().length > 0 || selectedImages.value.length > 0 || fileAttachments.value.length > 0
-})
-const hasUnsavedDraft = computed(() =>
-  draft.value.trim().length > 0
-  || selectedImages.value.length > 0
-  || selectedSkills.value.length > 0
-  || fileAttachments.value.length > 0
-)
-const isInteractionDisabled = computed(() => props.disabled || !props.activeThreadId)
-const isComposerConfigDisabled = computed(() => props.disabled || !props.activeThreadId)
-const fastAvailability = computed(() => fastModeAvailability(findModelCapabilities(reasoningCatalog.value, props.selectedModel)))
-const isFastModeSupported = computed(() => fastAvailability.value === 'supported')
-const showFastModeModelIcon = computed(() =>
-  props.selectedSpeedMode === 'fast' && isFastModeSupported.value,
-)
-const isSpeedToggleDisabled = computed(() =>
-  isInteractionDisabled.value || props.isUpdatingSpeedMode === true || (!isFastModeSupported.value && props.selectedSpeedMode !== 'fast'),
-)
-const speedModeDescription = computed(() => {
-  if (props.isUpdatingSpeedMode) {
-    return ('Saving speed setting...')
-  }
-  if (fastAvailability.value === 'unknown') return ('Fast mode availability is unknown')
-  if (fastAvailability.value === 'unsupported') return ('Fast mode is unavailable for this model')
-  return props.selectedSpeedMode === 'fast' ? ('Fast mode enabled') : ('Standard mode')
-})
-const placeholderText = computed(() =>
-  !props.activeThreadId
-    ? ('Select a thread to send a message')
-    : isPlanModeWaitingForModel.value
-      ? ('Loading models for plan mode...')
-      : ('Type a message... (@ for files)'),
-)
-const hasSubmitContent = computed(() =>
-  draft.value.trim().length > 0 || selectedImages.value.length > 0 || fileAttachments.value.length > 0,
-)
-const draftLineCount = computed(() => draft.value.split('\n').length)
-const hasExpandedComposerToggle = computed(() =>
-  isComposerExpanded.value || draftLineCount.value >= 6 || isDraftOverflowing.value,
-)
-function onSubmit(): void {
-  const text = draft.value.trim()
-  if (!canSubmit.value) return
-  if (text === '/goal' && props.activeThreadId !== '__new-thread__') {
-    emit('edit-goal')
-    clearPersistedDraftForThread(props.activeThreadId)
-    clearDraftState()
-    return
-  }
-  if (text === '/plan') {
-    emit('update:selected-collaboration-mode', isPlanModeSelected.value ? 'default' : 'plan')
-    clearPersistedDraftForThread(props.activeThreadId)
-    clearDraftState()
-    return
-  }
-  const threadId = props.activeThreadId
-  const payload = getCurrentDraftPayload()
-  const snapshot = JSON.stringify(payload)
-  isSubmitting.value = true
-  let settled = false
-  emit('submit', { ...payload, text }, (accepted) => {
-    if (settled) return
-    settled = true
-    isSubmitting.value = false
-    if (!accepted) return
-    // Acceptance may arrive after a thread switch or after the user edits again.
-    if (props.activeThreadId !== threadId || JSON.stringify(getCurrentDraftPayload()) !== snapshot) return
-    clearPersistedDraftForThread(threadId)
-    clearDraftState()
-    isComposerExpanded.value = false
-    isAttachMenuOpen.value = false
-    closeFileMention()
-    if (isAndroid || isMobile.value) inputRef.value?.blur()
-    else nextTick(() => inputRef.value?.focus())
-  })
-}
-
-function replaceDraftState(payload: ComposerDraftPayload): void {
-  draftGeneration.value += 1
-  draft.value = payload.text
-  selectedImages.value = payload.imageUrls.map((url, index) => ({
-    id: `draft-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
-    name: `Image ${index + 1}`,
-    url,
-  }))
-  selectedSkills.value = payload.skills.map((skill) => (
-    (props.skills ?? []).find((item) => item.path === skill.path)
-    ?? { name: skill.name, displayName: undefined, description: '', path: skill.path }
-  ))
-  fileAttachments.value = payload.fileAttachments.map((attachment) => ({ ...attachment }))
-  attachmentBatchStats.value = null
-  pendingAttachmentCount.value = 0
-  isAttachMenuOpen.value = false
-  closeFileMention()
-  attachmentSessionToken += 1
-}
-
-function clearDraftState(): void {
-  slashQuery.value = null
-  replaceDraftState({
-    text: '',
-    imageUrls: [],
-    fileAttachments: [],
-    skills: [],
-  })
-  isComposerExpanded.value = false
-}
-
-
-function clearPersistedDraftForThread(threadId: string): void {
-  persistDraftForThread(threadId, {
-    text: '',
-    imageUrls: [],
-    fileAttachments: [],
-    skills: [],
-  })
-}
-
-function getCurrentDraftPayload(): ComposerDraftPayload {
-  return {
-    text: draft.value,
-    imageUrls: selectedImages.value.map((image) => image.url),
-    fileAttachments: fileAttachments.value.map((attachment) => ({ ...attachment })),
-    skills: selectedSkills.value.map((skill) => ({ name: skill.name, path: skill.path })),
-  }
-}
-
-function onInterrupt(): void {
-  emit('interrupt')
-}
-
-function updateComposerOverflowState(): void {
-  const input = inputRef.value
-  if (!input) {
-    isDraftOverflowing.value = false
-    return
-  }
-  isDraftOverflowing.value = input.scrollHeight > input.clientHeight + 2
-}
-
-function queueComposerOverflowMeasurement(): void {
-  if (composerOverflowMeasurementQueued) return
-  composerOverflowMeasurementQueued = true
-  void nextTick(() => {
-    composerOverflowMeasurementQueued = false
-    updateComposerOverflowState()
-  })
-}
-
-function toggleComposerExpanded(): void {
-  if (isInteractionDisabled.value) return
-  isComposerExpanded.value = !isComposerExpanded.value
-  queueComposerOverflowMeasurement()
-  void nextTick(() => inputRef.value?.focus())
-}
-
-function onProviderSelect(provider: string): void {
-  if (!isNewThread.value || isComposerConfigDisabled.value || provider === activeModelProvider.value) return
-  if (!providerOptions.value.some(option => option.value === provider)) return
-  const options = providerModelOptions(props.models, provider, reasoningCatalog.value)
-  const preferred = modelSelectionKey(provider, defaultModelForProvider(reasoningCatalog.value, provider))
-  const model = options.find(option => option.value === preferred)?.value || options[0]?.value
-  if (model) emit('update:selected-model', model)
-}
-
-function onModelSelect(value: string): void {
-  if (!modelOptions.value.some(option => option.value === value)) return
-  emit('update:selected-model', value)
-}
-
-function toggleCollaborationMode(): void {
-  emit('update:selected-collaboration-mode', isPlanModeSelected.value ? 'default' : 'plan')
-}
-
-function onReasoningEffortSelect(value: string): void {
-  emit('update:selected-reasoning-effort', value as ReasoningEffort)
-}
-
-function onToggleSpeedMode(): void {
-  if (isSpeedToggleDisabled.value) return
-  emit('update:selected-speed-mode', props.selectedSpeedMode === 'fast' ? 'standard' : 'fast')
-}
 
 function toggleAttachMenu(): void {
-  if (isInteractionDisabled.value) return
+  if (input.isInteractionDisabled.value) return
   isAttachMenuOpen.value = !isAttachMenuOpen.value
 }
 
 function toggleSkillsSelector(): void {
-  if (isComposerConfigDisabled.value) return
+  if (settings.isComposerConfigDisabled.value) return
   isSkillsSelectorVisible.value = !isSkillsSelectorVisible.value
   isAttachMenuOpen.value = false
 }
 
 function triggerPhotoLibrary(): void {
-  photoLibraryInputRef.value?.click()
-}
-
-function removeImage(id: string): void {
-  selectedImages.value = selectedImages.value.filter((image) => image.id !== id)
-}
-
-function removeSkill(path: string): void {
-  selectedSkills.value = selectedSkills.value.filter((s) => s.path !== path)
-}
-
-function skillMarkdownPath(path: string): string {
-  const trimmed = path.trim()
-  if (!trimmed) return ''
-  return normalizeSkillMarkdownPath(trimmed.replace(/[\\/]+$/, ''))
-}
-
-function openSkillMarkdown(skill: SkillItem): void {
-  const markdownPath = skillMarkdownPath(skill.path)
-  if (!markdownPath || typeof window === 'undefined') return
-  window.open(toBrowseUrl(markdownPath, ''), '_blank', 'noopener,noreferrer')
-}
-
-function removeFileAttachment(fsPath: string): void {
-  fileAttachments.value = fileAttachments.value.filter((a) => a.fsPath !== fsPath)
-}
-
-function addFileAttachment(filePath: string, customLabel?: string): void {
-  const normalized = filePath.replace(/\\/g, '/')
-  if (fileAttachments.value.some((a) => a.fsPath === normalized)) return
-  const parts = normalized.split('/').filter(Boolean)
-  const label = customLabel?.trim() || parts[parts.length - 1] || normalized
-  fileAttachments.value = [...fileAttachments.value, { label, path: normalized, fsPath: normalized }]
-}
-
-function isImageFile(file: File): boolean {
-  if (file.type.startsWith('image/')) return true
-  return /\.(png|jpe?g|gif|webp)$/i.test(file.name)
-}
-
-function normalizeSelectedFiles(files: FileList | File[] | null | undefined): File[] {
-  if (!files) return []
-  return Array.from(files)
-}
-
-
-
-function beginAttachmentWork(sessionToken: number): boolean {
-  if (sessionToken !== attachmentSessionToken) return false
-  pendingAttachmentCount.value += 1
-  return true
-}
-
-function finishAttachmentWork(sessionToken: number): void {
-  if (sessionToken !== attachmentSessionToken) return
-  pendingAttachmentCount.value = Math.max(0, pendingAttachmentCount.value - 1)
-}
-
-function beginAttachmentBatch(total: number): void {
-  if (total <= 0) return
-  const current = attachmentBatchStats.value
-  const completed = current ? current.succeeded + current.failed : 0
-  if (!current || completed >= current.total) {
-    attachmentBatchStats.value = { total, succeeded: 0, failed: 0 }
-    return
-  }
-  attachmentBatchStats.value = {
-    ...current,
-    total: current.total + total,
-  }
-}
-
-function recordAttachmentBatchResult(result: 'success' | 'failure'): void {
-  const current = attachmentBatchStats.value
-  if (!current) return
-  attachmentBatchStats.value = {
-    ...current,
-    succeeded: current.succeeded + (result === 'success' ? 1 : 0),
-    failed: current.failed + (result === 'failure' ? 1 : 0),
-  }
-}
-
-function createAttachmentId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
-
-function createPastedImageName(file: File): string {
-  const now = new Date()
-  const timestamp = [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, '0'),
-    String(now.getDate()).padStart(2, '0'),
-    String(now.getHours()).padStart(2, '0'),
-    String(now.getMinutes()).padStart(2, '0'),
-    String(now.getSeconds()).padStart(2, '0'),
-  ].join('-')
-  const ext = file.type.startsWith('image/')
-    ? file.type.slice('image/'.length).replace(/[^a-z0-9]+/gi, '') || 'png'
-    : 'png'
-  return `pasted-image-${timestamp}.${ext}`
-}
-
-function ensureFileName(file: File): File {
-  if (file.name.trim()) return file
-  return new File([file], createPastedImageName(file), {
-    type: file.type || 'image/png',
-    lastModified: Date.now(),
-  })
-}
-
-async function attachImageFile(file: File, sessionToken: number): Promise<void> {
-  if (!beginAttachmentWork(sessionToken)) return
-  try {
-    const normalizedFile = ensureFileName(file)
-    const serverPath = await uploadFile(normalizedFile)
-    if (sessionToken !== attachmentSessionToken) return
-    if (!serverPath) {
-      recordAttachmentBatchResult('failure')
-      return
-    }
-    selectedImages.value = [
-      ...selectedImages.value,
-      {
-        id: createAttachmentId(),
-        name: normalizedFile.name,
-        url: `/codex-local-image?path=${encodeURIComponent(serverPath)}`,
-      },
-    ]
-    recordAttachmentBatchResult('success')
-  } catch {
-    if (sessionToken === attachmentSessionToken) {
-      recordAttachmentBatchResult('failure')
-    }
-  } finally {
-    finishAttachmentWork(sessionToken)
-  }
-}
-
-async function attachUploadedFile(file: File, sessionToken: number): Promise<void> {
-  if (!beginAttachmentWork(sessionToken)) return
-  try {
-    const serverPath = await uploadFile(file)
-    if (sessionToken !== attachmentSessionToken) return
-    if (!serverPath) {
-      recordAttachmentBatchResult('failure')
-      return
-    }
-    addFileAttachment(serverPath)
-    recordAttachmentBatchResult('success')
-  } catch {
-    if (sessionToken === attachmentSessionToken) {
-      recordAttachmentBatchResult('failure')
-    }
-  } finally {
-    finishAttachmentWork(sessionToken)
-  }
-}
-
-function attachIncomingFiles(files: FileList | File[] | null | undefined): void {
-  const normalizedFiles = normalizeSelectedFiles(files)
-  if (normalizedFiles.length === 0) return
-  beginAttachmentBatch(normalizedFiles.length)
-  isAttachMenuOpen.value = false
-  closeFileMention()
-  const sessionToken = attachmentSessionToken
-  for (const file of normalizedFiles) {
-    if (isImageFile(file)) {
-      void attachImageFile(file, sessionToken)
-    } else {
-      void attachUploadedFile(file, sessionToken)
-    }
-  }
-}
-
-function resetDragState(): void {
-  dragDepth = 0
-  isDragActive.value = false
-}
-
-function hasFilePayload(dataTransfer: DataTransfer | null): boolean {
-  if (!dataTransfer) return false
-  return Array.from(dataTransfer.types ?? []).includes('Files')
-}
-
-function clearInputValue(inputRefEl: HTMLInputElement | null): void {
-  if (inputRefEl) inputRefEl.value = ''
-}
-
-function onPhotoLibraryChange(event: Event): void {
-  const input = event.target as HTMLInputElement | null
-  attachIncomingFiles(input?.files ?? null)
-  clearInputValue(input)
-  isAttachMenuOpen.value = false
-}
-
-function onInputDragEnter(event: DragEvent): void {
-  if (isInteractionDisabled.value || !hasFilePayload(event.dataTransfer)) return
-  event.preventDefault()
-  dragDepth += 1
-  isDragActive.value = true
-}
-
-function onInputDragOver(event: DragEvent): void {
-  if (isInteractionDisabled.value || !hasFilePayload(event.dataTransfer)) return
-  event.preventDefault()
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'copy'
-  }
-  isDragActive.value = true
-}
-
-function onInputDragLeave(event: DragEvent): void {
-  if (!isDragActive.value) return
-  event.preventDefault()
-  dragDepth = Math.max(0, dragDepth - 1)
-  if (dragDepth === 0) {
-    resetDragState()
-  }
-}
-
-function onInputDrop(event: DragEvent): void {
-  if (isInteractionDisabled.value || !hasFilePayload(event.dataTransfer)) return
-  event.preventDefault()
-  resetDragState()
-  attachIncomingFiles(event.dataTransfer?.files ?? null)
-}
-
-function onWindowDragCleanup(): void {
-  if (!isDragActive.value && dragDepth === 0) return
-  resetDragState()
-}
-
-function onInputPaste(event: ClipboardEvent): void {
-  if (isInteractionDisabled.value) return
-  const plainText = event.clipboardData?.getData('text/plain') ?? ''
-  const items = Array.from(event.clipboardData?.items ?? [])
-  if (items.length === 0) return
-  const hasPlainText = plainText.length > 0
-  const imageFiles = items
-    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
-    .map((item) => item.getAsFile())
-    .filter((file): file is File => file instanceof File)
-  if (imageFiles.length === 0) return
-  if (!hasPlainText) {
-    event.preventDefault()
-  }
-  attachIncomingFiles(imageFiles)
-}
-
-function onInputChange(): void {
-  queueComposerOverflowMeasurement()
-  updateSlashSuggestions()
-  updateFileMentionState()
-}
-
-function onInputKeydown(event: KeyboardEvent): void {
-  if (event.isComposing) return
-  if (slashQuery.value !== null) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      slashQuery.value = null
-      return
-    }
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault()
-      const size = slashSuggestions.value.length
-      if (size) slashIndex.value = (slashIndex.value + (event.key === 'ArrowDown' ? 1 : size - 1)) % size
-      return
-    }
-    if (event.key === 'Enter' || event.key === 'Tab') {
-      const item = slashSuggestions.value[slashIndex.value]
-      if (item) {
-        event.preventDefault()
-        applySlashSuggestion(item)
-        return
-      }
-    }
-  }
-
-  if (isFileMentionOpen.value) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      closeFileMention()
-      return
-    }
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      if (fileMentionSuggestions.value.length > 0) {
-        fileMentionHighlightedIndex.value =
-          (fileMentionHighlightedIndex.value + 1) % fileMentionSuggestions.value.length
-      }
-      return
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      if (fileMentionSuggestions.value.length > 0) {
-        const size = fileMentionSuggestions.value.length
-        fileMentionHighlightedIndex.value = (fileMentionHighlightedIndex.value + size - 1) % size
-      }
-      return
-    }
-    if (event.key === 'Enter' || event.key === 'Tab') {
-      event.preventDefault()
-      const selected = fileMentionSuggestions.value[fileMentionHighlightedIndex.value]
-      if (selected) {
-        applyFileMention(selected)
-      } else {
-        closeFileMention()
-      }
-      return
-    }
-  }
-
-  const shouldSend = props.sendWithEnter !== false
-    ? event.key === 'Enter' && !event.shiftKey
-    : event.key === 'Enter' && (event.metaKey || event.ctrlKey)
-  if (shouldSend) {
-    event.preventDefault()
-    onSubmit()
-    return
-  }
-}
-
-function closeFileMention(): void {
-  isFileMentionOpen.value = false
-  mentionStartIndex.value = null
-  mentionQuery.value = ''
-  fileMentionSuggestions.value = []
-  fileMentionHighlightedIndex.value = 0
-}
-
-function updateFileMentionState(): void {
-  const input = inputRef.value
-  if (!input) {
-    closeFileMention()
-    return
-  }
-  const cursor = input.selectionStart ?? draft.value.length
-  const beforeCursor = draft.value.slice(0, cursor)
-  const match = beforeCursor.match(/(^|\s)(@[^\s@]*)$/)
-  if (!match) {
-    closeFileMention()
-    return
-  }
-
-  const mentionToken = match[2] ?? ''
-  const mentionOffset = mentionToken.length
-  const startIndex = cursor - mentionOffset
-  mentionStartIndex.value = startIndex
-  mentionQuery.value = mentionToken.slice(1)
-  isFileMentionOpen.value = true
-  void queueFileMentionSearch()
-}
-
-async function queueFileMentionSearch(): Promise<void> {
-  if (!isFileMentionOpen.value) return
-  const cwd = (props.cwd ?? '').trim()
-  if (!cwd) {
-    fileMentionSuggestions.value = []
-    return
-  }
-  if (fileMentionDebounceTimer) {
-    clearTimeout(fileMentionDebounceTimer)
-  }
-  const token = ++fileMentionSearchToken
-  fileMentionDebounceTimer = setTimeout(async () => {
-    try {
-      const rows = await searchComposerFiles(cwd, mentionQuery.value, 20)
-      if (!isFileMentionOpen.value || token !== fileMentionSearchToken) return
-      fileMentionSuggestions.value = rows
-      fileMentionHighlightedIndex.value = 0
-    } catch {
-      if (!isFileMentionOpen.value || token !== fileMentionSearchToken) return
-      fileMentionSuggestions.value = []
-    }
-  }, 120)
-}
-
-function applyFileMention(suggestion: ComposerFileSuggestion): void {
-  const input = inputRef.value
-  const start = mentionStartIndex.value
-  if (start !== null && input) {
-    const cursor = input.selectionStart ?? draft.value.length
-    draft.value = `${draft.value.slice(0, start)}${draft.value.slice(cursor)}`.trimEnd()
-  }
-  addFileAttachment(suggestion.path)
-  closeFileMention()
-  nextTick(() => input?.focus())
-}
-
-function hydrateDraft(payload: ComposerDraftPayload): void {
-  replaceDraftState(payload)
-  void nextTick(() => {
-    inputRef.value?.focus()
-    updateComposerOverflowState()
-  })
-}
-
-function appendTextToDraft(text: string): void {
-  const nextText = text.trim()
-  if (!nextText) return
-  if (draft.value.trim().length > 0) {
-    draft.value = `${draft.value.trimEnd()}\n${nextText}`
-  } else {
-    draft.value = nextText
-  }
-  nextTick(() => inputRef.value?.focus())
-}
-
-function getMentionFileName(path: string): string {
-  const idx = path.lastIndexOf('/')
-  if (idx < 0) return path
-  return path.slice(idx + 1)
-}
-
-function getMentionDirName(path: string): string {
-  const idx = path.lastIndexOf('/')
-  if (idx <= 0) return ''
-  return path.slice(0, idx)
-}
-
-function getFileExtension(path: string): string {
-  const base = getMentionFileName(path)
-  const idx = base.lastIndexOf('.')
-  if (idx <= 0) return ''
-  return base.slice(idx + 1).toLowerCase()
-}
-
-function getMentionBadgeText(path: string): string {
-  const ext = getFileExtension(path)
-  if (ext === 'ts') return 'TS'
-  if (ext === 'tsx') return 'TSX'
-  if (ext === 'js') return 'JS'
-  if (ext === 'jsx') return 'JSX'
-  if (ext === 'json') return '{}'
-  return ''
-}
-
-function getMentionBadgeClass(path: string): string {
-  const ext = getFileExtension(path)
-  if (ext.startsWith('ts')) return 'ts'
-  if (ext.startsWith('js')) return 'js'
-  if (ext === 'json') return 'json'
-  return 'default'
-}
-
-function isMarkdownFile(path: string): boolean {
-  const ext = getFileExtension(path)
-  return ext === 'md' || ext === 'mdx'
-}
-
-function skillSourceBadge(skill: SkillItem): SkillSourceBadge {
-  const path = skill.path.toLowerCase()
-  if (path.includes('/plugins/cache/')) {
-    return { badge: 'P', badgeLabel: 'Plugin', badgeTone: 'plugin' }
-  }
-  if (skill.scope === 'repo') {
-    return { badge: 'R', badgeLabel: 'Repo', badgeTone: 'repo' }
-  }
-  if (skill.scope === 'system') {
-    return { badge: 'S', badgeLabel: 'System', badgeTone: 'system' }
-  }
-  return { badge: 'U', badgeLabel: 'User', badgeTone: 'user' }
-}
-
-function onSkillDropdownToggle(path: string, checked: boolean): void {
-  if (checked) {
-    const skill = (props.skills ?? []).find((s) => s.path === path)
-    if (skill && !selectedSkills.value.some((s) => s.path === path)) {
-      selectedSkills.value = [...selectedSkills.value, skill]
-    }
-  } else {
-    selectedSkills.value = selectedSkills.value.filter((s) => s.path !== path)
-  }
+  attachments.photoLibraryInputRef.value?.click()
 }
 
 function onDocumentClick(event: MouseEvent): void {
@@ -1213,25 +497,25 @@ function onDocumentClick(event: MouseEvent): void {
 
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
-  window.addEventListener('drop', onWindowDragCleanup)
-  window.addEventListener('dragend', onWindowDragCleanup)
-  window.addEventListener('blur', onWindowDragCleanup)
-  queueComposerOverflowMeasurement()
+  window.addEventListener('drop', attachments.onWindowDragCleanup)
+  window.addEventListener('dragend', attachments.onWindowDragCleanup)
+  window.addEventListener('blur', attachments.onWindowDragCleanup)
+  input.queueComposerOverflowMeasurement()
 })
 
 defineExpose<ThreadComposerExposed>({
-  hydrateDraft,
-  appendTextToDraft,
-  hasUnsavedDraft: () => hasUnsavedDraft.value,
+  hydrateDraft: input.hydrateDraft,
+  appendTextToDraft: input.appendTextToDraft,
+  hasUnsavedDraft: () => input.hasUnsavedDraft.value,
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
-  window.removeEventListener('drop', onWindowDragCleanup)
-  window.removeEventListener('dragend', onWindowDragCleanup)
-  window.removeEventListener('blur', onWindowDragCleanup)
-  if (fileMentionDebounceTimer) {
-    clearTimeout(fileMentionDebounceTimer)
+  window.removeEventListener('drop', attachments.onWindowDragCleanup)
+  window.removeEventListener('dragend', attachments.onWindowDragCleanup)
+  window.removeEventListener('blur', attachments.onWindowDragCleanup)
+  if (input.fileMentionDebounceTimer) {
+    clearTimeout(input.fileMentionDebounceTimer)
   }
 })
 
@@ -1239,37 +523,38 @@ watch(
   () => props.activeThreadId,
   (nextThreadId) => {
     if (lastActiveThreadId) {
-      persistDraftForThread(lastActiveThreadId, getCurrentDraftPayload())
+      persistDraftForThread(lastActiveThreadId, input.getCurrentDraftPayload())
     }
-    clearDraftState()
+    input.clearDraftState()
     const restored = loadPersistedDraftForThread(nextThreadId)
     if (restored) {
-      replaceDraftState(restored)
-      onInputChange()
+      input.replaceDraftState(restored)
+      input.onInputChange()
     }
     lastActiveThreadId = nextThreadId.trim()
   },
   { immediate: true },
 )
 
-watch([draft, selectedImages, fileAttachments, selectedSkills], () => {
+watch([input.draft, attachments.selectedImages, attachments.fileAttachments, settings.selectedSkills], () => {
   if (!lastActiveThreadId) return
-  persistDraftForThread(lastActiveThreadId, getCurrentDraftPayload())
+  persistDraftForThread(lastActiveThreadId, input.getCurrentDraftPayload())
 }, { deep: true })
 
-watch(draft, () => {
-  queueComposerOverflowMeasurement()
+watch(input.draft, () => {
+  input.queueComposerOverflowMeasurement()
 })
 
 watch(
   () => props.cwd,
   () => {
-    if (isFileMentionOpen.value) {
-      void queueFileMentionSearch()
+    if (input.isFileMentionOpen.value) {
+      void input.queueFileMentionSearch()
     }
   },
 )
 
+export type { SubmitPayload, ThreadComposerExposed } from './composerContracts'
 </script>
 
 <style scoped>
