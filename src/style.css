@@ -1281,8 +1281,15 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 }
 
 /* On-demand archive, usage and diagnostic surfaces share sidebar theme colors. */
-.feature-panel { padding: 10px; font-size: 12px; overflow-wrap: anywhere; color: #3f3f46; }
-.feature-panel summary { cursor: pointer; font-weight: 600; }
+.feature-panel { padding: 12px; font-family: inherit; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; color: #3f3f46; }
+.feature-panel summary { cursor: pointer; font-weight: 500; display: flex; align-items: center; gap: 8px; min-height: 36px; list-style: none; }
+.feature-panel summary::-webkit-details-marker { display: none; }
+.feature-panel summary::before { content: ''; width: 16px; height: 16px; flex: 0 0 16px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m9 6 6 6-6 6' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; transition: transform .15s; }
+.feature-panel[open] > summary::before, .feature-panel details[open] > summary::before { transform: rotate(90deg); }
+.feature-panel summary:focus-visible, .feature-panel button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.feature-panel p { margin: 8px 0; }
+.feature-panel pre { font-size: 12px; text-align: left; }
+.execution-details { width: 100%; min-width: 0; text-align: left; }
 .thread-composer-queue-mode { font-size: 11px; white-space: nowrap; padding: 3px; }
 .feature-panel button { border: 1px solid #d4d4d8; border-radius: 6px; padding: 4px 8px; margin: 4px 0; background: #fff; }
 .feature-panel button:disabled { opacity: .55; cursor: default; }
