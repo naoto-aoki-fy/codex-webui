@@ -1,12 +1,14 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit()">
-    <details v-if="activeThreadId && activeThreadId !== '__new-thread__'" class="feature-panel apps-picker" @toggle="onAppsPickerToggle">
-      <summary>Apps / Connectors</summary>
-      <AppsPicker v-if="appsPickerLoaded" :thread-id="activeThreadId" :epoch="connectionEpoch ?? 0" :selected="selectedApps" :disabled="isInteractionDisabled" @change="selectedApps=$event" @unavailable="input.appsUnavailable.value=$event" />
-    </details>
-    <PromptLibrary v-if="promptLibraryOpen" @close="promptLibraryOpen=false" @choose="populatePrompt" />
+    <div v-if="isAppsPickerOpen" class="composer-apps-popover feature-panel" aria-label="Conversation Apps">
+      <button type="button" @click="isAppsPickerOpen=false">Close Apps</button>
+      <button type="button" @click="isAppsPickerOpen=false;emit('open-settings')">Manage connections in Settings</button>
+      <AppsPicker :thread-id="activeThreadId" :epoch="connectionEpoch ?? 0" :selected="selectedApps" :disabled="isInteractionDisabled" @change="selectedApps=$event" @unavailable="input.appsUnavailable.value=$event" />
+    </div>
+    <ManagementDialog :open="promptLibraryOpen" title="Prompts & commands" @close="promptLibraryOpen=false">
+      <PromptLibrary v-if="promptLibraryLoaded" @close="promptLibraryOpen=false" @choose="populatePrompt" />
+    </ManagementDialog>
     <p v-if="promptStorageNotice" role="status">{{ promptStorageNotice }}</p>
-    <button type="button" class="prompt-library-trigger" @click="promptLibraryOpen=!promptLibraryOpen">Prompts & commands</button>
 
     <div
       class="thread-composer-shell"
@@ -165,6 +167,8 @@
               {{ ('Add photos & files') }}
             </button>
 
+            <button class="thread-composer-attach-item" type="button" @click="isAttachMenuOpen=false;promptLibraryOpen=true">Prompts & commands</button>
+            <button v-if="!isNewThread" class="thread-composer-attach-item" type="button" @click="isAttachMenuOpen=false;isAppsPickerOpen=!isAppsPickerOpen">Apps / Connectors<span v-if="selectedApps.length"> ({{ selectedApps.length }})</span></button>
             <div class="thread-composer-attach-separator" />
             <button
               class="thread-composer-attach-setting"
@@ -325,8 +329,8 @@
 
 <script setup lang="ts">
 const AppsPicker = defineAsyncComponent(() => import('./AppsPicker.vue'))
-const appsPickerLoaded = ref(false)
-function onAppsPickerToggle(event: Event) { if ((event.target as HTMLDetailsElement).open) appsPickerLoaded.value = true }
+const isAppsPickerOpen = ref(false)
+const promptLibraryLoaded = ref(false)
 const PromptLibrary = defineAsyncComponent(() => import('./PromptLibrary.vue'))
 import type { ComposerProps, SubmitPayload, ThreadComposerExposed } from "./composerContracts"
 import { createComposerInput } from './composerInput'
@@ -347,6 +351,7 @@ import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerMaximize from '../icons/IconTablerMaximize.vue'
 import IconTablerMinimize from '../icons/IconTablerMinimize.vue'
 import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
+import ManagementDialog from '../shared/ManagementDialog.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
 import ComposerSearchDropdown from './ComposerSearchDropdown.vue'
 
@@ -355,6 +360,7 @@ const props = defineProps<ComposerProps>()
 export type { FileAttachment, ComposerDraftPayload } from '../../utils/composerDraftStorage'
 
 const emit = defineEmits<{
+  'open-settings': []
   'thread-action': [action: string]
   submit: [payload: SubmitPayload, settle: (accepted: boolean) => void]
   interrupt: []
@@ -373,6 +379,8 @@ const input = createComposerInput({
   get isAttachMenuOpen() { return isAttachMenuOpen; },
   get isMobile() { return isMobile; }
 })
+watch(() => input.promptLibraryOpen.value, open => { if (open) promptLibraryLoaded.value = true })
+watch(() => props.activeThreadId, () => { isAppsPickerOpen.value = false; input.promptLibraryOpen.value = false }, { flush: 'sync' })
 watch(() => props.connectionEpoch, () => { input.selectedApps.value = []; input.appsUnavailable.value = false })
 
 const {

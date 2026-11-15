@@ -3,7 +3,8 @@ import { expect, it } from 'vitest'
 
 const source = readFileSync(new URL('./SkillsMcpHub.vue', import.meta.url), 'utf8')
 it('retains Skills workflows and MCP inspection without catalog loading', () => {
-  expect(source).toContain('<SkillsHub')
+  expect(source).not.toContain('<SkillsHub')
+  expect(source).toContain('Apps / Connectors')
   expect(source).toContain('listDirectoryMcpServers()')
   expect(source).toContain('startDirectoryMcpLogin(serverName)')
   expect(source).toContain('reloadDirectoryMcpServers()')
