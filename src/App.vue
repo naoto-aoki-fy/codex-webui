@@ -66,6 +66,7 @@
             v-if="!isSidebarCollapsed"
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
             :is-fork-disabled="isForkOperationPending"
+            :is-exporting="isExporting"
             :is-thread-list-fully-loaded="isThreadListFullyLoaded"
             :search-query="sidebarSearchQuery"
             :search-matched-thread-ids="serverMatchedThreadIds"
@@ -74,7 +75,8 @@
             @rename-thread="onRenameThread"
             @fork-thread="onForkThread"
             @remove-project="onRemoveProject"
-            @copy-thread-chat="onCopyThreadChat" />
+            @copy-thread-chat="onCopyThreadChat" @export-thread="onExportThread" />
+          <p v-if="exportStatus" class="feature-panel" role="status">{{ exportStatus }}</p>
           <ArchivedThreads v-if="!isSidebarCollapsed" :epoch="operationEpoch" :restore="restoreThreadById" />
         </div>
 
@@ -250,6 +252,7 @@
                   :live-overlay="liveOverlay"
                   :is-revert-disabled="isRollingBack || isSelectedThreadInProgress"
                   :is-fork-disabled="isForkOperationPending"
+            :is-exporting="isExporting"
                   :pending-requests="selectedThreadServerRequests"
                   :has-more-persisted-above="hasMoreOlderMessages"
                   :is-loading-persisted-above="isLoadingOlderMessages"
@@ -344,6 +347,7 @@ import IconTablerBolt from './components/icons/IconTablerBolt.vue'
 import IconTablerSearch from './components/icons/IconTablerSearch.vue'
 import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
+import { createConversationExport } from './composables/conversationExport'
 import { useDesktopState } from './composables/useDesktopState'
 import { useFolderPicker } from './composables/useFolderPicker'
 import { useMobile } from './composables/useMobile'
@@ -846,6 +850,12 @@ function onSelectThread(threadId: string): void {
   if (route.name === 'thread' && routeThreadId.value === threadId) return
   void router.push({ name: 'thread', params: { threadId } })
   if (isMobile.value) setSidebarCollapsed(true)
+}
+
+const { busy: isExporting, status: exportStatus, run: exportConversation } = createConversationExport({ epoch: () => operationEpoch.value })
+function onExportThread(threadId: string) {
+  if (threadId !== selectedThreadId.value || !selectedThread.value) return
+  void exportConversation(threadId, selectedThread.value.title)
 }
 
 async function onCopyThreadChat(threadId: string): Promise<void> {
