@@ -22,6 +22,7 @@ describe('complete Markdown export (CAP-002/003)', () => {
     expect(markdown).not.toContain('current-never-export')
     expect(older).toHaveBeenCalledWith('id', 'latest', 10)
     expect(safeExportFilename('../../unsafe')).not.toMatch(/[/.].*\//)
+    expect(safeExportFilename('CON')).toBe('conversation-CON.md')
   })
   it('prevents duplicate jobs and excludes the initially active turn even if it completes later', async () => {
     let resolve!: (v: ReturnType<typeof detail>) => void
@@ -48,6 +49,13 @@ describe('complete Markdown export (CAP-002/003)', () => {
     await job.run('id', 'title')
     expect(download).not.toHaveBeenCalled()
     expect(job.status.value).toContain('Export failed')
+  })
+  it('preserves visible command details and fences embedded code markers safely', () => {
+    const text = conversationMarkdown('title', 'id', [msg('cmd', '', { commandExecution: { command: 'test', cwd: '/remote', status: 'completed', exitCode: 2, aggregatedOutput: '```output```' } })], false)
+    expect(text).toContain('cwd: /remote')
+    expect(text).toContain('exitCode: 2')
+    expect(text).toContain('````text\n')
+    expect(text).toContain('```output```')
   })
   it('omits internal payloads and never invents missing metadata', () => {
     const text = conversationMarkdown('title', 'id', [msg('ok', 'visible'), msg('raw', 'secret', { isUnhandled: true, rawPayload: 'secret' })], false)
