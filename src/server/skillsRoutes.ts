@@ -101,36 +101,6 @@ function deriveSkillPathInfo(
   }
 }
 
-// Preserve the legacy HTTP response fields for existing API consumers.
-type SkillHubEntry = {
-  name: string
-  owner: string
-  description: string
-  displayName: string
-  publishedAt: number
-  avatarUrl: string
-  url: string
-  installed: boolean
-  path?: string
-  enabled?: boolean
-}
-
-function buildLocalHubEntry(info: InstalledSkillInfo): SkillHubEntry {
-  const description = info.description ?? ''
-  return {
-    name: info.name,
-    owner: 'local',
-    description,
-    displayName: '',
-    publishedAt: 0,
-    avatarUrl: '',
-    url: '',
-    installed: true,
-    path: info.path,
-    enabled: info.enabled,
-  }
-}
-
 type RpcSkillRecord = {
   name?: string
   description?: string
@@ -260,7 +230,7 @@ export async function handleSkillsRoutes(
   if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub') {
     try {
       const installedMap = await collectInstalledSkillsMap(appServer)
-      const installed = [...installedMap.values()].map(buildLocalHubEntry)
+      const installed = [...installedMap.values()]
       installed.sort((a, b) => a.name.localeCompare(b.name))
       setJson(res, 200, { installed })
     } catch (error) {
@@ -271,15 +241,13 @@ export async function handleSkillsRoutes(
 
   if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub/readme') {
     try {
-      const owner = url.searchParams.get('owner') || ''
       const name = url.searchParams.get('name') || ''
-      const installed = url.searchParams.get('installed') === 'true'
       const skillPath = url.searchParams.get('path') || ''
-      if (!owner || !name) {
-        setJson(res, 400, { error: 'Missing owner or name' })
+      if (!name) {
+        setJson(res, 400, { error: 'Missing skill name' })
         return true
       }
-      if (installed) {
+      {
         const installedMap = await collectInstalledSkillsMap(appServer)
         const installedInfo = installedMap.get(name)
         const localSkillPath = installedInfo?.path

@@ -82,7 +82,7 @@ it('reads installed remote SKILL.md despite different local content', async () =
   const end = vi.fn()
   const res = { setHeader: vi.fn(), end } as unknown as ServerResponse
   expect(await handleSkillsRoutes({ method: 'GET' } as IncomingMessage, res,
-    new URL('http://localhost/codex-api/skills-hub/readme?owner=example/skills&name=sample&installed=true'),
+    new URL('http://localhost/codex-api/skills-hub/readme?name=sample'),
     { appServer: { rpc: vi.fn(async method => method === 'skills/list' ? { data: [{ skills: [{ name: 'sample', path, description: 'Local description' }] }] } : { dataBase64: Buffer.from(content).toString('base64') }) }, readJsonBody: async () => ({}) })).toBe(true)
   expect(res.statusCode).toBe(200)
   expect(JSON.parse(end.mock.calls[0]![0])).toMatchObject({ content, description: 'Local description', source: 'local' })
@@ -90,7 +90,7 @@ it('reads installed remote SKILL.md despite different local content', async () =
   expect(spawn).not.toHaveBeenCalled()
 })
 
-it('preserves legacy hub response fields for HTTP consumers', async () => {
+it('returns only installed skill fields consumed by the UI', async () => {
   const path = join(home, 'skills', 'sample', 'SKILL.md')
   await mkdir(join(home, 'skills', 'sample'), { recursive: true })
   await writeFile(path, '---\ndescription: Local description\n---\nInstructions')
@@ -101,8 +101,7 @@ it('preserves legacy hub response fields for HTTP consumers', async () => {
     { appServer: { rpc: async method => method === 'skills/list' ? { data: [{ skills: [{ name: 'sample', path, description: 'Local description' }] }] } : { dataBase64: Buffer.from('---\ndescription: Local description\n---\nInstructions').toString('base64') } }, readJsonBody: async () => ({}) })
   expect(res.statusCode).toBe(200)
   expect(JSON.parse(end.mock.calls[0]![0])).toEqual({ installed: [{
-    name: 'sample', owner: 'local', description: 'Local description', displayName: '',
-    publishedAt: 0, avatarUrl: '', url: '', installed: true, path, enabled: true,
+    name: 'sample', description: 'Local description', path, enabled: true,
   }] })
 })
 

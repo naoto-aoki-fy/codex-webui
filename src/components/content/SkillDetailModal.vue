@@ -7,11 +7,11 @@
             <div class="sdm-title-col">
               <div class="sdm-title-row">
                 <h3 class="sdm-title">{{ skill.name }}</h3>
-                <span v-if="!effectiveEnabled" class="sdm-badge-disabled">{{ t('Disabled') }}</span>
+                <span v-if="!effectiveEnabled" class="sdm-badge-disabled">{{ ('Disabled') }}</span>
               </div>
             </div>
           </div>
-          <button class="sdm-close" type="button" :aria-label="t('Close')" @click="$emit('close')">
+          <button class="sdm-close" type="button" :aria-label="('Close')" @click="$emit('close')">
             <IconTablerX class="sdm-close-icon" />
           </button>
         </div>
@@ -19,7 +19,7 @@
         <div class="sdm-body">
           <p v-if="effectiveDescription" class="sdm-desc">{{ effectiveDescription }}</p>
 
-          <div v-if="isLoadingReadme" class="sdm-readme-loading">{{ t('Loading skill contents...') }}</div>
+          <div v-if="isLoadingReadme" class="sdm-readme-loading">{{ ('Loading skill contents...') }}</div>
           <div v-else-if="readmeContent" class="sdm-readme" v-html="renderedReadme"></div>
 
         </div>
@@ -31,7 +31,7 @@
               type="button"
               @click="onToggleEnabled"
             >
-              {{ effectiveEnabled ? t('Disable') : t('Enable') }}
+              {{ effectiveEnabled ? ('Disable') : ('Enable') }}
             </button>
 
 
@@ -44,7 +44,6 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useUiLanguage } from '../../composables/useUiLanguage'
 import IconTablerX from '../icons/IconTablerX.vue'
 
 import type { LocalSkill } from '../../types/skills'
@@ -63,7 +62,6 @@ const localEnabled = ref<boolean | null>(null)
 const localDescription = ref('')
 const readmeContent = ref('')
 const isLoadingReadme = ref(false)
-const { t } = useUiLanguage()
 
 const effectiveEnabled = computed(() => localEnabled.value ?? props.skill.enabled ?? true)
 const effectiveDescription = computed(() => localDescription.value || props.skill.description)
@@ -99,7 +97,7 @@ async function fetchReadme(): Promise<void> {
   readmeContent.value = ''
   try {
     // Retain the legacy query contract while the UI only represents local skills.
-    const params = new URLSearchParams({ owner: 'local', name: props.skill.name, installed: 'true' })
+    const params = new URLSearchParams({ name: props.skill.name })
     if (props.skill.path) params.set('path', props.skill.path)
     const resp = await fetch(`/codex-api/skills-hub/readme?${params}`)
     if (!resp.ok) return

@@ -5,7 +5,6 @@ import { RolloutGenerationMetadata } from './rolloutGenerationMetadata.js'
 import { randomInt } from 'node:crypto'
 import { AppServerWebSocketClient, positiveEnv } from './appServerWebSocketClient.js'
 import { asRecord, getErrorMessage } from './bridgeHttpUtils.js'
-import { refreshChatgptAuthTokensForExternalAuth } from './externalAuthRefresh.js'
 
 export interface AppServerClientDependencies {
   threadIndex: {
@@ -303,24 +302,12 @@ export class AppServerClient {
     })
   }
 
-  private async handleChatgptAuthTokensRefreshRequest(requestId: number | string, params: unknown, generation: number): Promise<void> {
-    try {
-      await refreshChatgptAuthTokensForExternalAuth()
-    } catch (error) {
-      if (generation !== this.connectionGeneration) return
-      this.sendServerRequestReply(requestId, {
-        error: {
-          code: -32001,
-          message: getErrorMessage(error, 'Failed to refresh ChatGPT auth tokens'),
-        },
-      })
-    }
-  }
-
   private handleServerRequest(requestId: number | string, method: string, params: unknown): void {
     if (method === 'account/chatgptAuthTokens/refresh') {
-      const generation = this.connectionGeneration
-      void this.handleChatgptAuthTokensRefreshRequest(requestId, params, generation).catch(() => {})
+      this.sendServerRequestReply(requestId, { error: {
+        code: -32001,
+        message: 'Client-managed token refresh is unsupported. Run codex login on the App Server host and use Codex-managed authentication there.',
+      } })
       return
     }
 

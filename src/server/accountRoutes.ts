@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-export async function handleAccountRoutes(req: IncomingMessage, res: ServerResponse, url: URL, _context: unknown): Promise<boolean> {
+export async function handleAccountRoutes(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   if (req.method !== 'POST' || !url.pathname.startsWith('/codex-api/accounts/login/')) return false
   res.statusCode = 409
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
