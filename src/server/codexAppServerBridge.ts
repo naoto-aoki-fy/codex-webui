@@ -687,7 +687,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
               return
             }
           }
-          if (['account/usage/read', 'thread/compact/start', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update'].includes(body.method) || body.method==='config/value/write'&&req.headers['x-codex-config-write-errors']==='1') {
+          if (['account/usage/read', 'thread/compact/start', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update', 'account/login/start', 'account/login/cancel'].includes(body.method) || body.method==='config/value/write'&&req.headers['x-codex-config-write-errors']==='1') {
             setJson(res, 502, { error: getErrorMessage(error, body.method === 'account/usage/read' ? 'Account usage unavailable' : `Native ${body.method} request failed`), ...(typeof asRecord(error)?.code === 'number' ? { rpcCode: asRecord(error)!.code } : {}) })
             return
           }

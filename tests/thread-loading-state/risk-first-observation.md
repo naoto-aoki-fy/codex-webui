@@ -232,3 +232,27 @@ Commands: `pnpm exec vitest run src/api/daybreakStatus.test.ts`,
 Screenshots: `output/playwright/risk-33-{1280,375,768}-{light,dark}.png`.
 Performance: zero startup calls; two initial reads, one per explicit additional
 catalog page; twenty rows/page, 100 retained rows, no new subscriptions/history.
+
+### Native managed ChatGPT sign-in (29, partial)
+
+Prerequisites: credential-free intercepted App Server; signed-out default provider,
+explicit native `allowed_login_methods: [chatgpt]`, and a complete inventory of at
+most 20 loaded idle threads. Run `node scripts/test-risk-native-authentication.cjs`
+with the documented Playwright browser path. Never sign in a real account here.
+
+Actions: open Settings → Native Codex sign-in; prepare; review scope and confirm;
+start browser or device-code sign-in. Cancel the identified attempt, then simulate
+matching completion and actual account change. Inject an unrelated completion,
+expiry, cancellation/completion race, internal error and disconnect during start.
+
+Expected: no login on opening/preparing; all loaded activity is checked without
+resume/history reads. Only explicit confirmation starts native login. Cancellation
+uses the exact ID. Codes/URLs remain in memory and clear on completion/cancel or
+connection change. Unrelated completion is ignored; success requires matching
+native completion and account read. Sending stays paused until explicit reconnect
+and page reload invalidate account caches. Unknown writes never replay. Existing
+signed-in accounts, unknown policy, external credentials and excess inventory are
+rejected by this limited workflow. Check all three viewports in both themes.
+
+Cleanup: close fixture browser contexts; no live account mutation. A real pending
+attempt remains server-owned; closing a panel is not a cancellation guarantee.

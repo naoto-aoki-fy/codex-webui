@@ -482,3 +482,54 @@ Two compatibility units plus nine queue tests, type checks and the six-view
 queue browser suite with `randomUUID` disabled passed. Performance: sixteen random
 bytes per explicit submission, no startup request/storage/subscription change.
 Native queue IDs remain opaque correlation strings, not credentials.
+
+### 29 — PARTIAL, native managed ChatGPT sign-in
+
+The official `account_processor.rs` implements browser/device-code start,
+ID-specific cancellation, completion notification, AuthManager reload and account
+updates. Login URLs use `open_browser: false`; tokens remain native-owned. This
+workflow is limited to a signed-out default provider with actual native ChatGPT
+login permission. API keys, external-auth providers, account switching and logout
+remain outside this extension; the existing Logout action is preserved.
+
+Preparation reads account/policy plus at most 20 loaded thread identities and
+metadata (four reads in flight maximum); every loaded thread must be idle. The
+same checks run again before start. Existing known activity/approvals also block
+all account-changing UI. Native APIs have no cross-client activity lock; another
+client can race after preflight, which is disclosed before confirmation. Start
+requires explicit scope confirmation and warns that native start replaces pending
+login. Only matching completion plus actual ChatGPT account state establishes
+completion. Cancellation uses the exact acknowledged ID, including cancel intent
+before acknowledgment. Codes/URLs exist only in memory and clear on termination,
+disconnect or teardown. Unknown/internal errors never replay. Account changes keep
+sending paused until explicit existing gateway reconnect plus page reload clears
+connection/account caches. No OAuth client, process manager or secret storage.
+
+Full risk 4/5/5/5 = **24**; initial limited 4/5/4/4 = **22**, residual
+3/5/4/4 = **21**. Nine controller tests (15 including shared auth tests), type
+checks and six browser views passed: lazy reads, confirmation, both methods,
+exact cancellation, unrelated/early completions, native failure, unsafe URLs,
+account changes, disconnect, memory-only codes and cache barrier. Two preflight
+passes cost 3+N reads each (N≤20), one start, one reconciliation account read;
+no startup request, polling or added subscription. Live **NOT RUN**. Existing
+accounts/credentials were not changed during development.
+
+### Phase 3 contract limits: external imports, IDE and Cloud
+
+28 remains **PARTIAL** (remote manifest preview). Native import exists, but
+`external-agent-migration/src/service.rs::import_agents_md` checks absence/empty
+then writes without expected-version CAS or a recoverable backup. Session import
+can append to a ledger-mapped existing conversation, while detection does not
+supply the actual destination thread identity or a create-only conflict policy.
+Those semantics cannot establish the requested exact destination, conflict and
+recoverability guarantees. No import execution, credential copying or scripts.
+
+34 remains **BLOCKED**: native filesystem reads do not expose an IDE's active
+editor, selections or unsaved buffers. This repository has no authenticated IDE
+bridge contract. No on-disk file is mislabeled an unsaved editor buffer and no
+new local-control listener is introduced.
+
+30 remains **BLOCKED**: official Cloud client code is not an App Server integration
+contract. It requires account-owned backend authentication not exposed through
+this repository's supported native RPC boundary. No private endpoint proxy, token
+extraction, CLI spawning, task submission or result application is introduced.
