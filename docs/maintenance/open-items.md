@@ -138,16 +138,3 @@ Static evidence below does not establish production frequency, heap growth or la
 - **Acceptance:** any cleanup preserves active and durable references and unknown
   outcomes; large-file/concurrency tests demonstrate agreed bounds and retain HTTP
   conditional/range/error semantics. No automatic deletion is implied today.
-
-## Development tooling
-
-### Portable profiler inputs
-
-- **P3 · future improvement.** `profile:thread` in [package.json](../../package.json)
-  hardcodes a UUID; [TestChat profiler](../../scripts/profile-testchat-realtime.cjs)
-  defaults to `/Users/igor/temp/TestChat`.
-- **Impact:** default commands can target nonexistent or unintended data on another host.
-- **Next:** accept caller-selected inputs; meanwhile use the parameterized
-  [development instructions](../development.md#profiling-a-selected-thread).
-- **Acceptance:** explicit route/root values are honored and missing inputs fail
-  clearly; verify on a host without the historical thread/directory.

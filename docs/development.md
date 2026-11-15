@@ -115,16 +115,15 @@ and external-server acceptance instead. Existing screenshots remain historical e
 
 ## Profiling a selected thread
 
-Use a thread ID from the current server rather than the machine-specific ID in
-`profile:thread`:
+Choose a thread ID from the current server:
 
 ```sh
-PROFILE_BASE_URL=http://127.0.0.1:4173 PROFILE_ROUTE='#/thread/<thread-id>' PROFILE_WAIT_MS=7000 pnpm run profile:browser
+PROFILE_BASE_URL=http://127.0.0.1:4173 PROFILE_THREAD_ID='<thread-id>' PROFILE_WAIT_MS=7000 pnpm run profile:thread
 ```
 
 Inspect `duplicateCounts`, `warnings`, `totalApiKB`, `topApiSummary` and
 `slowestApiRows` under `output/playwright/`. Error pages and failed boots do not
-provide valid performance evidence. See [script follow-ups](maintenance-scope.md#script-follow-ups).
+provide valid performance evidence. The thread command fails before launching a browser when neither PROFILE_THREAD_ID nor PROFILE_ROUTE is supplied. The mutating TestChat profiler requires TESTCHAT_ROOT pointing to a disposable native Project root: `node scripts/profile-testchat-realtime.cjs`.
 
 ## Maintenance acceptance
 
@@ -132,7 +131,7 @@ Use the [disposable live maintenance checklist](../tests/website-docs-misc/maint
 for native Projects, fork/revert, Portable import display and a fresh-process
 rollout-cache check. The live test is opt-in and does not run in credential-free
 CI. Its browser checks use only test-created IDs; fixture coverage is reported
-separately from live provider execution. See the [final maintenance report](maintenance-cleanup.md).
+separately from live provider execution. See the [historical acceptance](maintenance-cleanup.md).
 
 
 ## Optional Docker feature checks
@@ -178,3 +177,19 @@ Credential-free protocol checks remain `pnpm run test:integration:fixture`.
 That harness manages its own synthetic WebSocket server and tests both CLI and
 development entry points; it does not establish Docker execution or live Codex
 authentication. See the [Docker acceptance checklist](../tests/auth-docker-runtime/fast-external-server.md).
+
+## Standalone verification scripts
+
+With a current development server on 4173, run `node scripts/test-maintenance-ui.cjs`.
+Install Playwright Chromium first. API responses and notifications are intercepted;
+this verifies rendering, not live Codex. Screenshots/assertions land under
+`output/playwright/`. Override MAINTENANCE_BROWSER_BASE_URL when necessary.
+
+Other `test-*.cjs` scripts remain opt-in diagnostics. Composer paste/Skills,
+folder-picker, provider, sidebar-menu, toolbar and fork scripts exercise UI flows.
+Password, connection-profile, connectivity and recovery scripts check deployment
+boundaries. Inspect their environment inputs and matching manual procedures before
+using real state. Maintenance/native-upgrade, rollout-cache-restart and Portable
+discoverability are live harnesses referenced under `tests/website-docs-misc/`.
+The external-server fixture is the credential-free CI entry-point check; Docker
+remains optional. Absence from package scripts is not evidence of disuse.

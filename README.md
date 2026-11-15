@@ -1,8 +1,7 @@
 # Codex WebUI
 
 A browser interface for the official Codex app-server, hosted on Windows or Linux.
-Desktop and mobile browsers (including Android and iOS) can connect to the host;
-responsive UI is available in desktop and mobile browsers.
+Desktop and mobile browsers (including Android and iOS) can connect to the host.
 
 ## Quick start
 
@@ -32,10 +31,7 @@ and configure a private network or external reverse proxy for remote access.
 - [Local development and optional HTTPS](docs/development.md)
 - [Implementation and feature status](PROJECT_SPEC.md)
 - [Supported Codex capabilities and pre-upgrade migration](docs/native-project-migration.md)
-- [Native APIs, removed features, and migration](docs/native-project-migration.md)
-- [Maintenance and publishing](docs/maintenance-scope.md) · [Open items](docs/maintenance/open-items.md)
+- [Maintenance scope](docs/maintenance-scope.md) · [Open items](docs/maintenance/open-items.md)
 - [Manual tests](tests.md)
 
 Forked from [pavel-voronin/codex-web-local](https://github.com/pavel-voronin/codex-web-local).
-
-Read-state compatibility: [native Codex cleanup](docs/native-codex-cleanup.md).

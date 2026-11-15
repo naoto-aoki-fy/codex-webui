@@ -1,5 +1,8 @@
 # Native Codex cleanup
 
+> Historical verification record. Numbering and commands describe that review.
+> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [migration policy](native-project-migration.md).
+
 ## Read receipts
 The browser uses `thread/list.readStates` and `thread/read.readState`.
 It marks a selected thread read with `thread/readState/update`, using the
