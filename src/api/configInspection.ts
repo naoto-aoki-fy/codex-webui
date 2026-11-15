@@ -1,5 +1,6 @@
 import {rpcCall} from './codexRpcClient'
 import {executionText} from './normalizers/executionDetails'
+import {activeUserConfig} from './userConfigDefaults'
 const settings=['model','model_provider','model_reasoning_effort','approval_policy','approvals_reviewer','sandbox_mode','permissions','profile','personality','service_tier','plan_mode_reasoning_effort'] as const
 const restrictions=['model_provider','allowed_approval_policies','allowed_approvals_reviewers','allowed_sandbox_modes','allowed_permission_profiles','default_permissions','allowed_login_methods','allow_managed_hooks_only','allow_login_shell'] as const
 function record(v:unknown):Record<string,unknown>{return v&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,unknown>:{}}
@@ -19,7 +20,7 @@ export function configInspection(value:unknown){
   if(name.type==='user'&&typeof name.profile==='string')profiles.set(executionText(name.profile).slice(0,200),projection(config,settings))
   return {identity:layerIdentity(name),version:typeof row.version==='string'?row.version.slice(0,1000):'Unavailable',disabled:row.disabledReason==null?null:executionText(row.disabledReason),settings:projection(config,settings)}
  })
- return {effective,layers,layersAvailable:Array.isArray(result.layers),profiles:[...profiles].map(([name,settings])=>({name,settings})),bounded:Array.isArray(result.layers)&&result.layers.length>40}
+ return {effective,layers,layersAvailable:Array.isArray(result.layers),profiles:[...profiles].map(([name,settings])=>({name,settings})),bounded:Array.isArray(result.layers)&&result.layers.length>40,userTarget:activeUserConfig(value)}
 }
 export function requirementsInspection(value:unknown){const result=record(value)
  if(!hasOwn(result,'requirements')||result.requirements!=null&&(typeof result.requirements!=='object'||Array.isArray(result.requirements)))throw new Error('Managed restrictions unavailable')

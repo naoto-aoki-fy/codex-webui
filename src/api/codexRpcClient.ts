@@ -27,7 +27,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null
 }
 
-export async function rpcCall<T>(method: string, params?: unknown): Promise<T> {
+export async function rpcCall<T>(method: string, params?: unknown, options?:{configWriteErrors?:boolean}): Promise<T> {
   const body: RpcRequestBody = { method, params: params ?? null }
 
   let response: Response
@@ -36,6 +36,7 @@ export async function rpcCall<T>(method: string, params?: unknown): Promise<T> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(method==='config/value/write'&&options?.configWriteErrors?{'X-Codex-Config-Write-Errors':'1'}:{}),
       },
       body: JSON.stringify(body),
     })

@@ -25,7 +25,7 @@ async function run() {
     socket.on('message', raw => {
       const frame = JSON.parse(String(raw)); frames.push(frame)
       if (!frame.method || frame.method === 'initialized') return
-      if (frame.method === 'account/usage/read' || frame.method === 'thread/compact/start' || frame.method === 'review/start' || frame.method.startsWith('thread/queue/') || frame.method === 'thread/settings/update' || frame.method === 'maintenance/unknown' || frame.method === 'generate-thread-title') {
+      if (frame.method === 'account/usage/read' || frame.method === 'thread/compact/start' || frame.method === 'review/start' || frame.method.startsWith('thread/queue/') || frame.method === 'thread/settings/update' || frame.method === 'config/value/write' || frame.method === 'maintenance/unknown' || frame.method === 'generate-thread-title') {
         socket.send(JSON.stringify({ id: frame.id, error: { code: -32601, message: 'Method not found' } }))
         return
       }
@@ -89,9 +89,9 @@ async function run() {
           assert.match(missing.headers.get('content-type'), /application\/json/)
           if (method !== 'HEAD') assert.deepEqual(await missing.json(), { error: 'Not found' })
         }
-        const call = async method => {
+        const call = async (method, configWriteErrors=false) => {
           const response = await fetch(url + '/codex-api/rpc', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json', ...(configWriteErrors?{'X-Codex-Config-Write-Errors':'1'}:{}) },
             body: JSON.stringify({ method, params: method === 'getAuthStatus' ? { includeToken: true } : { threadId: 'fixture', name: 'Native title' } }),
           })
           return { status: response.status, body: await response.json() }
@@ -102,6 +102,8 @@ async function run() {
         for (const method of ['account/usage/read', 'thread/compact/start', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update']) {
           assert.deepEqual(await call(method), { status: 502, body: { error: 'Method not found', rpcCode: -32601 } })
         }
+        assert.deepEqual(await call('config/value/write'),{status:502,body:{error:'Method not found'}})
+        assert.deepEqual(await call('config/value/write',true),{status:502,body:{error:'Method not found',rpcCode:-32601}})
         assert.equal(active.status, 200)
         assert.deepEqual(await call('generate-thread-title'), { status: 502, body: { error: 'Method not found' } })
         const auth = await call('getAuthStatus')
