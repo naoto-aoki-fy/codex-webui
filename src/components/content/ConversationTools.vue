@@ -10,6 +10,7 @@ import ImportPreview from './ImportPreview.vue'
 import PermissionsInspection from './PermissionsInspection.vue'
 import DeniedActions from './DeniedActions.vue'
 import NativeQueuePanel from './NativeQueuePanel.vue'
+import CreateWorktree from './CreateWorktree.vue'
 import type {createNativeQueue} from '../../composables/nativeQueue'
 import type {DeniedAction} from '../../composables/deniedActionObservation'
 import type {ThreadSecurity} from '../../api/threadSecurity'
@@ -21,6 +22,7 @@ defineProps<{
   security:ThreadSecurity|null;
   deniedActions:DeniedAction[];
   queue:ReturnType<typeof createNativeQueue>;
+  openCreatedWorktree:(path:string)=>Promise<void>;
   inProgress:boolean; sending:boolean; incomplete:boolean; disconnected:boolean; interrupting:boolean;
   compaction:ReturnType<typeof createThreadCompaction>; review:ReturnType<typeof createThreadReview>;
 }>()
@@ -52,4 +54,5 @@ const reviewTargetOptions = [
                 <NativeQueuePanel :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" :queue="queue" :in-progress="inProgress" :blocked="sending||incomplete||compaction.busy.value||review.busy.value" />
                 <BackgroundTerminals :thread-id="threadId" :epoch="epoch" :messages="messages" :disconnected="disconnected" />
                 <WorkingTreePanel :cwd="cwd" :epoch="epoch" />
+                <CreateWorktree :cwd="cwd" :epoch="epoch" :blocked="disconnected||inProgress||sending||incomplete||compaction.busy.value||review.busy.value" :open-project="openCreatedWorktree" />
 </template>

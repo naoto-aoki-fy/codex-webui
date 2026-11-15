@@ -1,4 +1,4 @@
-import { getWorkspaceRootsState, getWorkspaceRootsStateGeneration, invalidateWorkspaceRootsStateCache, updateWorkspaceRootsState, type WorkspaceRootsState, type WorkspaceRootsOperation } from './codexGateway'
+import { openProjectRootSelection, getWorkspaceRootsState, getWorkspaceRootsStateGeneration, invalidateWorkspaceRootsStateCache, updateWorkspaceRootsState, type WorkspaceRootsState, type WorkspaceRootsOperation } from './codexGateway'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setThreadPinned, acquireReasoningCatalog, forkThreadFromResponse, reasoningCatalog, getAvailableModelIds, getThreadDetail, resumeThread, startThreadTurn } from './codexGateway'
 
@@ -622,4 +622,8 @@ it('sends an App reference as a native mention alongside ordinary text and skill
   await startThreadTurn('app-thread','Use this app',[],undefined,undefined,[{name:'skill',path:'/skill'}],[],undefined,undefined,[{id:'connector_demo',name:'Demo App'}])
   expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string).params.input).toEqual([{type:'text',text:'Use this app'},{type:'skill',name:'skill',path:'/skill'},{type:'mention',name:'Demo App',path:'app://connector_demo'}])
  }finally{vi.unstubAllGlobals()}
+})
+
+it('rejects stale queued project registration before issuing a write',async()=>{
+ const request=vi.fn();vi.stubGlobal('fetch',request);let current=true;const pending=openProjectRootSelection('/remote/new-worktree',()=>current);current=false;await expect(pending).rejects.toThrow('Connection changed');expect(request).not.toHaveBeenCalled()
 })
