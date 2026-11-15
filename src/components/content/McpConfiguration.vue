@@ -11,7 +11,7 @@ async function read(){if(busy.value)return;const token=++generation;busy.value=t
 async function save(){if(busy.value||!data.value||!confirmation.value)return;const token=++generation,snapshot=data.value,change=confirmation.value;confirmation.value=null;busy.value=true;saving=true
  try{const result=await saveMcpSwitch(snapshot,change.name,change.enabled);if(token!==generation)return
   data.value={...snapshot,version:result.version,servers:snapshot.servers.map(server=>server.name===change.name?{...server,enabled:change.enabled}:server)}
-  status.value=result.overridden?'Saved, but overridden by another configuration layer. Effective runtime state is unchanged until verified.':'Saved configuration only. Use the existing MCP Refresh/reload explicitly when safe; runtime state has not been verified.'
+  status.value=result.overridden?'Saved, but overridden by another configuration layer. Effective runtime state has not been verified.':'Saved configuration only. Use the existing MCP Refresh/reload explicitly when safe; runtime state has not been verified.'
  }catch(e){if(token===generation){data.value=null;status.value='Save rejected or outcome uncertain. Read configuration before retrying. '+(e instanceof Error?e.message:'')}}finally{if(token===generation){busy.value=false;saving=false}}
 }
 </script>
