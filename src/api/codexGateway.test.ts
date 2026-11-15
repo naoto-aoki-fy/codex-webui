@@ -615,3 +615,11 @@ it('serializes Fast enable then disable explicitly without persistent thread-tie
   expect(requests.filter(r => r.method === 'turn/start').every(r => !('serviceTier' in r.params))).toBe(true)
   vi.unstubAllGlobals()
 })
+it('sends an App reference as a native mention alongside ordinary text and skills',async()=>{
+ const fetch=vi.fn(async(_input: RequestInfo | URL, _init?: RequestInit)=>new Response(JSON.stringify({result:{turn:{id:'app-turn'}}})))
+ vi.stubGlobal('fetch',fetch)
+ try{
+  await startThreadTurn('app-thread','Use this app',[],undefined,undefined,[{name:'skill',path:'/skill'}],[],undefined,undefined,[{id:'connector_demo',name:'Demo App'}])
+  expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string).params.input).toEqual([{type:'text',text:'Use this app'},{type:'skill',name:'skill',path:'/skill'},{type:'mention',name:'Demo App',path:'app://connector_demo'}])
+ }finally{vi.unstubAllGlobals()}
+})

@@ -296,6 +296,7 @@
                   :disabled="isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value"
                   :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
+                  :connection-epoch="operationEpoch"
                   :collaboration-modes="availableCollaborationModes"
                   :selected-collaboration-mode="selectedCollaborationMode"
                   :models="availableModelIds" :model-provider="parseModelSelection(composerSelectedModelId).provider"
@@ -1067,13 +1068,13 @@ function onOpenThreadAction(action: string) {
 }
 
 function onSubmitThreadMessage(
-  payload: { text: string; imageUrls: string[]; fileAttachments: Array<{ label: string; path: string; fsPath: string }>; skills: Array<{ name: string; path: string }> },
+  payload: { apps?: import('./api/apps').AppReference[]; text: string; imageUrls: string[]; fileAttachments: Array<{ label: string; path: string; fsPath: string }>; skills: Array<{ name: string; path: string }> },
   settle: (accepted: boolean) => void,
 ): void {
   scheduleMobileConversationJumpToLatest()
   const submission = isHomeRoute.value
     ? routing.submitFirstMessageForNewThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments)
-    : sendMessageToSelectedThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments).then(() => true)
+    : sendMessageToSelectedThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments, undefined, payload.apps).then(() => true)
   void submission.then(accepted => settle(accepted), failure => {
     desktopError.value = failure instanceof Error ? failure.message : String(failure)
     settle(false)

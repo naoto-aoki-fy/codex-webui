@@ -1319,3 +1319,5 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .memory-status pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 15rem; overflow: auto; }
 
 .remote-control-status { overflow-wrap: anywhere; max-height: 35vh; overflow: auto; }
+
+.apps-picker { max-height: 35vh; overflow: auto; overflow-wrap: anywhere; }

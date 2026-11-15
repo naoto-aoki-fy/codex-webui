@@ -52,6 +52,7 @@ export function areMessageFieldsEqual(first: UiMessage, second: UiMessage): bool
     first.isUnhandled === second.isUnhandled &&
     areCommandExecutionsEqual(first.commandExecution, second.commandExecution) &&
     arePlanDataEqual(first.plan, second.plan) &&
+    JSON.stringify(first.apps) === JSON.stringify(second.apps) &&
     first.executionLabel === second.executionLabel &&
     first.turnId === second.turnId &&
     first.generationMetadata?.model === second.generationMetadata?.model &&

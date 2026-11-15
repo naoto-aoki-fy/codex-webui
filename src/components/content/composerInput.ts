@@ -16,6 +16,8 @@ export function createComposerInput(deps: {
     isAttachMenuOpen: Ref<boolean, boolean>;
     isMobile: Ref<boolean, boolean>;
 }) {
+    const appsUnavailable = ref(false);
+    const selectedApps = ref<import('../../api/apps').AppReference[]>([]);
     const draft = ref('');
     const promptLibraryOpen = ref(false);
     const promptStorageNotice = ref('');
@@ -85,6 +87,7 @@ export function createComposerInput(deps: {
     const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
     const isSubmitting = ref(false);
     const canSubmit = computed(() => {
+        if (appsUnavailable.value) return false;
         if (isSubmitting.value)
             return false;
         if (deps.props.disabled)
@@ -99,7 +102,7 @@ export function createComposerInput(deps: {
             return false;
         return draft.value.trim().length > 0 || deps.attachments.selectedImages.value.length > 0 || deps.attachments.fileAttachments.value.length > 0;
     });
-    const hasUnsavedDraft = computed(() => draft.value.trim().length > 0
+    const hasUnsavedDraft = computed(() => selectedApps.value.length > 0 || draft.value.trim().length > 0
         || deps.attachments.selectedImages.value.length > 0
         || deps.settings.selectedSkills.value.length > 0
         || deps.attachments.fileAttachments.value.length > 0);
@@ -166,6 +169,7 @@ export function createComposerInput(deps: {
     }
     function replaceDraftState(payload: ComposerDraftPayload): void {
         draftGeneration.value += 1;
+        selectedApps.value = payload.apps?.map(app=>({...app})) ?? [];
         draft.value = payload.text;
         deps.attachments.selectedImages.value = payload.imageUrls.map((url, index) => ({
             id: `draft-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
@@ -201,6 +205,7 @@ export function createComposerInput(deps: {
     }
     function getCurrentDraftPayload(): ComposerDraftPayload {
         return {
+            ...(selectedApps.value.length ? {apps:selectedApps.value.map(app=>({...app}))} : {}),
             text: draft.value,
             imageUrls: deps.attachments.selectedImages.value.map((image) => image.url),
             fileAttachments: deps.attachments.fileAttachments.value.map((attachment) => ({ ...attachment })),
@@ -440,7 +445,7 @@ export function createComposerInput(deps: {
         return ext === 'md' || ext === 'mdx';
     }
     return {
-promptLibraryOpen, promptStorageNotice, populatePrompt,
+appsUnavailable, selectedApps, promptLibraryOpen, promptStorageNotice, populatePrompt,
 draft,
 slashQuery,
 slashIndex,

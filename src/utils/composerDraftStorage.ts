@@ -3,6 +3,7 @@ import { profileStorageKey } from './browserConnectionProfile'
 export type FileAttachment = { label: string; path: string; fsPath: string }
 
 export type ComposerDraftPayload = {
+  apps?: import('../api/apps').AppReference[]
   text: string
   imageUrls: string[]
   fileAttachments: FileAttachment[]
@@ -33,6 +34,7 @@ export function loadPersistedDraftForThread(threadId: string): ComposerDraftPayl
       }
     }
     return {
+      ...(Array.isArray(parsed.apps) && parsed.apps.length ? {apps:parsed.apps.slice(0,20).filter(app=>app&&typeof app.id==='string'&&app.id.length<=512&&!/[\s\x00-\x1f]/.test(app.id)&&typeof app.name==='string').map(app=>({id:app.id,name:app.name.slice(0,300)}))} : {}),
       text: typeof parsed.text === 'string' ? parsed.text : '',
       imageUrls: Array.isArray(parsed.imageUrls)
         ? parsed.imageUrls.filter((url): url is string => typeof url === 'string')
@@ -63,7 +65,7 @@ export function persistDraftForThread(threadId: string, payload: ComposerDraftPa
   const normalizedThreadId = threadId.trim()
   if (!normalizedThreadId) return
   try {
-    const hasContent = payload.text.trim().length > 0
+    const hasContent = !!payload.apps?.length || payload.text.trim().length > 0
       || payload.imageUrls.length > 0
       || payload.fileAttachments.length > 0
       || payload.skills.length > 0

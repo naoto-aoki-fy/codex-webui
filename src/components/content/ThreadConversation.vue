@@ -245,6 +245,7 @@
                 </span>
               </div>
 
+              <p v-for="app in message.apps" :key="app.id" class="message-app-reference">App reference: {{ app.name }} · app://{{ app.id }}</p>
               <div v-if="message.skills && message.skills.length > 0" class="message-skill-attachments">
                 <a
                   v-for="skill in message.skills"

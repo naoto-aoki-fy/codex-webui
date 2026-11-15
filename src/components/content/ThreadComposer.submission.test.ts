@@ -250,3 +250,11 @@ it('opens command discovery without submitting or losing attachments',async()=>{
  expect(c.submitted.mock.calls[0]![0].fileAttachments).toEqual(payload.fileAttachments)
  expect(c.submitted.mock.calls[0]![0].skills).toEqual(payload.skills)
 })
+it('preserves structured App references in drafts and submission and clears them on connection change',async()=>{
+ const c=mount({connectionEpoch:0});const apps=[{id:'connector_demo',name:'Demo App'}]
+ c.exposed.hydrateDraft({...payload,apps});await vue.nextTick();c.submit()
+ expect(c.submitted.mock.calls[0]![0].apps).toEqual(apps)
+ expect(JSON.parse(c.storage.get('codex-web-local.thread-draft.v1.child')!).apps).toEqual(apps)
+ c.submitted.mock.calls[0]![1](false);c.props.connectionEpoch=1;await vue.nextTick();c.submit()
+ expect(c.submitted.mock.calls[1]![0].apps).toBeUndefined()
+})

@@ -127,3 +127,19 @@ are deferred under the medium-risk ceiling; no designated real devices exist.
 before the independent Apps work. `node scripts/test-approved-remote.cjs`: lazy
 reads, exact environment scope, errors, zero access mutations; all sizes/themes
 passed. Performance in manual test. Live NOT RUN; read scope low risk.
+
+## 18 validation
+
+Implemented lazy paginated picker for accessible/enabled native Apps on loaded
+threads. Uses exact structured UserInput mention `{name,path:"app://<id>"}`;
+verified against floor `turn_start.rs` test `app://demo-app`, apps.rs and native
+input contract. Separate draft references persist in existing profile-scoped draft
+storage; unavailable observed selections block sending; connection changes clear
+remote references. Native history displays App identity as safe text, not raw JSON.
+No OAuth/install/pre-send probe or new-thread selection. Existing argument arity
+is preserved when there are no App references.
+Focused 6 suites: 338 passed (plus bounded selection regression); typecheck passed.
+`node scripts/test-approved-apps.cjs`: picker, exact turn input, reload persistence,
+removed selection, connection invalidation/errors; all sizes/themes passed after
+rerunning on stable source (initial HMR interrupted the first run). Performance in
+manual test. Live NOT RUN; risk medium.

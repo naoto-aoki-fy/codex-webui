@@ -24,6 +24,7 @@ import {
 export { reasoningOptions, resolveReasoningEffort, type ReasoningModel } from './modelCapabilities'
 import { pickCodexRateLimitSnapshot } from './normalizers/rateLimits'
 export { pickCodexRateLimitSnapshot } from './normalizers/rateLimits'
+import { nativeAppInputs } from './apps'
 import { buildTurnInput, type FileAttachmentParam } from './turnInput'
 export type { FileAttachmentParam } from './turnInput'
 import type { WorkspaceRootsOperation } from '../types/workspaceRoots'
@@ -616,10 +617,12 @@ export async function startThreadTurn(
   fileAttachments: FileAttachmentParam[] = [],
   collaborationMode?: CollaborationModeKind,
   speedMode?: SpeedMode,
+  apps?: import('./apps').AppReference[],
 ): Promise<string> {
   try {
     const normalizedModel = model?.trim() ?? ''
     const { input, attachments } = buildTurnInput(text, imageUrls, skills, fileAttachments)
+    if (apps?.length) input.push(...nativeAppInputs(apps))
     const params: Record<string, unknown> = {
       threadId,
       input,
