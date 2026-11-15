@@ -303,3 +303,30 @@ credential-free external-server integration fixture passed. Existing composer,
 Git, native history, Fork/Revert and historical metadata regressions passed. No
 paid voice session or real repository/conversation/configuration mutation was
 performed. Voice is blocked; queue and POSIX worktree scopes can proceed.
+
+## Phase 3 contract gates before permission mutations
+
+**04 retry withheld:** the native endpoint accepts an opaque serialized core
+Guardian event. The public, explicitly unstable auto-review notification is a
+different projection, without a supported retry-eligibility/expiry contract.
+No client-side reconstruction or command execution from denial text is added.
+Observation remains PARTIAL; full mutation risk remains 21, live NOT RUN.
+
+**14 BLOCKED:** `thread/settings/update.cwd` does exist and changes subsequent
+turns. It also selects default environments unless supplied explicitly. However,
+the WebUI historical file-link renderer currently resolves relative references
+against one conversation cwd (`ThreadConversation.vue::resolveRelativePath`),
+while native public turns do not supply historical cwd per response. Changing
+the current cwd would reinterpret existing historical links after reopening.
+Native project membership is independently explicit. A safe implementation needs
+historical context provenance/persistence and project/environment transition work;
+a UI-only path swap or implicit Fork cannot preserve the required semantics.
+No cwd mutation is exposed. Full risk remains 23, shipped risk none, live NOT RUN.
+
+**21 trust/enablement withheld:** the supported release exposes `hooks/list`, not
+a Hook enablement/trust mutation. Hook keys include source/trust/hash provenance
+but are not documented writable config paths. Generic config writes cannot
+safely map every project/plugin/managed Hook to its trust store and preserve
+unrelated definitions/secrets. No trust-file editing, Hook execution or imported
+Hook trust workaround is added. Inspection remains PARTIAL; full risk 23,
+inspection residual 8, live NOT RUN.
