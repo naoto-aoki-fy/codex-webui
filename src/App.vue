@@ -133,7 +133,7 @@
             </details>
           </template>
         </ContentHeader>
-        <p v-if="nativeAuthenticationBlocked" class="feature-panel native-auth-barrier" role="status">Native authentication is pending or needs account reconciliation. Sending is paused. <button type="button" @click="setSidebarCollapsed(false);isSettingsOpen=true">Open native sign-in controls</button></p>
+        <p v-if="nativeAuthenticationBlocked" class="feature-panel native-auth-barrier" role="status">Native authentication is pending or needs account reconciliation. Sending is paused. <button type="button" @click="settingsCategory='Codex account';isSettingsOpen=true">Open native sign-in controls</button></p>
         <p v-if="nativeDeletion?.state.value==='completed'" class="feature-panel" role="status">{{ nativeDeletion.status.value }}</p>
         <p v-if="nativeForkFailure" class="composer-runtime-error" role="alert">{{ nativeForkFailure }}</p>
 

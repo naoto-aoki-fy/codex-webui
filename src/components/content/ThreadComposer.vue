@@ -172,7 +172,7 @@
             <fieldset class="composer-send-modes" role="radiogroup" aria-label="Send mode" @keydown="onSendModeKeydown">
               <legend>Send mode</legend>
               <button v-for="mode in [{queue:false,label:'Immediate mode'},{queue:true,label:'Queue mode'}]" :key="mode.label" class="thread-composer-attach-setting" type="button" role="radio" :tabindex="input.queueMode.value===mode.queue ? 0 : -1" :aria-checked="input.queueMode.value===mode.queue" @click="input.queueMode.value=mode.queue;isAttachMenuOpen=false">
-                <span>{{ mode.label }}</span><span aria-hidden="true">{{ input.queueMode.value===mode.queue ? '✓' : '' }}</span>
+                <span class="thread-composer-attach-setting-label">{{ mode.label }}</span><span aria-hidden="true">{{ input.queueMode.value===mode.queue ? '✓' : '' }}</span>
               </button>
               <p v-if="isNewThread">The first message creates the conversation. Queue mode applies to subsequent submissions.</p>
             </fieldset>
