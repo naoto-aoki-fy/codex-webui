@@ -12,7 +12,7 @@ it.each(['/remote/codex', 'C:\\remote\\codex'])('stages exact bytes on B, record
     if (method === 'fs/writeFile') remote.set(p.path, Buffer.from(p.dataBase64, 'base64'))
     return {}
   })
-  const client = { rpc, getInitializationMetadata: () => ({ codexHome: root }) as any }
+  const client = { rpc, resolveCodexHome: async () => root }
   try {
     const a = await stageRemoteUpload(client, 'photo.png', bytes, state)
     const b = await stageRemoteUpload({ ...client }, 'notes.txt', Buffer.from('B'), state)
@@ -27,7 +27,7 @@ it.each(['/remote/codex', 'C:\\remote\\codex'])('stages exact bytes on B, record
 it('does not return a usable attachment on remote-write failure or oversized input', async () => {
   const state = await mkdtemp(join(tmpdir(), 'remote-uploads-'))
   const rpc = vi.fn(async method => { if (method === 'fs/writeFile') throw new Error('Remote permission denied'); return {} })
-  const client = { rpc, getInitializationMetadata: () => ({ codexHome: '/B' }) as any }
+  const client = { rpc, resolveCodexHome: async () => '/B' }
   try {
     await expect(stageRemoteUpload(client, 'x.txt', Buffer.from('x'), state)).rejects.toThrow('Remote permission denied')
     rpc.mockClear()
@@ -40,7 +40,7 @@ it('accounts for ambiguous, legacy and cross-profile uploads conservatively and 
   const { inspectRemoteUploads } = await import('./remoteUploads')
   const state = await mkdtemp(join(tmpdir(), 'remote-capacity-'))
   const rpc = vi.fn(async (_method: string, _params?: unknown) => ({}))
-  const client = { rpc, getInitializationMetadata: () => ({ codexHome: '/B' }) as any }
+  const client = { rpc, resolveCodexHome: async () => '/B' }
   try {
     await writeFile(join(state, 'codexapp-uploads.jsonl'), JSON.stringify({ path: '/B/codexapp-uploads/legacy', at: '2020-01-01' }) + '\n')
     vi.stubEnv('CODEXUI_UPLOAD_CAPACITY_BYTES', '4')
@@ -64,7 +64,7 @@ it('serializes capacity reservations and retains an ambiguous write as protected
   const state = await mkdtemp(join(tmpdir(), 'remote-race-'))
   vi.stubEnv('CODEXUI_UPLOAD_CAPACITY_BYTES', '4')
   const rpc = vi.fn(async (method: string) => { if (method === 'fs/writeFile') throw new Error('Disconnected after send'); return {} })
-  const client = { rpc, getInitializationMetadata: () => ({ codexHome: '/B' }) as any }
+  const client = { rpc, resolveCodexHome: async () => '/B' }
   try {
     const results = await Promise.allSettled([
       stageRemoteUpload(client, 'a', Buffer.from('abc'), state),
@@ -76,5 +76,17 @@ it('serializes capacity reservations and retains an ambiguous write as protected
     expect(inventory.trackedBytes).toBe(3)
     expect(inventory.uploads[0]).toMatchObject({ status: 'unknown', protected: true })
     expect(inventory.cleanup.eligiblePaths).toEqual([])
+  } finally { await rm(state, { recursive: true, force: true }) }
+})
+
+it('preserves the explicit remote upload override without home discovery', async () => {
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '\\\\host\\share\\uploads')
+  const state = await mkdtemp(join(tmpdir(), 'remote-override-'))
+  const client = { rpc: vi.fn(async () => ({})), resolveCodexHome: vi.fn(async () => { throw new Error('must not discover') }) }
+  try {
+    const path = await stageRemoteUpload(client, 'x', Buffer.from('x'), state)
+    expect(path.startsWith('\\\\host\\share\\uploads\\codexapp-uploads\\')).toBe(true)
+    expect(client.resolveCodexHome).not.toHaveBeenCalled()
+    expect(client.rpc.mock.calls.some(args => (args as unknown[])[0] === 'config/read')).toBe(false)
   } finally { await rm(state, { recursive: true, force: true }) }
 })

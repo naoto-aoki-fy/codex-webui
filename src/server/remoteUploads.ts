@@ -54,12 +54,11 @@ export async function inspectRemoteUploads(stateDirectory: string) {
 /** Indefinite retention, including unknown outcomes. No automatic deletion:
  * accepted turns and durable history may refer to these files after restart. */
 export async function stageRemoteUpload(
-  client: Pick<AppServerClient, 'rpc' | 'getInitializationMetadata'>,
+  client: Pick<AppServerClient, 'rpc' | 'resolveCodexHome'>,
   name: string, bytes: Buffer, stateDirectory: string,
 ): Promise<string> {
   if (bytes.length > MAX_UPLOAD_BYTES) throw new Error('Upload exceeds 20 MiB file limit')
-  await client.rpc('config/read', {})
-  const root = process.env.CODEXUI_REMOTE_UPLOAD_DIR?.trim() || client.getInitializationMetadata()?.codexHome
+  const root = process.env.CODEXUI_REMOTE_UPLOAD_DIR?.trim() || await client.resolveCodexHome()
   if (!root || !projectPath(root).isAbsolute(root)) throw new Error('Set CODEXUI_REMOTE_UPLOAD_DIR to an absolute path on the App Server host')
   const directory = projectPath(root).join(root, 'codexapp-uploads')
   await client.rpc('fs/createDirectory', { path: directory, recursive: true })
