@@ -1,6 +1,7 @@
 import type { UiProjectGroup } from '../../types/codex';
 export type SidebarProps = {
     isForkDisabled?: boolean;
+    isExporting?: boolean;
     groups: UiProjectGroup[];
     removableProjectIds?: string[];
     projectDisplayNameById: Record<string, string>;

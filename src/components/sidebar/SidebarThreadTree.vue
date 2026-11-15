@@ -278,6 +278,12 @@
         >
           Copy chat
         </button>
+        <button class="thread-menu-item" type="button"
+          :disabled="isExporting || openThreadMenuThread.id !== selectedThreadId"
+          title="Downloads all available completed history. The turn active at export start is excluded."
+          @click="emit('export-thread', openThreadMenuThread.id)">
+          {{ isExporting ? 'Exporting…' : 'Export conversation as Markdown' }}
+        </button>
         <ForkSplitButton label="Fork conversation" variant="sidebar" :disabled="isForkDisabled"
           @fork="onForkThread(openThreadMenuThread.id, $event)" />
         <button class="thread-menu-item" type="button" @click="onTogglePinFromMenu(openThreadMenuThread.id)">
@@ -367,6 +373,7 @@ const emit = defineEmits<{
   'rename-thread': [payload: { threadId: string; title: string }]
   'remove-project': [projectName: string]
   'copy-thread-chat': [threadId: string]
+  'export-thread': [threadId: string]
   'fork-thread': [payload: { threadId: string; method: ForkMethod }]
 }>()
 
