@@ -32,8 +32,13 @@ Run `node scripts/test-risk-deletion.cjs` with the documented Playwright browser
 path. Unit suites cover controller, persisted-prefix guard, native cache cleanup,
 recovery cancellation, late reads and protected transfer/Fork behavior. Cleanup:
 close fixture contexts. Native permanent deletion has no WebUI undo; do not use a
-real conversation to test rollback. Imported prefixes and native subtrees remain
-outside this limited deletion UI; archive remains available for them.
+real conversation to test rollback. Imported prefixes and known listed subtrees
+are rejected by this limited deletion UI; archive remains available for them.
+This is not an execution-time leaf-only guarantee: a child created after the last
+precheck can be included in native subtree deletion. Existing fixtures establish
+precheck behavior only. When descendant preservation is required, withhold this
+mutation until a native atomic leaf-only condition is available; another client
+list request, typed ID or completion event cannot establish that protection.
 
 Input visibility regression: in both themes, inspect the empty exact-ID field
 before typing. Expect a visible one-pixel border, theme-appropriate background,
