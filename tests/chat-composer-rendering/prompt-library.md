@@ -21,3 +21,7 @@ opening the library and on accepted text submission; at most 20 presets/30 promp
 JSON processing, no attachment/conversation copies. Browser matrix verifies no
 turn on selection or action alias, reload persistence and explicit clearing.
 Live model acceptance NOT RUN (fixture protocol only).
+
+While the main draft contains text, focus Preset name and press Enter. It must
+neither submit the chat nor alter its draft. Use Save text preset explicitly.
+IME composition confirmation in the name input is not intercepted.
