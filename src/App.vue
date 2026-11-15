@@ -93,7 +93,7 @@
               class="sidebar-settings-panel"
               @click.stop
             >
-              <AccountSettingsPanel :epoch="operationEpoch"
+              <AccountSettingsPanel :epoch="operationEpoch" :warnings="diagnosticWarnings"
                 :auth-available="codexAuthAvailable"
                 :refreshing="isRefreshingCodexAuth"
                 :change-blocked="isCodexAuthChangeBlocked"
@@ -432,6 +432,7 @@ const {
   archiveThreadById,
   restoreThreadById,
   operationEpoch,
+  diagnosticWarnings,
   forkThreadById,
   forkNativeThreadById,
   renameThreadById,

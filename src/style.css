@@ -1291,3 +1291,5 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 :root.dark .feature-panel { color: #d4d4d8; background: #18181b; }
 :root.dark .feature-panel button { color: #e4e4e7; border-color: #52525b; background: #27272a; }
 :root.dark .feature-panel [role="alert"] { color: #fda4af; }
+
+.diagnostic-report { white-space: pre-wrap; max-height: 200px; overflow: auto; font-size: 11px; }
