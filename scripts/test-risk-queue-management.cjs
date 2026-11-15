@@ -14,7 +14,7 @@ const {setup,assert}=require('./approved-fixture.cjs')
    if(body.method==='thread/queue/delete'){pending=pending.filter(p=>p.id!==body.params.queuedSubmissionId);return {json:{result:{deleted:true}}}}
    if(body.method==='thread/queue/start'){pending=pending.filter(p=>p.id!==body.params.queuedSubmissionId);return {json:{result:{turn:{id:'native-queue-turn',status:'inProgress'}}}}}
   })
-  await page.getByRole('button',{name:'Immediate mode',exact:true}).click();await page.getByRole('button',{name:'Edit queued first',exact:true}).click();await page.getByRole('textbox',{name:'Queued prompt text',exact:true}).fill('Edited queue text');await page.getByRole('button',{name:'Save queued prompt',exact:true}).click();await page.waitForTimeout(200)
+  await page.getByText('Native deferred prompt queue',{exact:true}).click();await page.getByRole('button',{name:'Read native queue',exact:true}).click();await page.getByRole('button',{name:'Edit queued first',exact:true}).click();await page.getByRole('textbox',{name:'Queued prompt text',exact:true}).fill('Edited queue text');await page.getByRole('button',{name:'Save queued prompt',exact:true}).click();await page.waitForTimeout(200)
   assert.deepEqual(pending[0].input.slice(1),[{type:'skill',name:'s',path:'/remote/SKILL.md'},{type:'mention',name:'App',path:'app://exact'}])
   await page.getByRole('button',{name:'Move up second',exact:true}).click();await page.waitForTimeout(200);assert.equal(pending[0].id,'second')
   await page.getByRole('button',{name:'Remove queued first',exact:true}).click();assert.equal(calls.some(c=>c.method==='thread/queue/delete'),false)

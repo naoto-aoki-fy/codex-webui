@@ -12,7 +12,7 @@ const {setup,assert}=require('./approved-fixture.cjs')
    }
   },false)
   await page.waitForTimeout(700);const expand=page.getByRole('button',{name:'Expand sidebar',exact:true});if(await expand.count())await expand.click()
-  await page.getByRole('button',{name:'Skills',exact:true}).click();await page.getByText('Curated plugin collection',{exact:true}).click()
+  await page.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('button',{name:'Apps / Connectors',exact:true}).click();await page.getByText('Curated plugin collection',{exact:true}).click()
   assert.equal(calls.some(c=>c.method==='plugin/list'),false)
   await page.getByRole('button',{name:'Read curated plugins',exact:true}).click();await page.getByText('Demo plugin · native-vertical',{exact:true}).click();await page.getByText('Advertised version: 2 · Local version: 1',{exact:true}).waitFor()
   assert.ok(!(await page.locator('.curated-plugins').innerText()).includes('SECRET'))

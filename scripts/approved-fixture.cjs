@@ -36,7 +36,16 @@ async function setup(page, handle = () => undefined, openTools = true) {
  await page.getByText('Fixture answer',{exact:true}).waitFor()
  for(let attempt=0;attempt<100&&!sockets.size;attempt++)await page.waitForTimeout(50)
  assert(sockets.size,'Native fixture notification stream did not become ready')
- if(openTools){await page.getByText('Conversation tools',{exact:true}).click();await page.getByText('Conversation actions',{exact:true}).waitFor()}
+ if(openTools)await openToolsDialog(page)
  return {calls,emit,errors,items,thread}
 }
-module.exports={setup,thread,assert}
+async function openToolsDialog(page) {
+ await page.locator('.conversation-header-menu > summary').click()
+ await page.getByRole('button',{name:'Conversation tools…',exact:true}).click()
+ await page.getByText('Conversation actions',{exact:true}).waitFor()
+}
+async function openComposerEntry(page,name) {
+ await page.getByRole('button',{name:'Add attachments and settings',exact:true}).click()
+ await page.getByRole(['Immediate mode','Queue mode'].includes(name)?'radio':'button',{name:name==='Apps / Connectors'?/^Apps \/ Connectors/:name,exact:true}).click()
+}
+module.exports={setup,thread,assert,openToolsDialog,openComposerEntry}

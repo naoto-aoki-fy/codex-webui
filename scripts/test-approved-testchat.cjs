@@ -5,7 +5,7 @@ const {writeFileSync}=require('node:fs')
  const browser=await chromium.launch({headless:true}),page=await browser.newPage({viewport:{width:1280,height:900}})
  thread.name='TestChat fixture'
  let submitted
- const {emit,errors}=await setup(page,body=>{if(body.method==='turn/start'){submitted=body.params;return {json:{result:{turn:{id:'testchat-turn',status:'inProgress'}}}}}})
+ const {emit,errors}=await setup(page,body=>{if(body.method==='turn/start'){submitted=body.params;return {json:{result:{turn:{id:'testchat-turn',status:'inProgress'}}}}}},false)
  const marker='APPROVED_TESTCHAT_'+Date.now(),text=`${marker}\n**Markdown** [sample.ts](/remote/project/src/sample.ts) and [reference](https://example.test/docs)\n\`\`\`ts\nconst safe = true\n\`\`\``
  await page.waitForTimeout(700);await page.locator('.thread-composer-input').fill(text);await page.locator('.thread-composer-submit').click()
  for(let i=0;!submitted&&i<100;i++)await page.waitForTimeout(20)

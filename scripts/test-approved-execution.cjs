@@ -6,7 +6,7 @@ const {mkdirSync}=require('node:fs')
  const browser=await chromium.launch({headless:true})
  for(const width of [1280,375,768]) {
   const page=await browser.newPage({viewport:{width,height:width===375?812:width===768?1024:900}})
-  const {calls,emit,errors}=await setup(page)
+  const {calls,emit,errors}=await setup(page,()=>undefined,false)
   const tool=page.locator('[data-message-id="m"] .execution-details');await tool.locator('summary').click()
   assert.ok((await tool.innerText()).includes('[redacted]'));assert.ok(!(await tool.innerText()).includes('HIDDEN_META'));assert.ok((await tool.innerText()).includes('Structured fixture result'));assert.ok(!(await tool.innerText()).includes('STRUCTURED_SECRET'));assert.ok(!(await tool.innerText()).includes('INTERNAL_DIAGNOSTIC'))
   assert.equal(await page.evaluate(()=>window.BAD),undefined)
