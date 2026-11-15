@@ -1,12 +1,16 @@
 # Native deferred prompt queue
 
+Current access and layout/state checks: [management dialogs and send modes](../chat-composer-rendering/management-dialogs-send-modes.md). Detailed tools use the conversation header menu; composer selection uses +; account and connection management use Settings.
+
+
 Prerequisites: supported independently managed App Server with native queue
 service; use synthetic fixtures for development. No browser-owned execution
 queue, paid turn or real conversation mutation is required by automation.
 
 1. Open an existing conversation. Immediate mode remains the default, including
    immediate steering while a turn is active.
-2. Switch to Queue mode. The native queue panel opens and reads availability.
+2. Select **+ → Send mode → Queue mode**. A read-only readiness check runs;
+   detailed management stays closed. Inspect it through the header tools menu.
    Unsupported/error responses disable queue submission without falling back to
    a chat send. The draft stays editable.
 3. Submit a synthetic prompt. Check the native client message/queue IDs and

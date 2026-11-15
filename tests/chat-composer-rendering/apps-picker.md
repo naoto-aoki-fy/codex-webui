@@ -1,5 +1,8 @@
 # Native Apps / Connectors references (18)
 
+Current access and layout/state checks: [management dialogs and send modes](../chat-composer-rendering/management-dialogs-send-modes.md). Detailed tools use the conversation header menu; composer selection uses +; account and connection management use Settings.
+
+
 Setup: supported loaded thread, or `node scripts/test-approved-apps.cjs` fixtures.
 Expand Apps / Connectors, refresh, select an accessible enabled App. Expect the
 exact native ID, a removable selected reference, and no install/auth/send operation.

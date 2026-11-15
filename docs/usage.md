@@ -29,9 +29,12 @@ when no longer needed. Mobile browsers access the App Server host's projects and
 
 
 
-Messages submitted during an active turn use Steer immediately. There is no deferred
-prompt queue; legacy queue data and the former busy-send preference are ignored.
-Stop remains available during generation. Earlier history loads on demand.
+Immediate mode is the default; during an active turn it uses Steer. Choose
+Immediate mode or native Queue mode from **composer + → Send mode**. Queue mode
+shows a compact indicator and requires the supported native queue service. Stop
+remains available during generation. Earlier history loads on demand. See
+[management entry points and send-mode behavior](management-ui.md) for dialogs,
+thread-switch resets and the first-message boundary.
 
 The new-thread and existing-thread composers use the App Server's
 `model/list` capabilities for reasoning effort choices. They preserve

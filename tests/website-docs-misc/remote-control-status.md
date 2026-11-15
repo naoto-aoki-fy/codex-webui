@@ -1,5 +1,8 @@
 # Remote Control status and registered clients (31, partial)
 
+Current access and layout/state checks: [management dialogs and send modes](../chat-composer-rendering/management-dialogs-send-modes.md). Detailed tools use the conversation header menu; composer selection uses +; account and connection management use Settings.
+
+
 Setup: supported independently enabled native service, or intercepted
 `node scripts/test-approved-remote.cjs`. Open Settings → Codex Remote Control status.
 No calls until Read status. Expect native service status/name. Read registered

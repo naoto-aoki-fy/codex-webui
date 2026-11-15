@@ -1,5 +1,8 @@
 # Text presets, prompt history and command discovery (25)
 
+Current access and layout/state checks: [management dialogs and send modes](../chat-composer-rendering/management-dialogs-send-modes.md). Detailed tools use the conversation header menu; composer selection uses +; account and connection management use Settings.
+
+
 Setup: ordinary conversation or isolated `node scripts/test-approved-prompts.cjs`.
 Open Prompts & commands. Save a named preset, edit it, reload, select it: draft
 text changes, attachments/skills remain, no turn is sent. Delete individual presets
@@ -13,7 +16,7 @@ Type /help, /prompts, /presets, /history: opens this editor. /review, /compact,
 Unknown slash input is sent normally. Existing Goal/Plan, skill selection (including
 a skill named review), Enter/Shift-Enter/IME, drafts and immediate steering remain.
 Both themes/all three sizes. Cleanup: Clear all stored prompts and presets in the
-fixture browser; no remote preset registry or deferred queue exists.
+fixture browser; no remote preset registry or browser-owned execution queue exists.
 
 Performance: no RPC/subscription/startup reads. Profile-local storage is read on
 opening the library and on accepted text submission; at most 20 presets/30 prompts,
