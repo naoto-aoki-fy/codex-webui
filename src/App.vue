@@ -275,6 +275,7 @@
                   <p>Manual native context compaction. Available while idle; visible and imported history is retained.</p>
                   <p v-if="compaction.thread.value === selectedThreadId" role="status">{{ compaction.status.value }}</p>
                 </details>
+                <MemoryStatus :thread-id="selectedThreadId" :epoch="operationEpoch" :disconnected="transportState === 'disconnected'" />
                 <BackgroundTerminals :thread-id="selectedThreadId" :epoch="operationEpoch" :messages="messages" :disconnected="transportState === 'disconnected'" />
                 <WorkingTreePanel :cwd="composerCwd" :epoch="operationEpoch" />
                 <ThreadGoalPanel
@@ -341,6 +342,7 @@ const reviewTargetOptions = [
  {value:'commit',label:'Commit'}, {value:'custom',label:'Custom instructions'},
 ]
 
+import MemoryStatus from './components/content/MemoryStatus.vue'
 import BackgroundTerminals from './components/content/BackgroundTerminals.vue'
 import WorkingTreePanel from './components/content/WorkingTreePanel.vue'
 import { createAppRouteCoordinator } from './appRouteCoordinator'

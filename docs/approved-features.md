@@ -105,3 +105,13 @@ unknown slash, action alias without mutation, explicit clear; all sizes/themes p
 Storage failures/credential-like and oversized prompt handling tested. Performance
 bounds in manual test. Live NOT RUN; risk medium. Browser profile is the scope;
 this is not a server-synchronized preset facility.
+
+## 20 validation and scope limitation
+
+Partial: actual native V2 readiness/consolidated count plus loaded thread's selected
+summary. `memory.rs` and request_processors/memory_status.rs establish read semantics.
+`thread/memoryMode/set` changes contribution, but thread settings/read responses do
+not expose the effective mode. No unverifiable switch or account-wide change added.
+`pnpm exec vitest run src/api/memoryStatus.test.ts`: 2 passed; typecheck passed.
+`node scripts/test-approved-memory.cjs`: lazy actual zero/summary/null/error/no writes,
+all sizes/themes passed. Performance in manual test. Live NOT RUN; read scope low risk.
