@@ -568,7 +568,9 @@ Full/attempted limited risk 4/5/5/5 = **24**; delivered mutation risk **none**
 not a live command. Live **NOT RUN**. This assessment precedes enabling the final
 irreversible deletion workflow.
 
-### 10 — PARTIAL, confirmed native deletion with child prechecks, implemented last
+### 10 — PARTIAL inspection; mutation BLOCKED at finalization
+
+The following describes historical implementation evidence. [Finalization](implementation-finalization.md) removes the deletion submission path because the native contract cannot guarantee descendant preservation. Read-only inspection remains available.
 
 Official `thread_delete.rs` owns persistence, owned-agent subtree deletion,
 attached-thread checks and Fork-history conflict rejection. It acknowledges and
