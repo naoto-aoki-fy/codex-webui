@@ -1331,3 +1331,7 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .curated-plugins pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .conversation-tools { max-height: 45vh; overflow: auto; }
+
+.native-shell textarea { display:block;width:100%;min-height:80px;padding:6px 8px;border:1px solid #a1a1aa;border-radius:6px;background:#fff;color:#18181b; }
+:root.dark .native-shell textarea { border-color:#71717a;background:#27272a;color:#f4f4f5; }
+.native-shell pre { white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto; }

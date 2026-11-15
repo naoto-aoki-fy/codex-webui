@@ -13,6 +13,8 @@ import NativeQueuePanel from './NativeQueuePanel.vue'
 import CreateWorktree from './CreateWorktree.vue'
 import DaybreakStatus from './DaybreakStatus.vue'
 import PermanentDeletion from './PermanentDeletion.vue'
+import NativeShellPanel from './NativeShell.vue'
+import type {NativeShell} from '../../composables/nativeShell'
 import type {ThreadDeletion} from '../../composables/threadDeletion'
 import type {createNativeQueue} from '../../composables/nativeQueue'
 import type {createThreadPermissions} from '../../composables/threadPermissions'
@@ -29,6 +31,7 @@ defineProps<{
   permissionChanges:ReturnType<typeof createThreadPermissions>;
   openCreatedWorktree:(path:string)=>Promise<void>;
   deletion:ThreadDeletion|null; ensureDeletion:()=>Promise<ThreadDeletion|null>; hasDraft:()=>boolean;
+  shell:NativeShell|null; ensureShell:()=>Promise<NativeShell|null>;
   inProgress:boolean; sending:boolean; incomplete:boolean; disconnected:boolean; interrupting:boolean;
   compaction:ReturnType<typeof createThreadCompaction>; review:ReturnType<typeof createThreadReview>;
 }>()
@@ -39,6 +42,7 @@ const reviewTargetOptions = [
 </script>
 <template>
                 <fieldset :disabled="deletion?.selectedBlocking.value" style="border:0;padding:0;margin:0;min-width:0">
+                <fieldset :disabled="shell?.selectedBlocking.value" style="border:0;padding:0;margin:0;min-width:0">
                 <details id="native-conversation-actions" class="feature-panel native-thread-actions">
                   <summary>Conversation actions</summary>
                   <button type="button" :disabled="compaction.busy.value || review.busy.value || inProgress || sending || incomplete || disconnected" @click="compaction.run">Compact conversation</button>
@@ -64,5 +68,7 @@ const reviewTargetOptions = [
                 <WorkingTreePanel :cwd="cwd" :epoch="epoch" />
                 <CreateWorktree :cwd="cwd" :epoch="epoch" :blocked="disconnected||inProgress||sending||incomplete||compaction.busy.value||review.busy.value" :open-project="openCreatedWorktree" />
                 </fieldset>
-                <PermanentDeletion :thread-id="threadId" :epoch="epoch" :deletion="deletion" :ensure-deletion="ensureDeletion" :has-draft="hasDraft" :blocked="disconnected||inProgress||sending||incomplete||compaction.busy.value||review.busy.value||queue.writing.value" />
+                <NativeShellPanel :thread-id="threadId" :epoch="epoch" :shell="shell" :ensure-shell="ensureShell" :blocked="disconnected||inProgress||sending||incomplete||compaction.busy.value||review.busy.value||queue.writing.value" />
+                </fieldset>
+                <PermanentDeletion :thread-id="threadId" :epoch="epoch" :deletion="deletion" :ensure-deletion="ensureDeletion" :has-draft="hasDraft" :blocked="disconnected||inProgress||sending||incomplete||compaction.busy.value||review.busy.value||queue.writing.value||!!shell?.selectedBlocking.value" />
 </template>
