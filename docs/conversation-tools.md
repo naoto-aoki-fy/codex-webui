@@ -1,5 +1,9 @@
 # Conversation tools and read-only account information
 
+For the later focused diff review, corrective commits, comparable performance
+baseline and limited live results, see [final verification](conversation-tools-verification.md).
+The implementation-pass measurements below describe revision `8c64343`.
+
 ## Runtime evidence and scope
 
 The implementation reuses the browser gateway, the independently managed App
@@ -10,8 +14,9 @@ proxy, rollout scanner, archive index or usage-history store is added.
 The repository's [runtime floor and native contract](native-project-migration.md)
 and [connection ownership](external-app-server.md) still apply. The bundled
 0.167.2 protocol and method catalog are advisory, not capability negotiation.
-These features were validated with credential-free fixtures, **not a live Codex
-runtime or production account**. A connected server can reject these operations.
+The initial implementation pass used credential-free fixtures. Limited live
+checks and remaining acceptance prerequisites are recorded in the final
+verification linked above; fixture success alone is not runtime acceptance.
 
 Upstream contracts inspected at OpenAI Codex commit
 `b016cd18472588606c04af565528c4cd6746a41f`:
