@@ -563,8 +563,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       if (req.method === 'GET' && url.pathname === '/codex-api/connection-diagnostics') {
-        const state = await projects.read()
-        const directory = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state.active[0] || state.order[0] || null
+        const state = url.searchParams.get('probe') === '1' ? await projects.read() : null
+        const directory = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state?.active[0] || state?.order[0] || null
         const generation = appServer.getConnectionGeneration()
         const diagnostics = appServer.capabilities
         let git: { available: boolean | null; detail: string } = { available: null, detail: 'Not checked. command/exec support does not establish Git availability.' }
@@ -586,7 +586,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           setJson(res, 409, { error: 'Connection changed during diagnosis. Check compatibility again.' })
           return
         }
-        setJson(res, 200, { data: { profile: getConnectionProfileId(), generation, directory, workflows: WORKFLOW_CAPABILITIES, capabilities: diagnostics.snapshot(), git } })
+        setJson(res, 200, { data: { connection: appServer.getInitializationMetadata() ? 'initialized' : 'unknown-or-disconnected', platformOs: appServer.getInitializationMetadata()?.platformOs ?? null, profile: getConnectionProfileId(), generation, directory, workflows: WORKFLOW_CAPABILITIES, capabilities: diagnostics.snapshot(), git } })
         return
       }
 

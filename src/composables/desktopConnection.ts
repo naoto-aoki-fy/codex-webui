@@ -25,6 +25,7 @@ type FileAttachment = {
 };
 /** Owns the single notification subscription, readiness identity, coalescing timer and refresh queues. startPolling is idempotent; the desktop stopPolling teardown closes the subscription and timer before dropping shared state. */
 export function createDesktopConnection(deps: {
+    invalidateReadJobs: () => void;
     history: ReturnType<typeof createDesktopHistory>;
     setLiveAgentMessagesForThread: (threadId: string, nextMessages: UiMessage[]) => void;
     clearLiveReasoningForThread: (threadId: string) => void;
@@ -238,6 +239,7 @@ export function createDesktopConnection(deps: {
             if (generation !== lifecycleGeneration)
                 return;
             if (notification.method === 'ready') {
+                deps.invalidateReadJobs();
                 if (reloadForConnectionProfile(readString(asRecord(notification.params)?.connectionProfile)))
                     return;
                 const instanceId = readString(asRecord(notification.params)?.backendInstanceId);

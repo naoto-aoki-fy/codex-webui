@@ -9,7 +9,7 @@ export function createArchivedThreads(epoch: Ref<number>, restore: (id: string) 
   const loaded = ref(false)
   const cursor = ref<string | null>(null)
   let job = 0
-  watch(epoch, () => { job++; rows.value = []; loaded.value = false; cursor.value = null; busy.value = false; error.value = 'Connection changed. Refresh archived conversations.' })
+  watch(epoch, () => { job++; rows.value = []; loaded.value = false; cursor.value = null; busy.value = false; error.value = 'Connection changed. Refresh archived conversations.' }, { flush: 'sync' })
   async function load(more = false) {
     if (busy.value || (more && !cursor.value)) return
     const token = ++job

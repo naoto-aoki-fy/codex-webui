@@ -1,3 +1,4 @@
+import { appendDiagnosticWarning, type DiagnosticWarning } from '../diagnostics'
 import { createDesktopConnection } from './desktopConnection'
 import { createDesktopTurns } from './desktopTurns'
 import { createDesktopHistory } from './desktopHistory'
@@ -229,8 +230,10 @@ export function useDesktopState() {
   const projectDisplayNameById = ref<Record<string, string>>({})
   const workspaceRootsState = ref<WorkspaceRootsState | null>(null)
 
+  const diagnosticWarnings = ref<DiagnosticWarning[]>([])
   const operationEpoch = ref(0)
   const connection = createDesktopConnection({
+    invalidateReadJobs() { operationEpoch.value++; diagnosticWarnings.value = [] },
     get history() { return history; },
     get setLiveAgentMessagesForThread() { return setLiveAgentMessagesForThread; },
     get clearLiveReasoningForThread() { return clearLiveReasoningForThread; },
@@ -1634,6 +1637,7 @@ export function useDesktopState() {
   }
 
   function applyRealtimeUpdates(notification: RpcNotification): void {
+    if (notification.method === 'warning') diagnosticWarnings.value = appendDiagnosticWarning(diagnosticWarnings.value, notification.params, notification.atIso)
     if (notification.method === 'turn/completed' || notification.method === 'error') {
       const params = asRecord(notification.params)
       const threadId = extractThreadIdFromNotification(notification)
@@ -1689,7 +1693,7 @@ export function useDesktopState() {
       }
       return
     }
-    if (notification.method === 'app-server/reconnected' || notification.method === 'app-server/disconnected') operationEpoch.value++
+    if (notification.method === 'app-server/reconnected' || notification.method === 'app-server/disconnected') { operationEpoch.value++; diagnosticWarnings.value = [] }
     if (notification.method === 'app-server/reconnected') {
       transportState.value = 'connected'
       void connection.recoverBridgeState(true)
@@ -2571,6 +2575,8 @@ export function useDesktopState() {
   }
 
   function stopPolling(): void {
+    operationEpoch.value++
+    diagnosticWarnings.value = []
     for (const timer of recoveryDismissTimerByThreadId.values()) clearTimeout(timer)
     recoveryDismissTimerByThreadId.clear()
     ++connection.lifecycleGeneration
@@ -2712,6 +2718,7 @@ export function useDesktopState() {
     archiveThreadById,
     restoreThreadById,
     operationEpoch,
+    diagnosticWarnings,
     renameThreadById,
     forkThreadById,
     forkNativeThreadById,

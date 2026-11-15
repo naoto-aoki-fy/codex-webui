@@ -1209,3 +1209,21 @@ describe('native archive restore', () => {
     expect(state.projectGroups.value.flatMap(group => group.threads)).toEqual([])
   })
 })
+
+describe('diagnostic event ownership', () => {
+  it('uses the existing single subscription and clears bounded warnings on disconnect', () => {
+    installTestWindow()
+    let notify!: (notification: { method: string; params: unknown; atIso: string }) => void
+    gatewayMocks.subscribeCodexNotifications.mockImplementation(handler => { notify = handler; return vi.fn() })
+    const state = useDesktopState()
+    state.startPolling(); state.startPolling()
+    expect(gatewayMocks.subscribeCodexNotifications).toHaveBeenCalledTimes(1)
+    for (let i = 0; i < 25; i++) notify({ method: 'warning', params: { message: `warning ${i}` }, atIso: '2026-11-15T00:00:00Z' })
+    expect(state.diagnosticWarnings.value).toHaveLength(20)
+    expect(state.diagnosticWarnings.value[0]?.message).toBe('warning 5')
+    notify({ method: 'app-server/disconnected', params: {}, atIso: '2026-11-15T00:00:00Z' })
+    expect(state.operationEpoch.value).toBe(1)
+    expect(state.diagnosticWarnings.value).toEqual([])
+    state.stopPolling()
+  })
+})
