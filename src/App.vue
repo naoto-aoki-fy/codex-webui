@@ -193,6 +193,8 @@
                 :inert="!newThreadCwd.trim()" :aria-disabled="!newThreadCwd.trim()">
                 <ThreadComposer ref="homeThreadComposerRef" :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
+                  :selected-queue-mode="composerSendMode.queue.value"
+                  @update:selected-queue-mode="composerSendMode.queue.value=$event"
                   :disabled="nativeAuthenticationBlocked || !newThreadCwd.trim()"
                   :collaboration-modes="availableCollaborationModes"
                   :selected-collaboration-mode="selectedCollaborationMode"
@@ -244,6 +246,10 @@
                   :request-count="selectedThreadServerRequests.length"
                   @respond-server-request="onRespondServerRequest"
                 />
+                <p v-if="composerSendMode.queue.value && (nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value)" class="composer-runtime-error" role="alert">
+                  {{ nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value }}
+                  <button type="button" @click="onOpenThreadAction('queue')">Inspect native prompt queue</button>
+                </p>
                 <p v-if="modelSelectionNotice" class="composer-model-notice" role="status">{{ (modelSelectionNotice) }}</p>
                 <ThreadComposer
                   v-if="!selectedThreadPendingRequest"
@@ -253,6 +259,8 @@
                   :active-thread-id="composerThreadContextId"
                   :queue-ready="nativeQueue.available.value"
                   :cwd="composerCwd"
+                  :selected-queue-mode="composerSendMode.queue.value"
+                  @update:selected-queue-mode="composerSendMode.queue.value=$event"
                   :connection-epoch="operationEpoch"
                   :collaboration-modes="availableCollaborationModes"
                   :selected-collaboration-mode="selectedCollaborationMode"
@@ -360,6 +368,7 @@
 
 <script setup lang="ts">
 
+import { createComposerSendMode } from './composables/composerSendMode'
 import { createAppRouteCoordinator } from './appRouteCoordinator'
 import { createAppTransferDialog } from './appTransferDialog'
 
@@ -536,6 +545,7 @@ const routing = createAppRouteCoordinator({
   get desktopError() { return desktopError; },
   get sendMessageToNewThread() { return sendMessageToNewThread; },
   get newThreadProjectId() { return newThreadProjectId; },
+  onThreadCreated: threadId => composerSendMode.created(threadId),
   get router() { return router; },
   get scheduleMobileConversationJumpToLatest() { return scheduleMobileConversationJumpToLatest; }
 })
@@ -670,6 +680,10 @@ const filteredMessages = computed(() =>
 const liveOverlay = computed(() => selectedLiveOverlay.value)
 watch(selectedThreadId, () => { isConversationToolsOpen.value = false; closeConversationMenu() }, { flush: 'sync' })
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
+const composerSendMode = createComposerSendMode(composerThreadContextId)
+watch([composerSendMode.queue, composerThreadContextId, operationEpoch, transportState], () => {
+  if (composerSendMode.queue.value && !isHomeRoute.value && selectedThreadId.value && !nativeQueue.loaded.value) void nativeQueue.refresh()
+})
 const composerReasoningEffort = computed(() => readReasoningEffortForThread(composerThreadContextId.value))
 const composerReasoningOptions = computed(() => readReasoningOptionsForThread(composerThreadContextId.value))
 const composerSelectedModelId = computed(() => readModelIdForThread(composerThreadContextId.value))
@@ -965,6 +979,7 @@ function resolvePreferredLocalCwd(projectId: string, fallbackCwd = ''): string {
 }
 
 function onStartNewThread(projectName: string): void {
+  composerSendMode.reset()
   const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
   const projectCwd = resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
   if (projectCwd || workspaceRootOptionsState.value.nativeProjects) {
@@ -983,6 +998,7 @@ function resolveSelectedThreadProjectCwd(): string {
 }
 
 function onStartNewThreadFromToolbar(): void {
+  composerSendMode.reset()
   const resolvedCwd = resolveSelectedThreadProjectCwd()
   if (resolvedCwd) {
     newThreadCwd.value = resolvedCwd

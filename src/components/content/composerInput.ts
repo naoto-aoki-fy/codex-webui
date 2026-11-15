@@ -11,13 +11,17 @@ import { createComposerSettings } from './composerSettings';
 export function createComposerInput(deps: {
     props: Readonly<ComposerProps>;
     settings: ReturnType<typeof createComposerSettings>;
-    emit: ((evt: "submit", payload: SubmitPayload, settle: (accepted: boolean) => void) => void) & ((evt: "thread-action", action: string) => void) & ((evt: "interrupt") => void) & ((evt: "edit-goal") => void) & ((evt: "update:selected-collaboration-mode", mode: CollaborationModeKind) => void) & ((evt: "update:selected-model", modelId: string) => void) & ((evt: "update:selected-reasoning-effort", effort: string) => void) & ((evt: "update:selected-speed-mode", mode: SpeedMode) => void);
+    emit: ((evt: "update:selected-queue-mode", queue: boolean) => void) & ((evt: "submit", payload: SubmitPayload, settle: (accepted: boolean) => void) => void) & ((evt: "thread-action", action: string) => void) & ((evt: "interrupt") => void) & ((evt: "edit-goal") => void) & ((evt: "update:selected-collaboration-mode", mode: CollaborationModeKind) => void) & ((evt: "update:selected-model", modelId: string) => void) & ((evt: "update:selected-reasoning-effort", effort: string) => void) & ((evt: "update:selected-speed-mode", mode: SpeedMode) => void);
     attachments: ReturnType<typeof createComposerAttachments>;
     isAttachMenuOpen: Ref<boolean, boolean>;
     isMobile: Ref<boolean, boolean>;
 }) {
     const appsUnavailable = ref(false);
-    const queueMode = ref(false);
+    const localQueueMode = ref(false);
+    const queueMode = computed({
+        get: () => deps.props.selectedQueueMode ?? localQueueMode.value,
+        set: (queue: boolean) => { localQueueMode.value = queue; deps.emit('update:selected-queue-mode', queue); },
+    });
     const selectedApps = ref<import('../../api/apps').AppReference[]>([]);
     const draft = ref('');
     const promptLibraryOpen = ref(false);
@@ -88,7 +92,7 @@ export function createComposerInput(deps: {
     const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
     const isSubmitting = ref(false);
     const canSubmit = computed(() => {
-        if(queueMode.value&&!deps.props.queueReady)return false;
+        if(queueMode.value&&deps.props.activeThreadId!=='__new-thread__'&&!deps.props.queueReady)return false;
         if (appsUnavailable.value) return false;
         if (isSubmitting.value)
             return false;
@@ -147,7 +151,7 @@ export function createComposerInput(deps: {
         const snapshot = JSON.stringify(payload);
         isSubmitting.value = true;
         let settled = false;
-        deps.emit('submit', { ...payload, text, ...(queueMode.value?{queue:true}:{}) }, (accepted) => {
+        deps.emit('submit', { ...payload, text, ...(queueMode.value&&threadId!=='__new-thread__'?{queue:true}:{}) }, (accepted) => {
             if (settled)
                 return;
             settled = true;

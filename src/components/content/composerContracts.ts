@@ -2,6 +2,7 @@ import type { CollaborationModeKind, CollaborationModeOption, ReasoningEffort, S
 import type { ComposerDraftPayload, FileAttachment } from '../../utils/composerDraftStorage';
 export type ComposerProps = {
     queueReady?: boolean;
+    selectedQueueMode?: boolean;
     connectionEpoch?: number;
     activeThreadId: string;
     cwd?: string;
