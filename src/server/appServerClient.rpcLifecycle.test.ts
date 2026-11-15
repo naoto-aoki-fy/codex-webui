@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 // Keep the real transport handshake, socket-generation guard, and client pending
 // map. Replace only the wire so ordering and elapsed time are deterministic.
-const wire = vi.hoisted(() => ({ sockets: [] as any[] }))
+const wire = vi.hoisted(() => ({ sockets: [] as any[], metadata: {} as unknown, holdHandshake: false, autoFs: false }))
 vi.mock('ws', async () => {
   const { EventEmitter } = await import('node:events')
   class Socket extends EventEmitter {
@@ -17,7 +17,8 @@ vi.mock('ws', async () => {
     send(raw: string, callback?: (error?: Error) => void) {
       const frame = JSON.parse(raw)
       this.frames.push(frame)
-      if (frame.method === 'initialize') queueMicrotask(() => this.reply(frame.id, {}))
+      if (frame.method === 'initialize' && !wire.holdHandshake) queueMicrotask(() => this.reply(frame.id, wire.metadata))
+      if (wire.autoFs && frame.method?.startsWith('fs/')) queueMicrotask(() => this.reply(frame.id, {}))
       callback?.()
     }
     reply(id: number, result: unknown) { this.emit('message', Buffer.from(JSON.stringify({ id, result })), false) }
@@ -27,7 +28,7 @@ vi.mock('ws', async () => {
 })
 import { AppServerClient } from './appServerClient'
 
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); wire.sockets.length = 0 })
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); wire.sockets.length = 0; wire.metadata = {}; wire.holdHandshake = false; wire.autoFs = false; vi.unstubAllEnvs() })
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve() }
 
 it.each(['disconnect', 'replacement'] as const)('isolates stale replies and never replays on %s', async cause => {
@@ -269,8 +270,9 @@ it.each([false, true])('recovers a failed restored subscription (persistent=%s) 
   } finally { client.dispose() }
 })
 
-it('shares home discovery across demands, learns existing reads, and resets on reconnect', async () => {
-  vi.stubEnv('CODEX_HOME', '')
+it.each([{}, { codexHome: 'relative' }])('falls back to thread/config discovery for unusable handshake metadata %j', async metadata => {
+  wire.metadata = metadata
+  vi.stubEnv('CODEX_HOME', '/webui/state')
   const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
   try {
     const read = client.rpc('thread/read', { threadId: 't', includeTurns: false })
@@ -295,4 +297,78 @@ it('shares home discovery across demands, learns existing reads, and resets on r
     expect(await client.resolveCodexHome()).toBe('C:\\custom')
     expect(fresh.frames.filter((f: any) => f.method === 'config/read')).toHaveLength(1)
   } finally { client.dispose(); vi.unstubAllEnvs() }
+})
+
+
+it('waits for the handshake on the first upload and makes zero discovery config reads', async () => {
+  const { stageRemoteUpload } = await import('./remoteUploads')
+  const { mkdtemp, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const state = await mkdtemp(join(tmpdir(), 'handshake-upload-'))
+  vi.stubEnv('CODEX_HOME', '/webui/state')
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '')
+  wire.holdHandshake = true
+  wire.autoFs = true
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  try {
+    const upload = stageRemoteUpload(client, 'test.txt', Buffer.from('test'), state)
+    const concurrentHome = client.resolveCodexHome()
+    await flush()
+    const socket = wire.sockets[0]
+    expect(socket.frames.map((f: any) => f.method)).toEqual(['initialize'])
+    socket.reply(socket.frames[0].id, { codexHome: '/server/state' })
+    expect(await concurrentHome).toBe('/server/state')
+    expect(await upload).toMatch(/^\/server\/state\/codexapp-uploads\//)
+    expect(socket.frames.filter((f: any) => f.method === 'config/read')).toHaveLength(0)
+    expect(socket.frames.filter((f: any) => f.method === 'initialize')).toHaveLength(1)
+  } finally { client.dispose(); await rm(state, { recursive: true, force: true }) }
+})
+
+it('applies handshake home before internal reads and subscription recovery, and replaces it on reconnect', async () => {
+  wire.metadata = { codexHome: '/server/first' }
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const internal = client as any
+  try {
+    const read = internal.call('thread/read', { threadId: 't', includeTurns: false })
+    await flush()
+    const old = wire.sockets[0]
+    const frame = old.frames.find((f: any) => f.method === 'thread/read')
+    old.reply(frame.id, { thread: { path: '/other/sessions/2026/11/15/rollout-t.jsonl' } })
+    await read
+    expect(await client.resolveCodexHome()).toBe('/server/first')
+    internal.subscribedThreads.add('t')
+    wire.metadata = { codexHome: '/server/second' }
+    await client.reconnect()
+    await flush()
+    const fresh = wire.sockets[1]
+    expect(await client.resolveCodexHome()).toBe('/server/second')
+    const resume = fresh.frames.find((f: any) => f.method === 'thread/resume')
+    expect(resume).toBeTruthy()
+    // Obsolete transport replies cannot affect the new cache, even with a new ID.
+    old.reply(resume.id, { thread: { path: '/stale/sessions/2026/11/15/rollout-t.jsonl' } })
+    fresh.reply(resume.id, { thread: { id: 't' } })
+    expect(await client.resolveCodexHome()).toBe('/server/second')
+    expect([...old.frames, ...fresh.frames].filter((f: any) => f.method === 'config/read')).toHaveLength(0)
+  } finally { client.dispose() }
+})
+
+it('rejects obsolete initialization and cannot seed the replacement cache from its response', async () => {
+  wire.holdHandshake = true
+  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  try {
+    const stale = client.resolveCodexHome()
+    const rejected = expect(stale).rejects.toThrow('reset')
+    await flush()
+    const old = wire.sockets[0]
+    const reconnect = client.reconnect()
+    await rejected
+    await flush()
+    const fresh = wire.sockets[1]
+    old.reply(old.frames[0].id, { codexHome: '/obsolete' })
+    fresh.reply(fresh.frames[0].id, { codexHome: '/current' })
+    await reconnect
+    expect(await client.resolveCodexHome()).toBe('/current')
+    expect(fresh.frames.filter((f: any) => f.method === 'config/read')).toHaveLength(0)
+  } finally { client.dispose() }
 })

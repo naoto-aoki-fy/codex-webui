@@ -71,7 +71,10 @@ export class AppServerClient {
     (method, params) => this.call(method, params),
     () => `${this.getConnectionGeneration()}:${getConnectionProfileId()}`,
   )
-  resolveCodexHome(): Promise<string> { return this.codexHome.resolve() }
+  async resolveCodexHome(): Promise<string> {
+    await this.ensureInitialized()
+    return this.codexHome.resolve()
+  }
 
   private readonly rolloutMetadata = new RolloutGenerationMetadata({
     rpc: (method, params) => this.call(method, params),
@@ -350,7 +353,7 @@ export class AppServerClient {
   }
 
   private async callObserved(method: string, params: unknown, deadlineMs?: number): Promise<unknown> {
-    await this.transport.connect()
+    await this.ensureInitialized()
     const id = this.nextId++
 
     return new Promise((resolve, reject) => {
@@ -376,7 +379,10 @@ export class AppServerClient {
   }
 
   private async ensureInitialized(): Promise<void> {
+    const token = this.codexHome.token()
     await this.transport.connect()
+    if (token !== this.codexHome.token()) throw new Error('Retired app-server initialization')
+    this.codexHome.observeInitialization(this.getInitializationMetadata(), token)
   }
 
   private readonly recovery = new SubscriptionRecovery(
@@ -485,6 +491,7 @@ export class AppServerClient {
     if (this.reconnectPromise) return this.reconnectPromise
     this.reconnectPromise = (async () => {
       await (reset ? this.transport.reconnect() : this.transport.connect())
+      await this.ensureInitialized()
       this.retryAttempt = 0
       if (this.retryTimer) clearTimeout(this.retryTimer)
       this.retryTimer = null

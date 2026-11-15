@@ -75,9 +75,16 @@ of live provider execution or fork rollout behavior on every server version.
 
 ## Remote home discovery
 
-The connection/profile-scoped resolver starts with trimmed `CODEX_HOME` or an
-unresolved empty value. Successful existing `thread/read` responses can supply
-its home from native session/archive paths, including custom directory names.
+The connection/profile-scoped resolver starts empty. After the handshake it
+validates and caches `initialize.result.codexHome`, the server's effective home
+including its default directory. WebUI's `CODEX_HOME` is never a source for this
+remote path. Home-dependent operations wait for initialization before deciding
+whether discovery is needed. The initialization helper only waits and applies
+metadata; it never invokes home resolution or config discovery.
+
+If handshake metadata is missing or invalid, successful existing `thread/read`
+responses can supply the home from native session/archive paths, including custom
+directory names.
 When a consumer still needs an unresolved home, concurrent demands share one
 `config/read` with `includeLayers: true`. Only the base user layer (null or
 legacy omitted profile) supplies its config file's parent directory; no local
@@ -86,7 +93,9 @@ remote path. Unsuccessful discovery can retry on later demand.
 
 The first resolved value survives for the connection/profile lifetime, including
 when a thread response wins a race with configuration discovery. Reconnection or
-profile changes reset the cache from `CODEX_HOME` and retire in-flight results.
+profile changes clear the cache, apply the new connection's initialization
+metadata, and retire in-flight results. Initialization metadata is applied before
+normal and internal thread reads, including subscription recovery.
 Uploads share this resolver unless `CODEXUI_REMOTE_UPLOAD_DIR` explicitly overrides
 the destination. WebUI-local state storage remains separate. See the
 [discovery checks](../tests/website-docs-misc/codex-home-discovery.md).
