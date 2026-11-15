@@ -115,3 +115,15 @@ not expose the effective mode. No unverifiable switch or account-wide change add
 `pnpm exec vitest run src/api/memoryStatus.test.ts`: 2 passed; typecheck passed.
 `node scripts/test-approved-memory.cjs`: lazy actual zero/summary/null/error/no writes,
 all sizes/themes passed. Performance in manual test. Live NOT RUN; read scope low risk.
+
+## 31 validation and scope limitation
+
+Partial: native Remote Control service status and environment-scoped paginated
+registered clients, honestly distinguished from currently connected clients.
+No pairing/revocation/enablement, credentials or infrastructure changes. The
+experimental management contract is established at the floor, but access mutations
+are deferred under the medium-risk ceiling; no designated real devices exist.
+`pnpm exec vitest run src/api/remoteControl.test.ts`: 2 passed; typecheck passed
+before the independent Apps work. `node scripts/test-approved-remote.cjs`: lazy
+reads, exact environment scope, errors, zero access mutations; all sizes/themes
+passed. Performance in manual test. Live NOT RUN; read scope low risk.
