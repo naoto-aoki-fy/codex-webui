@@ -118,3 +118,31 @@ local CLI execution would breach the independently managed App Server boundary.
 No placeholder browser or speculative RPC is added. Both inspection and
 mutations are blocked pending an official integration contract; full risk 24,
 no shipped behavioral risk. Live acceptance **NOT RUN**.
+
+### 28 — PARTIAL (project configuration manifest delivered)
+
+Explicit Claude Code/Cursor source discovery uses native
+`externalAgentConfig/detect {migrationSource,cwds:[remoteCwd],includeHome:false,maxSessions:0}`.
+The canonical selectors are established by `external-agent-migration/src/source/`
+and `migration_source.rs`. Home and session discovery are excluded: the App
+Server detect handler records discovered session connector candidates in a
+ledger, whereas `sessions/ledger.rs::record_detected_session_connectors` returns
+without writing for an empty map. Repository-only detection emits no sessions
+(`detect/mod.rs`, guarded by `scope.is_home()`). This restriction is deliberate.
+
+The UI shows native proposed-resource descriptions/destinations, public identities
+and excluded scopes. Exact file diffs/conflicts are unavailable, explicitly
+labelled. Imports are withheld, not represented as successful lifecycle support.
+Residual inspection risk 1/2/1/3 = **9**. Three focused tests, type checks and six
+browser views passed; no import, source execution, home/session request or new
+subscription. Live acceptance **NOT RUN**.
+
+### 34 — BLOCKED (Phase 1 contract assessment)
+
+The 0.169.0 App Server request enum has filesystem access but no API for an
+authenticated connected editor, active document, selection or unsaved buffers.
+The repository has no existing IDE bridge/identity or buffer lifecycle protocol.
+The CLI's IDE-related behavior is not a remotely callable editor context API.
+An on-disk file picker would misrepresent unsaved editor state; a new unrestricted
+IDE listener would broaden the transport architecture. No substitute is added.
+Full risk remains 21; shipped risk none, browser/live acceptance **NOT RUN**.
