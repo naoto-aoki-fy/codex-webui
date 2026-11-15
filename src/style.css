@@ -1310,3 +1310,7 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 
 .background-terminals { max-height: 40vh; overflow: auto; overflow-wrap: anywhere; }
 .background-terminals pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
+
+.prompt-library { max-height: 42vh; overflow: auto; overflow-wrap: anywhere; }
+.prompt-library input, .prompt-library textarea { width: 100%; color: inherit; background: transparent; border: 1px solid #a1a1aa; padding: .3rem; }
+.prompt-library-trigger { align-self: flex-start; font-size: .75rem; padding: .2rem .6rem; }

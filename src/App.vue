@@ -263,7 +263,7 @@
               </div>
 
               <div class="composer-container">
-                <details class="feature-panel native-thread-actions">
+                <details id="native-conversation-actions" class="feature-panel native-thread-actions">
                   <summary>Conversation actions</summary>
                   <button type="button" :disabled="compaction.busy.value || review.busy.value || isSelectedThreadInProgress || isSendingMessage || isSelectedThreadImportIncomplete || transportState === 'disconnected'" @click="compaction.run">Compact conversation</button>
                   <ComposerDropdown v-model="review.kind.value" :options="reviewTargetOptions" placeholder="Review target" />
@@ -312,6 +312,7 @@
                   @submit="onSubmitThreadMessage" @update:selected-model="onSelectModel"
                   @update:selected-reasoning-effort="onSelectReasoningEffort"
                   @update:selected-speed-mode="onSelectSpeedMode"
+                  @thread-action="onOpenThreadAction"
                   @edit-goal="threadGoalPanelRef?.edit()"
                   @interrupt="onInterruptTurn" />
               </div>
@@ -1055,6 +1056,12 @@ function scheduleWorkspaceRootsResume(): void {
       }
     }).finally(() => { workspaceRootsResumeInProgress = false })
   }, 100)
+}
+
+function onOpenThreadAction(action: string) {
+  const id = action === 'diff' ? 'current-working-tree' : action === 'processes' ? 'native-background-processes' : 'native-conversation-actions'
+  const panel = document.getElementById(id) as HTMLDetailsElement | null
+  if (panel) { panel.open = true; panel.scrollIntoView({ block: 'nearest' }) }
 }
 
 function onSubmitThreadMessage(

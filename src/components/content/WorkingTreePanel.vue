@@ -21,7 +21,7 @@ async function preview(row:GitRow,staged:boolean) {
 }
 </script>
 <template>
- <details class="feature-panel working-tree-panel">
+ <details id="current-working-tree" class="feature-panel working-tree-panel">
   <summary>Current Git working tree</summary>
   <p>Remote project: {{ cwd || 'Unavailable' }}</p>
   <p v-if="stamp">Refreshed: {{ stamp }}. Snapshot; refresh after external changes.</p>

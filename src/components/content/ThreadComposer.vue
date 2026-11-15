@@ -1,5 +1,8 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit()">
+    <PromptLibrary v-if="promptLibraryOpen" @close="promptLibraryOpen=false" @choose="populatePrompt" />
+    <p v-if="promptStorageNotice" role="status">{{ promptStorageNotice }}</p>
+    <button type="button" class="prompt-library-trigger" @click="promptLibraryOpen=!promptLibraryOpen">Prompts & commands</button>
 
     <div
       class="thread-composer-shell"
@@ -315,6 +318,7 @@
 </template>
 
 <script setup lang="ts">
+import PromptLibrary from './PromptLibrary.vue'
 import type { ComposerProps, SubmitPayload, ThreadComposerExposed } from "./composerContracts"
 import { createComposerInput } from './composerInput'
 import { createComposerSettings } from './composerSettings'
@@ -342,6 +346,7 @@ const props = defineProps<ComposerProps>()
 export type { FileAttachment, ComposerDraftPayload } from '../../utils/composerDraftStorage'
 
 const emit = defineEmits<{
+  'thread-action': [action: string]
   submit: [payload: SubmitPayload, settle: (accepted: boolean) => void]
   interrupt: []
   'edit-goal': []
@@ -360,6 +365,7 @@ const input = createComposerInput({
   get isMobile() { return isMobile; }
 })
 const {
+  promptLibraryOpen, promptStorageNotice, populatePrompt,
   draft,
   slashQuery,
   slashIndex,
