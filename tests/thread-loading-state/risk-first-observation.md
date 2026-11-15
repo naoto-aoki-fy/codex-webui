@@ -65,3 +65,20 @@ Performance: no startup reads; exactly two requests per explicit refresh,
 independently handled failures; 40 layers/100 profile names/12,000 characters per
 projected value, collapsed layer/profile details; no subscriptions or polling.
 Large fixture projection is unit-tested. Live performance NOT RUN.
+
+## 28 — External-agent configuration manifest
+
+Open External-agent import preview. Choose Claude Code or Cursor using the custom
+picker; press Discover import candidates. Verify the exact remote cwd and source.
+Review resource descriptions/destinations and expand public identities. Skills,
+plugins, MCP lifecycle and memory extensions remain skipped. Home/session/connector
+discovery is not requested. Conflict/content-diff availability must be stated
+honestly; there is no import button. Test empty, unsupported/malformed, delayed
+disconnect and source/project changes. No content is executed. Cleanup: close.
+
+Automation: `pnpm exec vitest run src/api/importPreview.test.ts`,
+`pnpm run typecheck`, `PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-import.cjs`.
+Screenshots: `output/playwright/risk-28-{1280,375,768}-{light,dark}.png`.
+Performance: one lazy detect RPC per action; 100 manifest rows, twenty identities
+per resource class, bounded/collapsed details. Native repository scan timing was
+not measured live. No repeated subscriptions or client filesystem recursion.
