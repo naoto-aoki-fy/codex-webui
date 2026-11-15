@@ -1,5 +1,8 @@
 # Local development
 
+Review the [protected product requirements](product-requirements.md) before changing
+fork/revert, conversation transfer or historical response metadata.
+
 First start `codex app-server --listen ws://127.0.0.1:4500` independently on the host that owns
 the repositories and Codex login. The web backend can use a separate host and SSH tunnel. See [connection details](external-app-server.md).
 Development honors `CODEXUI_APP_SERVER_URL` and preserves `CODEX_HOME`.

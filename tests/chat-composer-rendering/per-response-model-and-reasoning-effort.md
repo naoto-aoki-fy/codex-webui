@@ -1,5 +1,10 @@
 ### Feature: Rollout-derived historical model and reasoning metadata
 
+Requirement: [CAP-003](../../docs/product-requirements.md#cap-003-historical-response-metadata).
+Active automated coverage: `src/server/rolloutGenerationMetadata.test.ts`,
+`src/server/turnGenerationMetadata.test.ts` and `src/turnGenerationMetadata.test.ts`.
+These fixtures do not establish live provider acceptance.
+
 Prerequisites: independently managed App Server with filesystem APIs, two completed
 turns using different models/efforts, and a disposable test conversation. Do not
 edit original rollout files. See [architecture](../../docs/turn-generation-metadata.md).
@@ -21,7 +26,10 @@ Actions and expected results:
    remains unchanged, imported content stays visible after reload, and Fork and
    Revert restores the chosen prompt for editing. Fork metadata comes only from
    the destination rollout; missing inherited evidence displays unknown.
-7. Check labels in light and dark themes, with an older history page and another
+7. Using a controlled fixture, compare missing effort, explicit null and `none`.
+   Expect unknown, unspecified and the recorded value to remain distinguishable;
+   no case may fall back to the current composer effort.
+8. Check labels in light and dark themes, with an older history page and another
    thread containing different metadata. Values must not leak across threads.
 
 Cleanup: archive only disposable conversations. Restore permissions/theme and

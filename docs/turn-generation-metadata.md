@@ -1,5 +1,8 @@
 # Per-turn generation metadata
 
+Product guarantees: [CAP-003 Historical Response Metadata](product-requirements.md#cap-003-historical-response-metadata).
+This document owns current model/effort recovery implementation details.
+
 Codex-generated rollout JSONL is the source of historical model and reasoning
 metadata. Parsed results are persistently cached on the App Server host. The
 application no longer records settings from turn submissions, RPC responses, or

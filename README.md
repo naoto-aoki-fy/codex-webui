@@ -3,6 +3,10 @@
 A browser interface for the official Codex app-server, hosted on Windows or Linux.
 Desktop and mobile browsers (including Android and iOS) can connect to the host.
 
+Distinguishing features include non-destructive Fork and Revert, Portable Fork
+for cross-provider continuation, and historical response timestamps, models and
+reasoning efforts. See [protected product requirements](docs/product-requirements.md).
+
 ## Quick start
 
 For source development, use Node.js 22 and the pinned pnpm version (see the development guide). Separately install Codex for the external server.

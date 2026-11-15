@@ -41,10 +41,16 @@ Immutable wiki raw material remains untouched.
 | 27 | Intentionally retain account/rateLimits/read recovery for unknown-variant plan_type decoder errors with embedded JSON body. Generated prolite support is insufficient evidence for every supported endpoint. Removal requires supported-runtime evidence for structured unknown-plan handling. |
 | 28 | Dependencies remain used by runtime, tests, scripts or generation. No unrelated upgrade/lockfile churn. proper-lockfile protects send recovery; Codex supplies pinned generation, Playwright supplies acceptance and zstd supplies rollout tests. |
 
-Protected **01, 02 and 12** retain transfer, historical model/effort and existing
-fork/revert implementations and regression coverage. Injected-only Portable import
-discoverability remains the documented upstream limitation; no client-owned index
-or fabricated ordinary turn is introduced.
+## Permanent product boundaries
+
+[Protected product requirements](product-requirements.md) define CAP-001 Fork and
+Revert, CAP-002 Portable Fork and CAP-003 Historical Response Metadata (timestamp,
+model, reasoning effort). These permanent behavioral guarantees supersede reliance
+on historical cleanup items **01, 02 and 12**. Internal implementations may evolve;
+ordinary cleanup or upstream migration does not authorize functional reduction.
+Retain and update the linked regression coverage when changing related code.
+Injected-only Portable import discoverability remains the documented upstream
+limitation; no client-owned index or fabricated ordinary turn is introduced.
 
 ## Performance evidence and limits
 

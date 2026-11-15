@@ -1,5 +1,8 @@
 # Prompt and answer timestamps
 
+Requirement: [CAP-003](../../docs/product-requirements.md#cap-003-historical-response-metadata).
+The manual criteria below are active; dated verification records are historical.
+
 Prerequisites: Run the app with a Codex conversation whose session JSONL contains
 `task_started` with a turn ID, `user_message`, and `task_complete` events with ISO timestamps.
 
@@ -16,9 +19,25 @@ Prerequisites: Run the app with a Codex conversation whose session JSONL contain
 
 Cleanup: Remove any disposable test conversation using normal app controls.
 
-Automated coverage: `src/server/messageTimestamps.test.ts` and
-`src/api/normalizers/v2.test.ts` cover recovery, missing evidence, local formatting,
-streaming suppression, and final-answer selection.
+Active automated coverage:
+
+- `src/api/normalizers/v2.test.ts`: explicit event timestamps, paginated millisecond
+  fields, serialized-response normalization, malformed/missing evidence, streaming
+  suppression and final-answer selection.
+- `src/server/threadLiveStateRetirement.test.ts`: timestamp and execution metadata
+  preservation in normal and earlier-page history reads.
+- Local display formatting lives in `src/messageTimestamps.ts`; verify browser
+  timezone formatting with the manual steps above. Serialized fixtures do not
+  prove live persistence or visible formatting.
+
+Run `pnpm exec vitest run src/api/normalizers/v2.test.ts src/server/threadLiveStateRetirement.test.ts`.
+
+## Historical verification records
+
+The following performance notes and dated results describe earlier implementations,
+not current acceptance evidence. The former server timestamp test file was removed;
+use the active suites above. Historical session-cache details and suite counts are
+not guarantees about the current recovery architecture.
 
 Performance audit: No new HTTP requests, timers, or dependencies. Historical
 recovery reuses the existing session-file read and bounded 64-entry cache; parsing
@@ -38,7 +57,7 @@ Validation commands (2026-11-05):
 - Live browser refresh persistence, mobile layout, and light/dark visuals remain
   unverified; follow the manual steps above on a running Codex-backed instance.
 
-## App-server millisecond timestamps
+## Active acceptance: App-server millisecond timestamps
 
 Setup: Use a completed paginated `thread/read` response with user `startedAtMs`
 (and `completedAtMs`) `1793800496289`, and final-answer `completedAtMs`
@@ -56,13 +75,14 @@ Setup: Use a completed paginated `thread/read` response with user `startedAtMs`
 
 Cleanup: Restore fixture responses or remove the disposable conversation.
 
-Verification: focused normalizer and session-recovery suites pass (24 tests);
-frontend typecheck/Vite build and CLI build pass. Browser local-time and visible
+Historical verification for the millisecond-timestamp change (not rerun here):
+focused normalizer and session-recovery suites passed (24 tests);
+frontend typecheck/Vite build and CLI build passed. Browser local-time and visible
 refresh verification could not run because the Playwright Chromium executable
 is absent. The reload regression re-normalizes a serialized historical response;
 it does not prove browser rendering or server persistence.
 
-Performance: code-path audit confirms constant-time field validation/conversion
+Historical performance note: code-path audit confirmed constant-time field validation/conversion
 per message, retaining the existing linear traversal and final-message lookup.
 No requests, session-file reads, polling, cache changes, dependencies, or UI
 changes were added. Browser latency was not measured.
