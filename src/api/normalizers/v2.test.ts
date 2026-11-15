@@ -287,3 +287,13 @@ it('suppresses completion timestamps for in-progress answers and trailing commen
   Object.assign(payload.thread.turns[0]!.items[2]!, { phase: 'commentary' })
   expect(normalizeThreadMessagesV2(payload)[2]?.completedAt).toBeUndefined()
 })
+
+it('retains reliable review result execution metadata and explicit item completion time only',()=>{
+ const payload=threadReadResponseWithContent([{type:'exitedReviewMode',id:'review-result',review:'Finding',completedAtMs:1795000000000}])
+ Object.assign(payload.thread.turns[0]!,{generationMetadata:{model:'review-model',modelSource:'execution',effort:'none',effortSource:'execution'}})
+ const message=normalizeThreadMessagesV2(payload)[0]!
+ expect(message.role).toBe('assistant');expect(message.generationMetadata?.model).toBe('review-model');expect(message.generationMetadata?.effort).toBe('none');expect(message.completedAt).toBe(new Date(1795000000000).toISOString())
+ payload.thread.turns[0]!.status='inProgress';expect(normalizeThreadMessagesV2(payload)[0]?.completedAt).toBeUndefined()
+ const absent=threadReadResponseWithContent([{type:'exitedReviewMode',id:'unknown-review',review:'Finding'}])
+ expect(normalizeThreadMessagesV2(absent)[0]?.generationMetadata).toBeUndefined();expect(normalizeThreadMessagesV2(absent)[0]?.completedAt).toBeUndefined()
+})

@@ -40,6 +40,8 @@
         <details v-if="message.executionLabel" class="execution-details feature-panel">
           <summary>{{ message.executionLabel }}</summary>
           <pre v-text="message.text"></pre>
+          <p v-if="message.messageType === 'exitedReviewMode'" class="message-generation-metadata">{{ generationMetadataLabel(message.generationMetadata) }}</p>
+          <p v-if="message.messageType === 'exitedReviewMode' && formatMessageTimestamp(message.completedAt)" class="message-timestamp"><time :datetime="message.completedAt">Answered: {{ formatMessageTimestamp(message.completedAt) }}</time></p>
         </details>
         <div v-else-if="isCommandMessage(message)" class="message-row" data-role="system">
           <div class="message-stack" data-role="system">

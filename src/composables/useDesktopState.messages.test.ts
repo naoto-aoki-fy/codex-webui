@@ -2467,3 +2467,18 @@ it('keeps native tools, commands and agent text in first-event order without dup
  expect(state.messages.value.filter(m=>m.id.endsWith('-order')).map(m=>m.id)).toEqual(['search-order','command-order','agent-order'])
  expect(state.messages.value.filter(m=>m.id==='search-order')).toHaveLength(1)
 })
+it.each(['compaction','review'] as const)('prevents destructive history overlap while native %s acknowledgment is pending',async action=>{
+ const state=await loadState()
+ if(action==='compaction'){state.compaction.thread.value=thread.id;state.compaction.state.value='pending'}
+ else{state.review.thread.value=thread.id;state.review.busy.value=true}
+ expect(await state.executeThreadRevert(thread.id,'turn-1','revert')).toBe('')
+ expect(await state.forkNativeThreadById(thread.id)).toBe('')
+ expect(gateway.forkThread).not.toHaveBeenCalled()
+ expect(state.selectedThreadId.value).toBe(thread.id)
+})
+it('does not request review or compaction while a history revert is pending',async()=>{
+ const state=await loadState();state.isRollingBack.value=true
+ const fetch=vi.fn();vi.stubGlobal('fetch',fetch)
+ try{await state.review.run();await state.compaction.run();expect(fetch).not.toHaveBeenCalled()}
+ finally{vi.unstubAllGlobals()}
+})
