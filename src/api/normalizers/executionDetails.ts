@@ -32,6 +32,7 @@ export function normalizeExecutionItem(value: unknown, phase?: 'started' | 'comp
   const item = record(value)
   if (typeof item.id !== 'string' || !item.id) return null
   const type = item.type
+  if (type === 'enteredReviewMode' || type === 'exitedReviewMode') return {id:item.id, role:'system', messageType:type, executionLabel:type==='enteredReviewMode'?'Native review started':'Native review results', text:executionText(item.review ?? 'Review details unavailable')}
   if (type !== 'mcpToolCall' && type !== 'webSearch') return null
   const status = type === 'mcpToolCall' && ['inProgress', 'completed', 'failed'].includes(String(item.status))
     ? String(item.status) : phase === 'started' ? 'inProgress' : phase === 'completed' ? 'completed' : 'unavailable'

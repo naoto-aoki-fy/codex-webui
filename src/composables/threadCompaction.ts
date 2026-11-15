@@ -23,7 +23,8 @@ export function createThreadCompaction(deps:{epoch:Ref<number>;selected:Ref<stri
   if(event.method==='item/started'&&params.item?.type==='contextCompaction')itemId=params.item.id
   if(event.method==='item/completed'&&params.item?.type==='contextCompaction'&&itemId&&params.item.id===itemId){
    state.value='completed';status.value='Native compaction completed. Context usage follows server observations; visible history is retained.'
-   void deps.refresh(thread.value).catch(()=>{status.value+=' History refresh failed; refresh manually.'})
+   const token=job
+   void deps.refresh(thread.value).catch(()=>{if(token===job)status.value+=' History refresh failed; refresh manually.'})
   }
   if(event.method==='turn/completed'&&params.turn?.status==='failed'){
    state.value='failed';status.value='Native compaction failed. '+String(params.turn?.error?.message||'No error detail supplied.').slice(0,1000)

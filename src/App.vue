@@ -265,7 +265,13 @@
               <div class="composer-container">
                 <details class="feature-panel native-thread-actions">
                   <summary>Conversation actions</summary>
-                  <button type="button" :disabled="compaction.busy.value || isSelectedThreadInProgress || isSendingMessage || isSelectedThreadImportIncomplete || transportState === 'disconnected'" @click="compaction.run">Compact conversation</button>
+                  <button type="button" :disabled="compaction.busy.value || review.busy.value || isSelectedThreadInProgress || isSendingMessage || isSelectedThreadImportIncomplete || transportState === 'disconnected'" @click="compaction.run">Compact conversation</button>
+                  <ComposerDropdown v-model="review.kind.value" :options="reviewTargetOptions" placeholder="Review target" />
+                  <textarea v-if="review.kind.value !== 'uncommittedChanges'" v-model="review.value.value" aria-label="Review target value" maxlength="8000" placeholder="Base branch, commit SHA, or custom instructions" />
+                  <button type="button" :disabled="review.busy.value || compaction.busy.value || isSelectedThreadInProgress || isSendingMessage || isSelectedThreadImportIncomplete || transportState === 'disconnected'" @click="review.run">Start native review</button>
+                  <button v-if="review.selectedBusy.value && review.turn.value" type="button" :disabled="isInterruptingTurn" @click="review.cancel">Interrupt review turn</button>
+                  <p>Review runs inline in this conversation while idle. Active work must finish first.</p>
+                  <p v-if="review.thread.value === selectedThreadId" role="status">{{ review.status.value }}</p>
                   <p>Manual native context compaction. Available while idle; visible and imported history is retained.</p>
                   <p v-if="compaction.thread.value === selectedThreadId" role="status">{{ compaction.status.value }}</p>
                 </details>
@@ -285,7 +291,7 @@
                 <ThreadComposer
                   v-if="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
-                  :disabled="isSelectedThreadImportIncomplete || compaction.selectedBusy.value"
+                  :disabled="isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value"
                   :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
                   :collaboration-modes="availableCollaborationModes"
@@ -328,6 +334,11 @@
 </template>
 
 <script setup lang="ts">
+const reviewTargetOptions = [
+ {value:'uncommittedChanges',label:'Uncommitted changes'}, {value:'baseBranch',label:'Base branch'},
+ {value:'commit',label:'Commit'}, {value:'custom',label:'Custom instructions'},
+]
+
 import WorkingTreePanel from './components/content/WorkingTreePanel.vue'
 import { createAppRouteCoordinator } from './appRouteCoordinator'
 import { createAppTransferDialog } from './appTransferDialog'
@@ -440,7 +451,7 @@ const {
   archiveThreadById,
   restoreThreadById,
   operationEpoch,
-  compaction,
+  compaction, review,
   diagnosticWarnings,
   forkThreadById,
   forkNativeThreadById,

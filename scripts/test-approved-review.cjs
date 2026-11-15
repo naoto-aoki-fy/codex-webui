@@ -1,0 +1,30 @@
+const {chromium}=require('playwright')
+const {setup,assert}=require('./approved-fixture.cjs')
+;(async()=>{
+ const browser=await chromium.launch({headless:true})
+ for(const width of [1280,375,768]){
+  const page=await browser.newPage({viewport:{width,height:width===375?812:width===768?1024:900}})
+  let failure=false
+  const {calls,emit,items,errors}=await setup(page,body=>body.method==='review/start'?failure?{status:502,json:{error:'Method not found',rpcCode:-32601}}:{json:{result:{reviewThreadId:'approved-fixture',turn:{id:'review-turn',status:'inProgress'}}}}:undefined)
+  await page.waitForTimeout(1000);await page.getByText('Conversation actions',{exact:true}).click()
+  const button=page.getByRole('button',{name:'Start native review',exact:true})
+  await button.click();await page.getByText('Native review started. Results appear in the conversation.',{exact:true}).waitFor()
+  assert.equal(calls.filter(c=>c.method==='review/start').length,1)
+  assert.deepEqual(calls.find(c=>c.method==='review/start').params,{threadId:'approved-fixture',delivery:'inline',target:{type:'uncommittedChanges'}})
+  assert.equal(await button.isDisabled(),true)
+  emit('turn/started',{threadId:'approved-fixture',turn:{id:'review-turn',status:'inProgress',items:[]}})
+  const result={id:'review-result',type:'exitedReviewMode',review:'Review fixture: bounded result with file.ts:12'};items.push(result)
+  emit('item/completed',{threadId:'approved-fixture',turnId:'review-turn',item:result})
+  const row=page.locator('[data-message-id="review-result"]');await row.locator('summary').click();await row.getByText('Review fixture:',{exact:false}).waitFor()
+  await page.getByRole('button',{name:'Interrupt review turn',exact:true}).click()
+  await page.getByText('Review interruption requested;', {exact:false}).waitFor()
+  assert.equal(calls.filter(c=>c.method==='turn/interrupt').length,1)
+  emit('turn/completed',{threadId:'approved-fixture',turn:{id:'review-turn',status:'interrupted',items:[]}})
+  await page.getByText('Native review interrupted.',{exact:true}).waitFor()
+  for(const theme of ['light','dark']){await page.evaluate(dark=>document.documentElement.classList.toggle('dark',dark),theme==='dark');await page.waitForTimeout(2200);await page.screenshot({path:`output/playwright/approved-01-${width}-${theme}.png`})}
+  await page.reload();await page.getByText('Fixture answer',{exact:true}).waitFor();await page.locator('[data-message-id="review-result"] summary').click();await page.getByText('Review fixture:',{exact:false}).waitFor()
+  await page.getByText('Conversation actions',{exact:true}).click();failure=true;await button.click();await page.getByText('Dedicated review is unsupported by this App Server.',{exact:true}).waitFor()
+  assert.deepEqual(errors,[]);await page.close()
+ }
+ await browser.close();console.log('PASS 01: native target/progress/results/interruption/reopened history/unsupported; matrix')
+})().catch(e=>{console.error(e);process.exit(1)})
