@@ -310,8 +310,8 @@
             v-else
             class="thread-composer-submit"
             type="button"
-            :aria-label="input.queueMode.value?'Queue prompt':isTurnInProgress ? ('Steer') : ('Send message')"
-            :title="input.queueMode.value?'Add to native queue':isTurnInProgress ? ('Steer') : ('Send')"
+            :aria-label="input.queueMode.value && !isNewThread?'Queue prompt':isTurnInProgress ? ('Steer') : ('Send message')"
+            :title="input.queueMode.value && !isNewThread?'Add to native queue':isTurnInProgress ? ('Steer') : ('Send')"
             :disabled="!canSubmit"
             @click="onSubmit()"
           >
