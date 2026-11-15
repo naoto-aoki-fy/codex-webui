@@ -16,7 +16,7 @@
           class="thread-delete-button"
           type="button"
           :data-confirming="deleteConfirming"
-          :title="deleteConfirming ? 'Confirm delete' : t('Delete thread')"
+          :title="deleteConfirming ? 'Confirm delete' : ('Delete thread')"
           @click.stop="emit('delete')"
         >
           <span v-if="deleteConfirming" class="thread-delete-confirm-label">Confirm</span>
@@ -28,7 +28,7 @@
       <span class="thread-row-title-wrap">
         <span class="thread-row-title-line">
           <span class="thread-row-title">{{ thread.title }}</span>
-          <IconTablerGitFork v-if="thread.hasWorktree" class="thread-row-worktree-icon" :title="t('Worktree thread')" />
+          <IconTablerGitFork v-if="thread.hasWorktree" class="thread-row-worktree-icon" :title="('Worktree thread')" />
           <span
             v-if="thread.pendingRequestState"
             class="thread-row-request-chip"
@@ -60,7 +60,6 @@
 <script setup lang="ts">
 import type { ComponentPublicInstance } from 'vue'
 import type { UiThread } from '../../types/codex'
-import { useUiLanguage } from '../../composables/useUiLanguage'
 import SidebarMenuRow from './SidebarMenuRow.vue'
 import IconTablerDots from '../icons/IconTablerDots.vue'
 import IconTablerGitFork from '../icons/IconTablerGitFork.vue'
@@ -84,7 +83,6 @@ const emit = defineEmits<{
   'menu-anchor': [element: Element | ComponentPublicInstance | null]
 }>()
 
-const { t } = useUiLanguage()
 
 function shouldShowThreadIndicator(thread: UiThread): boolean {
   return Boolean(thread.pendingRequestState) || thread.inProgress || thread.unread

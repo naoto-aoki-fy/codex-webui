@@ -14,7 +14,7 @@
         </p>
 
         <section class="thread-pending-request-approval">
-          <div class="thread-pending-request-options" role="radiogroup" :aria-label="t('Approval choices')">
+          <div class="thread-pending-request-options" role="radiogroup" :aria-label="('Approval choices')">
             <button
               v-for="(option, index) in approvalOptions"
               :key="option.id"
@@ -39,7 +39,7 @@
                 class="thread-pending-request-inline-control"
                 type="text"
                 :value="approvalFreeformText"
-                :placeholder="t('No, and tell Codex what to do differently')"
+                :placeholder="('No, and tell Codex what to do differently')"
                 @focus="onFocusApprovalOther"
                 @input="onApprovalOtherInput"
                 @keydown.enter.prevent="onSubmitApproval(request)"
@@ -47,10 +47,10 @@
             </label>
 
             <button type="button" class="thread-pending-request-secondary" @click="onRespondApproval(request, 'cancel')">
-              {{ t('Skip') }}
+              {{ ('Skip') }}
             </button>
             <button type="button" class="thread-pending-request-primary" @click="onSubmitApproval(request)">
-              {{ t('Send') }}
+              {{ ('Send') }}
             </button>
           </footer>
         </section>
@@ -71,7 +71,7 @@
 
         <section v-if="request.method === 'mcpServer/elicitation/request'" class="thread-pending-request-user-input">
           <p v-if="readMcpElicitationServerName(request)" class="thread-pending-request-question-description">
-            {{ t('Server') }}: {{ readMcpElicitationServerName(request) }}
+            {{ ('Server') }}: {{ readMcpElicitationServerName(request) }}
           </p>
 
           <a
@@ -81,7 +81,7 @@
             target="_blank"
             rel="noopener noreferrer"
           >
-            {{ t('Open authorization link') }}
+            {{ ('Open authorization link') }}
           </a>
 
           <div
@@ -95,7 +95,7 @@
             <p v-if="field.description" class="thread-pending-request-question-text">{{ field.description }}</p>
 
             <label v-if="field.kind === 'string' || field.kind === 'number'" class="thread-pending-request-input-wrap">
-              <span class="thread-pending-request-select-label">{{ t('Value') }}</span>
+              <span class="thread-pending-request-select-label">{{ ('Value') }}</span>
               <input
                 class="thread-pending-request-input"
                 :type="field.inputType"
@@ -105,25 +105,25 @@
             </label>
 
             <div v-else-if="field.kind === 'boolean'" class="thread-pending-request-select-wrap">
-              <span class="thread-pending-request-select-label">{{ t('Choice') }}</span>
+              <span class="thread-pending-request-select-label">{{ ('Choice') }}</span>
               <ComposerDropdown
                 class="thread-pending-request-dropdown"
                 :model-value="serializeMcpBooleanValue(readMcpElicitationFieldValue(request.id, field))"
                 :options="mcpBooleanOptions(field)"
-                :placeholder="t('Select true or false')"
+                :placeholder="('Select true or false')"
                 @update:model-value="onMcpElicitationBooleanChange(request.id, field, $event)"
               />
             </div>
 
             <div v-else-if="field.kind === 'singleEnum'" class="thread-pending-request-select-wrap">
-              <span class="thread-pending-request-select-label">{{ t('Choice') }}</span>
+              <span class="thread-pending-request-select-label">{{ ('Choice') }}</span>
               <ComposerDropdown
                 class="thread-pending-request-dropdown"
                 :model-value="String(readMcpElicitationFieldValue(request.id, field) ?? '')"
                 :options="mcpSingleEnumOptions(field)"
-                :placeholder="t('Select an option')"
+                :placeholder="('Select an option')"
                 enable-search
-                :search-placeholder="t('Search options...')"
+                :search-placeholder="('Search options...')"
                 @update:model-value="onMcpElicitationFieldValueChange(request.id, field, $event)"
               />
             </div>
@@ -151,13 +151,13 @@
 
           <footer class="thread-pending-request-footer">
             <button type="button" class="thread-pending-request-secondary" @click="onRespondMcpElicitation(request, 'cancel')">
-              {{ t('Cancel') }}
+              {{ ('Cancel') }}
             </button>
             <button type="button" class="thread-pending-request-secondary" @click="onRespondMcpElicitation(request, 'decline')">
-              {{ t('Decline') }}
+              {{ ('Decline') }}
             </button>
             <button type="button" class="thread-pending-request-primary" @click="onRespondMcpElicitation(request, 'accept')">
-              {{ t('Continue') }}
+              {{ ('Continue') }}
             </button>
           </footer>
         </section>
@@ -173,12 +173,12 @@
 
             <div v-if="question.options.length > 0" class="thread-pending-request-question-options">
               <div class="thread-pending-request-select-wrap">
-                <span class="thread-pending-request-select-label">{{ t('Choice') }}</span>
+                <span class="thread-pending-request-select-label">{{ ('Choice') }}</span>
                 <ComposerDropdown
                   class="thread-pending-request-dropdown"
                   :model-value="readQuestionAnswer(request.id, question.id, question.options[0]?.label || '')"
                   :options="toolQuestionOptions(question)"
-                  :placeholder="t('Choice')"
+                  :placeholder="('Choice')"
                   @update:model-value="onQuestionAnswerChange(request.id, question.id, $event)"
                 />
               </div>
@@ -192,12 +192,12 @@
             </div>
 
             <label v-if="question.isOther" class="thread-pending-request-input-wrap">
-              <span class="thread-pending-request-select-label">{{ t('Other answer') }}</span>
+              <span class="thread-pending-request-select-label">{{ ('Other answer') }}</span>
               <input
                 class="thread-pending-request-input"
                 type="text"
                 :value="readQuestionOtherAnswer(request.id, question.id)"
-                :placeholder="t('Other answer')"
+                :placeholder="('Other answer')"
                 @input="onQuestionOtherAnswerInput(request.id, question.id, $event)"
               />
             </label>
@@ -205,26 +205,26 @@
 
           <footer class="thread-pending-request-footer">
             <button type="button" class="thread-pending-request-primary" @click="onRespondToolRequestUserInput(request)">
-              {{ t('Send') }}
+              {{ ('Send') }}
             </button>
           </footer>
         </section>
 
         <section v-else-if="request.method === 'item/tool/call'" class="thread-pending-request-actions">
           <button type="button" class="thread-pending-request-primary" @click="onRespondToolCallFailure(request)">
-            {{ t('Fail Tool Call') }}
+            {{ ('Fail Tool Call') }}
           </button>
           <button type="button" class="thread-pending-request-secondary" @click="onRespondToolCallSuccess(request)">
-            {{ t('Success (Empty)') }}
+            {{ ('Success (Empty)') }}
           </button>
         </section>
 
         <section v-else class="thread-pending-request-actions">
           <button type="button" class="thread-pending-request-primary" @click="onRespondEmptyResult(request)">
-            {{ t('Return Empty Result') }}
+            {{ ('Return Empty Result') }}
           </button>
           <button type="button" class="thread-pending-request-secondary" @click="onRejectUnknownRequest(request)">
-            {{ t('Reject Request') }}
+            {{ ('Reject Request') }}
           </button>
         </section>
       </template>
@@ -235,7 +235,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { UiServerRequest, UiServerRequestReply } from '../../types/codex'
-import { useUiLanguage } from '../../composables/useUiLanguage'
 import ComposerDropdown from './ComposerDropdown.vue'
 
 type ApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel'
@@ -285,7 +284,6 @@ const toolQuestionAnswers = ref<Record<string, string>>({})
 const toolQuestionOtherAnswers = ref<Record<string, string>>({})
 const mcpElicitationAnswers = ref<Record<string, string | number | boolean | string[] | null>>({})
 const mcpElicitationValidationError = ref('')
-const { t } = useUiLanguage()
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -771,11 +769,11 @@ function serializeMcpBooleanValue(value: string | number | boolean | string[] | 
 
 function mcpBooleanOptions(field: McpElicitationField): Array<{ value: string; label: string }> {
   const options = [
-    { value: 'true', label: t('True') },
-    { value: 'false', label: t('False') },
+    { value: 'true', label: ('True') },
+    { value: 'false', label: ('False') },
   ]
   if (!field.hasExplicitDefault) {
-    options.unshift({ value: '', label: t('Select true or false') })
+    options.unshift({ value: '', label: ('Select true or false') })
   }
   return options
 }
@@ -783,7 +781,7 @@ function mcpBooleanOptions(field: McpElicitationField): Array<{ value: string; l
 function mcpSingleEnumOptions(field: McpElicitationField): Array<{ value: string; label: string }> {
   const options = field.options.map((option) => ({ value: option.value, label: option.label }))
   if (!field.hasExplicitDefault) {
-    options.unshift({ value: '', label: t('Select an option') })
+    options.unshift({ value: '', label: ('Select an option') })
   }
   return options
 }

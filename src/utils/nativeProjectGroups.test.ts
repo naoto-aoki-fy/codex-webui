@@ -18,9 +18,9 @@ it('groups only by explicit native IDs, preserving duplicate names, identical ro
   expect(groups.map(g => [g.projectName, g.threads.map(t => t.id)])).toEqual([
     ['p2', ['two']], ['p1', ['one']], ['empty', []], [UNASSIGNED_PROJECT, ['no-project']],
   ])
-  expect(getWorkspaceProjectId(state, 'p1', groups)).toBe('p1')
-  expect(getWorkspaceProjectId(state, '/shared', groups)).toBe('')
-  expect(getWorkspaceProjectId(state, 'Same name', groups)).toBe('')
+  expect(getWorkspaceProjectId(state, 'p1')).toBe('p1')
+  expect(getWorkspaceProjectId(state, '/shared')).toBe('')
+  expect(getWorkspaceProjectId(state, 'Same name')).toBe('')
   expect(groups[0]!.threads[0]!.cwd).toBe('/elsewhere/.codex/worktrees/shared')
 })
 it('clones native roots and metadata without sharing writable state with the cache', () => {

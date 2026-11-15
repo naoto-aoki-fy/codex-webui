@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 
-const source = readFileSync(new URL('./DirectoryHub.vue', import.meta.url), 'utf8')
+const source = readFileSync(new URL('./SkillsMcpHub.vue', import.meta.url), 'utf8')
 it('retains Skills workflows and MCP inspection without catalog loading', () => {
   expect(source).toContain('<SkillsHub')
   expect(source).toContain('listDirectoryMcpServers()')

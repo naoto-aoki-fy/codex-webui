@@ -2,10 +2,8 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { clearThreadGoal, getThreadGoal, setThreadGoal, THREAD_GOAL_STATUSES, type ThreadGoal, type ThreadGoalStatus } from '../../api/codexGateway'
 import ComposerDropdown from './ComposerDropdown.vue'
-import { useUiLanguage } from '../../composables/useUiLanguage'
 
 const props = defineProps<{ threadId: string; inProgress: boolean }>()
-const { t } = useUiLanguage()
 const goal = ref<ThreadGoal | null>(null)
 const editing = ref(false)
 const busy = ref(false)
@@ -75,21 +73,21 @@ defineExpose({ edit })
 </script>
 
 <template>
-  <section v-if="goal || editing" class="thread-goal-panel" :aria-label="t('Goal')">
-    <button v-if="goal && !editing" type="button" class="thread-goal-summary" :title="goal.objective" :aria-label="`${t('Edit goal')}: ${goal.objective}`" :aria-expanded="false" @click="edit">
-      <strong>{{ t('Goal') }} · {{ goal.status }}</strong>
+  <section v-if="goal || editing" class="thread-goal-panel" :aria-label="('Goal')">
+    <button v-if="goal && !editing" type="button" class="thread-goal-summary" :title="goal.objective" :aria-label="`${('Edit goal')}: ${goal.objective}`" :aria-expanded="false" @click="edit">
+      <strong>{{ ('Goal') }} · {{ goal.status }}</strong>
       <span class="thread-goal-preview">— {{ goal.objective }}</span>
     </button>
     <form v-if="editing" class="thread-goal-editor" @submit.prevent="save()">
-      <strong>{{ t(goal ? 'Edit goal' : 'Set goal') }}</strong>
-      <small v-if="goal">{{ goal.tokensUsed.toLocaleString() }} {{ t('tokens') }}<template v-if="goal.tokenBudget !== null"> / {{ goal.tokenBudget.toLocaleString() }}</template> · {{ Math.round(goal.timeUsedSeconds) }}s</small>
-      <textarea ref="objectiveInput" v-model="objective" :aria-label="t('Goal objective')" :disabled="busy" rows="3" />
+      <strong>{{ (goal ? 'Edit goal' : 'Set goal') }}</strong>
+      <small v-if="goal">{{ goal.tokensUsed.toLocaleString() }} {{ ('tokens') }}<template v-if="goal.tokenBudget !== null"> / {{ goal.tokenBudget.toLocaleString() }}</template> · {{ Math.round(goal.timeUsedSeconds) }}s</small>
+      <textarea ref="objectiveInput" v-model="objective" :aria-label="('Goal objective')" :disabled="busy" rows="3" />
       <ComposerDropdown :model-value="status" :options="statusOptions" :disabled="busy" @update:model-value="status = $event as ThreadGoalStatus" />
       <p v-if="error" role="alert">{{ error }}</p>
       <div class="thread-goal-actions">
-        <button v-if="goal" type="button" :disabled="busy" @click="save(true)">{{ t('Clear goal') }}</button>
-        <button type="button" :disabled="busy" @click="editing = false">{{ t('Cancel') }}</button>
-        <button type="submit" :disabled="busy || !objective.trim()">{{ t('Save goal') }}</button>
+        <button v-if="goal" type="button" :disabled="busy" @click="save(true)">{{ ('Clear goal') }}</button>
+        <button type="button" :disabled="busy" @click="editing = false">{{ ('Cancel') }}</button>
+        <button type="submit" :disabled="busy || !objective.trim()">{{ ('Save goal') }}</button>
       </div>
     </form>
   </section>

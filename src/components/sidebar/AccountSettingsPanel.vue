@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import ConnectionDiagnostics from './ConnectionDiagnostics.vue'
-import { useUiLanguage } from '../../composables/useUiLanguage'
 
 defineProps<{
   authAvailable: boolean | null
@@ -14,20 +13,19 @@ const emit = defineEmits<{
   logout: []
 }>()
 
-const { t } = useUiLanguage()
 </script>
 
 <template>
   <div class="sidebar-settings-account-section">
     <div class="sidebar-settings-account-header">
-      <span class="sidebar-settings-account-title">{{ t('Codex account') }}</span>
-      <button class="sidebar-settings-account-refresh" type="button" :disabled="refreshing" @click="emit('refresh')">{{ refreshing ? t('Reloading…') : t('Reload') }}</button>
+      <span class="sidebar-settings-account-title">{{ ('Codex account') }}</span>
+      <button class="sidebar-settings-account-refresh" type="button" :disabled="refreshing" @click="emit('refresh')">{{ refreshing ? ('Reloading…') : ('Reload') }}</button>
     </div>
-    <p class="sidebar-settings-account-empty">{{ authAvailable === true ? t('Signed in to Codex') : authAvailable === false ? t('Authentication is managed by the external Codex app-server. Sign in there, then reconnect.') : t('External Codex authentication status unavailable. Check the app-server connection.') }}</p>
+    <p class="sidebar-settings-account-empty">{{ authAvailable === true ? ('Signed in to Codex') : authAvailable === false ? ('Authentication is managed by the external Codex app-server. Sign in there, then reconnect.') : ('External Codex authentication status unavailable. Check the app-server connection.') }}</p>
     <div v-if="error" class="sidebar-settings-account-error">{{ error }}</div>
     <ConnectionDiagnostics />
     <div class="sidebar-settings-account-login">
-      <button v-if="authAvailable === true" class="sidebar-settings-account-login-button" type="button" :disabled="changeBlocked || refreshing" @click="emit('logout')">{{ t('Logout') }}</button>
+      <button v-if="authAvailable === true" class="sidebar-settings-account-login-button" type="button" :disabled="changeBlocked || refreshing" @click="emit('logout')">{{ ('Logout') }}</button>
     </div>
   </div>
 </template>

@@ -19,8 +19,8 @@
               class="sidebar-search-toggle"
               type="button"
               :aria-pressed="isSidebarSearchVisible"
-              :aria-label="t('Search threads')"
-              :title="t('Search threads')"
+              :aria-label="('Search threads')"
+              :title="('Search threads')"
               @click="toggleSidebarSearch"
             >
               <IconTablerSearch class="sidebar-search-toggle-icon" />
@@ -29,8 +29,8 @@
               class="sidebar-search-toggle"
               :class="{ 'is-active': isSkillsRoute }"
               type="button"
-              :aria-label="t('Skills')"
-              :title="t('Skills')"
+              :aria-label="('Skills')"
+              :title="('Skills')"
               :aria-current="isSkillsRoute ? 'page' : undefined"
               @click="router.push({ name: 'skills' }); isMobile && setSidebarCollapsed(true)"
             >
@@ -45,14 +45,14 @@
               v-model="sidebarSearchQuery"
               class="sidebar-search-input"
               type="text"
-              :placeholder="t('Filter threads...')"
+              :placeholder="('Filter threads...')"
               @keydown="onSidebarSearchKeydown"
             />
             <button
               v-if="sidebarSearchQuery.length > 0"
               class="sidebar-search-clear"
               type="button"
-              :aria-label="t('Clear search')"
+              :aria-label="('Clear search')"
               @click="clearSidebarSearch"
             >
               <IconTablerX class="sidebar-search-clear-icon" />
@@ -114,7 +114,7 @@
                 :data-state="threadContextBadgeState"
                 :title="threadContextTooltip"
               >
-                <span class="sidebar-settings-label">{{ t('Context') }}</span>
+                <span class="sidebar-settings-label">{{ ('Context') }}</span>
                 <span class="sidebar-settings-context-value" :data-state="threadContextBadgeState">
                   {{ threadContextPrimaryText }}
                   <span class="sidebar-settings-context-meta">{{ threadContextSecondaryText }}</span>
@@ -132,7 +132,7 @@
             @click.stop="isSettingsOpen = !isSettingsOpen"
           >
             <IconTablerSettings class="sidebar-settings-icon" />
-            <span>{{ t('Settings') }}</span>
+            <span>{{ ('Settings') }}</span>
           </button>
         </div>
       </section>
@@ -165,34 +165,34 @@
         <p v-if="nativeForkFailure" class="composer-runtime-error" role="alert">{{ nativeForkFailure }}</p>
 
         <div v-if="transportState === 'disconnected' || selectedRecoveryState || selectedUnknownOutcome || selectedLostApproval" class="connection-recovery-status" role="status">
-          <span v-if="transportState === 'disconnected'">{{ t('App-server disconnected. Reconnecting…') }}</span>
-          <span v-if="selectedRecoveryState">{{ t('Thread subscription') }}: {{ t(selectedRecoveryState) }}</span>
-          <button v-if="selectedRecoveryState === 'failed'" type="button" @click="retrySelectedSubscription">{{ t('Retry subscription') }}</button>
-          <span v-if="selectedLostApproval">{{ t('The previous approval expired with the connection. Inspect the thread on the server host; only newly delivered approvals can be answered.') }}</span>
-          <span v-if="selectedUnknownOutcome">{{ t('Submission outcome unknown. Inspect refreshed history before resending; missing history does not prove failure.') }}</span>
-          <button v-if="selectedUnknownOutcome || selectedLostApproval" type="button" @click="reconcileSelectedHistory">{{ t('Refresh history') }}</button>
+          <span v-if="transportState === 'disconnected'">{{ ('App-server disconnected. Reconnecting…') }}</span>
+          <span v-if="selectedRecoveryState">{{ ('Thread subscription') }}: {{ (selectedRecoveryState) }}</span>
+          <button v-if="selectedRecoveryState === 'failed'" type="button" @click="retrySelectedSubscription">{{ ('Retry subscription') }}</button>
+          <span v-if="selectedLostApproval">{{ ('The previous approval expired with the connection. Inspect the thread on the server host; only newly delivered approvals can be answered.') }}</span>
+          <span v-if="selectedUnknownOutcome">{{ ('Submission outcome unknown. Inspect refreshed history before resending; missing history does not prove failure.') }}</span>
+          <button v-if="selectedUnknownOutcome || selectedLostApproval" type="button" @click="reconcileSelectedHistory">{{ ('Refresh history') }}</button>
         </div>
         <section class="content-body">
           <template v-if="isSkillsRoute">
-            <DirectoryHub
+            <SkillsMcpHub
               @skills-changed="onSkillsChanged"
             />
           </template>
           <template v-else-if="isHomeRoute">
             <div class="content-grid content-grid-home">
               <div class="new-thread-empty">
-                <p class="new-thread-hero">{{ t("Let's build") }}</p>
+                <p class="new-thread-hero">{{ ("Let's build") }}</p>
                 <ComposerDropdown class="new-thread-folder-dropdown" :model-value="newThreadProjectId || newThreadCwd"
-                  :options="newThreadFolderOptions" :placeholder="t('Choose folder')"
+                  :options="newThreadFolderOptions" :placeholder="('Choose folder')"
                   :enable-search="true"
-                  :search-placeholder="t('Quick search project')"
+                  :search-placeholder="('Quick search project')"
                   :disabled="false" @update:model-value="onSelectNewThreadFolder" />
                 <p v-if="newThreadCwd" class="new-thread-folder-selected" :title="newThreadCwd">
-                  {{ t('Selected folder') }}: {{ newThreadCwd }}
+                  {{ ('Selected folder') }}: {{ newThreadCwd }}
                 </p>
                 <div class="new-thread-folder-actions">
                   <button class="new-thread-folder-action new-thread-folder-action-primary" type="button" @click="onOpenExistingFolder">
-                    {{ t('Select folder') }}
+                    {{ ('Select folder') }}
                   </button>
 
                 </div>
@@ -270,7 +270,7 @@
                   :request-count="selectedThreadServerRequests.length"
                   @respond-server-request="onRespondServerRequest"
                 />
-                <p v-if="modelSelectionNotice" class="composer-model-notice" role="status">{{ t(modelSelectionNotice) }}</p>
+                <p v-if="modelSelectionNotice" class="composer-model-notice" role="status">{{ (modelSelectionNotice) }}</p>
                 <ThreadComposer
                   v-if="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
@@ -317,6 +317,7 @@
 </template>
 
 <script setup lang="ts">
+import { useNativeProjectOptions } from './composables/useNativeProjectOptions'
 import type { ForkMethod } from './types/codex'
 import { prepareConversationTransfer, cancelConversationTransfer, reasoningCatalog } from './api/codexGateway'
 import { parseModelSelection, modelSelectionKey, defaultModelForProvider } from './api/modelCapabilities'
@@ -342,7 +343,6 @@ import IconTablerX from './components/icons/IconTablerX.vue'
 import { useDesktopState } from './composables/useDesktopState'
 import { useFolderPicker } from './composables/useFolderPicker'
 import { useMobile } from './composables/useMobile'
-import { useUiLanguage } from './composables/useUiLanguage'
 import {
   logoutCodex,
   getHomeDirectory,
@@ -353,18 +353,17 @@ import {
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import { getCodexAuthenticationStatus } from './api/codexGateway'
-import { getPathLeafName, getPathParent, normalizePathForComparison, normalizePathForUi } from './pathUtils.js'
+import { getPathParent, normalizePathForUi } from './pathUtils.js'
 import { copyTextToClipboard } from './utils/clipboard'
 
 const ThreadConversation = defineAsyncComponent(() => import('./components/content/ThreadConversation.vue'))
-const DirectoryHub = defineAsyncComponent(() => import('./components/content/DirectoryHub.vue'))
-const { t } = useUiLanguage()
+const SkillsMcpHub = defineAsyncComponent(() => import('./components/content/SkillsMcpHub.vue'))
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const SETTINGS_HELP = {
-  sendWithEnter: t('When enabled, press Enter to send. When disabled, use Command+Enter to send.'),
-  appearance: t('Switch between system theme, light mode, and dark mode.'),
-  chatWidth: t('Choose how wide the conversation column and composer can grow on desktop screens.'),
+  sendWithEnter: ('When enabled, press Enter to send. When disabled, use Command+Enter to send.'),
+  appearance: ('Switch between system theme, light mode, and dark mode.'),
+  chatWidth: ('Choose how wide the conversation column and composer can grow on desktop screens.'),
 } as const
 
 type ChatWidthMode = 'standard' | 'wide' | 'extra-wide'
@@ -469,9 +468,6 @@ const newThreadProjectId = computed(() => typeof route.query.projectId === 'stri
 useNewThreadCwdRoute(router, newThreadCwd)
 const workspaceRootOptionsState = ref<import('./api/codexGateway').WorkspaceRootsState>({
   order: [],
-  active: [],
-  labels: {},
-  projectOrder: [],
 })
 watch(workspaceRootsState, state => { if (state) workspaceRootOptionsState.value = state })
 const isSidebarCollapsed = ref(loadSidebarCollapsed())
@@ -556,27 +552,12 @@ const activeProjectName = computed<string | null>(() => {
     return thread?.projectName ?? null
   }
 
-  if (workspaceRootOptionsState.value.nativeProjects) return newThreadProjectId.value || null
-  const cwd = normalizePathForComparison(newThreadCwd.value).replace(/\/+$/u, '')
-  if (!cwd) return null
-  const matchesCwd = (path: string) => normalizePathForComparison(path).replace(/\/+$/u, '') === cwd
-
-  // Full paths distinguish same-name folders and include worktree threads.
-  const group = projectGroups.value.find((group) =>
-    matchesCwd(group.projectName) || group.threads.some((thread) => matchesCwd(thread.cwd)),
-  )
-  if (group) return group.projectName
-
-  // Registered roots also cover empty projects and groups with only worktree threads.
-  const workspaceRoot = workspaceRootOptionsState.value.order.find(matchesCwd)
-  if (!workspaceRoot) return null
-  const projectName = getPathLeafName(workspaceRoot)
-  return projectGroups.value.some((group) => group.projectName === projectName) ? projectName : null
+  return newThreadProjectId.value || null
 })
 const contentTitle = computed(() => {
-  if (isSkillsRoute.value) return t('Skills')
-  if (isHomeRoute.value) return t('Start new thread')
-  return selectedThread.value?.title ?? t('Choose a thread')
+  if (isSkillsRoute.value) return ('Skills')
+  if (isHomeRoute.value) return ('Start new thread')
+  return selectedThread.value?.title ?? ('Choose a thread')
 })
 const contentProjectName = computed(() => {
   if (isHomeRoute.value || isSkillsRoute.value) return ''
@@ -633,19 +614,19 @@ function formatCompactTokenCount(value: number): string {
 
 function buildThreadContextTooltip(usage: UiThreadTokenUsage | null): string {
   if (!usage) {
-    return t('Waiting for Codex thread/tokenUsage/updated events for this thread.')
+    return ('Waiting for Codex thread/tokenUsage/updated events for this thread.')
   }
 
   const lines = [
-    `${t('Current context usage')}: ${usage.currentContextTokens.toLocaleString()} ${t('tokens')}`,
-    `${t('Cumulative thread usage')}: ${usage.total.totalTokens.toLocaleString()} ${t('tokens')}`,
+    `${('Current context usage')}: ${usage.currentContextTokens.toLocaleString()} ${('tokens')}`,
+    `${('Cumulative thread usage')}: ${usage.total.totalTokens.toLocaleString()} ${('tokens')}`,
   ]
 
   if (typeof usage.modelContextWindow === 'number') {
-    lines.unshift(`${t('Model context window')}: ${usage.modelContextWindow.toLocaleString()} ${t('tokens')}`)
-    lines.push(`${t('Remaining context')}: ${(usage.remainingContextTokens ?? 0).toLocaleString()} ${t('tokens')}`)
+    lines.unshift(`${('Model context window')}: ${usage.modelContextWindow.toLocaleString()} ${('tokens')}`)
+    lines.push(`${('Remaining context')}: ${(usage.remainingContextTokens ?? 0).toLocaleString()} ${('tokens')}`)
   } else {
-    lines.push(t('Model context window is unavailable in the latest usage event.'))
+    lines.push(('Model context window is unavailable in the latest usage event.'))
   }
 
   return lines.join('\n')
@@ -661,114 +642,27 @@ const threadContextBadgeState = computed(() => {
 
 const threadContextPrimaryText = computed(() => {
   const usage = selectedThreadTokenUsage.value
-  if (!usage) return t('Awaiting data')
+  if (!usage) return ('Awaiting data')
   if (typeof usage.remainingContextTokens === 'number') {
-    return `${formatCompactTokenCount(usage.remainingContextTokens)} ${t('left')}`
+    return `${formatCompactTokenCount(usage.remainingContextTokens)} ${('left')}`
   }
-  return `${formatCompactTokenCount(usage.currentContextTokens)} ${t('used')}`
+  return `${formatCompactTokenCount(usage.currentContextTokens)} ${('used')}`
 })
 
 const threadContextSecondaryText = computed(() => {
   const usage = selectedThreadTokenUsage.value
-  if (!usage) return t('Updates after the next token usage event')
+  if (!usage) return ('Updates after the next token usage event')
   if (typeof usage.modelContextWindow === 'number') {
-    return `${formatCompactTokenCount(usage.currentContextTokens)} ${t('used')} / ${formatCompactTokenCount(usage.modelContextWindow)}`
+    return `${formatCompactTokenCount(usage.currentContextTokens)} ${('used')} / ${formatCompactTokenCount(usage.modelContextWindow)}`
   }
-  return t('Window size unavailable')
+  return ('Window size unavailable')
 })
 
 const threadContextTooltip = computed(() => buildThreadContextTooltip(selectedThreadTokenUsage.value))
 
-function hasDuplicateFolderLeaf(path: string, knownPaths: string[]): boolean {
-  const normalizedPath = normalizePathForUi(path).trim()
-  const leafName = getPathLeafName(normalizedPath)
-  if (!normalizedPath || !leafName) return false
-  return knownPaths.some((knownPath) => {
-    const normalizedKnownPath = normalizePathForUi(knownPath).trim()
-    return normalizedKnownPath !== normalizedPath && getPathLeafName(normalizedKnownPath) === leafName
-  })
-}
-
-function getFolderOptionLabel(path: string, fallbackLabel = ''): string {
-  const normalizedPath = normalizePathForUi(path).trim()
-  const explicitLabel = fallbackLabel.trim()
-  if (explicitLabel) return explicitLabel
-  const leafName = getPathLeafName(normalizedPath)
-  const knownPaths = [
-    ...workspaceRootOptionsState.value.order,
-    ...projectGroups.value.map((group) => group.threads[0]?.cwd?.trim() ?? '').filter(Boolean),
-  ]
-  return hasDuplicateFolderLeaf(normalizedPath, knownPaths) ? normalizedPath : leafName
-}
-
-const removableProjectIds = computed(() => workspaceRootsState.value?.nativeProjects?.map(project => project.id) ?? [])
-
-function getOrderedWorkspaceRootOptions(): string[] {
-  const savedRoots = new Set(workspaceRootOptionsState.value.order)
-  const orderedRoots = [...savedRoots].sort()
-  for (const rootPath of workspaceRootOptionsState.value.order) {
-    if (!orderedRoots.includes(rootPath)) orderedRoots.push(rootPath)
-  }
-  return orderedRoots
-}
-
-function resolveWorkspaceRootCwd(projectName: string): string {
-  if (workspaceRootOptionsState.value.nativeProjects) return workspaceRootOptionsState.value.nativeProjects.find(p => p.id === projectName)?.roots[0]?.path || ''
-  const normalizedProjectName = normalizePathForUi(projectName).trim()
-  if (!normalizedProjectName) return ''
-  const knownPaths = [
-    ...workspaceRootOptionsState.value.order,
-    ...projectGroups.value.map((group) => group.threads[0]?.cwd?.trim() ?? '').filter(Boolean),
-  ]
-  for (const cwdRaw of workspaceRootOptionsState.value.order) {
-    const cwd = normalizePathForUi(cwdRaw).trim()
-    if (!cwd) continue
-    const leafName = getPathLeafName(cwd)
-    const orderName = hasDuplicateFolderLeaf(cwd, knownPaths) ? cwd : leafName
-    if (cwd === normalizedProjectName || orderName === normalizedProjectName || leafName === normalizedProjectName) {
-      return cwd
-    }
-  }
-  return ''
-}
-
-const newThreadFolderOptions = computed(() => {
-  if (workspaceRootOptionsState.value.nativeProjects) return workspaceRootOptionsState.value.nativeProjects.map(p => ({ value: p.id, label: p.name }))
-  const options: Array<{ value: string; label: string }> = []
-  const seenCwds = new Set<string>()
-
-  for (const cwdRaw of getOrderedWorkspaceRootOptions()) {
-    const cwd = cwdRaw.trim()
-    if (!cwd || seenCwds.has(cwd)) continue
-    seenCwds.add(cwd)
-    options.push({
-      value: cwd,
-      label: getFolderOptionLabel(cwd),
-    })
-  }
-
-  for (const group of projectGroups.value) {
-    const cwd = group.threads[0]?.cwd?.trim() ?? ''
-    if (!cwd || seenCwds.has(cwd)) continue
-    seenCwds.add(cwd)
-    options.push({
-      value: cwd,
-      label: getFolderOptionLabel(cwd, projectDisplayNameById.value[group.projectName]),
-    })
-  }
-
-  const selectedCwd = newThreadCwd.value.trim()
-  if (selectedCwd && !seenCwds.has(selectedCwd)) {
-    options.unshift({
-      value: selectedCwd,
-      label: getFolderOptionLabel(selectedCwd),
-    })
-  }
-
-  return options
-})
+const { newThreadFolderOptions, removableProjectIds, resolveWorkspaceRootCwd } = useNativeProjectOptions(workspaceRootOptionsState)
 const darkModeMediaQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
-const chatWidthLabel = computed(() => t(CHAT_WIDTH_PRESETS[chatWidth.value].label))
+const chatWidthLabel = computed(() => (CHAT_WIDTH_PRESETS[chatWidth.value].label))
 const contentStyle = computed(() => {
   const preset = CHAT_WIDTH_PRESETS[chatWidth.value]
   const keyboardInset = Math.max(
@@ -1022,19 +916,8 @@ async function onForkThread(payload: { threadId: string; turnIndex?: number; met
   } finally { nativeForkPending.value = false }
 }
 
-function isWorktreePath(cwdRaw: string): boolean {
-  const cwd = cwdRaw.trim().replace(/\\/gu, '/')
-  if (!cwd) return false
-  return cwd.includes('/.codex/worktrees/') || cwd.includes('/.git/worktrees/')
-}
-
-function resolvePreferredLocalCwd(projectName: string, fallbackCwd = ''): string {
-  if (workspaceRootOptionsState.value.nativeProjects) return resolveWorkspaceRootCwd(projectName) || fallbackCwd
-  const group = projectGroups.value.find((row) => row.projectName === projectName)
-  if (!group) return resolveWorkspaceRootCwd(projectName) || fallbackCwd.trim()
-  const nonWorktreeThread = group.threads.find((thread) => !isWorktreePath(thread.cwd))
-  const candidate = nonWorktreeThread?.cwd?.trim() ?? group.threads[0]?.cwd?.trim() ?? ''
-  return candidate || resolveWorkspaceRootCwd(projectName) || fallbackCwd.trim()
+function resolvePreferredLocalCwd(projectId: string, fallbackCwd = ''): string {
+  return resolveWorkspaceRootCwd(projectId) || fallbackCwd.trim()
 }
 
 function onStartNewThread(projectName: string): void {
@@ -1044,7 +927,7 @@ function onStartNewThread(projectName: string): void {
     newThreadCwd.value = projectCwd
   }
   if (isMobile.value) setSidebarCollapsed(true)
-  void router.push({ name: 'home', query: { ...(newThreadCwd.value ? { cwd: newThreadCwd.value } : {}), ...(workspaceRootOptionsState.value.nativeProjects ? { projectId: projectName } : {}) } })
+  void router.push({ name: 'home', query: { ...(newThreadCwd.value ? { cwd: newThreadCwd.value } : {}), projectId: projectName } })
 }
 
 function resolveSelectedThreadProjectCwd(): string {

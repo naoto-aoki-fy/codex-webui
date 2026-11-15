@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { t } from '../../composables/useUiLanguage'
 
 defineProps<{
   sendWithEnter: boolean
@@ -17,15 +16,15 @@ const emit = defineEmits<{
 
 <template>
   <button class="sidebar-settings-row" type="button" :title="help.sendWithEnter" @click="emit('toggleSendWithEnter')">
-    <span class="sidebar-settings-label">{{ t('Require ⌘ + enter to send') }}</span>
+    <span class="sidebar-settings-label">{{ ('Require ⌘ + enter to send') }}</span>
     <span class="sidebar-settings-toggle" :class="{ 'is-on': !sendWithEnter }" />
   </button>
   <button class="sidebar-settings-row" type="button" :title="help.appearance" @click="emit('cycleDarkMode')">
-    <span class="sidebar-settings-label">{{ t('Appearance') }}</span>
-    <span class="sidebar-settings-value">{{ darkMode === 'system' ? t('System') : darkMode === 'dark' ? t('Dark') : t('Light') }}</span>
+    <span class="sidebar-settings-label">{{ ('Appearance') }}</span>
+    <span class="sidebar-settings-value">{{ darkMode === 'system' ? ('System') : darkMode === 'dark' ? ('Dark') : ('Light') }}</span>
   </button>
   <button class="sidebar-settings-row" type="button" :title="help.chatWidth" @click="emit('cycleChatWidth')">
-    <span class="sidebar-settings-label">{{ t('Chat width') }}</span>
+    <span class="sidebar-settings-label">{{ ('Chat width') }}</span>
     <span class="sidebar-settings-value">{{ chatWidthLabel }}</span>
   </button>
 </template>

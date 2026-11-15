@@ -1,7 +1,7 @@
 import type { WorkspaceRootsState } from '../api/normalizers/workspaceRoots'
 import type { UiProjectGroup } from '../types/codex'
 export const UNASSIGNED_PROJECT = '__codexapp_unassigned__'
-export function getWorkspaceProjectId(state: WorkspaceRootsState | null, id: string, _groups: UiProjectGroup[]): string {
+export function getWorkspaceProjectId(state: WorkspaceRootsState | null, id: string): string {
   return state?.nativeProjects?.find(p => p.id === id)?.id || ''
 }
 /** Native membership is explicit even for identical roots, moved cwd and empty projects. */

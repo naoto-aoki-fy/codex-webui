@@ -95,7 +95,7 @@
               </span>
             </button>
           </template>
-          <div v-else class="thread-composer-file-mention-empty">{{ t('No matching files') }}</div>
+          <div v-else class="thread-composer-file-mention-empty">{{ ('No matching files') }}</div>
         </div>
         <div v-if="slashQuery !== null" class="thread-composer-file-mentions thread-composer-slash-mentions">
           <button v-for="(item, index) in slashSuggestions" :key="item.skill?.path ?? item.name"
@@ -103,11 +103,11 @@
             type="button" @mousedown.prevent="applySlashSuggestion(item)">
             <span>/{{ item.name }}</span><small>{{ item.description }}</small>
           </button>
-          <div v-if="!slashSuggestions.length">{{ t('No matching skills or commands') }}</div>
+          <div v-if="!slashSuggestions.length">{{ ('No matching skills or commands') }}</div>
         </div>
         <div v-if="draft.trimStart().startsWith('/goal ') || isPlanModeSelected" class="thread-composer-active-mode">
-          <button v-if="draft.trimStart().startsWith('/goal ')" type="button" :aria-label="t('Disable goal mode')" @click="draft = draft.trimStart().slice(6)">{{ t('Goal') }} ×</button>
-          <button v-if="isPlanModeSelected" type="button" @click="emit('update:selected-collaboration-mode', 'default')">{{ t('Plan') }} ×</button>
+          <button v-if="draft.trimStart().startsWith('/goal ')" type="button" :aria-label="('Disable goal mode')" @click="draft = draft.trimStart().slice(6)">{{ ('Goal') }} ×</button>
+          <button v-if="isPlanModeSelected" type="button" @click="emit('update:selected-collaboration-mode', 'default')">{{ ('Plan') }} ×</button>
         </div>
         <textarea
           ref="inputRef"
@@ -123,8 +123,8 @@
           v-if="hasExpandedComposerToggle"
           class="thread-composer-expand"
           type="button"
-          :aria-label="isComposerExpanded ? t('Exit full screen composer') : t('Expand composer')"
-          :title="isComposerExpanded ? t('Exit full screen composer') : t('Expand composer')"
+          :aria-label="isComposerExpanded ? ('Exit full screen composer') : ('Expand composer')"
+          :title="isComposerExpanded ? ('Exit full screen composer') : ('Expand composer')"
           :disabled="isInteractionDisabled"
           @click="toggleComposerExpanded"
         >
@@ -140,7 +140,7 @@
           <button
             class="thread-composer-attach-trigger"
             type="button"
-            :aria-label="t('Add attachments and settings')"
+            :aria-label="('Add attachments and settings')"
             :aria-expanded="isAttachMenuOpen"
             :disabled="isInteractionDisabled"
             @click="toggleAttachMenu"
@@ -155,7 +155,7 @@
               :disabled="isInteractionDisabled"
               @click="triggerPhotoLibrary"
             >
-              {{ t('Add photos & files') }}
+              {{ ('Add photos & files') }}
             </button>
 
             <div class="thread-composer-attach-separator" />
@@ -164,11 +164,11 @@
               type="button"
               role="switch"
               :aria-checked="isSkillsSelectorVisible"
-              :aria-label="t('Skills')"
+              :aria-label="('Skills')"
               :disabled="isComposerConfigDisabled"
               @click="toggleSkillsSelector"
             >
-              <span class="thread-composer-attach-setting-label">{{ t('Skills') }}</span>
+              <span class="thread-composer-attach-setting-label">{{ ('Skills') }}</span>
               <span
                 class="thread-composer-attach-switch"
                 :class="{ 'is-on': isSkillsSelectorVisible }"
@@ -179,12 +179,12 @@
               type="button"
               role="switch"
               :aria-checked="selectedSpeedMode === 'fast'"
-              :aria-label="`${t('Fast mode')} ${selectedSpeedMode === 'fast' ? t('enabled') : t('disabled')}`"
+              :aria-label="`${('Fast mode')} ${selectedSpeedMode === 'fast' ? ('enabled') : ('disabled')}`"
               :disabled="isSpeedToggleDisabled"
               @click="onToggleSpeedMode"
             >
               <span class="thread-composer-attach-setting-copy">
-                <span class="thread-composer-attach-setting-label">{{ t('Fast mode') }}</span>
+                <span class="thread-composer-attach-setting-label">{{ ('Fast mode') }}</span>
                 <span class="thread-composer-attach-setting-description">{{ speedModeDescription }}</span>
               </span>
               <span
@@ -201,13 +201,13 @@
               type="button"
               role="switch"
               :aria-checked="isPlanModeSelected"
-              :aria-label="isPlanModeSelected ? t('Disable plan mode') : t('Enable plan mode')"
+              :aria-label="isPlanModeSelected ? ('Disable plan mode') : ('Enable plan mode')"
               :disabled="isComposerConfigDisabled"
               @click="toggleCollaborationMode"
             >
               <span class="thread-composer-attach-setting-copy">
-                <span class="thread-composer-attach-setting-label">{{ t('Plan mode') }}</span>
-                <span class="thread-composer-attach-setting-description">{{ t('Agent proposes a plan before acting') }}</span>
+                <span class="thread-composer-attach-setting-label">{{ ('Plan mode') }}</span>
+                <span class="thread-composer-attach-setting-description">{{ ('Agent proposes a plan before acting') }}</span>
               </span>
               <span
                 class="thread-composer-attach-switch"
@@ -221,7 +221,7 @@
               :disabled="isInteractionDisabled"
               @click="isAttachMenuOpen = false; emit('edit-goal')"
             >
-              {{ t('Goal…') }}
+              {{ ('Goal…') }}
             </button>
           </div>
         </div>
@@ -231,7 +231,7 @@
           class="thread-composer-control"
           :model-value="activeModelProvider"
           :options="providerOptions"
-          :placeholder="t('Model Provider')"
+          :placeholder="('Model Provider')"
           open-direction="up"
           :disabled="isComposerConfigDisabled"
           @update:model-value="onProviderSelect"
@@ -242,11 +242,11 @@
           :model-value="displayedModel"
           :options="modelOptions"
           :selected-prefix-icon="showFastModeModelIcon ? IconTablerBolt : null"
-          :placeholder="t('Model')"
+          :placeholder="('Model')"
           open-direction="up"
           :disabled="isComposerConfigDisabled || modelOptions.length === 0"
           enable-search
-          :search-placeholder="t('Search models...')"
+          :search-placeholder="('Search models...')"
           @update:model-value="onModelSelect"
         />
 
@@ -255,8 +255,8 @@
           class="thread-composer-control"
           :options="skillDropdownOptions"
           :selected-values="selectedSkillPaths"
-          :placeholder="t('Skills')"
-          :search-placeholder="t('Search skills...')"
+          :placeholder="('Skills')"
+          :search-placeholder="('Search skills...')"
           open-direction="up"
           :disabled="isComposerConfigDisabled"
           @toggle="onSkillDropdownToggle"
@@ -266,7 +266,7 @@
           class="thread-composer-control"
           :model-value="selectedReasoningEffort"
           :options="reasoningOptions"
-          :placeholder="t(reasoningOptions.length ? 'Thinking' : 'Model default')"
+          :placeholder="(reasoningOptions.length ? 'Thinking' : 'Model default')"
           open-direction="up"
           :disabled="isComposerConfigDisabled || reasoningOptions.length === 0"
           @update:model-value="onReasoningEffortSelect"
@@ -279,8 +279,8 @@
             v-if="isTurnInProgress && !hasSubmitContent"
             class="thread-composer-stop"
             type="button"
-            :aria-label="isStopPending ? t('Saving thread before stop is available') : t('Stop')"
-            :title="isStopPending ? t('Saving thread before stop is available') : t('Stop')"
+            :aria-label="isStopPending ? ('Saving thread before stop is available') : ('Stop')"
+            :title="isStopPending ? ('Saving thread before stop is available') : ('Stop')"
             :disabled="disabled || !activeThreadId || isInterruptingTurn || isStopPending"
             @click="onInterrupt"
           >
@@ -291,8 +291,8 @@
             v-else
             class="thread-composer-submit"
             type="button"
-            :aria-label="isTurnInProgress ? t('Steer') : t('Send message')"
-            :title="isTurnInProgress ? t('Steer') : t('Send')"
+            :aria-label="isTurnInProgress ? ('Steer') : ('Send message')"
+            :title="isTurnInProgress ? ('Steer') : ('Send')"
             :disabled="!canSubmit"
             @click="onSubmit()"
           >
@@ -316,7 +316,7 @@
 
 <script setup lang="ts">
 import { fastModeAvailability, findReasoningModel as findModelCapabilities } from '../../api/modelCapabilities'
-import { profileStorageKey } from '../../utils/browserConnectionProfile'
+import { loadPersistedDraftForThread, persistDraftForThread, type FileAttachment, type ComposerDraftPayload } from '../../utils/composerDraftStorage'
 import { findReasoningModel, reasoningCatalog } from '../../api/codexGateway'
 import { parseModelSelection, defaultModelForProvider, modelSelectionKey, providerModelOptions } from '../../api/modelCapabilities'
 import { normalizeSkillMarkdownPath } from '../../api/normalizers/skills'
@@ -329,7 +329,6 @@ import type {
   SpeedMode,
 } from '../../types/codex'
 import { useMobile } from '../../composables/useMobile'
-import { useUiLanguage } from '../../composables/useUiLanguage'
 import {
   searchComposerFiles,
   uploadFile,
@@ -372,15 +371,7 @@ const props = defineProps<{
   sendWithEnter?: boolean
 }>()
 
-export type FileAttachment = { label: string; path: string; fsPath: string }
-
-export type ComposerDraftPayload = {
-  text: string
-  imageUrls: string[]
-  fileAttachments: FileAttachment[]
-  skills: Array<{ name: string; path: string }>
-}
-
+export type { FileAttachment, ComposerDraftPayload } from '../../utils/composerDraftStorage'
 export type SubmitPayload = {
   text: string
   imageUrls: string[]
@@ -403,7 +394,6 @@ const emit = defineEmits<{
   'update:selected-reasoning-effort': [effort: ReasoningEffort | '']
   'update:selected-speed-mode': [mode: SpeedMode]
 }>()
-const { t } = useUiLanguage()
 
 type SelectedImage = {
   id: string
@@ -486,7 +476,6 @@ let fileMentionDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let dragDepth = 0
 let attachmentSessionToken = 0
 const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
-const DRAFT_STORAGE_PREFIX = 'codex-web-local.thread-draft.v1.'
 let lastActiveThreadId = ''
 
 const reasoningOptions = computed(() => props.reasoningEffortOptions ?? [])
@@ -562,18 +551,18 @@ const isSpeedToggleDisabled = computed(() =>
 )
 const speedModeDescription = computed(() => {
   if (props.isUpdatingSpeedMode) {
-    return t('Saving speed setting...')
+    return ('Saving speed setting...')
   }
-  if (fastAvailability.value === 'unknown') return t('Fast mode availability is unknown')
-  if (fastAvailability.value === 'unsupported') return t('Fast mode is unavailable for this model')
-  return props.selectedSpeedMode === 'fast' ? t('Fast mode enabled') : t('Standard mode')
+  if (fastAvailability.value === 'unknown') return ('Fast mode availability is unknown')
+  if (fastAvailability.value === 'unsupported') return ('Fast mode is unavailable for this model')
+  return props.selectedSpeedMode === 'fast' ? ('Fast mode enabled') : ('Standard mode')
 })
 const placeholderText = computed(() =>
   !props.activeThreadId
-    ? t('Select a thread to send a message')
+    ? ('Select a thread to send a message')
     : isPlanModeWaitingForModel.value
-      ? t('Loading models for plan mode...')
-      : t('Type a message... (@ for files)'),
+      ? ('Loading models for plan mode...')
+      : ('Type a message... (@ for files)'),
 )
 const hasSubmitContent = computed(() =>
   draft.value.trim().length > 0 || selectedImages.value.length > 0 || fileAttachments.value.length > 0,
@@ -650,71 +639,6 @@ function clearDraftState(): void {
   isComposerExpanded.value = false
 }
 
-function getDraftStorageKey(threadId: string): string {
-  return profileStorageKey(`${DRAFT_STORAGE_PREFIX}${threadId}`)
-}
-
-function loadPersistedDraftForThread(threadId: string): ComposerDraftPayload | null {
-  if (typeof window === 'undefined') return null
-  const normalizedThreadId = threadId.trim()
-  if (!normalizedThreadId) return null
-  try {
-    const raw = window.localStorage.getItem(getDraftStorageKey(normalizedThreadId))
-      || window.localStorage.getItem(profileStorageKey(`codex-web-local.thread-fork-recovery.v1.${normalizedThreadId}`))
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<ComposerDraftPayload> | string
-    if (typeof parsed === 'string') {
-      return {
-        text: parsed,
-        imageUrls: [],
-        fileAttachments: [],
-        skills: [],
-      }
-    }
-    return {
-      text: typeof parsed.text === 'string' ? parsed.text : '',
-      imageUrls: Array.isArray(parsed.imageUrls)
-        ? parsed.imageUrls.filter((url): url is string => typeof url === 'string')
-        : [],
-      fileAttachments: Array.isArray(parsed.fileAttachments)
-        ? parsed.fileAttachments.filter((attachment): attachment is FileAttachment => (
-          Boolean(attachment)
-          && typeof attachment.label === 'string'
-          && typeof attachment.path === 'string'
-          && typeof attachment.fsPath === 'string'
-        ))
-        : [],
-      skills: Array.isArray(parsed.skills)
-        ? parsed.skills.filter((skill): skill is { name: string; path: string } => (
-          Boolean(skill)
-          && typeof skill.name === 'string'
-          && typeof skill.path === 'string'
-        ))
-        : [],
-    }
-  } catch {
-    return null
-  }
-}
-
-function persistDraftForThread(threadId: string, payload: ComposerDraftPayload): void {
-  if (typeof window === 'undefined') return
-  const normalizedThreadId = threadId.trim()
-  if (!normalizedThreadId) return
-  try {
-    const hasContent = payload.text.trim().length > 0
-      || payload.imageUrls.length > 0
-      || payload.fileAttachments.length > 0
-      || payload.skills.length > 0
-    if (hasContent) {
-      window.localStorage.setItem(getDraftStorageKey(normalizedThreadId), JSON.stringify(payload))
-      return
-    }
-    window.localStorage.removeItem(getDraftStorageKey(normalizedThreadId))
-  } catch {
-    // Ignore localStorage failures (quota/private mode).
-  }
-}
 
 function clearPersistedDraftForThread(threadId: string): void {
   persistDraftForThread(threadId, {

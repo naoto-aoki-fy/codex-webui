@@ -13,7 +13,7 @@
           <IconTablerChevronRight v-if="!isPinnedSectionExpanded" class="thread-icon" />
           <IconTablerChevronDown v-else class="thread-icon" />
         </template>
-        <span class="thread-tree-header">{{ t('Pinned') }}</span>
+        <span class="thread-tree-header">{{ ('Pinned') }}</span>
       </SidebarMenuRow>
 
       <ul v-if="isPinnedSectionExpanded" class="thread-list">
@@ -53,29 +53,29 @@
           <IconTablerChevronRight v-if="!isProjectsSectionExpanded" class="thread-icon" />
           <IconTablerChevronDown v-else class="thread-icon" />
         </template>
-        <span class="thread-tree-header">{{ t('Projects') }}</span>
+        <span class="thread-tree-header">{{ ('Projects') }}</span>
         <template #right>
           <div ref="organizeMenuWrapRef" class="organize-menu-wrap">
             <button
               class="organize-menu-trigger"
               type="button"
               :aria-expanded="isOrganizeMenuOpen"
-              :aria-label="t('Organize threads')"
-              :title="t('Organize threads')"
+              :aria-label="('Organize threads')"
+              :title="('Organize threads')"
               @click.stop="toggleOrganizeMenu"
             >
               <IconTablerDots class="thread-icon" />
             </button>
 
             <div v-if="isOrganizeMenuOpen" class="organize-menu-panel" @click.stop>
-              <p class="organize-menu-title">{{ t('Organize') }}</p>
+              <p class="organize-menu-title">{{ ('Organize') }}</p>
               <button
                 class="organize-menu-item"
                 :data-active="threadViewMode === 'project'"
                 type="button"
                 @click="setThreadViewMode('project')"
               >
-                <span>{{ t('By project') }}</span>
+                <span>{{ ('By project') }}</span>
                 <span v-if="threadViewMode === 'project'">✓</span>
               </button>
               <button
@@ -84,15 +84,15 @@
                 type="button"
                 @click="setThreadViewMode('chronological')"
               >
-                <span>{{ t('Chronological list') }}</span>
+                <span>{{ ('Chronological list') }}</span>
                 <span v-if="threadViewMode === 'chronological'">✓</span>
               </button>
-              <p class="organize-menu-title">{{ t('Sort by') }}</p>
+              <p class="organize-menu-title">{{ ('Sort by') }}</p>
               <button class="organize-menu-item" type="button" :data-active="chatSortMode === 'updated'" @click="chatSortMode = 'updated'">
-                <span>{{ t('Updated') }}</span><span v-if="chatSortMode === 'updated'">✓</span>
+                <span>{{ ('Updated') }}</span><span v-if="chatSortMode === 'updated'">✓</span>
               </button>
               <button class="organize-menu-item" type="button" :data-active="chatSortMode === 'created'" @click="chatSortMode = 'created'">
-                <span>{{ t('Created') }}</span><span v-if="chatSortMode === 'created'">✓</span>
+                <span>{{ ('Created') }}</span><span v-if="chatSortMode === 'created'">✓</span>
               </button>
             </div>
           </div>
@@ -101,9 +101,9 @@
 
       <template v-if="isProjectsSectionExpanded">
 
-      <p v-if="isSearchActive && filteredGroups.length === 0" class="thread-tree-no-results">{{ t('No matching threads') }}</p>
+      <p v-if="isSearchActive && filteredGroups.length === 0" class="thread-tree-no-results">{{ ('No matching threads') }}</p>
 
-      <p v-else-if="isLoading && groups.length === 0" class="thread-tree-loading">{{ t('Loading threads...') }}</p>
+      <p v-else-if="isLoading && groups.length === 0" class="thread-tree-loading">{{ ('Loading threads...') }}</p>
 
       <ul v-else-if="isChronologicalView" class="thread-list thread-list-global">
       <li
@@ -238,7 +238,7 @@
             <template #left>
               <span class="project-empty-spacer" />
             </template>
-            <span class="project-empty">{{ isSearchActive ? t('No matching threads') : t('No threads') }}</span>
+            <span class="project-empty">{{ isSearchActive ? ('No matching threads') : ('No threads') }}</span>
           </SidebarMenuRow>
 
           <SidebarMenuRow v-if="hasHiddenThreads(group)" class="thread-show-more-row">
@@ -284,10 +284,10 @@
           {{ isPinned(openThreadMenuThread.id) ? 'Unpin thread' : 'Pin thread' }}
         </button>
         <button class="thread-menu-item" type="button" @click="openRenameThreadDialog(openThreadMenuThread.id, openThreadMenuThread.title)">
-          {{ t('Rename thread') }}
+          {{ ('Rename thread') }}
         </button>
         <button class="thread-menu-item thread-menu-item-danger" type="button" @click="openDeleteThreadDialog(openThreadMenuThread.id, openThreadMenuThread.title)">
-          {{ t('Delete thread') }}
+          {{ ('Delete thread') }}
         </button>
       </div>
     </Teleport>
@@ -295,7 +295,7 @@
     <Teleport to="body">
       <div v-if="renameThreadDialogVisible" class="rename-thread-overlay" @click.self="closeRenameThreadDialog">
         <div class="rename-thread-panel" role="dialog" aria-modal="true" aria-label="Thread title">
-          <h3 class="rename-thread-title">{{ t('Rename thread') }}</h3>
+          <h3 class="rename-thread-title">{{ ('Rename thread') }}</h3>
           <p class="rename-thread-subtitle">Make it short and recognizable.</p>
           <input
             ref="renameThreadInputRef"
@@ -307,8 +307,8 @@
             @keydown.esc.prevent="closeRenameThreadDialog"
           />
           <div class="rename-thread-actions">
-            <button class="rename-thread-button" type="button" @click="closeRenameThreadDialog">{{ t('Cancel') }}</button>
-            <button class="rename-thread-button rename-thread-button-primary" type="button" @click="submitRenameThread">{{ t('Save') }}</button>
+            <button class="rename-thread-button" type="button" @click="closeRenameThreadDialog">{{ ('Cancel') }}</button>
+            <button class="rename-thread-button rename-thread-button-primary" type="button" @click="submitRenameThread">{{ ('Save') }}</button>
           </div>
         </div>
       </div>
@@ -354,8 +354,6 @@ import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerFolder from '../icons/IconTablerFolder.vue'
 import IconTablerFolderOpen from '../icons/IconTablerFolderOpen.vue'
 import IconTablerTrash from '../icons/IconTablerTrash.vue'
-import { useUiLanguage } from '../../composables/useUiLanguage'
-import { getPathLeafName, getPathParent } from '../../pathUtils.js'
 import SidebarMenuRow from './SidebarMenuRow.vue'
 import SidebarThreadRow from './SidebarThreadRow.vue'
 import { filterSidebarGroups, collectChronologicalThreads } from './threadVisibility'
@@ -376,7 +374,6 @@ const props = defineProps<{
   searchMatchedThreadIds: string[] | null
 }>()
 
-const { t } = useUiLanguage()
 
 const emit = defineEmits<{
   select: [threadId: string]
@@ -880,47 +877,12 @@ function getProjectDisplayName(projectName: string): string {
   return props.projectDisplayNameById[projectName] ?? projectName
 }
 
-function isPathLikeProjectName(value: string): boolean {
-  return value.includes('/') || value.includes('\\')
-}
-
-function getProjectTooltipTitle(projectName: string): string {
-  return isPathLikeProjectName(projectName) ? projectName : getProjectDisplayName(projectName)
-}
-
-function isDuplicatePathLeafName(value: string): boolean {
-  const leafName = getPathLeafName(value)
-  if (!leafName) return false
-  let matchingCount = 0
-  for (const group of props.groups) {
-    if (!isPathLikeProjectName(group.projectName)) continue
-    if (getPathLeafName(group.projectName) !== leafName) continue
-    matchingCount += 1
-    if (matchingCount > 1) return true
-  }
-  return false
+function getProjectTooltipTitle(projectId: string): string {
+  return getProjectDisplayName(projectId)
 }
 
 function getProjectVisibleName(group: UiProjectGroup): string {
-  const customDisplayName = props.projectDisplayNameById[group.projectName]
-  const displayName = getProjectDisplayName(group.projectName)
-  const projectName = group.projectName
-  if (customDisplayName && !isPathLikeProjectName(projectName) && projectName !== displayName) {
-    if (displayName.includes(projectName) || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(projectName)) return displayName
-    return `${displayName} ${projectName}`
-  }
-  if (customDisplayName && isPathLikeProjectName(projectName)) {
-    const leafName = getPathLeafName(projectName)
-    const parentLeafName = getPathLeafName(getPathParent(projectName))
-    const contextName = isDuplicatePathLeafName(projectName) ? parentLeafName : leafName
-    return contextName && contextName !== displayName ? `${displayName} ${contextName}` : displayName
-  }
-  if (!displayName.includes('/') && !displayName.includes('\\')) return displayName
-  const leafName = getPathLeafName(displayName) || displayName
-  const parentLeafName = getPathLeafName(getPathParent(displayName))
-  if (parentLeafName.startsWith('.') && parentLeafName !== leafName) return `${leafName} ${parentLeafName}`
-  if (group.threads.length > 0 || !isDuplicatePathLeafName(projectName)) return leafName
-  return parentLeafName ? `${leafName} ${parentLeafName}` : leafName
+  return getProjectDisplayName(group.projectName)
 }
 
 const removableProjectIdSet = computed(() => new Set(props.removableProjectIds ?? []))
