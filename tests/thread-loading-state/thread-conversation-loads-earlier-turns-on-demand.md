@@ -55,3 +55,15 @@ Cleanup: dispose fixture states; archive only disposable fixture threads.
 Empty-page edge: return an empty older page with `hasMoreOlder: false` before a
 pending detail refresh completes. If the detail still contains the page boundary,
 the refresh must keep pagination exhausted rather than re-enable the older button.
+
+## Bottom-follow scrolling with optional composer controls
+
+Setup: an idle short history with an unloaded older page; use the conversation-
+tools fixture at desktop, phone and tablet sizes. Open the conversation and allow
+its normal bottom-follow scroll to settle. Expanding/collapsing optional composer
+controls or resizing while following the bottom must not fetch an older page.
+Scroll upward away from the bottom, or explicitly click Load earlier messages:
+the normal pager must still fetch and preserve position. Fixture cleanup: close
+browser; no live history mutation. `conversationViewport.test.ts` reproduces the
+near-top/at-bottom overlap. Performance: one extra boolean guard on the existing
+scroll handler; no listener, cache, history request or polling added.

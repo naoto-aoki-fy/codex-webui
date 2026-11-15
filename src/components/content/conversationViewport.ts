@@ -287,7 +287,7 @@ export function createConversationViewport(deps: {
         if (!container || deps.props.isLoading)
             return;
         autoFollowOutput.value = isAtBottom(container);
-        if (hasMoreAbove.value && !isLoadingMore.value && container.scrollTop < LOAD_MORE_SCROLL_THRESHOLD_PX) {
+        if (!autoFollowOutput.value && hasMoreAbove.value && !isLoadingMore.value && container.scrollTop < LOAD_MORE_SCROLL_THRESHOLD_PX) {
             void loadMoreAbove();
         }
     }
