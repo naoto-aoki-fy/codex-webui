@@ -1292,6 +1292,10 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 :root.dark .feature-panel { color: #d4d4d8; background: #18181b; }
 :root.dark .feature-panel button { color: #e4e4e7; border-color: #52525b; background: #27272a; }
 :root.dark .feature-panel [role="alert"] { color: #fda4af; }
+:is(.permanent-deletion, .create-worktree, .config-inspection) input:not([type="checkbox"]) { display: block; width: 100%; max-width: 100%; min-height: 32px; margin: 4px 0; padding: 5px 8px; border: 1px solid #a1a1aa; border-radius: 6px; background: #fff; color: #18181b; }
+:is(.permanent-deletion, .create-worktree) label { display: block; margin: 6px 0; }
+:is(.permanent-deletion, .create-worktree, .config-inspection) input:not([type="checkbox"]):focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+:root.dark :is(.permanent-deletion, .create-worktree, .config-inspection) input:not([type="checkbox"]) { border-color: #71717a; background: #27272a; color: #f4f4f5; }
 
 .diagnostic-report { white-space: pre-wrap; max-height: 200px; overflow: auto; font-size: 11px; }
 

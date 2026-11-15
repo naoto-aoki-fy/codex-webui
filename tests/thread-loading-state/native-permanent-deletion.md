@@ -34,3 +34,8 @@ recovery cancellation, late reads and protected transfer/Fork behavior. Cleanup:
 close fixture contexts. Native permanent deletion has no WebUI undo; do not use a
 real conversation to test rollback. Imported prefixes and native subtrees remain
 outside this limited deletion UI; archive remains available for them.
+
+Input visibility regression: in both themes, inspect the empty exact-ID field
+before typing. Expect a visible one-pixel border, theme-appropriate background,
+readable text and keyboard focus outline. Worktree destination/branch and model
+configuration text inputs use the same scoped styling. No native select is added.

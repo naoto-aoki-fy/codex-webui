@@ -613,3 +613,15 @@ bound. A disjoint-layer regression test covers the defect. This limits public
 profile projections to 100 rather than up to 4,000; no request, write, subscription
 or persistence changes. The existing four configuration projection tests and
 frontend/server type checks pass. Live performance is not measured.
+
+### Final audit correction: visible mutation inputs
+
+Dark-theme screenshot inspection exposed an empty exact-ID input blending into
+the deletion panel. Scoped global CSS now gives deletion, worktree and model
+configuration text inputs a border, background, readable text and focus outline
+in both themes. The deletion browser test asserts computed border/background;
+all six views pass, as do the affected worktree/configuration browser flows.
+Type checks, full units (1,471 passed/two skipped), build and integration fixture
+pass on the final product source. Performance: four static CSS rules, no new
+JavaScript, request, subscription or persistence path. Final bundle comparison
+records the resulting CSS/build conditions.
