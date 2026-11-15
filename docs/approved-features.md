@@ -41,3 +41,11 @@ Baseline: production build at 99acc2c using the existing locked dependencies;
 copy retained in /tmp/approved-baseline/dist for identical-fixture comparison.
 Each feature receives focused tests, manual acceptance and a code-path performance
 audit; final full suite/build/integration/CLI and browser matrix follow.
+
+## 06 validation
+
+Implemented public MCP/search details in existing normalization and live owner.
+`pnpm exec vitest run src/api/normalizers/executionDetails.test.ts src/api/normalizers/v2.test.ts src/composables/useDesktopState.test.ts`: 85 passed.
+`pnpm run typecheck`: passed. Browser execution matrix: passed, 3 viewports × 2 themes;
+history/live/progress/dedup/no history reads, public-text redaction and safe markup.
+No parser/link code changed. Live validation NOT RUN. Risk: medium.

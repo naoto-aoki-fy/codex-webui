@@ -37,7 +37,11 @@
         :data-role="message.role"
         :data-message-type="message.messageType || ''"
       >
-        <div v-if="isCommandMessage(message)" class="message-row" data-role="system">
+        <details v-if="message.executionLabel" class="execution-details feature-panel">
+          <summary>{{ message.executionLabel }}</summary>
+          <pre v-text="message.text"></pre>
+        </details>
+        <div v-else-if="isCommandMessage(message)" class="message-row" data-role="system">
           <div class="message-stack" data-role="system">
             <button
               v-if="getGroupedCommandsForLatest(message).length > 0"
