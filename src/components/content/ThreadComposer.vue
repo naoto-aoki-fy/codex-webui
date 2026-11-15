@@ -279,6 +279,8 @@
           @update:model-value="onReasoningEffortSelect"
         />
 
+        <button v-if="!isNewThread" type="button" class="thread-composer-control" :aria-pressed="input.queueMode.value" :disabled="disabled"
+          @click="input.queueMode.value=!input.queueMode.value;if(input.queueMode.value)emit('thread-action','queue')">{{ input.queueMode.value?'Queue mode':'Immediate mode' }}</button>
         <div
           class="thread-composer-actions"
         >
@@ -298,8 +300,8 @@
             v-else
             class="thread-composer-submit"
             type="button"
-            :aria-label="isTurnInProgress ? ('Steer') : ('Send message')"
-            :title="isTurnInProgress ? ('Steer') : ('Send')"
+            :aria-label="input.queueMode.value?'Queue prompt':isTurnInProgress ? ('Steer') : ('Send message')"
+            :title="input.queueMode.value?'Add to native queue':isTurnInProgress ? ('Steer') : ('Send')"
             :disabled="!canSubmit"
             @click="onSubmit()"
           >
@@ -568,6 +570,7 @@ watch(
     }
   },
 )
+watch(()=>props.activeThreadId,()=>{input.queueMode.value=false},{flush:'sync'})
 
 export type { SubmitPayload, ThreadComposerExposed } from './composerContracts'
 </script>

@@ -3,6 +3,7 @@ import { createThreadReview } from './threadReview'
 import { createThreadCompaction } from './threadCompaction'
 import {createThreadSecurityObservation} from './threadSecurityObservation'
 import {createDeniedActionObservation} from './deniedActionObservation'
+import {createNativeQueue} from './nativeQueue'
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
 import { appendDiagnosticWarning, type DiagnosticWarning } from '../diagnostics'
 import { createDesktopConnection } from './desktopConnection'
@@ -254,6 +255,11 @@ export function useDesktopState() {
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
     refresh: id => history.loadMessages(id, { force: true }),
+  })
+  const nativeQueue = createNativeQueue({epoch:operationEpoch,selected:selectedThreadId,
+    ready:()=>transportState.value!=='disconnected',
+    blocked:()=>isRollingBack.value||compaction.busy.value||review.busy.value||turns.isSendingMessage.value||
+      history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
   })
 
   const connection = createDesktopConnection({
@@ -1668,6 +1674,7 @@ export function useDesktopState() {
   function applyRealtimeUpdates(notification: RpcNotification): void {
     securityObservation.observe(notification)
     deniedActions.observe(notification)
+    nativeQueue.observe(notification)
     review.observe(notification)
     compaction.observe(notification)
     if (notification.method === 'warning') diagnosticWarnings.value = appendDiagnosticWarning(diagnosticWarnings.value, notification.params, notification.atIso)
@@ -2779,6 +2786,7 @@ export function useDesktopState() {
     securityObservation,
     deniedActions,
     compaction, review,
+    nativeQueue,
     diagnosticWarnings,
     renameThreadById,
     forkThreadById,

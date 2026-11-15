@@ -1,6 +1,7 @@
 import type { CollaborationModeKind, CollaborationModeOption, ReasoningEffort, SpeedMode } from '../../types/codex';
 import type { ComposerDraftPayload, FileAttachment } from '../../utils/composerDraftStorage';
 export type ComposerProps = {
+    queueReady?: boolean;
     connectionEpoch?: number;
     activeThreadId: string;
     cwd?: string;
@@ -38,6 +39,7 @@ export type SkillItem = {
     enabled?: boolean;
 };
 export type SubmitPayload = {
+    queue?: boolean;
     apps?: import('../../api/apps').AppReference[];
     text: string;
     imageUrls: string[];

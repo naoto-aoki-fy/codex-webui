@@ -194,3 +194,55 @@ Two focused unit tests, type checks and six browser views passed: native account
 allowed methods, secrets, signed out/no allowed method, errors and disconnect.
 Two lazy reads per explicit action; no startup read, polling or subscription.
 Native login lifecycle remains pending Phase 3. Live acceptance **NOT RUN**.
+
+## Phase 1 gate
+
+Delivered scopes: 05 `5ecd8a6`, 21 `c7b3825`, 23 `9e2aa79`, 28 `4ac7636`,
+03 `cdc0f94`, 04 `1741cd0`, 29 `4d509cc`. Cloud (30) and IDE (34) have no
+supported integration contract. There were no resource mutations during this
+phase. All seven delivered browser matrices passed in light/dark at desktop,
+375×812 and 768×1024. Unit suite: **1,414 passed / two skipped**. Production
+build and credential-free external-server integration fixture passed, including
+single upstream connection and existing retired-endpoint protections. Protected
+Fork/Revert, portable imports and metadata unit regressions passed. No live
+09/11 acceptance was resumed. Mutation portions remain partial, not completed.
+
+### 27 — BLOCKED at transcription isolation gate
+
+The supported App Server exposes `thread/realtime/*`, not a standalone
+transcription/dictation operation. Native realtime is a conversation workflow:
+`core/src/realtime_conversation.rs` persists completed transcripts and routes
+`HandoffRequested` through `RealtimeHandoffAdmission::route` into
+`route_realtime_text_input`. `clientManagedHandoffs` suppresses response forwarding
+(`handoff_out`), not coding-turn admission. A prompt asking for transcription
+cannot enforce the required single-shot input-only behavior. No microphone UI,
+third-party service, paid session or experimental flag is introduced. The initial
+isolation gate fails at the contract level; native realtime extension is therefore
+withheld. Full risk estimate 18 (actual verification difficulty 5 raises the
+attempted scope to 20); shipped behavioral risk none. Live **NOT RUN**.
+
+### 07 — PARTIAL milestone: native queue submission/list
+
+Explicit composer Queue mode uses `thread/queue/list` to establish availability,
+then `thread/queue/add` with a unique native client message identifier. Existing
+text/attachment/Skill/App input construction is retained. The native response
+must match the client identifier; only acknowledged acceptance clears the draft.
+Immediate mode remains the default and unknown slash input is still normal text.
+Unknown writes block subsequent queue submissions until native inspection and
+explicit acknowledgment; they are never replayed. Queue mode remains selected
+across disconnect so its draft is not silently converted into steering.
+
+Native persistence/order and unavailable-service semantics are established in
+`request_processors/thread_queue_processor.rs`; no browser execution queue exists.
+`thread/queue/changed` only marks the snapshot stale and no longer triggers an
+unrelated thread-list refresh. Source selection/connection guards discard stale
+read results. First-use action-panel opening was corrected after the refresh
+browser case exposed an async-component render race.
+
+Five queue units plus 18 composer/draft regressions, full type checks and six
+browser views passed, including refresh persistence, duplicate submission and
+unknown outcomes. Performance: no startup RPC/subscription, one availability
+read, one write and one reconciliation read per accepted add; 20 rows/page,
+100 displayed rows, bounded previews/attachment retention. Residual initial
+scope 2/3/2/3 = **13**. Editing/deletion/reordering/start follow separately.
+Live **NOT RUN**; only synthetic queued prompts were used.

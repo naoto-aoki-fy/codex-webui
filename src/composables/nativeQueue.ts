@@ -1,0 +1,40 @@
+import {computed,ref,watch,type Ref} from 'vue'
+import {rpcCall,type RpcNotification} from '../api/codexRpcClient'
+import {queueEntry,queuePage,queuedInput,type QueueEntry} from '../api/nativeQueue'
+import type {SubmitPayload} from '../components/content/composerContracts'
+export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;ready:()=>boolean;blocked:()=>boolean},request:typeof rpcCall=rpcCall){
+ const rows=ref<QueueEntry[]>([]),cursor=ref<string|null>(null),loaded=ref(false),stale=ref(false),reading=ref(false),writing=ref(false),status=ref(''),readError=ref(''),operationThread=ref(''),uncertainByThread=ref<Record<string,string>>({})
+ const uncertain=computed(()=>uncertainByThread.value[deps.selected.value]??'')
+ const available=computed(()=>loaded.value&&!stale.value&&!uncertain.value&&deps.ready())
+ let readJob=0,writeJob=0
+ const seen=new Set<string>()
+ function reset(){readJob++;rows.value=[];cursor.value=null;loaded.value=false;stale.value=false;reading.value=false;readError.value='';seen.clear()}
+ watch(deps.selected,reset,{flush:'sync'})
+ watch(deps.epoch,()=>{reset();if(writing.value){uncertainByThread.value={...uncertainByThread.value,[operationThread.value]:'Connection changed during a queue write. Outcome unknown; inspect the native queue and history. No replay is performed.'}}writeJob++;writing.value=false},{flush:'sync'})
+ async function refresh(more=false){
+  if(reading.value||!deps.ready()||!deps.selected.value||more&&(!cursor.value||stale.value||rows.value.length>=100))return
+  const token=++readJob,id=deps.selected.value,next=more?cursor.value:null;reading.value=true;readError.value=''
+  if(!more){rows.value=[];cursor.value=null;loaded.value=false;seen.clear()}
+  try{const page=queuePage(await request('thread/queue/list',{threadId:id,limit:20,...(next?{cursor:next}:{})}));if(token!==readJob)return
+   if(page.cursor&&(page.cursor===next||seen.has(page.cursor)))throw new Error('Repeated queue cursor; refresh from the beginning')
+   if(page.cursor)seen.add(page.cursor)
+   rows.value=[...new Map([...rows.value,...page.rows].map(row=>[row.id,row])).values()].slice(0,100);cursor.value=page.cursor;loaded.value=true;stale.value=false
+  }catch(e){if(token===readJob){loaded.value=false;readError.value=e instanceof Error?e.message:'Native queue unavailable'}}finally{if(token===readJob)reading.value=false}
+ }
+ async function add(payload:SubmitPayload){
+  if(writing.value||!available.value||deps.blocked())throw new Error('Read the native queue and resolve pending actions before queuing')
+  if(Object.keys(uncertainByThread.value).length>=20)throw new Error('Resolve uncertain queue operations before submitting more')
+  const id=deps.selected.value,token=++writeJob,clientId=crypto.randomUUID(),input=queuedInput(payload)
+  writing.value=true;operationThread.value=id;status.value='Requesting native queue submission…'
+  try{const result=await request<{queuedSubmission:unknown}>('thread/queue/add',{threadId:id,input,clientUserMessageId:clientId});if(token!==writeJob)throw new Error('Queue outcome unknown after connection change')
+   const row=queueEntry(result?.queuedSubmission);if(row.clientId!==clientId)throw new Error('Queue acknowledgment identity mismatch')
+   status.value=`Accepted by native queue: ${row.id}. Native settings apply when it runs.`
+   if(deps.selected.value===id){stale.value=true;await refresh()}
+   return true
+  }catch(e){if(token===writeJob){uncertainByThread.value={...uncertainByThread.value,[id]:`Queue outcome unknown. Client message: ${clientId}. Inspect queue and history before another submission. ${e instanceof Error?e.message:'Request failed'}`};status.value=uncertainByThread.value[id]!}throw e}
+  finally{if(token===writeJob)writing.value=false}
+ }
+ function observe(event:RpcNotification){const p=event.params as {threadId?:unknown}|null;if(event.method==='thread/queue/changed'&&p?.threadId===deps.selected.value){readJob++;reading.value=false;stale.value=true}}
+ function acknowledgeUnknown(){if(!loaded.value||reading.value||writing.value)return;const next={...uncertainByThread.value};delete next[deps.selected.value];uncertainByThread.value=next;status.value='Uncertain result acknowledged. Inspect history as well: an absent queue entry may already have run.';operationThread.value=deps.selected.value}
+ return {rows,cursor,loaded,stale,reading,writing,status,readError,operationThread,uncertain,available,refresh,add,observe,acknowledgeUnknown}
+}

@@ -9,6 +9,8 @@ import ConfigInspection from './ConfigInspection.vue'
 import ImportPreview from './ImportPreview.vue'
 import PermissionsInspection from './PermissionsInspection.vue'
 import DeniedActions from './DeniedActions.vue'
+import NativeQueuePanel from './NativeQueuePanel.vue'
+import type {createNativeQueue} from '../../composables/nativeQueue'
 import type {DeniedAction} from '../../composables/deniedActionObservation'
 import type {ThreadSecurity} from '../../api/threadSecurity'
 import type {createThreadCompaction} from '../../composables/threadCompaction'
@@ -18,6 +20,7 @@ defineProps<{
   threadId:string; cwd:string; epoch:number; messages:UiMessage[];
   security:ThreadSecurity|null;
   deniedActions:DeniedAction[];
+  queue:ReturnType<typeof createNativeQueue>;
   inProgress:boolean; sending:boolean; incomplete:boolean; disconnected:boolean; interrupting:boolean;
   compaction:ReturnType<typeof createThreadCompaction>; review:ReturnType<typeof createThreadReview>;
 }>()
@@ -46,6 +49,7 @@ const reviewTargetOptions = [
                 <ImportPreview :cwd="cwd" :epoch="epoch" :disconnected="disconnected" />
                 <PermissionsInspection :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" :security="security" />
                 <DeniedActions :thread-id="threadId" :rows="deniedActions" />
+                <NativeQueuePanel :thread-id="threadId" :disconnected="disconnected" :queue="queue" />
                 <BackgroundTerminals :thread-id="threadId" :epoch="epoch" :messages="messages" :disconnected="disconnected" />
                 <WorkingTreePanel :cwd="cwd" :epoch="epoch" />
 </template>
