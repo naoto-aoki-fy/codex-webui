@@ -146,3 +146,18 @@ The CLI's IDE-related behavior is not a remotely callable editor context API.
 An on-disk file picker would misrepresent unsaved editor state; a new unrestricted
 IDE listener would broaden the transport architecture. No substitute is added.
 Full risk remains 21; shipped risk none, browser/live acceptance **NOT RUN**.
+
+### 03 — PARTIAL (actual permission observation delivered)
+
+Normal `thread/resume` responses supply approval policy, reviewer, sandbox and
+active permission profile; `thread/settings/updated` supplies effective changes
+(`v2/thread.rs`, native thread settings processor). Existing history ownership
+guards accept the resume snapshot only while current. Native settings events
+invalidate older resume observations. Snapshots clear at connection generation
+changes, retain at most 100 threads, and never populate historical generation
+metadata or persist browser configuration. Inspection causes no additional
+resume. Managed constraints are read explicitly using `configRequirements/read`.
+
+Residual observation risk 1/2/1/2 = **8**. Full unit suite, type checks and six
+browser views cover settings/unknown/managed/other-thread/stale/disconnected cases.
+Permission mutations remain pending Phase 3 assessment. Live **NOT RUN**.

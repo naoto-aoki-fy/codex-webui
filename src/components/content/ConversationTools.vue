@@ -7,11 +7,14 @@ import SubagentsPanel from './SubagentsPanel.vue'
 import HooksInspection from './HooksInspection.vue'
 import ConfigInspection from './ConfigInspection.vue'
 import ImportPreview from './ImportPreview.vue'
+import PermissionsInspection from './PermissionsInspection.vue'
+import type {ThreadSecurity} from '../../api/threadSecurity'
 import type {createThreadCompaction} from '../../composables/threadCompaction'
 import type {createThreadReview} from '../../composables/threadReview'
 import type {UiMessage} from '../../types/codex'
 defineProps<{
   threadId:string; cwd:string; epoch:number; messages:UiMessage[];
+  security:ThreadSecurity|null;
   inProgress:boolean; sending:boolean; incomplete:boolean; disconnected:boolean; interrupting:boolean;
   compaction:ReturnType<typeof createThreadCompaction>; review:ReturnType<typeof createThreadReview>;
 }>()
@@ -38,6 +41,7 @@ const reviewTargetOptions = [
                 <HooksInspection :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" />
                 <ConfigInspection :cwd="cwd" :epoch="epoch" :disconnected="disconnected" />
                 <ImportPreview :cwd="cwd" :epoch="epoch" :disconnected="disconnected" />
+                <PermissionsInspection :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" :security="security" />
                 <BackgroundTerminals :thread-id="threadId" :epoch="epoch" :messages="messages" :disconnected="disconnected" />
                 <WorkingTreePanel :cwd="cwd" :epoch="epoch" />
 </template>
