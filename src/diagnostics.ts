@@ -2,7 +2,7 @@
 export type DiagnosticWarning = { atIso: string; message: string }
 export const WARNING_LIMIT = 20
 export function redactDiagnosticText(value: string): string {
-  return value
+  return value.slice(0, 6000)
     .replace(/\b(?:https?|wss?):\/\/[^\s<>"']+/gi, '[URL omitted]')
     .replace(/\b(?:authorization|proxy-authorization|cookie|set-cookie)\s*[:=][^\r\n]*/gi, '[credential header omitted]')
     .replace(/\b(?:bearer|basic)\s+[^\s,;]+/gi, '[credential omitted]')
