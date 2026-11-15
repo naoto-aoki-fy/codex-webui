@@ -263,6 +263,7 @@
               </div>
 
               <div class="composer-container">
+                <WorkingTreePanel :cwd="composerCwd" :epoch="operationEpoch" />
                 <ThreadGoalPanel
                   ref="threadGoalPanelRef"
                   :thread-id="selectedThreadId"
@@ -321,6 +322,7 @@
 </template>
 
 <script setup lang="ts">
+import WorkingTreePanel from './components/content/WorkingTreePanel.vue'
 import { createAppRouteCoordinator } from './appRouteCoordinator'
 import { createAppTransferDialog } from './appTransferDialog'
 

@@ -49,3 +49,13 @@ Implemented public MCP/search details in existing normalization and live owner.
 `pnpm run typecheck`: passed. Browser execution matrix: passed, 3 viewports × 2 themes;
 history/live/progress/dedup/no history reads, public-text redaction and safe markup.
 No parser/link code changed. Live validation NOT RUN. Risk: medium.
+
+## 12 validation
+
+Implemented lazy remote working-tree status and staged/unstaged/untracked patch
+previews. `pnpm exec vitest run src/api/workingTree.test.ts`: 2 passed;
+`pnpm run typecheck`: passed; `node scripts/test-approved-panels.cjs`: passed
+all three sizes/both themes, exact remote cwd/argv, lazy reads, previews and
+non-repository errors. Read-only fixed argv, no shell/external diff/textconv or
+optional Git locks/fsmonitor. Git status bounds fail closed; patches explicitly
+bounded. See manual test for performance audit. Live NOT RUN; risk medium.
