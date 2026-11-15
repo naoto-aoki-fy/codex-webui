@@ -131,9 +131,9 @@ export function createDesktopTurns(deps: {
     async function sendMessageToSelectedThread(text: string, imageUrls: string[] = [], skills: Array<{
         name: string;
         path: string;
-    }> = [], fileAttachments: FileAttachment[] = [], collaborationModeOverride?: CollaborationModeKind): Promise<void> {
+    }> = [], fileAttachments: FileAttachment[] = [], collaborationModeOverride?: CollaborationModeKind, apps?: import('../api/apps').AppReference[]): Promise<void> {
         const generation = deps.lifecycleGeneration;
-        const submissionContext = { generation, speedMode: deps.selectedSpeedMode.value, modelId: deps.readModelIdForThread(deps.selectedThreadId.value), reasoningEffort: deps.selectedReasoningEffort.value };
+        const submissionContext = { generation, ...(apps?.length ? {apps} : {}), speedMode: deps.selectedSpeedMode.value, modelId: deps.readModelIdForThread(deps.selectedThreadId.value), reasoningEffort: deps.selectedReasoningEffort.value };
         if (deps.isUpdatingSpeedMode.value)
             return;
         let threadId = deps.selectedThreadId.value;
@@ -144,6 +144,7 @@ export function createDesktopTurns(deps: {
         if (!threadId || (!nextText && imageUrls.length === 0 && fileAttachments.length === 0))
             return;
         const submittedMode = collaborationModeOverride ?? deps.selectedCollaborationMode.value;
+        if (apps?.length && deps.approvals.getThreadPendingRequests(threadId).some(request => request.method === 'item/tool/requestUserInput')) throw new Error('App references cannot be included in a pending tool answer.')
         if (await maybeReplyToPendingUserInputRequest(threadId, nextText, imageUrls, skills, fileAttachments)) {
             return;
         }
@@ -295,6 +296,7 @@ export function createDesktopTurns(deps: {
         reasoningEffort: ReasoningEffort | '';
         speedMode?: SpeedMode;
         resumed?: boolean;
+        apps?: import('../api/apps').AppReference[];
     } = {
         generation: deps.lifecycleGeneration,
         modelId: deps.readModelIdForThread(threadId),
@@ -344,7 +346,9 @@ export function createDesktopTurns(deps: {
             if (generation === deps.lifecycleGeneration)
                 deps.recordModelUsage(modelId);
             submissionAttempted = true;
-            const startedTurnId = await startThreadTurn(threadId, nextText, normalizedImageUrls, modelId || undefined, reasoningEffort || undefined, skills.length > 0 ? skills : undefined, fileAttachments, collaborationMode, context.speedMode ?? deps.selectedSpeedMode.value);
+            const args: Parameters<typeof startThreadTurn> = [threadId, nextText, normalizedImageUrls, modelId || undefined, reasoningEffort || undefined, skills.length > 0 ? skills : undefined, fileAttachments, collaborationMode, context.speedMode ?? deps.selectedSpeedMode.value];
+            if (context.apps?.length) args.push(context.apps);
+            const startedTurnId = await startThreadTurn(...args);
             submissionAccepted = true;
             if (!ownsAttempt())
                 return;

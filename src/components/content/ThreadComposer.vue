@@ -1,5 +1,6 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit()">
+    <AppsPicker v-if="activeThreadId && activeThreadId !== '__new-thread__'" :thread-id="activeThreadId" :epoch="connectionEpoch ?? 0" :selected="selectedApps" :disabled="isInteractionDisabled" @change="selectedApps=$event" @unavailable="input.appsUnavailable.value=$event" />
     <PromptLibrary v-if="promptLibraryOpen" @close="promptLibraryOpen=false" @choose="populatePrompt" />
     <p v-if="promptStorageNotice" role="status">{{ promptStorageNotice }}</p>
     <button type="button" class="prompt-library-trigger" @click="promptLibraryOpen=!promptLibraryOpen">Prompts & commands</button>
@@ -318,6 +319,7 @@
 </template>
 
 <script setup lang="ts">
+import AppsPicker from './AppsPicker.vue'
 import PromptLibrary from './PromptLibrary.vue'
 import type { ComposerProps, SubmitPayload, ThreadComposerExposed } from "./composerContracts"
 import { createComposerInput } from './composerInput'
@@ -364,8 +366,10 @@ const input = createComposerInput({
   get isAttachMenuOpen() { return isAttachMenuOpen; },
   get isMobile() { return isMobile; }
 })
+watch(() => props.connectionEpoch, () => { input.selectedApps.value = [] })
+
 const {
-  promptLibraryOpen, promptStorageNotice, populatePrompt,
+  selectedApps, promptLibraryOpen, promptStorageNotice, populatePrompt,
   draft,
   slashQuery,
   slashIndex,
@@ -542,7 +546,7 @@ watch(
   { immediate: true },
 )
 
-watch([input.draft, attachments.selectedImages, attachments.fileAttachments, settings.selectedSkills], () => {
+watch([input.selectedApps, input.draft, attachments.selectedImages, attachments.fileAttachments, settings.selectedSkills], () => {
   if (!lastActiveThreadId) return
   persistDraftForThread(lastActiveThreadId, input.getCurrentDraftPayload())
 }, { deep: true })

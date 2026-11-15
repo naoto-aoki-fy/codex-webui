@@ -76,6 +76,7 @@ export type UiMessage = {
   role: 'user' | 'assistant' | 'system'
   text: string
   images?: string[]
+  apps?: Array<{id:string;name:string}>
   skills?: Array<{ name: string; path: string }>
   fileAttachments?: UiFileAttachment[]
   fileChanges?: UiFileChange[]

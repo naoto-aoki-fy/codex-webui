@@ -1,6 +1,7 @@
 import type { CollaborationModeKind, CollaborationModeOption, ReasoningEffort, SpeedMode } from '../../types/codex';
 import type { ComposerDraftPayload, FileAttachment } from '../../utils/composerDraftStorage';
 export type ComposerProps = {
+    connectionEpoch?: number;
     activeThreadId: string;
     cwd?: string;
     collaborationModes?: CollaborationModeOption[];
@@ -37,6 +38,7 @@ export type SkillItem = {
     enabled?: boolean;
 };
 export type SubmitPayload = {
+    apps?: import('../../api/apps').AppReference[];
     text: string;
     imageUrls: string[];
     fileAttachments: FileAttachment[];

@@ -130,14 +130,16 @@ function parseUserMessageContent(
   images: string[]
   skills: Array<{ name: string; path: string }>
   fileAttachments: UiFileAttachment[]
+  apps: Array<{id:string;name:string}>
   rawBlocks: UiMessage[]
   isAutomationRun: boolean
   automationDisplayName: string | null
 } {
   if (!Array.isArray(content)) {
-    return { text: '', images: [], skills: [], fileAttachments: [], rawBlocks: [], isAutomationRun: false, automationDisplayName: null }
+    return { text: '', images: [], skills: [], apps: [], fileAttachments: [], rawBlocks: [], isAutomationRun: false, automationDisplayName: null }
   }
 
+  const apps: Array<{id:string;name:string}> = []
   const textChunks: string[] = []
   const images: string[] = []
   const skills: Array<{ name: string; path: string }> = []
@@ -161,7 +163,10 @@ function parseUserMessageContent(
       }
     }
 
-    if (block.type !== 'text' && block.type !== 'image' && block.type !== 'localImage' && block.type !== 'skill') {
+    if (block.type === 'mention' && typeof block.path === 'string' && block.path.startsWith('app://') && apps.length < 20) {
+      apps.push({id:block.path.slice(6),name:block.name})
+    }
+    if (!(block.type === 'mention' && typeof block.path === 'string' && block.path.startsWith('app://')) && block.type !== 'text' && block.type !== 'image' && block.type !== 'localImage' && block.type !== 'skill') {
       rawBlocks.push({
         id: `${itemId}:user-content:${index}`,
         role: 'user',
@@ -181,7 +186,7 @@ function parseUserMessageContent(
     text: heartbeat?.instructions ?? extractCodexUserRequestText(fullText),
     images,
     skills,
-    fileAttachments,
+    fileAttachments, apps,
     rawBlocks,
     isAutomationRun: heartbeat !== null,
     automationDisplayName: heartbeat?.automationId || null,
@@ -313,7 +318,7 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
   if (item.type === 'userMessage') {
     const parsed = parseUserMessageContent(item.id, item.content as UserInput[] | undefined)
     const messages: UiMessage[] = []
-    const hasRenderableUserContent = parsed.text.length > 0 || parsed.images.length > 0 || parsed.fileAttachments.length > 0 || parsed.skills.length > 0
+    const hasRenderableUserContent = parsed.apps.length > 0 || parsed.text.length > 0 || parsed.images.length > 0 || parsed.fileAttachments.length > 0 || parsed.skills.length > 0
 
     if (hasRenderableUserContent) {
       messages.push({
@@ -321,6 +326,7 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
         role: 'user',
         text: parsed.text,
         images: parsed.images,
+        ...(parsed.apps.length ? {apps:parsed.apps} : {}),
         skills: parsed.skills.length > 0 ? parsed.skills : undefined,
         fileAttachments: parsed.fileAttachments.length > 0 ? parsed.fileAttachments : undefined,
         messageType: item.type,
