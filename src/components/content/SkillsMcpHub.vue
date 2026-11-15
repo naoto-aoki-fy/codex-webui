@@ -2,8 +2,8 @@
   <div class="directory-hub">
     <div class="directory-header">
       <div>
-        <h2 class="directory-title">Skills & MCPs</h2>
-        <p class="directory-subtitle">Manage MCP servers and installed local skills.</p>
+        <h2 class="directory-title">Apps / Connectors</h2>
+        <p class="directory-subtitle">Manage MCP connections, authentication, configuration and curated plugins.</p>
       </div>
       <div class="directory-header-actions">
         <button class="directory-refresh" type="button" :disabled="isManualRefreshInFlight" @click="refreshMcps">
@@ -16,10 +16,7 @@
     <CuratedPlugins :epoch="props.epoch ?? 0" />
     <McpConfiguration :epoch="props.epoch ?? 0" />
     <section class="directory-section">
-      <SkillsHub
-        @skills-changed="emit('skills-changed')"
-      >
-        <template #before-installed>
+
           <div class="skills-embedded-section">
             <button class="skills-embedded-toggle" type="button" @click="isMcpSectionOpen = !isMcpSectionOpen">
               <span class="skills-embedded-title">MCPs({{ visibleMcpServers.length }})</span>
@@ -68,8 +65,7 @@
               </div>
             </div>
           </div>
-        </template>
-      </SkillsHub>
+
     </section>
 
   </div>
@@ -80,7 +76,6 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getMethodCatalog, listDirectoryMcpServers, reloadDirectoryMcpServers, startDirectoryMcpLogin, type DirectoryMcpServerStatus } from '../../api/codexGateway'
 import CuratedPlugins from './CuratedPlugins.vue'
 import McpConfiguration from './McpConfiguration.vue'
-import SkillsHub from './SkillsHub.vue'
 const props = defineProps<{ epoch?: number }>()
 
 

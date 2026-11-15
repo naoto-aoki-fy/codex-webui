@@ -121,6 +121,17 @@
               <IconTablerBolt />
             </span>
           </template>
+          <template #actions>
+            <details v-if="!isHomeRoute && !isSkillsRoute && selectedThreadId" ref="conversationMenuRef" class="conversation-header-menu">
+              <summary aria-label="Conversation tools" title="Conversation tools"><IconTablerDots /></summary>
+              <div class="conversation-header-menu-body">
+                <button type="button" @click="openConversationTools">Conversation tools…</button>
+                <button type="button" @click="closeConversationMenu();onCopyThreadChat(selectedThreadId)">Copy conversation</button>
+                <button type="button" :disabled="isExporting" @click="closeConversationMenu();onExportThread(selectedThreadId)">Export conversation as Markdown</button>
+                <button type="button" @click="closeConversationMenu();onArchiveThread(selectedThreadId)">Archive conversation</button>
+              </div>
+            </details>
+          </template>
         </ContentHeader>
         <p v-if="nativeAuthenticationBlocked" class="feature-panel native-auth-barrier" role="status">Native authentication is pending or needs account reconciliation. Sending is paused. <button type="button" @click="setSidebarCollapsed(false);isSettingsOpen=true">Open native sign-in controls</button></p>
         <p v-if="nativeDeletion?.state.value==='completed'" class="feature-panel" role="status">{{ nativeDeletion.status.value }}</p>
@@ -136,9 +147,8 @@
         </div>
         <section class="content-body">
           <template v-if="isSkillsRoute">
-            <SkillsMcpHub :epoch="operationEpoch"
-              @skills-changed="onSkillsChanged"
-            />
+            <div class="skills-management-entry"><button type="button" class="new-thread-folder-action" @click="openConnectorSettings">Manage Apps / Connectors in Settings</button></div>
+            <SkillsHub @skills-changed="onSkillsChanged" />
           </template>
           <template v-else-if="isHomeRoute">
             <div class="content-grid content-grid-home">
@@ -195,6 +205,7 @@
                   :is-turn-in-progress="false"
                   :is-stop-pending="false"
                   :is-interrupting-turn="false" :send-with-enter="sendWithEnter"
+                  @open-settings="openConnectorSettings"
                   @submit="onSubmitThreadMessage"
                   @update:selected-collaboration-mode="onSelectCollaborationMode"
                   @update:selected-model="onSelectModel"
@@ -222,20 +233,6 @@
               </div>
 
               <div class="composer-container">
-                <details id="conversation-tools" class="feature-panel conversation-tools" @toggle="onConversationToolsToggle">
-                  <summary>Conversation tools</summary>
-                  <ConversationTools v-if="areConversationToolsLoaded" :thread-id="selectedThreadId" :cwd="composerCwd"
-                    :security="securityObservation.snapshots.value[selectedThreadId] ?? null"
-                    :denied-actions="deniedActions.rows.value"
-                    :queue="nativeQueue"
-                    :permission-changes="permissionChanges"
-                    :open-created-worktree="openCreatedWorktree"
-                    :deletion="nativeDeletion" :ensure-deletion="ensureNativeDeletion" :has-draft="()=>threadComposerRef?.hasUnsavedDraft()??false"
-                    :shell="nativeShell" :ensure-shell="ensureNativeShell"
-                    :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
-                    :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage || permissionChanges.blocking.value || nativeAuthenticationBlocked" :incomplete="isSelectedThreadImportIncomplete"
-                    :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
-                </details>
                 <ThreadGoalPanel
                   ref="threadGoalPanelRef"
                   :thread-id="selectedThreadId"
@@ -271,6 +268,7 @@
                   :is-interrupting-turn="isInterruptingTurn"
                   :send-with-enter="sendWithEnter"
                   @update:selected-collaboration-mode="onSelectCollaborationMode"
+                  @open-settings="openConnectorSettings"
                   @submit="onSubmitThreadMessage" @update:selected-model="onSelectModel"
                   @update:selected-reasoning-effort="onSelectReasoningEffort"
                   @update:selected-speed-mode="onSelectSpeedMode"
@@ -284,6 +282,19 @@
       </section>
     </template>
   </DesktopLayout>
+  <ManagementDialog :open="isConversationToolsOpen" title="Conversation tools" :description="toolsConversationTitle" @close="isConversationToolsOpen=false">
+                  <ConversationTools v-if="areConversationToolsLoaded" :thread-id="selectedThreadId" :cwd="composerCwd"
+                    :security="securityObservation.snapshots.value[selectedThreadId] ?? null"
+                    :denied-actions="deniedActions.rows.value"
+                    :queue="nativeQueue"
+                    :permission-changes="permissionChanges"
+                    :open-created-worktree="openCreatedWorktree"
+                    :deletion="nativeDeletion" :ensure-deletion="ensureNativeDeletion" :has-draft="()=>threadComposerRef?.hasUnsavedDraft()??false"
+                    :shell="nativeShell" :ensure-shell="ensureNativeShell"
+                    :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
+                    :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage || permissionChanges.blocking.value || nativeAuthenticationBlocked" :incomplete="isSelectedThreadImportIncomplete"
+                    :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
+  </ManagementDialog>
   <ArchivedThreads :open="isArchiveOpen" :epoch="operationEpoch" :restore="restoreThreadById" @close="isArchiveOpen=false" />
   <ManagementDialog :open="isSettingsOpen" title="Settings" @close="isSettingsOpen=false">
     <div class="settings-layout">
@@ -327,6 +338,9 @@
               <div class="sidebar-settings-rate-limits">
                 <RateLimitStatus :snapshots="accountRateLimitSnapshots" />
               </div>
+        </section>
+        <section v-if="connectorsLoaded" v-show="settingsCategory==='Apps / Connectors'" aria-label="Apps / Connectors">
+          <SkillsMcpHub :epoch="operationEpoch" @skills-changed="onSkillsChanged" />
         </section>
       </div>
     </div>
@@ -372,6 +386,7 @@ import SidebarThreadControls from './components/sidebar/SidebarThreadControls.vu
 import IconTablerBolt from './components/icons/IconTablerBolt.vue'
 import IconTablerSearch from './components/icons/IconTablerSearch.vue'
 import IconTablerSettings from './components/icons/IconTablerSettings.vue'
+import IconTablerDots from './components/icons/IconTablerDots.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
 import { createConversationExport } from './composables/conversationExport'
 import { useDesktopState } from './composables/useDesktopState'
@@ -386,10 +401,18 @@ import { copyTextToClipboard } from './utils/clipboard'
 
 const ConversationTools = defineAsyncComponent(() => import('./components/content/ConversationTools.vue'))
 const areConversationToolsLoaded = ref(false)
-function onConversationToolsToggle(event: Event) {
-  if ((event.target as HTMLDetailsElement).open) areConversationToolsLoaded.value = true
+const isConversationToolsOpen = ref(false)
+const toolsConversationTitle = ref('')
+const conversationMenuRef = ref<HTMLDetailsElement | null>(null)
+function closeConversationMenu() { if (conversationMenuRef.value) conversationMenuRef.value.open = false }
+function openConversationTools() {
+  closeConversationMenu()
+  toolsConversationTitle.value = `${contentTitle.value} · ${selectedThreadId.value}`
+  areConversationToolsLoaded.value = true
+  isConversationToolsOpen.value = true
 }
 const ThreadConversation = defineAsyncComponent(() => import('./components/content/ThreadConversation.vue'))
+const SkillsHub = defineAsyncComponent(() => import('./components/content/SkillsHub.vue'))
 const SkillsMcpHub = defineAsyncComponent(() => import('./components/content/SkillsMcpHub.vue'))
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
@@ -560,9 +583,12 @@ let isRestoringSidebarScroll = false
 const homeDirectory = ref('')
 const isSettingsOpen = ref(false)
 const isArchiveOpen = ref(false)
-const settingsCategories = ['General', 'Codex account']
+const settingsCategories = ['General', 'Codex account', 'Apps / Connectors']
 const settingsCategory = ref('Codex account')
 const settingsLoaded = ref(false)
+const connectorsLoaded = ref(false)
+function openConnectorSettings() { connectorsLoaded.value = true; settingsCategory.value = 'Apps / Connectors'; isSettingsOpen.value = true }
+watch(settingsCategory, category => { if (category === 'Apps / Connectors') connectorsLoaded.value = true })
 watch(isSettingsOpen, open => { if (open) settingsLoaded.value = true })
 const accountActionError = ref('')
 const codexAuthAvailable = ref<boolean | null>(null)
@@ -642,6 +668,7 @@ const filteredMessages = computed(() =>
   }),
 )
 const liveOverlay = computed(() => selectedLiveOverlay.value)
+watch(selectedThreadId, () => { isConversationToolsOpen.value = false; closeConversationMenu() }, { flush: 'sync' })
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
 const composerReasoningEffort = computed(() => readReasoningEffortForThread(composerThreadContextId.value))
 const composerReasoningOptions = computed(() => readReasoningOptionsForThread(composerThreadContextId.value))
@@ -1057,9 +1084,7 @@ function scheduleWorkspaceRootsResume(): void {
 
 async function onOpenThreadAction(action: string) {
   const ownerThread=selectedThreadId.value,ownerEpoch=operationEpoch.value
-  areConversationToolsLoaded.value = true
-  const tools = document.getElementById('conversation-tools') as HTMLDetailsElement | null
-  if (tools) tools.open = true
+  openConversationTools()
   await import('./components/content/ConversationTools.vue')
   await nextTick()
   await new Promise<void>(resolve=>window.requestAnimationFrame(()=>resolve()))
