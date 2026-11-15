@@ -8,6 +8,10 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
+| [Optional conversation controls load on demand](optional-tools-loading.md) |
+| [MCP and Web search execution details](approved-execution-details.md) |
+| [Text presets, recent prompts and command aliases](prompt-library.md) |
+| [Native App references](apps-picker.md) |
 | [Composer without built-in dictation](composer-without-dictation.md) |
 | [API wrapper cleanup preserves active flows](api-wrapper-cleanup.md) |
 | [Composer cleanup preserves sidebar usage indicators](composer-usage-cleanup.md) |

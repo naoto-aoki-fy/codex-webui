@@ -15,6 +15,6 @@ Check all three viewports and both themes. Cleanup: fixture-only processes have
 no host counterpart. Never terminate real user processes for testing.
 
 Performance: no startup calls/listeners or polling. One 50-row page per explicit
-read, max 200 retained rows, 6,000 output characters per expanded row. One exact
+read, max 200 retained rows, 6,000 output characters per listed row. One exact
 termination per confirmation; no automatic retry or bulk operation. Native list
 has no output field: no extra output read is fabricated. Live latency NOT RUN.
