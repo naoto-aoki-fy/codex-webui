@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict')
+const {resolve}=require('node:path')
 const thread = {id:'approved-fixture',name:'Approved fixture',cwd:'/remote/project',projectId:'p',preview:'fixture',createdAt:1,updatedAt:1,status:{type:'idle'}}
 async function setup(page, handle = () => undefined, openTools = true) {
  const calls=[], sockets=new Set(), errors=[]
@@ -25,9 +26,16 @@ async function setup(page, handle = () => undefined, openTools = true) {
   await route.fulfill({json:payload})
  })
  await page.routeWebSocket('**/codex-api/ws',ws=>{sockets.add(ws);ws.onClose(()=>sockets.delete(ws))})
+ if(process.env.APPROVED_DIST_ROOT)await page.route('**/*',route=>{
+  const url=new URL(route.request().url())
+  if(url.origin==='http://127.0.0.1:4173'&&(url.pathname==='/'||url.pathname.startsWith('/assets/')))return route.fulfill({path:resolve(process.env.APPROVED_DIST_ROOT,'dist',url.pathname==='/'?'index.html':url.pathname.slice(1)),contentType:url.pathname==='/'?'text/html':url.pathname.endsWith('.css')?'text/css':'application/javascript'})
+  return route.fallback()
+ })
  const emit=(method,params)=>{for(const ws of sockets)ws.send(JSON.stringify({method,params,atIso:new Date().toISOString()}))}
  await page.goto('http://127.0.0.1:4173/#/thread/approved-fixture')
  await page.getByText('Fixture answer',{exact:true}).waitFor()
+ for(let attempt=0;attempt<100&&!sockets.size;attempt++)await page.waitForTimeout(50)
+ assert(sockets.size,'Native fixture notification stream did not become ready')
  if(openTools){await page.getByText('Conversation tools',{exact:true}).click();await page.getByText('Conversation actions',{exact:true}).waitFor()}
  return {calls,emit,errors,items,thread}
 }
