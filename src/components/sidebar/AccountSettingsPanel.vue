@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DiagnosticWarning } from '../../diagnostics'
-import RemoteControlStatus from './RemoteControlStatus.vue'
+import {defineAsyncComponent} from 'vue'
+const RemoteControlStatus = defineAsyncComponent(() => import('./RemoteControlStatus.vue'))
 import AccountUsage from './AccountUsage.vue'
 import ConnectionDiagnostics from './ConnectionDiagnostics.vue'
 

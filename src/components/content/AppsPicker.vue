@@ -17,7 +17,7 @@ async function refresh(more=false){if(busy.value||props.disabled)return;const to
 function add(app:AvailableApp){if(props.disabled||!app.accessible||!app.enabled||props.selected.length>=20)return;emit('change',[...props.selected.filter(row=>row.id!==app.id),{id:app.id,name:app.name}])}
 </script>
 <template>
- <details class="feature-panel apps-picker"><summary>Apps / Connectors</summary>
+ <section class="apps-picker-body">
   <p>Native references for this thread. Availability can change; refresh to recheck. Selecting never installs or authenticates an App.</p>
   <button type="button" :disabled="busy||disabled" @click="refresh(false)">Refresh available Apps</button>
   <ul><li v-for="app in selected" :key="app.id">Selected: {{ app.name }} · app://{{ app.id }} <span v-if="rows?.some(row=>row.id===app.id&&(!row.enabled||!row.accessible))"> · No longer available; remove this reference.</span><button type="button" :disabled="disabled" @click="emit('change',selected.filter(row=>row.id!==app.id))">Remove App {{ app.name }}</button></li></ul>
@@ -25,5 +25,5 @@ function add(app:AvailableApp){if(props.disabled||!app.accessible||!app.enabled|
   <ul v-if="rows"><li v-for="app in rows" :key="app.id"><button type="button" :disabled="disabled||!app.enabled||!app.accessible||selected.length>=20" @click="add(app)">Reference {{ app.name }}</button> · {{ app.id }} · {{ app.accessible&&app.enabled?'Available':'Unavailable' }}</li></ul>
   <button v-if="cursor" type="button" :disabled="busy||disabled" @click="refresh(true)">Load more Apps</button>
   <p v-if="error" role="alert">{{ error }}</p>
- </details>
+ </section>
 </template>

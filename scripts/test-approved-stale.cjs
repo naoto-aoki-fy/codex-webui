@@ -16,7 +16,7 @@ const {setup,assert}=require('./approved-fixture.cjs')
   const {emit,errors}=await setup(page,async body=>{
    if(body.method===c.method&&(!c.filter||c.filter(body))){began=true;await new Promise(resolve=>release=resolve);return {json:{result:c.result}}}
    if(body.method==='memory/status')return {json:{result:{v2Ready:true,v2ConsolidatedThreads:1}}}
-  })
+  },!c.settings&&!c.skills)
   await page.waitForTimeout(700)
   if(c.settings)await page.getByRole('button',{name:'Settings',exact:true}).click()
   if(c.skills)await page.getByRole('button',{name:'Skills',exact:true}).click()

@@ -9,7 +9,7 @@ const {setup,assert}=require('./approved-fixture.cjs')
    if(body.method===method){began=true;await new Promise(resolve=>release=resolve);return {json:{result:kind==='process'?{terminated:true}:{status:'ok',version:'v2',filePath:'/remote/config.toml'}}}}
    if(body.method==='thread/backgroundTerminals/list')return {json:{result:{data:[{processId:'42',itemId:'cmd',command:'fixture process',cwd:'/remote'}],nextCursor:null}}}
    if(body.method==='config/read'&&body.params?.includeLayers)return {json:{result:{layers:[{name:{type:'user',file:'/remote/config.toml'},version:'v1',config:{mcp_servers:{demo:{enabled:true}}}}]}}}
-  })
+  },kind==='process')
   await page.waitForTimeout(700)
   if(kind==='process'){
    await page.getByText('Background processes',{exact:true}).click();await page.getByRole('button',{name:'Refresh background processes',exact:true}).click();await page.getByRole('button',{name:'Terminate process 42',exact:true}).click();await page.getByRole('button',{name:'Confirm termination 42',exact:true}).click()

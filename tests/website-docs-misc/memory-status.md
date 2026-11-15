@@ -1,5 +1,7 @@
 # Memory readiness and selected summary (20, partial)
 
+Open **Conversation tools** in the selected conversation before expanding the feature panel.
+
 Setup: supported loaded thread or `node scripts/test-approved-memory.cjs`.
 Expand Memory status, click Read memory status. Expect actual V2 readiness/count
 (including zero), and the thread-selected memory summary as collapsed safe text.

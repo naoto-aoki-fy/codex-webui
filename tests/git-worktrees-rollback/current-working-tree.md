@@ -1,5 +1,7 @@
 # Current remote Git working tree (12)
 
+Open **Conversation tools** in the selected conversation before expanding the feature panel.
+
 Setup: supported remote command/exec, Git on the server, a disposable repository
 with staged/unstaged, renamed/deleted, binary, large and untracked files.
 Open a conversation in that project, expand Current Git working tree, refresh.

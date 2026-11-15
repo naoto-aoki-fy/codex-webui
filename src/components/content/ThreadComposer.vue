@@ -1,6 +1,9 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit()">
-    <AppsPicker v-if="activeThreadId && activeThreadId !== '__new-thread__'" :thread-id="activeThreadId" :epoch="connectionEpoch ?? 0" :selected="selectedApps" :disabled="isInteractionDisabled" @change="selectedApps=$event" @unavailable="input.appsUnavailable.value=$event" />
+    <details v-if="activeThreadId && activeThreadId !== '__new-thread__'" class="feature-panel apps-picker" @toggle="onAppsPickerToggle">
+      <summary>Apps / Connectors</summary>
+      <AppsPicker v-if="appsPickerLoaded" :thread-id="activeThreadId" :epoch="connectionEpoch ?? 0" :selected="selectedApps" :disabled="isInteractionDisabled" @change="selectedApps=$event" @unavailable="input.appsUnavailable.value=$event" />
+    </details>
     <PromptLibrary v-if="promptLibraryOpen" @close="promptLibraryOpen=false" @choose="populatePrompt" />
     <p v-if="promptStorageNotice" role="status">{{ promptStorageNotice }}</p>
     <button type="button" class="prompt-library-trigger" @click="promptLibraryOpen=!promptLibraryOpen">Prompts & commands</button>
@@ -319,8 +322,10 @@
 </template>
 
 <script setup lang="ts">
-import AppsPicker from './AppsPicker.vue'
-import PromptLibrary from './PromptLibrary.vue'
+const AppsPicker = defineAsyncComponent(() => import('./AppsPicker.vue'))
+const appsPickerLoaded = ref(false)
+function onAppsPickerToggle(event: Event) { if ((event.target as HTMLDetailsElement).open) appsPickerLoaded.value = true }
+const PromptLibrary = defineAsyncComponent(() => import('./PromptLibrary.vue'))
 import type { ComposerProps, SubmitPayload, ThreadComposerExposed } from "./composerContracts"
 import { createComposerInput } from './composerInput'
 import { createComposerSettings } from './composerSettings'
@@ -330,7 +335,7 @@ import { loadPersistedDraftForThread, persistDraftForThread, type FileAttachment
 import { reasoningCatalog } from '../../api/codexGateway'
 import { parseModelSelection, defaultModelForProvider, modelSelectionKey } from '../../api/modelCapabilities'
 
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CollaborationModeKind, ReasoningEffort, SpeedMode } from '../../types/codex'
 import { useMobile } from '../../composables/useMobile'
 
@@ -366,7 +371,7 @@ const input = createComposerInput({
   get isAttachMenuOpen() { return isAttachMenuOpen; },
   get isMobile() { return isMobile; }
 })
-watch(() => props.connectionEpoch, () => { input.selectedApps.value = [] })
+watch(() => props.connectionEpoch, () => { input.selectedApps.value = []; input.appsUnavailable.value = false })
 
 const {
   selectedApps, promptLibraryOpen, promptStorageNotice, populatePrompt,

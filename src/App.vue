@@ -250,7 +250,7 @@
                 <ThreadConversation ref="threadConversationRef" :messages="filteredMessages" :is-loading="isLoadingMessages"
                   :active-thread-id="composerThreadContextId" :cwd="composerCwd"
                   :live-overlay="liveOverlay"
-                  :is-revert-disabled="isRollingBack || isSelectedThreadInProgress"
+                  :is-revert-disabled="isRollingBack || isSelectedThreadInProgress || compaction.selectedBusy.value || review.selectedBusy.value"
                   :is-fork-disabled="isForkOperationPending"
             :is-exporting="isExporting"
                   :pending-requests="selectedThreadServerRequests"
@@ -263,21 +263,13 @@
               </div>
 
               <div class="composer-container">
-                <details id="native-conversation-actions" class="feature-panel native-thread-actions">
-                  <summary>Conversation actions</summary>
-                  <button type="button" :disabled="compaction.busy.value || review.busy.value || isSelectedThreadInProgress || isSendingMessage || isSelectedThreadImportIncomplete || transportState === 'disconnected'" @click="compaction.run">Compact conversation</button>
-                  <ComposerDropdown v-model="review.kind.value" :options="reviewTargetOptions" placeholder="Review target" />
-                  <textarea v-if="review.kind.value !== 'uncommittedChanges'" v-model="review.value.value" aria-label="Review target value" maxlength="8000" placeholder="Base branch, commit SHA, or custom instructions" />
-                  <button type="button" :disabled="review.busy.value || compaction.busy.value || isSelectedThreadInProgress || isSendingMessage || isSelectedThreadImportIncomplete || transportState === 'disconnected'" @click="review.run">Start native review</button>
-                  <button v-if="review.selectedBusy.value && review.turn.value" type="button" :disabled="isInterruptingTurn" @click="review.cancel">Interrupt review turn</button>
-                  <p>Review runs inline in this conversation while idle. Active work must finish first.</p>
-                  <p v-if="review.thread.value === selectedThreadId" role="status">{{ review.status.value }}</p>
-                  <p>Manual native context compaction. Available while idle; visible and imported history is retained.</p>
-                  <p v-if="compaction.thread.value === selectedThreadId" role="status">{{ compaction.status.value }}</p>
+                <details id="conversation-tools" class="feature-panel conversation-tools" @toggle="onConversationToolsToggle">
+                  <summary>Conversation tools</summary>
+                  <ConversationTools v-if="areConversationToolsLoaded" :thread-id="selectedThreadId" :cwd="composerCwd"
+                    :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
+                    :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage" :incomplete="isSelectedThreadImportIncomplete"
+                    :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
                 </details>
-                <MemoryStatus :thread-id="selectedThreadId" :epoch="operationEpoch" :disconnected="transportState === 'disconnected'" />
-                <BackgroundTerminals :thread-id="selectedThreadId" :epoch="operationEpoch" :messages="messages" :disconnected="transportState === 'disconnected'" />
-                <WorkingTreePanel :cwd="composerCwd" :epoch="operationEpoch" />
                 <ThreadGoalPanel
                   ref="threadGoalPanelRef"
                   :thread-id="selectedThreadId"
@@ -338,14 +330,7 @@
 </template>
 
 <script setup lang="ts">
-const reviewTargetOptions = [
- {value:'uncommittedChanges',label:'Uncommitted changes'}, {value:'baseBranch',label:'Base branch'},
- {value:'commit',label:'Commit'}, {value:'custom',label:'Custom instructions'},
-]
 
-import MemoryStatus from './components/content/MemoryStatus.vue'
-import BackgroundTerminals from './components/content/BackgroundTerminals.vue'
-import WorkingTreePanel from './components/content/WorkingTreePanel.vue'
 import { createAppRouteCoordinator } from './appRouteCoordinator'
 import { createAppTransferDialog } from './appTransferDialog'
 
@@ -383,6 +368,11 @@ import { getCodexAuthenticationStatus } from './api/codexGateway'
 import { getPathParent, normalizePathForUi } from './pathUtils.js'
 import { copyTextToClipboard } from './utils/clipboard'
 
+const ConversationTools = defineAsyncComponent(() => import('./components/content/ConversationTools.vue'))
+const areConversationToolsLoaded = ref(false)
+function onConversationToolsToggle(event: Event) {
+  if ((event.target as HTMLDetailsElement).open) areConversationToolsLoaded.value = true
+}
 const ThreadConversation = defineAsyncComponent(() => import('./components/content/ThreadConversation.vue'))
 const SkillsMcpHub = defineAsyncComponent(() => import('./components/content/SkillsMcpHub.vue'))
 
@@ -1061,7 +1051,12 @@ function scheduleWorkspaceRootsResume(): void {
   }, 100)
 }
 
-function onOpenThreadAction(action: string) {
+async function onOpenThreadAction(action: string) {
+  areConversationToolsLoaded.value = true
+  const tools = document.getElementById('conversation-tools') as HTMLDetailsElement | null
+  if (tools) tools.open = true
+  await import('./components/content/ConversationTools.vue')
+  await nextTick()
   const id = action === 'diff' ? 'current-working-tree' : action === 'processes' ? 'native-background-processes' : 'native-conversation-actions'
   const panel = document.getElementById(id) as HTMLDetailsElement | null
   if (panel) { panel.open = true; panel.scrollIntoView({ block: 'nearest' }) }
