@@ -15,3 +15,8 @@ item; details collapsed, rendered as text. Existing message windowing applies.
 Live item events use the existing overlay and do not reload history. Fixture
 asserts no extra thread/read calls across item lifecycle events. Live latency and
 large-history heap use were not measured.
+
+Structured MCP results: supply public structuredContent along with empty/nonempty
+text blocks and private _meta/debug/credential fields. Expect bounded public JSON
+as inert text, private fields omitted, and no Empty result claim when structured
+results exist. This uses the same bounded formatter; no extra reads are made.

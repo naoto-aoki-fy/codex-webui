@@ -8,7 +8,7 @@ const {mkdirSync}=require('node:fs')
   const page=await browser.newPage({viewport:{width,height:width===375?812:width===768?1024:900}})
   const {calls,emit,errors}=await setup(page)
   const tool=page.locator('[data-message-id="m"] .execution-details');await tool.locator('summary').click()
-  assert.ok((await tool.innerText()).includes('[redacted]'));assert.ok(!(await tool.innerText()).includes('HIDDEN_META'))
+  assert.ok((await tool.innerText()).includes('[redacted]'));assert.ok(!(await tool.innerText()).includes('HIDDEN_META'));assert.ok((await tool.innerText()).includes('Structured fixture result'));assert.ok(!(await tool.innerText()).includes('STRUCTURED_SECRET'));assert.ok(!(await tool.innerText()).includes('INTERNAL_DIAGNOSTIC'))
   assert.equal(await page.evaluate(()=>window.BAD),undefined)
   await page.locator('[data-message-id="w"] summary').click();await page.getByText('Results: Empty result',{exact:false}).waitFor()
   const reads=calls.filter(c=>c.method==='thread/read').length

@@ -22,7 +22,7 @@ export function executionText(value: unknown): string {
       for (const key in value) {
         if (!Object.prototype.hasOwnProperty.call(value,key)) continue
         if (++keys > 40) break
-        if (/meta|instruction|credential|secret|password|token|api.?key|authorization|cookie/i.test(key)) continue
+        if (/meta|instruction|credential|secret|password|token|api.?key|authorization|cookie|diagnostic|debug|trace|logs/i.test(key)) continue
         result[key.slice(0, 100)] = clean((value as Record<string, unknown>)[key], depth + 1)
       }
       return result
@@ -47,10 +47,12 @@ export function normalizeExecutionItem(value: unknown, phase?: 'started' | 'comp
     const result = record(item.result)
     // Render only public text blocks. Never expose _meta, UI resources or opaque diagnostics.
     const content = Array.isArray(result.content) ? result.content.slice(0, 40) : null
-    details.push(`Results: ${!content ? 'Unavailable' : content.length === 0 ? 'Empty result' : content.map(block => {
+    const structured = result.structuredContent != null
+    details.push(`Results: ${!content ? (structured ? 'Text content unavailable' : 'Unavailable') : content.length === 0 ? (structured ? 'No text content' : 'Empty result') : content.map(block => {
       const row = record(block)
       return row.type === 'text' && typeof row.text === 'string' ? executionText(row.text) : '[non-text content omitted]'
     }).join('\n')}`)
+    if (structured) details.push(`Structured results: ${executionText(result.structuredContent)}`)
     if (item.error != null) details.push(`Error: ${executionText(record(item.error).message ?? 'Unavailable')}`)
   } else {
     const action = record(item.action)

@@ -3,7 +3,7 @@ const thread = {id:'approved-fixture',name:'Approved fixture',cwd:'/remote/proje
 async function setup(page, handle = () => undefined, openTools = true) {
  const calls=[], sockets=new Set(), errors=[]
  const items=[{type:'userMessage',id:'u',content:[{type:'text',text:'Fixture request'}]}, {type:'agentMessage',id:'a',text:'Fixture answer'},
- {type:'mcpToolCall',id:'m',server:'fixture',tool:'lookup',status:'completed',arguments:{q:'safe'},result:{content:[{type:'text',text:'<script>window.BAD=true</script> token=secret'}],_meta:{hidden:'HIDDEN_META'}}},
+ {type:'mcpToolCall',id:'m',server:'fixture',tool:'lookup',status:'completed',arguments:{q:'safe'},result:{content:[{type:'text',text:'<script>window.BAD=true</script> token=secret'}],structuredContent:{answer:'Structured fixture result',apiKey:'STRUCTURED_SECRET',debug:{hidden:'INTERNAL_DIAGNOSTIC'}},_meta:{hidden:'HIDDEN_META'}}},
  {type:'webSearch',id:'w',query:'fixture query',results:[]}]
  page.on('pageerror',e=>errors.push(e.message))
  await page.route('**/codex-api/**',async route=>{
