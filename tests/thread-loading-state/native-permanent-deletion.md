@@ -1,58 +1,27 @@
-# Permanent native conversation deletion (10, partial)
+# Permanent deletion inspection (10, partial; mutation blocked)
 
-Use only credential-free fixtures or explicitly designated disposable native
-conversations. No live resource is designated for this implementation pass.
+Prerequisites: use the credential-free intercepted App Server fixture. No live
+resource or deletion attempt is needed.
 
-1. Open Conversation tools → Permanent native conversation deletion. Inspect an
-   idle native thread with no active or archived child agents. Check exact name,
-   native ID, remote cwd, Fork origin and refresh timestamp.
-2. Confirm no write occurs during inspection. Try an imported conversation,
-   active thread, child subtree, unknown status/filter and changed selection.
-   All must prevent deletion. Preserve an unsent draft; inspection must reject
-   until it is saved elsewhere or explicitly cleared.
-3. Type an incorrect ID and omit confirmation: submit stays disabled. Type the
-   exact ID and confirm the irreversible operation including the native race
-   caveat; submit once. Child lists and metadata are rechecked before native
-   `thread/delete {threadId}`. No filesystem removal or archive fallback occurs.
-4. Inject native Fork-reference rejection: show rejection and retain history.
-   Inject internal/transport failure: show unknown, block replay, preserve the
-   generic RPC error contract for unrelated operations.
-5. Acknowledge without event: display accepted, never completed. An unrelated
-   deletion event cannot complete this request. Deliver the exact native event
-   before or after acknowledgment: completion requires both. Remove only actual
-   native-deleted IDs and route home only if the deleted thread is still selected.
-6. During pending deletion change connection/profile, selection, or teardown the
-   panel. Stale preflight cannot write; late old completion cannot update a new
-   operation. Verify late history/subscription reads do not resurrect deleted
-   history. Other thread snapshots/subscriptions must survive.
-7. Refresh after successful fixture deletion; the native list must still omit it.
-   Verify both themes at 1280×900, 375×812, 768×1024.
+1. Open Conversation tools → Permanent native conversation deletion.
+2. Expect an explicit unavailable notice explaining that native deletion cannot
+   atomically exclude descendants. No typed-ID, confirmation or submit control
+   is offered.
+3. Inspect an idle native fixture with empty child inventories. Native identity,
+   cwd, Fork origin and inspection time remain visible. Only metadata/list reads
+   occur. Imported, active and ambiguous/child inventories still reject preview.
+4. Invoke the feature controller's `run` directly, before/after inspection and
+   after reconnect: it must send no deletion request, regardless of typed ID or
+   confirmation. No override or writable capability flag exists.
+5. Verify light/dark at desktop, 375×812 and 768×1024; reconnect and confirm no
+   deletion request. Archive/restore remain their existing separate workflows.
 
-Run `node scripts/test-risk-deletion.cjs` with the documented Playwright browser
-path. Unit suites cover controller, persisted-prefix guard, native cache cleanup,
-recovery cancellation, late reads and protected transfer/Fork behavior. Cleanup:
-close fixture contexts. Native permanent deletion has no WebUI undo; do not use a
-real conversation to test rollback. Imported prefixes and known listed subtrees
-are rejected by this limited deletion UI; archive remains available for them.
-This is not an execution-time leaf-only guarantee: a child created after the last
-precheck can be included in native subtree deletion. Existing fixtures establish
-precheck behavior only. When descendant preservation is required, withhold this
-mutation until a native atomic leaf-only condition is available; another client
-list request, typed ID or completion event cannot establish that protection.
+Automation: `pnpm exec vitest run src/composables/threadDeletion.test.ts` and
+`APPROVED_DIST_ROOT=. PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-deletion.cjs`.
+Screenshots: `output/playwright/risk-10-{1280,375,768}-{light,dark}.png`.
+Cleanup: close fixture browser contexts; no real resources were changed.
 
-Input visibility regression: in both themes, inspect the empty exact-ID field
-before typing. Expect a visible one-pixel border, theme-appropriate background,
-readable text and keyboard focus outline. Worktree destination/branch and model
-configuration text inputs use the same scoped styling. No native select is added.
-
-Lazy-loading ownership: delay the first deletion-controller module, click Inspect
-on conversation A, then navigate before releasing the module. No preview request
-may be sent for replacement conversation B on behalf of the old click. A fresh
-explicit Inspect on B must work. Controller tests also enforce captured identity.
-
-Final standalone-command exclusion: while an owned command is pending or uncertain
-in another conversation, select a different idle native thread. Permanent deletion
-must remain disabled with an explanation, and the controller must send no metadata
-or delete RPC. Finish/inspect the original command first. No process is terminated
-by deleting, changing selection or showing this guard. Re-run this destructive
-workflow's fixture gate after the standalone command suite.
+The verified 0.169.0 native request accepts only threadId and deletes a subtree.
+A new operation with an authoritative atomic leaf-only condition would require
+separate implementation/evidence. Do not use a warning, repeated child list or
+confirmation as authorization to restore the old mutation path.
