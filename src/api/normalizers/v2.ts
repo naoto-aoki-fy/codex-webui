@@ -576,7 +576,9 @@ export function normalizeThreadMessagesV2(payload: Pick<ThreadReadResponse, 'thr
           && (itemTiming.phase == null || itemTiming.phase === 'final_answer')
           ? readMessageMilliseconds(itemTiming.completedAtMs) ?? readMessageTimestamp(itemTiming.completedAt) ?? readMessageTimestamp(timing.completedAt)
           : undefined
-        messages.push({ ...msg, submittedAt, completedAt, turnId, turnIndex, ...(msg.role === 'assistant' ? { generationMetadata } : {}) })
+        const reviewCompletedAt = item.type === 'exitedReviewMode' && turn.status === 'completed'
+          ? readMessageMilliseconds(itemTiming.completedAtMs) : undefined
+        messages.push({ ...msg, submittedAt, completedAt: completedAt ?? reviewCompletedAt, turnId, turnIndex, ...(msg.role === 'assistant' ? { generationMetadata } : {}) })
       }
     }
     const errorText = readTurnErrorText(turn)

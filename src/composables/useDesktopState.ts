@@ -11,7 +11,7 @@ import { pruneThreadStateMap, removeThreadFromGroups, mergeThreadGroups, mergeIn
 export { removeThreadFromGroups } from './threadListReconciliation'
 
 import { fastModeAvailability, modelSelectionKey, parseModelSelection, defaultModelForProvider } from '../api/modelCapabilities'
-import { markNativeThreadRead, refreshThreadGenerationMetadata } from '../api/codexGateway'
+import { interruptThreadTurn, markNativeThreadRead, refreshThreadGenerationMetadata } from '../api/codexGateway'
 import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
 import { getWorkspaceProjectId, filterGroupsByWorkspaceRoots } from '../utils/desktopProjectGroups'
 import { readPlanUpdate, asRecord, readString, readNumber, readThreadTokenUsageUpdate, extractThreadIdFromNotification, readTurnErrorMessage, readNotificationErrorState, readTurnActivity, liveReasoningMessageId, readReasoningStartedItemId, readReasoningDelta, readReasoningSectionBreakMessageId, readReasoningCompletedId, readAgentMessageStartedId, readAgentMessageDelta, readAgentMessageCompleted, readCompletedImageView, readCommandOutputDelta, isAgentContentEvent, type TurnActivityState } from './desktopNotificationReaders'
@@ -238,13 +238,13 @@ export function useDesktopState() {
   const diagnosticWarnings = ref<DiagnosticWarning[]>([])
   const operationEpoch = ref(0)
   const review = createThreadReview({ epoch: operationEpoch, selected: selectedThreadId,
-    blocked: () => inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value ||
+    blocked: () => isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
-    interrupt: () => turns.interruptSelectedThreadTurn(),
+    interrupt: (threadId, turnId) => interruptThreadTurn(threadId, turnId),
   })
   const compaction = createThreadCompaction({ epoch: operationEpoch, selected: selectedThreadId,
-    blocked: () => inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || review.busy.value ||
+    blocked: () => isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || review.busy.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
     refresh: id => history.loadMessages(id, { force: true }),
@@ -2468,10 +2468,16 @@ export function useDesktopState() {
     }
   }
 
+  function hasPendingNativeAction(threadId: string): boolean {
+    return (compaction.busy.value && compaction.thread.value === threadId)
+      || (review.busy.value && review.thread.value === threadId)
+  }
+
   const pendingNativeForks = new Set<string>()
   async function forkNativeThreadById(threadId: string, turnIndex?: number, expectedTurnId?: string): Promise<string> {
     const sourceId = threadId.trim()
     if (!sourceId) return ''
+    if (hasPendingNativeAction(sourceId)) { error.value = 'Wait for the native conversation action to finish before forking.'; return '' }
     if (turnIndex !== undefined && (!Number.isSafeInteger(turnIndex) || turnIndex < 0)) {
       error.value = 'This imported response has no native turn boundary. Use Portable Transfer for this response.'
       return ''
@@ -2538,6 +2544,7 @@ export function useDesktopState() {
     if (!turnId.trim()) return ''
 
     if (inProgressById.value[threadId]) return ''
+    if (hasPendingNativeAction(threadId)) { error.value = 'Wait for the native conversation action to finish before reverting.'; return '' }
 
     isRollingBack.value = true
     error.value = ''

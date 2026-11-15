@@ -19,3 +19,16 @@ it('guards active work and duplicates, uses native review and matches completion
  action.observe({method:'turn/completed',params:{threadId:'t',turn:{id:'r',status:'interrupted'}},atIso:''});expect(action.status.value).toContain('interrupted')
  await action.run();epoch.value++;expect(action.status.value).toContain('unknown');expect(action.busy.value).toBe(false)
 })
+it('uses the acknowledged review identity before lifecycle events and reconciles completion before its reply',async()=>{
+ const epoch=ref(0),selected=ref('t'),interrupt=vi.fn(async(_thread:string,_turn:string)=>{})
+ let resolve!:(value:unknown)=>void
+ const request=vi.fn(()=>new Promise(r=>resolve=r))
+ const action=createThreadReview({epoch,selected,blocked:()=>false,ready:()=>true,interrupt},request)
+ const pending=action.run()
+ action.observe({method:'turn/completed',params:{threadId:'t',turn:{id:'early',status:'completed'}},atIso:''})
+ resolve({reviewThreadId:'t',turn:{id:'early'}});await pending
+ expect(action.busy.value).toBe(false);expect(action.status.value).toBe('Native review completed.')
+ const next=action.run();resolve({reviewThreadId:'t',turn:{id:'cancel-before-start'}});await next;await action.cancel()
+ expect(interrupt).toHaveBeenCalledWith('t','cancel-before-start')
+ expect(action.status.value).toContain('interruption requested')
+})
