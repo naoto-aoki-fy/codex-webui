@@ -21,7 +21,7 @@ import { getWorkspaceProjectId, filterGroupsByWorkspaceRoots } from '../utils/de
 import { readPlanUpdate, asRecord, readString, readNumber, readThreadTokenUsageUpdate, extractThreadIdFromNotification, readTurnErrorMessage, readNotificationErrorState, readTurnActivity, liveReasoningMessageId, readReasoningStartedItemId, readReasoningDelta, readReasoningSectionBreakMessageId, readReasoningCompletedId, readAgentMessageStartedId, readAgentMessageDelta, readAgentMessageCompleted, readCompletedImageView, readCommandOutputDelta, isAgentContentEvent, type TurnActivityState } from './desktopNotificationReaders'
 import { MODEL_USAGE_STORAGE_KEY, loadModelUsageOrder, REASONING_BY_MODEL_STORAGE_KEY, NEW_THREAD_MODEL_CONTEXT, normalizeStoredModelId, createStringKeyedRecord, cloneStringKeyedRecord, omitStringKeyedRecordKey, pruneThreadContextStateMap, isNewThreadContextId, toThreadContextId, loadSelectedModelMap, readSelectedModel, saveSelectedModelMap, loadReasoningPreferences, loadSelectedCollaborationModeMap, readSelectedCollaborationMode, writeSelectedCollaborationModeForContext, saveSelectedCollaborationModeMap, loadThreadTokenUsageMap, saveThreadTokenUsageMap, loadSelectedThreadId, saveSelectedThreadId } from './desktopStatePersistence'
 import { areStringArraysEqual, areMessageArraysEqual, normalizeMessageText, isOptimisticUserMessage, upsertMessage } from '../utils/desktopMessageReconciliation'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { formatTurnDuration, parseIsoTimestamp } from '../utils/turnTiming'
 import { createConversationTransfer, unarchiveThread, archiveThread, forkThread, forkThreadFromResponse, getAvailableCollaborationModes, getAccountRateLimits, renameThread, getAvailableModelIds, acquireReasoningCatalog, reasoningCatalog, reasoningOptions, resolveReasoningEffort, findReasoningModel, getCurrentModelConfig, getSkillsList, getBackgroundThreadListLimit, pickCodexRateLimitSnapshot, revertThreadHistory, validateThreadRevert, getThreadDetailForRevert, invalidateResumeThread, resumeThreadSubscription, getThreadGroupsPage, getWorkspaceRootsState, getWorkspaceRootsStateGeneration, setCodexSpeedMode, updateWorkspaceRootsState, invalidateWorkspaceRootsStateCache, type RpcNotification, type SkillInfo, type WorkspaceRootsState } from '../api/codexGateway'
 import { CodexApiError } from '../api/codexErrors'
@@ -244,15 +244,27 @@ export function useDesktopState() {
 
   const diagnosticWarnings = ref<DiagnosticWarning[]>([])
   const operationEpoch = ref(0)
+  const nativeAuthentication=shallowRef<import('./nativeAuthentication').NativeAuthentication|null>(null)
+  const nativeAuthenticationBlocked=computed(()=>nativeAuthentication.value?.blocking.value??false)
+  const nativeAccountChangeBlocked=computed(()=>hasActiveInProgressThreads()||turns.isSendingMessage.value||turns.isInterruptingTurn.value||isRollingBack.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.busy.value||permissionChanges.state.value==='unknown'||Object.values(approvals.pendingServerRequestsByThreadId.value).some(rows=>rows.length>0))
+  async function ensureNativeAuthentication(){
+    const epoch=operationEpoch.value,owner=connection.lifecycleGeneration,module=await import('./nativeAuthentication')
+    if(epoch!==operationEpoch.value||owner!==connection.lifecycleGeneration)return null
+    if(!nativeAuthentication.value)nativeAuthentication.value=module.createNativeAuthentication({epoch:operationEpoch,ready:()=>transportState.value!=='disconnected',
+      blocked:()=>nativeAccountChangeBlocked.value,
+      reconnectAndReload:async()=>{const current=nativeAuthentication.value;const result=await fetch('/codex-api/reconnect',{method:'POST'});if(!result.ok||(await result.json()).ok!==true)throw new Error('Native connection refresh was not acknowledged');if(nativeAuthentication.value===current&&typeof window!=='undefined')window.location.reload()},
+    })
+    return nativeAuthentication.value
+  }
   watch(operationEpoch,()=>{securityObservation.clear();deniedActions.clear()},{flush:'sync'})
   const review = createThreadReview({ epoch: operationEpoch, selected: selectedThreadId,
-    blocked: () => isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value || permissionChanges.blocking.value ||
+    blocked: () => nativeAuthenticationBlocked.value || isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value || permissionChanges.blocking.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
     interrupt: (threadId, turnId) => interruptThreadTurn(threadId, turnId),
   })
   const compaction = createThreadCompaction({ epoch: operationEpoch, selected: selectedThreadId,
-    blocked: () => isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || review.busy.value || permissionChanges.blocking.value ||
+    blocked: () => nativeAuthenticationBlocked.value || isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || review.busy.value || permissionChanges.blocking.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
     refresh: id => history.loadMessages(id, { force: true }),
@@ -261,12 +273,12 @@ export function useDesktopState() {
     active:()=>inProgressById.value[selectedThreadId.value]===true,
     refreshHistory:id=>history.loadMessages(id,{force:true}),
     ready:()=>transportState.value!=='disconnected',
-    blocked:()=>isRollingBack.value||compaction.busy.value||review.busy.value||permissionChanges.blocking.value||turns.isSendingMessage.value||
+    blocked:()=>nativeAuthenticationBlocked.value||isRollingBack.value||compaction.busy.value||review.busy.value||permissionChanges.blocking.value||turns.isSendingMessage.value||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
   })
   const permissionChanges=createThreadPermissions({epoch:operationEpoch,selected:selectedThreadId,
     ready:()=>transportState.value!=='disconnected',snapshot:id=>securityObservation.snapshots.value[id]??null,
-    blocked:()=>isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||compaction.busy.value||review.busy.value||nativeQueue.writing.value||turns.isSendingMessage.value||
+    blocked:()=>nativeAuthenticationBlocked.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||compaction.busy.value||review.busy.value||nativeQueue.writing.value||turns.isSendingMessage.value||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
   })
 
@@ -1682,6 +1694,7 @@ export function useDesktopState() {
   function applyRealtimeUpdates(notification: RpcNotification): void {
     securityObservation.observe(notification)
     permissionChanges.observe(notification)
+    nativeAuthentication.value?.observe(notification)
     deniedActions.observe(notification)
     nativeQueue.observe(notification)
     review.observe(notification)
@@ -2493,7 +2506,7 @@ export function useDesktopState() {
   }
 
   function hasPendingNativeAction(threadId: string): boolean {
-    return ((permissionChanges.busy.value || permissionChanges.state.value==='unknown') && permissionChanges.thread.value === threadId) || (compaction.busy.value && compaction.thread.value === threadId)
+    return nativeAuthenticationBlocked.value || ((permissionChanges.busy.value || permissionChanges.state.value==='unknown') && permissionChanges.thread.value === threadId) || (compaction.busy.value && compaction.thread.value === threadId)
       || (review.busy.value && review.thread.value === threadId)
   }
 
@@ -2650,6 +2663,7 @@ export function useDesktopState() {
 
   function stopPolling(): void {
     operationEpoch.value++
+    nativeAuthentication.value?.dispose();nativeAuthentication.value=null
     diagnosticWarnings.value = []
     for (const timer of recoveryDismissTimerByThreadId.values()) clearTimeout(timer)
     recoveryDismissTimerByThreadId.clear()
@@ -2797,6 +2811,7 @@ export function useDesktopState() {
     compaction, review,
     nativeQueue,
     permissionChanges,
+    nativeAuthentication,nativeAuthenticationBlocked,nativeAccountChangeBlocked,ensureNativeAuthentication,
     diagnosticWarnings,
     renameThreadById,
     forkThreadById,
@@ -2805,10 +2820,10 @@ export function useDesktopState() {
     executeThreadRevert,
 
     sendMessageToSelectedThread: (...args: Parameters<typeof turns.sendMessageToSelectedThread>) => {
-      if (compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value&&permissionChanges.thread.value===selectedThreadId.value) return Promise.reject(new Error('Wait for the native conversation action to finish.'))
+      if (nativeAuthenticationBlocked.value || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value&&permissionChanges.thread.value===selectedThreadId.value) return Promise.reject(new Error('Wait for the native conversation action to finish.'))
       return turns.sendMessageToSelectedThread(...args)
     },
-    sendMessageToNewThread: turns.sendMessageToNewThread,
+    sendMessageToNewThread: (...args:Parameters<typeof turns.sendMessageToNewThread>)=>nativeAuthenticationBlocked.value?Promise.reject(new Error('Finish native authentication before sending')):turns.sendMessageToNewThread(...args),
     interruptSelectedThreadTurn: turns.interruptSelectedThreadTurn,
     setSelectedCollaborationMode,
     readModelIdForThread,

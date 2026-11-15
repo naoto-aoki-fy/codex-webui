@@ -94,6 +94,7 @@
               @click.stop
             >
               <AccountSettingsPanel :epoch="operationEpoch" :warnings="diagnosticWarnings"
+                :native-auth="nativeAuthentication" :ensure-native-auth="ensureNativeAuthentication"
                 :auth-available="codexAuthAvailable"
                 :refreshing="isRefreshingCodexAuth"
                 :change-blocked="isCodexAuthChangeBlocked"
@@ -165,6 +166,7 @@
             </span>
           </template>
         </ContentHeader>
+        <p v-if="nativeAuthenticationBlocked" class="feature-panel native-auth-barrier" role="status">Native authentication is pending or needs account reconciliation. Sending is paused. <button type="button" @click="setSidebarCollapsed(false);isSettingsOpen=true">Open native sign-in controls</button></p>
         <p v-if="nativeForkFailure" class="composer-runtime-error" role="alert">{{ nativeForkFailure }}</p>
 
         <div v-if="transportState === 'disconnected' || selectedRecoveryState || selectedUnknownOutcome || selectedLostApproval" class="connection-recovery-status" role="status">
@@ -224,7 +226,7 @@
                 :inert="!newThreadCwd.trim()" :aria-disabled="!newThreadCwd.trim()">
                 <ThreadComposer ref="homeThreadComposerRef" :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
-                  :disabled="!newThreadCwd.trim()"
+                  :disabled="nativeAuthenticationBlocked || !newThreadCwd.trim()"
                   :collaboration-modes="availableCollaborationModes"
                   :selected-collaboration-mode="selectedCollaborationMode"
                   :models="availableModelIds" :model-provider="parseModelSelection(composerSelectedModelId).provider" :selected-model="composerSelectedModelId"
@@ -272,7 +274,7 @@
                     :permission-changes="permissionChanges"
                     :open-created-worktree="openCreatedWorktree"
                     :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
-                    :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage || permissionChanges.blocking.value" :incomplete="isSelectedThreadImportIncomplete"
+                    :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage || permissionChanges.blocking.value || nativeAuthenticationBlocked" :incomplete="isSelectedThreadImportIncomplete"
                     :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
                 </details>
                 <ThreadGoalPanel
@@ -290,7 +292,7 @@
                 <ThreadComposer
                   v-if="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
-                  :disabled="isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
+                  :disabled="nativeAuthenticationBlocked || isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
                   :active-thread-id="composerThreadContextId"
                   :queue-ready="nativeQueue.available.value"
                   :cwd="composerCwd"
@@ -457,6 +459,7 @@ const {
   deniedActions,
   nativeQueue,
   permissionChanges,
+  nativeAuthentication,nativeAuthenticationBlocked,nativeAccountChangeBlocked,ensureNativeAuthentication,
   compaction, review,
   diagnosticWarnings,
   forkThreadById,
@@ -645,10 +648,7 @@ const isVirtualKeyboardOpen = computed(() => {
 const isSelectedThreadInProgress = computed(() => !isHomeRoute.value && selectedThread.value?.inProgress === true)
 const showThreadContextBadge = computed(() => !isHomeRoute.value && !isSkillsRoute.value && selectedThreadId.value.trim().length > 0)
 const isCodexAuthChangeBlocked = computed(() =>
-  isSendingMessage.value ||
-  isInterruptingTurn.value ||
-  isSelectedThreadInProgress.value ||
-  selectedThreadServerRequests.value.length > 0,
+  nativeAuthenticationBlocked.value || nativeAccountChangeBlocked.value,
 )
 
 function formatCompactTokenCount(value: number): string {

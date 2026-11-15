@@ -3,6 +3,7 @@ import type { DiagnosticWarning } from '../../diagnostics'
 import {defineAsyncComponent} from 'vue'
 const RemoteControlStatus = defineAsyncComponent(() => import('./RemoteControlStatus.vue'))
 const AuthInspection = defineAsyncComponent(() => import('./AuthInspection.vue'))
+const NativeAuthentication = defineAsyncComponent(() => import('./NativeAuthentication.vue'))
 import AccountUsage from './AccountUsage.vue'
 import ConnectionDiagnostics from './ConnectionDiagnostics.vue'
 
@@ -13,6 +14,8 @@ defineProps<{
   refreshing: boolean
   changeBlocked: boolean
   error: string
+  nativeAuth:import('../../composables/nativeAuthentication').NativeAuthentication|null
+  ensureNativeAuth:()=>Promise<import('../../composables/nativeAuthentication').NativeAuthentication|null>
 }>()
 
 const emit = defineEmits<{
@@ -32,6 +35,7 @@ const emit = defineEmits<{
     <div v-if="error" class="sidebar-settings-account-error">{{ error }}</div>
     <RemoteControlStatus :epoch="epoch" />
     <AuthInspection :epoch="epoch" />
+    <NativeAuthentication :auth="nativeAuth" :ensure-auth="ensureNativeAuth" :blocked="changeBlocked" />
     <AccountUsage :epoch="epoch" />
     <ConnectionDiagnostics :epoch="epoch" :warnings="warnings" />
     <div class="sidebar-settings-account-login">

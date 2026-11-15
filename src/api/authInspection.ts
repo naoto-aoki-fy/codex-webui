@@ -12,7 +12,7 @@ export function accountInspection(value:unknown){
 export function loginMethodsInspection(value:unknown){const result=value as {requirements?:{allowed_login_methods?:unknown}|null}
  const methods=result?.requirements?.allowed_login_methods
  if(!Array.isArray(methods))return null
- if(methods.length>20||methods.some(v=>typeof v!=='string'))throw new Error('Incompatible native login-method restrictions')
+ if(methods.length>20||methods.some(v=>typeof v!=='string'||v.length>100))throw new Error('Incompatible native login-method restrictions')
  return methods as string[]
 }
 export async function readNativeAccount(){return accountInspection(await rpcCall('account/read',{refreshToken:false}))}
