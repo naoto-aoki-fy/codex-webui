@@ -13,6 +13,7 @@
     </div>
 
     <div v-if="toast" class="directory-toast" :class="{ 'is-error': toast.type === 'error' }">{{ toast.text }}</div>
+    <McpConfiguration :epoch="props.epoch ?? 0" />
     <section class="directory-section">
       <SkillsHub
         @skills-changed="emit('skills-changed')"
@@ -76,9 +77,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getMethodCatalog, listDirectoryMcpServers, reloadDirectoryMcpServers, startDirectoryMcpLogin, type DirectoryMcpServerStatus } from '../../api/codexGateway'
+import McpConfiguration from './McpConfiguration.vue'
 import SkillsHub from './SkillsHub.vue'
-const props = defineProps<{
-}>()
+const props = defineProps<{ epoch?: number }>()
 
 
 const emit = defineEmits<{

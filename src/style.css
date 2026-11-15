@@ -1321,3 +1321,5 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .remote-control-status { overflow-wrap: anywhere; max-height: 35vh; overflow: auto; }
 
 .apps-picker { max-height: 35vh; overflow: auto; overflow-wrap: anywhere; }
+
+.mcp-configuration { overflow-wrap: anywhere; max-height: 45vh; overflow: auto; }
