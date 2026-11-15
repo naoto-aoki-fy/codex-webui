@@ -533,3 +533,34 @@ new local-control listener is introduced.
 contract. It requires account-owned backend authentication not exposed through
 this repository's supported native RPC boundary. No private endpoint proxy, token
 extraction, CLI spawning, task submission or result application is introduced.
+
+### 26 — BLOCKED, native local-host escape hatch lacks required ownership contract
+
+The operation is real: `thread/shellCommand` in official 0.169.0 accepts a shell
+string and timeout, explicitly **unsandboxed with full access**. Inspection of
+`thread_processor.rs::thread_shell_command_inner`, `core/src/tasks/user_shell.rs`
+and the matching native tests establishes that it selects the App Server's
+**local** environment, not the normal turn-selected executor. It can reject a
+thread whose cwd is not native to that host. The current WebUI project/file APIs
+also support remote execution environments, so a selected project path alone
+cannot establish this execution target. Thread environment metadata is optional;
+no local-host substitution is safe when it is absent or remote-only.
+
+More fundamentally, the RPC returns `{}` before its core operation starts: no
+invocation, turn or process identity and no client correlation key. Native
+`userShell` items identify execution source but not the originating request;
+another connected client can submit indistinguishable commands. The native test
+`thread_shell_command_history_responses_exclude_persisted_command_executions`
+also explicitly excludes those command items from reopened read/list/Fork
+responses. Thus loss of the live event stream cannot reconcile ownership or
+completion from history, and cancellation cannot be safely tied to this user's
+submission. A native execution ID/correlation and read-only status contract (plus
+explicit local environment identity) is required for this requested lifecycle.
+No arbitrary shell executable fallback, misleading sandbox promise, normal-chat
+substitute or new runner is introduced. Existing fixed-argument remote Git reads
+and verified worktree creation are preserved.
+
+Full/attempted limited risk 4/5/5/5 = **24**; delivered mutation risk **none**
+(blocked). Verification here is authoritative source/native test inspection,
+not a live command. Live **NOT RUN**. This assessment precedes enabling the final
+irreversible deletion workflow.
