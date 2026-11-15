@@ -564,3 +564,41 @@ Full/attempted limited risk 4/5/5/5 = **24**; delivered mutation risk **none**
 (blocked). Verification here is authoritative source/native test inspection,
 not a live command. Live **NOT RUN**. This assessment precedes enabling the final
 irreversible deletion workflow.
+
+### 10 — PARTIAL, confirmed native leaf-conversation deletion, implemented last
+
+Official `thread_delete.rs` owns persistence, owned-agent subtree deletion,
+attached-thread checks and Fork-history conflict rejection. It acknowledges and
+then emits `thread/deleted` only after native success. The UI uses those semantics
+and never removes rollout files itself. Initial scope is an idle native
+conversation with complete empty active/archived child inventories; imported
+conversations and known subtrees remain excluded. A server-side receipt guard
+also rejects every Portable destination stage without changing persisted history.
+Portable destinations are created by `thread/start`, not native spawned-child
+creation; the workflow does not turn a native subtree into a client-owned graph.
+
+The UI shows exact name/ID/cwd/Fork origin/time, requires typed ID and irreversible
+consequence confirmation, rejects unsaved drafts, and rechecks scope before the
+single native write. Native deletion has no atomic idle/preview lock: another
+client can start work or spawn owned agents after preflight; the confirmation
+explicitly describes native stop/cascade consequences. External Fork references
+are enforced by the native store, not guessed from the sidebar. Known active
+turns/approvals and other selected-thread actions block the operation. Rejection,
+accepted-without-event and unknown/internal/transport outcomes are distinct.
+Completion requires acknowledgment **and** exact native event, in either order.
+No replay, archive fallback, UI-only success or receipt deletion is used.
+
+Only actual deletion events invalidate snapshots/history, pending recovery and
+loaded lists for their exact native IDs. Late reads cannot restore deleted rows;
+other snapshots/subscriptions survive. Selection is routed home only after
+confirmed completion if it still targets that conversation. Unknown outcomes
+remain blocked for inspection/reload; list absence alone does not imply success.
+
+Full reassessment 5/5/5/5 = **25** (previous 21); initial limited 4/5/4/4 = **22**,
+residual 3/5/4/4 = **21**, still high because native deletion is irreversible and
+cross-client activity is not locked. Focused controller, portable-prefix, recovery,
+cache and late-history tests plus six browser views cover the safeguards above,
+including post-refresh native absence. Three bounded lazy reads per preview and
+three rechecks before one write; child presence rejects immediately, no recursive
+walk or polling. Existing event coalescing handles list refresh; no new stream or
+subscription. Live **NOT RUN**; no real conversation was deleted.

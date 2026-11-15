@@ -2482,3 +2482,17 @@ it('does not request review or compaction while a history revert is pending',asy
  try{await state.review.run();await state.compaction.run();expect(fetch).not.toHaveBeenCalled()}
  finally{vi.unstubAllGlobals()}
 })
+
+it('does not resurrect native-deleted history from a late read or retain its live rows',async()=>{
+ const state=await loadState(),pending=deferred<ResumedThread>()
+ gateway.getThreadDetail.mockReturnValueOnce(pending.promise)
+ const loading=state.loadMessages(thread.id,{force:true})
+ streamReply('remove live row on confirmed deletion')
+ state.primeSelectedThread('another-thread')
+ notify({method:'thread/deleted',params:{threadId:thread.id}})
+ pending.resolve(completedDetail);await loading
+ expect(state.selectedThreadId.value).toBe('another-thread')
+ state.primeSelectedThread(thread.id)
+ expect(state.messages.value).toEqual([])
+ expect(state.projectGroups.value.flatMap(group=>group.threads).some(row=>row.id===thread.id)).toBe(false)
+})

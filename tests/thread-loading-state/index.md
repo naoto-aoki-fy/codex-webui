@@ -8,6 +8,8 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
+| [Risk-first native observation and account workflows](risk-first-observation.md) |
+| [Permanent native conversation deletion](native-permanent-deletion.md) |
 | [Manual native compaction](manual-compaction.md) |
 | [Ctrl+Arrow message navigation](ctrl-arrow-message-navigation.md) |
 | [Thread titles without redundant generation](thread-titles-without-generation.md) |

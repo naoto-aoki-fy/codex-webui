@@ -167,6 +167,7 @@
           </template>
         </ContentHeader>
         <p v-if="nativeAuthenticationBlocked" class="feature-panel native-auth-barrier" role="status">Native authentication is pending or needs account reconciliation. Sending is paused. <button type="button" @click="setSidebarCollapsed(false);isSettingsOpen=true">Open native sign-in controls</button></p>
+        <p v-if="nativeDeletion?.state.value==='completed'" class="feature-panel" role="status">{{ nativeDeletion.status.value }}</p>
         <p v-if="nativeForkFailure" class="composer-runtime-error" role="alert">{{ nativeForkFailure }}</p>
 
         <div v-if="transportState === 'disconnected' || selectedRecoveryState || selectedUnknownOutcome || selectedLostApproval" class="connection-recovery-status" role="status">
@@ -273,6 +274,7 @@
                     :queue="nativeQueue"
                     :permission-changes="permissionChanges"
                     :open-created-worktree="openCreatedWorktree"
+                    :deletion="nativeDeletion" :ensure-deletion="ensureNativeDeletion" :has-draft="()=>threadComposerRef?.hasUnsavedDraft()??false"
                     :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
                     :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage || permissionChanges.blocking.value || nativeAuthenticationBlocked" :incomplete="isSelectedThreadImportIncomplete"
                     :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
@@ -292,7 +294,7 @@
                 <ThreadComposer
                   v-if="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
-                  :disabled="nativeAuthenticationBlocked || isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
+                  :disabled="nativeDeletion?.selectedBlocking.value || nativeAuthenticationBlocked || isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
                   :active-thread-id="composerThreadContextId"
                   :queue-ready="nativeQueue.available.value"
                   :cwd="composerCwd"
@@ -460,6 +462,7 @@ const {
   nativeQueue,
   permissionChanges,
   nativeAuthentication,nativeAuthenticationBlocked,nativeAccountChangeBlocked,ensureNativeAuthentication,
+  nativeDeletion,ensureNativeDeletion,
   compaction, review,
   diagnosticWarnings,
   forkThreadById,
@@ -1436,6 +1439,10 @@ watch(
     await routing.syncThreadSelectionWithRoute()
   },
 )
+
+watch(()=>nativeDeletion.value?.state.value,state=>{
+  if(state==='completed'&&route.name==='thread'&&routeThreadId.value===nativeDeletion.value?.thread.value)void router.replace({name:'home'})
+})
 
 watch(
   () => selectedThreadId.value,

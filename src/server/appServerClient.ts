@@ -192,10 +192,14 @@ export class AppServerClient {
     const nThreadId = this.extractThreadIdFromParams(notification.params)
     if (nThreadId && notification.method !== 'turn/generationMetadata') {
       this.historyPager.invalidate(nThreadId)
-      if (notification.method === 'thread/reverted') {
+      if (notification.method === 'thread/reverted' || notification.method === 'thread/deleted') {
         this.snapshotEpoch = {}
         this.lastThreadReadSnapshotByThreadId.delete(nThreadId)
         this.streamEventsByThreadId.delete(nThreadId)
+      }
+      if(notification.method==='thread/deleted'){
+        this.subscribedThreads.delete(nThreadId)
+        this.recovery.forget(nThreadId)
       }
     }
     for (const listener of this.notificationListeners) {
