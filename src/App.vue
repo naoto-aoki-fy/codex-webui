@@ -317,10 +317,12 @@
 </template>
 
 <script setup lang="ts">
+import { createAppRouteCoordinator } from './appRouteCoordinator'
+import { createAppTransferDialog } from './appTransferDialog'
+
 import { useNativeProjectOptions } from './composables/useNativeProjectOptions'
-import type { ForkMethod } from './types/codex'
-import { prepareConversationTransfer, cancelConversationTransfer, reasoningCatalog } from './api/codexGateway'
-import { parseModelSelection, modelSelectionKey, defaultModelForProvider } from './api/modelCapabilities'
+
+import { parseModelSelection } from './api/modelCapabilities'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNewThreadCwdRoute } from './composables/useNewThreadCwdRoute'
@@ -343,13 +345,7 @@ import IconTablerX from './components/icons/IconTablerX.vue'
 import { useDesktopState } from './composables/useDesktopState'
 import { useFolderPicker } from './composables/useFolderPicker'
 import { useMobile } from './composables/useMobile'
-import {
-  logoutCodex,
-  getHomeDirectory,
-  getWorkspaceRootsState,
-  openProjectRootSelection,
-  searchThreads,
-} from './api/codexGateway'
+import { logoutCodex, getHomeDirectory, getWorkspaceRootsState, openProjectRootSelection, searchThreads } from './api/codexGateway'
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import { getCodexAuthenticationStatus } from './api/codexGateway'
@@ -367,7 +363,6 @@ const SETTINGS_HELP = {
 } as const
 
 type ChatWidthMode = 'standard' | 'wide' | 'extra-wide'
-
 
 type ChatWidthPreset = {
   label: string
@@ -460,8 +455,25 @@ const homeThreadComposerRef = ref<ThreadComposerExposed | null>(null)
 const threadGoalPanelRef = ref<InstanceType<typeof ThreadGoalPanel> | null>(null)
 const threadComposerRef = ref<ThreadComposerExposed | null>(null)
 const threadConversationRef = ref<{ jumpToLatest: () => void } | null>(null)
-const isRouteSyncInProgress = ref(false)
-let hasPendingRouteSync = false
+const routing = createAppRouteCoordinator({
+  get route() { return route; },
+  get selectedThreadId() { return selectedThreadId; },
+  get selectThread() { return selectThread; },
+  get routeThreadId() { return routeThreadId; },
+  get ensureThreadMessagesLoaded() { return ensureThreadMessagesLoaded; },
+  get newThreadCwd() { return newThreadCwd; },
+  get desktopError() { return desktopError; },
+  get sendMessageToNewThread() { return sendMessageToNewThread; },
+  get newThreadProjectId() { return newThreadProjectId; },
+  get router() { return router; },
+  get scheduleMobileConversationJumpToLatest() { return scheduleMobileConversationJumpToLatest; }
+})
+const {
+  isRouteSyncInProgress,
+  syncThreadSelectionWithRoute,
+  submitFirstMessageForNewThread,
+} = routing
+
 const hasInitialized = ref(false)
 const newThreadCwd = ref('')
 const newThreadProjectId = computed(() => typeof route.query.projectId === 'string' ? route.query.projectId : '')
@@ -842,79 +854,31 @@ function onArchiveThread(threadId: string): void {
   void archiveThreadById(threadId)
 }
 
-const transferPicker = ref<null | { sourceId: string; turnIndex?: number; turnId?: string; id: string; loading: boolean; pending: boolean; failure: string }>(null)
-const nativeForkPending = ref(false)
-const nativeForkFailure = ref('')
-const isForkOperationPending = computed(() => nativeForkPending.value || transferPicker.value !== null)
-const canConfirmFork = computed(() => {
-  const picker = transferPicker.value
-  return !!picker && !picker.pending && !picker.loading && !!picker.id && !picker.failure && !!transferModel.value && transferProviderOptions.value.some(option => option.value === transferProvider.value)
+const transfers = createAppTransferDialog({
+  get messages() { return messages; },
+  get selectedThreadId() { return selectedThreadId; },
+  get forkThreadById() { return forkThreadById; },
+  get forkThreadFromTurn() { return forkThreadFromTurn; },
+  get desktopError() { return desktopError; },
+  get router() { return router; },
+  get isMobile() { return isMobile; },
+  get setSidebarCollapsed() { return setSidebarCollapsed; },
+  get forkNativeThreadById() { return forkNativeThreadById; }
 })
-const transferProvider = ref('')
-const isSelectedThreadImportIncomplete = computed(() => messages.value.some(message => message.id === `import-status-${selectedThreadId.value}`))
-const transferProviderOptions = computed(() => [...new Map(reasoningCatalog.value.filter(model => !!model.modelProvider)
-  .map(model => [model.modelProvider!, { value: model.modelProvider!, label: model.providerDisplayName || model.modelProvider! }])).values()])
-const transferModel = computed(() => {
-  const model = defaultModelForProvider(reasoningCatalog.value, transferProvider.value)
-  return model && transferProvider.value ? modelSelectionKey(transferProvider.value, model) : ''
-})
-
-async function openTransferPicker(sourceId: string, turnIndex?: number): Promise<void> {
-  if (isForkOperationPending.value) return
-  const turnId = selectedThreadId.value === sourceId ? messages.value.find(message => message.role === 'assistant' && message.turnIndex === turnIndex)?.turnId : undefined
-  transferPicker.value = { sourceId, turnIndex, turnId, id: '', loading: true, pending: false, failure: '' }
-  const picker = transferPicker.value
-  transferProvider.value = ''
-  try {
-    const prepared = await prepareConversationTransfer(sourceId, turnIndex, turnId)
-    Object.assign(picker, prepared)
-    // Cancellation can finish while this read is pending.
-    if (transferPicker.value !== picker) await cancelConversationTransfer(prepared.id)
-  } catch (cause) {
-    picker.failure = cause instanceof Error ? cause.message : String(cause)
-  } finally { picker.loading = false }
-}
-async function cancelTransferPicker(): Promise<void> {
-  const picker = transferPicker.value
-  if (!picker || picker.pending) return
-  transferPicker.value = null
-  if (picker.id) await cancelConversationTransfer(picker.id).catch(() => {})
-}
-async function confirmTransferPicker(): Promise<void> {
-  const picker = transferPicker.value
-  if (!picker || !canConfirmFork.value) return
-  picker.pending = true
-  const nextId = picker.turnIndex === undefined
-    ? await forkThreadById(picker.sourceId, picker.id, transferModel.value)
-    : await forkThreadFromTurn(picker.sourceId, picker.turnIndex, picker.id, transferModel.value)
-  picker.pending = false
-  if (!nextId) {
-    picker.failure = desktopError.value || 'Import did not complete. Do not retry injection.'
-    return
-  }
-  transferPicker.value = null
-  await navigateToFork(nextId)
-}
-async function navigateToFork(threadId: string): Promise<void> {
-  await router.push({ name: 'thread', params: { threadId } })
-  if (isMobile.value) setSidebarCollapsed(true)
-}
-async function onForkThread(payload: { threadId: string; turnIndex?: number; method: ForkMethod }): Promise<void> {
-  if (isForkOperationPending.value) return
-  nativeForkFailure.value = ''
-  if (payload.method === 'portable') {
-    await openTransferPicker(payload.threadId, payload.turnIndex)
-    return
-  }
-  nativeForkPending.value = true
-  try {
-    const turnId = payload.turnIndex !== undefined && selectedThreadId.value === payload.threadId
-      ? messages.value.find(message => message.role === 'assistant' && message.turnIndex === payload.turnIndex)?.turnId : undefined
-    const nextId = await forkNativeThreadById(payload.threadId, payload.turnIndex, turnId)
-    if (nextId) await navigateToFork(nextId)
-    else nativeForkFailure.value = desktopError.value || 'Native Fork did not complete. Inspect the thread list before trying again.'
-  } finally { nativeForkPending.value = false }
-}
+const {
+  transferPicker,
+  nativeForkFailure,
+  isForkOperationPending,
+  canConfirmFork,
+  transferProvider,
+  isSelectedThreadImportIncomplete,
+  transferProviderOptions,
+  openTransferPicker,
+  cancelTransferPicker,
+  confirmTransferPicker,
+  onForkThread,
+  onForkThreadFromMessage,
+} = transfers
 
 function resolvePreferredLocalCwd(projectId: string, fallbackCwd = ''): string {
   return resolveWorkspaceRootCwd(projectId) || fallbackCwd.trim()
@@ -970,10 +934,6 @@ async function handleServerRequestResponse(payload: UiServerRequestReply): Promi
   } catch {
     // sendMessageToSelectedThread already surfaces the error through shared state.
   }
-}
-
-async function onForkThreadFromMessage(payload: { threadId: string; turnIndex: number; method: ForkMethod }): Promise<void> {
-  await onForkThread(payload)
 }
 
 function setSidebarCollapsed(nextValue: boolean): void {
@@ -1066,7 +1026,7 @@ function onSubmitThreadMessage(
 ): void {
   scheduleMobileConversationJumpToLatest()
   const submission = isHomeRoute.value
-    ? submitFirstMessageForNewThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments)
+    ? routing.submitFirstMessageForNewThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments)
     : sendMessageToSelectedThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments).then(() => true)
   void submission.then(accepted => settle(accepted), failure => {
     desktopError.value = failure instanceof Error ? failure.message : String(failure)
@@ -1391,47 +1351,8 @@ async function initialize(): Promise<void> {
   })
   await applyLaunchProjectPathFromUrl()
   hasInitialized.value = true
-  await syncThreadSelectionWithRoute()
+  await routing.syncThreadSelectionWithRoute()
   startPolling()
-}
-
-async function syncThreadSelectionWithRoute(): Promise<void> {
-  if (isRouteSyncInProgress.value) {
-    hasPendingRouteSync = true
-    return
-  }
-  isRouteSyncInProgress.value = true
-
-  try {
-    do {
-      hasPendingRouteSync = false
-
-      if (route.name === 'home' || route.name === 'skills') {
-        if (selectedThreadId.value !== '') {
-          await selectThread('')
-        }
-        continue
-      }
-
-      if (route.name === 'thread') {
-        const threadId = routeThreadId.value
-        if (!threadId) continue
-        if (selectedThreadId.value !== threadId) {
-          const result = await selectThread(threadId)
-          if (result === 'not-found') {
-            continue
-          }
-        } else {
-          void ensureThreadMessagesLoaded(threadId, { silent: true }).catch(() => {
-            // The conversation overlay receives the error from useDesktopState.
-          })
-        }
-      }
-    } while (hasPendingRouteSync)
-
-  } finally {
-    isRouteSyncInProgress.value = false
-  }
 }
 
 watch(
@@ -1443,16 +1364,15 @@ watch(
     ] as const,
   async () => {
     if (!hasInitialized.value) return
-    await syncThreadSelectionWithRoute()
+    await routing.syncThreadSelectionWithRoute()
   },
 )
-
 
 watch(
   () => selectedThreadId.value,
   async (threadId) => {
     if (!hasInitialized.value) return
-    if (isRouteSyncInProgress.value) return
+    if (routing.isRouteSyncInProgress.value) return
     if (isHomeRoute.value || isSkillsRoute.value) return
 
     if (!threadId) {
@@ -1481,29 +1401,6 @@ watch(isMobile, (mobile) => {
     setSidebarCollapsed(true)
   }
 }, { immediate: true })
-
-async function submitFirstMessageForNewThread(
-  text: string,
-  imageUrls: string[] = [],
-  skills: Array<{ name: string; path: string }> = [],
-  fileAttachments: Array<{ label: string; path: string; fsPath: string }> = [],
-): Promise<boolean> {
-  try {
-    let targetCwd = newThreadCwd.value
-    if (!targetCwd.trim()) {
-      desktopError.value = 'Select an existing workspace before starting a conversation.'
-      return false
-    }
-    const threadId = await sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments, newThreadProjectId.value || undefined)
-    if (!threadId) return false
-    await router.replace({ name: 'thread', params: { threadId } })
-    scheduleMobileConversationJumpToLatest()
-    return true
-  } catch {
-    // Error is already reflected in state.
-    return false
-  }
-}
 
 async function onRefreshCodexAuth(): Promise<void> {
   if (isRefreshingCodexAuth.value) return
