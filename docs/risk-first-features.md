@@ -77,3 +77,17 @@ matrix passed (lazy reads, details, navigation, empty/unsupported, duplicate and
 delayed navigation). Performance and exact manual steps are in
 [the observation tests](../tests/thread-loading-state/risk-first-observation.md).
 Live acceptance: **NOT RUN**, no designated native subagent test threads.
+
+### 21 — PARTIAL (inspection delivered)
+
+`hooks/list {threadId}` reads the loaded thread's snapshot without executing
+Hooks (`request_processors/catalog_processor.rs::hooks_list_response`). Native
+definitions, source, event, effective enabled/managed state and trust/hash are
+displayed, with bounded/redacted definitions. No trust or enablement mutation is
+included in Phase 1. Residual inspection risk 1/2/1/2 = **8**; full-feature risk
+remains 23 until a safe mutation contract is established.
+
+Three unit tests, type checks and six browser views passed, including secret
+omission, disabled/untrusted distinction, empty/error and disconnect during a
+pending read. One lazy request, no new subscription or Hook execution. Live
+acceptance: **NOT RUN**. Mutation assessment follows in Phase 3.

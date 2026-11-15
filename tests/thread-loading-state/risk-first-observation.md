@@ -29,3 +29,20 @@ Performance audit: browser fixture asserts zero child requests before use; first
 read uses one native child page and one metadata read, inspection one metadata
 read, subsequent pages one request each. Twenty rows/page, 200 retained rows,
 4,000-character previews, no new subscriptions or polling. Live timings NOT RUN.
+
+## 21 — Hooks inspection
+
+Open Conversation tools → Hooks inspection → Read Hooks. Check native event,
+exact key, enabled/managed/trust values, then expand definition/origin/hash.
+Disabled and untrusted are independent states. Commands are displayed as inert
+text with recognizable credential assignments redacted. Test no scopes, no
+Hooks, malformed definitions, unavailable API, repeated clicks, and disconnect
+during a delayed read. Changing thread/profile clears the snapshot.
+
+Expected: no Hook execution, trust or config write. Cleanup: close the panel.
+Automation: `pnpm exec vitest run src/api/hooksInspection.test.ts`,
+`pnpm run typecheck`, `PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-hooks.cjs`.
+Screenshots: `output/playwright/risk-21-{1280,375,768}-{light,dark}.png`.
+Performance: zero reads before use, one thread-scoped `hooks/list` per refresh,
+100 rendered definitions total, ten bounded warnings/errors per scope, no new
+subscription, polling or resume. No live timing was measured.
