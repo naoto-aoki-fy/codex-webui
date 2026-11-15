@@ -2409,8 +2409,12 @@ export function useDesktopState() {
     try { await loadThreads({ force: true }) }
     catch { error.value = 'Conversation restored, but refreshing active conversations failed. Reload to reconcile.' }
     if (epoch !== operationEpoch.value) throw new Error('Connection changed. Refresh archived conversations.')
-    loadedThreadListGroups = mergeThreadGroupPages(loadedThreadListGroups, [{ projectName: restored.projectName, threads: [restored] }])
-    applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
+    // Keep fresher list metadata/read receipts; only reinsert an older restored row
+    // when the first active page did not include it.
+    if (!flattenThreads(loadedThreadListGroups).some(thread => thread.id === threadId)) {
+      loadedThreadListGroups = mergeThreadGroupPages(loadedThreadListGroups, [{ projectName: restored.projectName, threads: [restored] }])
+      applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
+    }
   }
 
   async function renameThreadById(threadId: string, threadName: string) {
