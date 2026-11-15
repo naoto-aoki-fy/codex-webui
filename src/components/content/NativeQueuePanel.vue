@@ -15,6 +15,7 @@ async function run(kind:'update'|'delete'|'start'|'reorder',id:string,text?:stri
   <p v-if="queue.stale.value">Queue changed. Refresh before acting.</p><p v-if="queue.loaded.value&&!queue.rows.value.length">No pending prompts returned.</p>
   <p v-if="error" role="alert">{{ error }}</p>
   <p v-if="queue.operationThread.value===threadId" role="status">{{ queue.status.value }}</p><p v-if="queue.readError.value" role="alert">{{ queue.readError.value }}</p>
+  <p v-if="queue.recoveryError.value" role="alert">{{ queue.recoveryError.value }}</p>
   <p v-if="queue.uncertain.value" role="alert">{{ queue.uncertain.value }}</p><button v-if="queue.uncertain.value" type="button" :disabled="!queue.loaded.value||queue.reading.value||queue.writing.value" @click="queue.acknowledgeUnknown">Acknowledge uncertain queue outcome after inspection</button>
   <ul><li v-for="(row,index) in queue.rows.value" :key="row.id"><p>{{ row.id }} · Client message: {{ row.clientId }}</p><p>Input types: {{ row.types.join(', ') }}</p><details><summary>Pending prompt preview (first 8,000 characters)</summary><pre v-text="row.preview"></pre></details>
    <button type="button" :disabled="disabled||row.text===null" @click="editing=row.id;draft=row.text??''">Edit queued {{ row.id }}</button>

@@ -18,6 +18,13 @@ queue, paid turn or real conversation mutation is required by automation.
    outcome is unknown, the draft remains and another queue submission is blocked.
    Inspect queue **and history** (an absent entry may already have run), then
    explicitly acknowledge uncertainty. No write is automatically retried.
+   Model a remotely committed enqueue with a lost reply, then reload and reconnect:
+   the profile-scoped identity marker must still block a second add. It stores
+   only thread/client IDs, before submission; unavailable storage prevents the
+   write. Native client IDs are correlation identifiers, not deduplication keys.
+   Acknowledging uncertainty permits a deliberate new submission, which can
+   duplicate earlier execution. Queue/history inspection is not a non-execution
+   proof, and native start/removal is not a documented atomic exactly-once commit.
 6. Deliver native queue-changed, reconnect and other-thread events. Stale reads
    must not populate the replacement thread/connection; native changes require
    explicit refresh. Queue notifications must not reload full thread history.
@@ -50,3 +57,11 @@ HTTP browser compatibility: disable `crypto.randomUUID` while retaining native
 `getRandomValues`, then submit and reconcile a queued prompt. A UUID v4 correlation
 ID is still generated. If both APIs are unavailable, fail before a queue write.
 `src/utils/clientMessageId.test.ts` and the queue browser suite cover this path.
+
+Recovery-marker performance audit: one bounded profile-storage read when the
+queue owner is created, one pre-submission recovery read, and a bounded
+read/write before submission and after acknowledgment. At most 20 thread/client
+identity pairs (90,000-character parse bound), no input bytes and no timers,
+subscriptions or new RPCs. Markers are removed only after a checked acknowledgment,
+native rejection or explicit inspection acknowledgment. Native exactly-once
+execution and recovery after browser-data removal are not established.

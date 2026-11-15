@@ -10,7 +10,7 @@ const {setup,assert}=require('./approved-fixture.cjs')
    if(body.method==='thread/queue/list')return mode==='unsupported'?{status:502,json:{error:'Native queue unavailable'}}:{json:{result:{data:pending,nextCursor:null}}}
    if(body.method==='thread/queue/add'){
     if(mode==='delayed')await new Promise(resolve=>release=resolve)
-    if(mode==='lost')return {status:502,json:{error:'Connection lost after queue submission'}}
+    if(mode==='lost'){pending.push({id:'lost-reply-fixture',input:body.params.input,clientUserMessageId:body.params.clientUserMessageId});return {status:502,json:{error:'Connection lost after queue submission'}}}
     const queuedSubmission={id:'queued-fixture',input:body.params.input,clientUserMessageId:body.params.clientUserMessageId};pending.push(queuedSubmission);return {json:{result:{queuedSubmission}}}
    }
    if(body.method==='turn/steer')return {json:{result:{turnId:'active'}}}
@@ -25,6 +25,8 @@ const {setup,assert}=require('./approved-fixture.cjs')
   mode='delayed';await draft.fill('Delayed queue fixture');await page.getByRole('button',{name:'Queue prompt',exact:true}).click();await page.waitForTimeout(150);await page.getByRole('button',{name:'Queue prompt',exact:true}).evaluate(el=>el.click());assert.equal(calls.filter(c=>c.method==='thread/queue/add').length,2);release();await page.waitForTimeout(200)
   mode='lost';await draft.fill('Uncertain queue fixture');await page.getByRole('button',{name:'Queue prompt',exact:true}).click();await page.getByRole('alert').filter({hasText:'Queue outcome unknown'}).waitFor();assert.equal(await draft.inputValue(),'Uncertain queue fixture');assert.equal(await page.getByRole('button',{name:'Queue prompt',exact:true}).isDisabled(),true)
   const count=calls.filter(c=>c.method==='thread/queue/add').length;emit('app-server/disconnected',{});await page.waitForTimeout(200);assert.equal(calls.filter(c=>c.method==='thread/queue/add').length,count)
+  await page.reload();await page.getByText('Fixture answer',{exact:true}).waitFor();await page.getByRole('button',{name:'Immediate mode',exact:true}).click();await page.getByText('lost-reply-fixture · Client message:',{exact:false}).waitFor();assert.equal(await page.getByRole('button',{name:'Queue prompt',exact:true}).isDisabled(),true);assert.equal(calls.filter(c=>c.method==='thread/queue/add').length,count)
+  const recovery=await page.evaluate(()=>localStorage.getItem('codex-web-local.queue-submissions.v1'));assert(recovery);assert.equal(recovery.includes('Uncertain queue fixture'),false)
   assert.deepEqual(errors,[]);await page.close()
  }
  await browser.close();console.log('PASS 07 explicit queue vs steering, native persistence after refresh, acknowledgment, duplicate and uncertain writes; six views')
