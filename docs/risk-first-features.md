@@ -62,3 +62,18 @@ that individual portion and do not block independent work.
 No change is authorized to withheld extensions of 15/16/17/19/20/22/31. No
 real-world resource mutation, paid operation, account change or installation is
 performed for acceptance. Final statuses and actual verification follow below.
+
+### 05 — IMPLEMENTED (observation only, as approved)
+
+Direct native children (active/archived), bounded pagination, native parent links,
+status/role, on-demand preview and normal navigation are delivered. Native
+`thread/list.parentThreadId` filtering is exercised upstream in
+`app-server/tests/suite/v2/thread_list.rs::thread_list_relation_filters_read_spawn_graph_from_state_db`;
+`thread/read` supplies metadata without turns. The UI rejects ignored filters.
+No new orchestration or subscriptions. Residual 1/2/1/2 = **8**.
+
+Three focused unit tests, frontend/server type checks and the six-view browser
+matrix passed (lazy reads, details, navigation, empty/unsupported, duplicate and
+delayed navigation). Performance and exact manual steps are in
+[the observation tests](../tests/thread-loading-state/risk-first-observation.md).
+Live acceptance: **NOT RUN**, no designated native subagent test threads.
