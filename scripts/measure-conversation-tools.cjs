@@ -8,7 +8,7 @@ const { gzipSync } = require('node:zlib')
 const [beforeRoot, afterRoot = process.cwd()] = process.argv.slice(2)
 if (!beforeRoot) throw new Error('Supply an extracted, built pre-feature revision')
 const base = 'http://127.0.0.1:4173'
-const out = resolve('output/playwright/final-verification')
+const out = resolve(process.env.CONVERSATION_MEASURE_OUTPUT || 'output/playwright/final-verification')
 mkdirSync(out, { recursive: true })
 function bundles(root) {
  const manifest = JSON.parse(readFileSync(join(root, 'dist/.vite/manifest.json')))
@@ -29,8 +29,9 @@ function turn(index, large) {
  ]}
 }
 async function setup(context, root, large = false) {
- const page=await context.newPage(), calls=[], payloads=[], errors=[]
+ const page=await context.newPage(), calls=[], payloads=[], errors=[], assetRequests=[]
  page.on('pageerror',e=>errors.push(e.message))
+ page.on('request',request=>{const path=new URL(request.url()).pathname;if(path.startsWith('/assets/'))assetRequests.push(path)})
  const total=large?TURN_COUNT:2
  await page.route('**/*',async route=>{
   const req=route.request(), url=new URL(req.url())
@@ -68,7 +69,7 @@ async function setup(context, root, large = false) {
  await page.routeWebSocket('**/codex-api/ws',()=>{})
  await page.goto(base+'/#/thread/tools-fixture')
  await page.getByText(large?`TURN_${TURN_COUNT-1}_ANSWER`:'Latest Markdown',{exact:false}).first().waitFor()
- return {page,calls,payloads,errors}
+ return {page,calls,payloads,errors,assetRequests}
 }
 ;(async()=>{
  const browser=await chromium.launch({headless:true})
@@ -77,12 +78,14 @@ async function setup(context, root, large = false) {
   for(let trial=1;trial<=3;trial++)for(const [revision,root] of [['before',beforeRoot],['after',afterRoot]]){
    const context=await browser.newContext({viewport:{width:1280,height:900}})
    try {
-    const {page,calls,payloads,errors}=await setup(context,root)
+    const {page,calls,payloads,errors,assetRequests}=await setup(context,root)
     await page.waitForTimeout(7000)
     assert.deepEqual(errors,[])
     assert.equal(calls.some(call=>call.params?.archived===true||call.method==='account/usage/read'||call.path.endsWith('/thread-turn-page')),false)
     const counts={};for(const call of calls){const key=call.method||call.path;counts[key]=(counts[key]||0)+1}
-    report.startup.push({revision,trial,count:calls.length,responseBytes:payloads.reduce((a,b)=>a+b,0),counts})
+    assert.equal(assetRequests.some(path=>/\/(ConversationTools|AppsPicker|PromptLibrary|RemoteControlStatus)-/.test(path)),false,'Optional feature module fetched before opening it')
+    const javascriptBytes=[...new Set(assetRequests)].filter(path=>path.endsWith('.js')).reduce((sum,path)=>sum+readFileSync(join(root,'dist',path.slice(1))).length,0)
+    report.startup.push({revision,trial,assetRequests,javascriptBytes,count:calls.length,responseBytes:payloads.reduce((a,b)=>a+b,0),counts})
    } finally{await context.close()}
   }
   const context=await browser.newContext({viewport:{width:1280,height:900},acceptDownloads:true})

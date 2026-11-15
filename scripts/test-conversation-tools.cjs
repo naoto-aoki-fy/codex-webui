@@ -4,12 +4,13 @@ const assert = require('node:assert/strict')
 const { mkdirSync, readFileSync, writeFileSync } = require('node:fs')
 const { resolve } = require('node:path')
 ;(async () => {
- const out = resolve('output/playwright'); mkdirSync(out, {recursive:true})
+ const out = resolve(process.env.TOOLS_OUTPUT_DIR || 'output/playwright'); mkdirSync(out, {recursive:true})
  const browser = await chromium.launch({headless:true})
  const evidence = []
- for (const viewport of [{width:1280,height:900},{width:375,height:812},{width:768,height:1024}]) {
+ for (const viewport of [{width:1280,height:900},{width:375,height:812},{width:768,height:1024}].filter(v=>!process.env.TOOLS_WIDTH||v.width===Number(process.env.TOOLS_WIDTH))) {
   const context = await browser.newContext({viewport, acceptDownloads:true, permissions:['clipboard-read','clipboard-write']})
   const page = await context.newPage(); const calls=[]; const errors=[]; const bytes=[]; const externalRequests=[]
+  if(process.env.TOOLS_DEBUG)await page.addInitScript(()=>{window.settingsEvents=[];document.addEventListener('pointerdown',event=>{window.settingsEvents.push({type:'pointer',tag:event.target.tagName,cls:event.target.className,inside:!!event.target.closest?.('.sidebar-settings-panel'),width:innerWidth,mobile:matchMedia('(max-width:767px)').matches});window.settingsEvents=window.settingsEvents.slice(-20)},true)})
   page.on('request',request=>{if(!request.url().startsWith('http://127.0.0.1:4173/')&&!request.url().startsWith('data:'))externalRequests.push(request.url())})
   let restored=false, pageFailure=false, active=false, usageKind='valid', diagnosticFailure=false; const sockets=new Set()
   const thread = {id:'tools-fixture',name:'Tools fixture',cwd:'/fixture',projectId:'p',preview:'fixture',createdAt:1,updatedAt:1,status:{type:'idle'}}
@@ -49,6 +50,11 @@ const { resolve } = require('node:path')
    await route.fulfill({status,json:payload})
   })
   await page.routeWebSocket('**/codex-api/ws', ws=>{sockets.add(ws);ws.onClose(()=>sockets.delete(ws))})
+  if(process.env.TOOLS_DIST_ROOT)await page.route('**/*',route=>{
+   const url=new URL(route.request().url())
+   if(url.pathname==='/'||url.pathname.startsWith('/assets/'))return route.fulfill({path:resolve(process.env.TOOLS_DIST_ROOT,'dist',url.pathname==='/'?'index.html':url.pathname.slice(1)),contentType:url.pathname==='/'?'text/html':url.pathname.endsWith('.css')?'text/css':'application/javascript'})
+   return route.fallback()
+  })
   page.on('pageerror',error=>errors.push(error.message))
   const openSidebar=async()=>{const expand=page.getByRole('button',{name:'Expand sidebar',exact:true});if(await expand.count())await expand.click()}
   const openMenu=async()=>{await openSidebar();const row=page.locator('.thread-row').filter({hasText:'Tools fixture'});await row.hover();await row.locator('.thread-menu-trigger').click()}
@@ -57,6 +63,7 @@ const { resolve } = require('node:path')
    await page.goto('http://127.0.0.1:4173/#/thread/tools-fixture')
    await page.getByText('Latest Markdown',{exact:false}).first().waitFor()
    await openSidebar()
+   if(process.env.TOOLS_STARTUP_ONLY){await page.waitForTimeout(1500);const metrics=await page.locator('.conversation-list').evaluate(el=>({top:el.scrollTop,height:el.clientHeight,scrollHeight:el.scrollHeight}));evidence.push({viewport,olderPages:calls.filter(c=>c.path.endsWith('/thread-turn-page')).length,metrics});console.log(JSON.stringify(evidence.at(-1)));continue}
    assert.equal(calls.filter(c=>c.params?.archived===true).length,0)
    assert.equal(calls.filter(c=>c.method==='account/usage/read').length,0)
    assert.equal(calls.filter(c=>c.path.endsWith('/thread-turn-page')).length,0)
@@ -127,10 +134,10 @@ const { resolve } = require('node:path')
    assert.equal(calls.some(c=>/feedback|billing|consume|purchase/.test(c.path+' '+c.method)),false)
    assert.deepEqual(errors,[]);assert.deepEqual(externalRequests,[])
    evidence.push({viewport,calls,totalApiKB:bytes.reduce((a,b)=>a+b,0)/1024,apiResponseCount:bytes.length,assertions:'archive pagination/rejection/restore/reload, complete export/failure/active snapshot, usage absent/empty/unsupported/no polling, warning bound/report copy/no external upload, themes'})
-  } catch(error) {await shot('failure');console.error((await page.locator('body').innerText()).slice(-4000));throw error}
+  } catch(error) {if(process.env.TOOLS_DEBUG)console.error(JSON.stringify(await page.evaluate(()=>({events:window.settingsEvents,width:innerWidth,mobile:matchMedia('(max-width:767px)').matches,sidebar:document.querySelector('.sidebar-root')?.getBoundingClientRect().toJSON()}))));await shot('failure');console.error((await page.locator('body').innerText()).slice(-4000));throw error}
   finally {await context.close()}
  }
  writeFileSync(resolve(out,'conversation-tools-results.json'),JSON.stringify(evidence,null,2))
  await browser.close()
- console.log('PASS conversation tools; desktop/375x812/768x1024; light/dark; isolated fixture. Evidence: output/playwright/conversation-tools-results.json')
+ console.log(process.env.TOOLS_STARTUP_ONLY ? 'PASS startup-only comparison' : 'PASS conversation tools; desktop/375x812/768x1024; light/dark; isolated fixture. Evidence: output/playwright/conversation-tools-results.json')
 })().catch(error=>{console.error(error);process.exit(1)})
