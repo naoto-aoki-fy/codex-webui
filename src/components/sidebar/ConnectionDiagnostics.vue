@@ -19,11 +19,14 @@ async function refresh(probe = false) {
   const epoch = props.epoch
   busy.value = true
   error.value = ''
+  diagnosis.value = null
+  copied.value = ''
   try {
     const response = await fetch(`/codex-api/connection-diagnostics${probe ? '?probe=1' : ''}`)
     const body = await response.json()
     if (!response.ok) throw new Error(body.error || 'Cannot read connection diagnostics')
     if (epoch !== props.epoch) return
+    if (!body.data || typeof body.data !== 'object') throw new Error('Incompatible diagnostic response')
     diagnosis.value = body.data
     if (!probe) return
     const inventoryResponse = await fetch('/codex-api/uploads')
