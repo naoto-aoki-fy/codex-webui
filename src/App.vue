@@ -269,9 +269,10 @@
                     :security="securityObservation.snapshots.value[selectedThreadId] ?? null"
                     :denied-actions="deniedActions.rows.value"
                     :queue="nativeQueue"
+                    :permission-changes="permissionChanges"
                     :open-created-worktree="openCreatedWorktree"
                     :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
-                    :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage" :incomplete="isSelectedThreadImportIncomplete"
+                    :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage || permissionChanges.blocking.value" :incomplete="isSelectedThreadImportIncomplete"
                     :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
                 </details>
                 <ThreadGoalPanel
@@ -289,7 +290,7 @@
                 <ThreadComposer
                   v-if="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
-                  :disabled="isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value"
+                  :disabled="isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
                   :active-thread-id="composerThreadContextId"
                   :queue-ready="nativeQueue.available.value"
                   :cwd="composerCwd"
@@ -455,6 +456,7 @@ const {
   securityObservation,
   deniedActions,
   nativeQueue,
+  permissionChanges,
   compaction, review,
   diagnosticWarnings,
   forkThreadById,

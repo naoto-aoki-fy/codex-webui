@@ -330,3 +330,34 @@ safely map every project/plugin/managed Hook to its trust store and preserve
 unrelated definitions/secrets. No trust-file editing, Hook execution or imported
 Hook trust workaround is added. Inspection remains PARTIAL; full risk 23,
 inspection residual 8, live NOT RUN.
+
+### 03 — PARTIAL, explicit thread permission mutations delivered
+
+Verified `thread/settings/update` now supports confirmed approval policy
+(`on-request`/`never`) and built-in sandbox changes (read-only without network,
+workspace write without extra/temp roots or network, unrestricted full access).
+Native `protocol.rs::get_writable_roots_with_cwd` establishes that workspace
+write includes execution cwd even with empty additional roots. The UI does not
+invent named profiles, edit custom roots or change global defaults. Managed
+profile restrictions withhold raw sandbox replacement; incomplete restriction
+reads withhold all writes. The native processor independently validates managed
+constraints before applying subsequent-turn settings.
+
+Failure gate: request and accepted states remain pending until **both** RPC
+acknowledgment and matching effective `thread/settings/updated` observation.
+Other-thread settings never satisfy a request. Coded rejections and unknown
+transport outcomes differ. Unknown settings block this thread's send/steer,
+review/compaction/queue actions until a fresh native observation is explicitly
+reconciled; no replay occurs. The existing event owner remains the only listener.
+Broader access/reduced oversight requires a separate explicit confirmation.
+Native historical model/effort metadata is not rewritten.
+
+Full risk 23; limited pre-safeguard 3/5/3/4 = **20**, residual 2/5/3/4 = **19**.
+The impact remains high despite fixture success. Five focused mutation tests,
+existing security tests, **1,432-test full suite**, frontend/server type checks,
+build, external-server fixture and six browser views passed. Browser checks cover
+confirmation, ack/event ordering, unrelated events, refresh persistence, managed
+restrictions, rejection, unknown/reconciliation and send blocking. RPC-code
+preservation is scoped to this new write and generic errors remain unchanged.
+One native write per confirmation, no additional startup reads or subscriptions.
+Live **NOT RUN**; no real thread permissions were changed.

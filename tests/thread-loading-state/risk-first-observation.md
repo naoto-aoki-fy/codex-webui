@@ -132,3 +132,30 @@ Automation: `pnpm exec vitest run src/api/authInspection.test.ts`,
 Screenshots: `output/playwright/risk-29-{1280,375,768}-{light,dark}.png`.
 Performance: two explicit lazy native reads, fixed small account projection,
 twenty method identifiers maximum, no poll/listener. Live acceptance NOT RUN.
+
+## 03 — Permission mutation acceptance gate
+
+Use fixture settings and managed requirements. Read restrictions, choose an
+approval/sandbox change with the custom pickers, and confirm the exact thread.
+No write is allowed without observed settings and known policy. Full access and
+never-approve choices must clearly disclose broader access/reduced oversight.
+Workspace write means native cwd, no additional/temp roots, no network. Custom
+roots/named managed profiles are not edited here.
+
+Delay acknowledgment and emit matching settings before/after it: completion
+requires both. Unrelated/mismatched events cannot complete the request. Double
+click sends one write. Native rejection differs from reply loss. Unknown results
+block affected-thread sending/actions until fresh native settings are explicitly
+reconciled; no blind replay. Reopen and verify actual native state. Managed
+restrictions must remove disallowed choices. Other threads/global defaults and
+historical generation metadata remain intact. Cleanup: fixture-only; do not
+change real user permissions for development.
+
+Commands: `pnpm exec vitest run src/composables/threadPermissions.test.ts src/composables/threadSecurityObservation.test.ts`,
+`pnpm run test:unit`, `pnpm run typecheck`, `pnpm run build`,
+`pnpm run test:integration:fixture`,
+`PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-permission-changes.cjs`.
+Screenshots: `output/playwright/risk-03-changes-{1280,375,768}-{light,dark}.png`.
+Performance: one native write, existing native settings event and no history
+reload for completion; one explicit requirements read, no additional connection,
+polling or startup calls. Live permission-effect verification NOT RUN.

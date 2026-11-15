@@ -12,6 +12,7 @@ import DeniedActions from './DeniedActions.vue'
 import NativeQueuePanel from './NativeQueuePanel.vue'
 import CreateWorktree from './CreateWorktree.vue'
 import type {createNativeQueue} from '../../composables/nativeQueue'
+import type {createThreadPermissions} from '../../composables/threadPermissions'
 import type {DeniedAction} from '../../composables/deniedActionObservation'
 import type {ThreadSecurity} from '../../api/threadSecurity'
 import type {createThreadCompaction} from '../../composables/threadCompaction'
@@ -22,6 +23,7 @@ defineProps<{
   security:ThreadSecurity|null;
   deniedActions:DeniedAction[];
   queue:ReturnType<typeof createNativeQueue>;
+  permissionChanges:ReturnType<typeof createThreadPermissions>;
   openCreatedWorktree:(path:string)=>Promise<void>;
   inProgress:boolean; sending:boolean; incomplete:boolean; disconnected:boolean; interrupting:boolean;
   compaction:ReturnType<typeof createThreadCompaction>; review:ReturnType<typeof createThreadReview>;
@@ -49,7 +51,7 @@ const reviewTargetOptions = [
                 <HooksInspection :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" />
                 <ConfigInspection :cwd="cwd" :epoch="epoch" :disconnected="disconnected" />
                 <ImportPreview :cwd="cwd" :epoch="epoch" :disconnected="disconnected" />
-                <PermissionsInspection :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" :security="security" />
+                <PermissionsInspection :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" :security="security" :changes="permissionChanges" :blocked="inProgress||sending||incomplete||compaction.busy.value||review.busy.value||queue.writing.value" />
                 <DeniedActions :thread-id="threadId" :rows="deniedActions" />
                 <NativeQueuePanel :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" :queue="queue" :in-progress="inProgress" :blocked="sending||incomplete||compaction.busy.value||review.busy.value" />
                 <BackgroundTerminals :thread-id="threadId" :epoch="epoch" :messages="messages" :disconnected="disconnected" />
