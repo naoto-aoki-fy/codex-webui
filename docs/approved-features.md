@@ -59,3 +59,14 @@ all three sizes/both themes, exact remote cwd/argv, lazy reads, previews and
 non-repository errors. Read-only fixed argv, no shell/external diff/textconv or
 optional Git locks/fsmonitor. Git status bounds fail closed; patches explicitly
 bounded. See manual test for performance audit. Live NOT RUN; risk medium.
+
+## 02 validation
+
+Implemented explicit idle-only native compaction; empty reply stays pending,
+matching native item completion establishes success, then normal history refresh.
+Unknown outcomes are never replayed. Operation-specific numeric error evidence
+is added for compaction only; unrelated generic errors retain their contract.
+`pnpm exec vitest run src/composables/threadCompaction.test.ts src/composables/useDesktopState.test.ts`: 64 passed. Typecheck passed after correcting fixture request typing.
+`node scripts/test-approved-compaction.cjs`: acknowledgment/completion, duplicate
+and sending guards, unsupported, active-turn guard; 3 sizes × both themes passed.
+See manual test for code-path performance audit. Live NOT RUN; risk medium.
