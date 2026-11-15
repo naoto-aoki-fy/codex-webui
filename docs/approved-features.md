@@ -230,3 +230,21 @@ as `:(glob)*` from broadening a selected tracked preview. The disposable real-Gi
 fixture verifies staged/unstaged, rename/delete, binary, literal filenames, and
 64 KiB bounded large untracked patches. `pnpm exec vitest run src/api/workingTree.test.ts src/api/workingTree.fixture.test.ts`: 3 tests passed. No real repository or
 user resources are mutated by that fixture; it creates and removes its own tmpdir.
+
+Connection-safety follow-up: all seven new read panels reject delayed responses
+after a native disconnect/epoch change. Process termination and MCP saves now
+explicitly retain an **outcome unknown** message when connection changes during
+the write; stale acknowledgments cannot report success and no mutation is retried.
+`node scripts/test-approved-stale.cjs` and `node scripts/test-approved-uncertain.cjs`
+passed. The isolated TestChat fixture submitted a unique marker with representative
+Markdown/code/file/reference links and inspected the actual assistant row:
+hrefOk/titleOk/textOk all true; no live model call or real TestChat data was used.
+Integration assertions now also cover scoped numeric unsupported errors for native
+review and compaction while retaining exactly the existing generic error shape.
+
+Final pre-lazy full verification: typecheck passed; 1,387 unit tests passed (two
+opt-in live cases skipped); production build passed; built/dev credential-free
+integration and CJS-driven public ESM CLI help passed. Optional UI payload growth
+was measured at 419.63 → 458.17 kB main JS (gzip 134.13 → 146.57 kB), prompting
+narrow lazy mounting through the app's existing async-component pattern. Controllers
+and event ownership remain unchanged; final post-change measurements follow below.

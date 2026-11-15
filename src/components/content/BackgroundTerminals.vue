@@ -4,8 +4,8 @@ import {listBackgroundTerminals,terminateBackgroundTerminal,type BackgroundTermi
 import type {UiMessage} from '../../types/codex'
 const props=defineProps<{threadId:string;epoch:number;messages:UiMessage[];disconnected:boolean}>()
 const rows=ref<BackgroundTerminal[]|null>(null),cursor=ref<string|null>(null),busy=ref(false),status=ref(''),stamp=ref(''),confirmId=ref('')
-let generation=0
-watch(()=>[props.threadId,props.epoch],()=>{generation++;rows.value=null;cursor.value=null;busy.value=false;status.value='';stamp.value='';confirmId.value=''}, {flush:'sync'})
+let generation=0,terminating=false
+watch(()=>[props.threadId,props.epoch],()=>{generation++;rows.value=null;cursor.value=null;busy.value=false;status.value=terminating?'Connection changed during termination; outcome unknown. Refresh before another action.':'';terminating=false;stamp.value='';confirmId.value=''}, {flush:'sync'})
 async function refresh(more=false){
  if(busy.value||props.disconnected)return
  const token=++generation;busy.value=true;status.value='';confirmId.value=''
@@ -20,12 +20,12 @@ async function refresh(more=false){
 }
 async function terminate(row:BackgroundTerminal){
  if(busy.value||props.disconnected||confirmId.value!==row.processId)return
- const token=++generation;busy.value=true;confirmId.value=''
+ const token=++generation;busy.value=true;confirmId.value='';terminating=true
  try{const terminated=await terminateBackgroundTerminal(props.threadId,row.processId);if(token!==generation)return
   rows.value=rows.value?.filter(item=>item.processId!==row.processId)??null
   status.value=terminated?'Process termination acknowledged. Refresh to inspect current processes.':'Process already exited or is no longer manageable. Refresh the list.'
  }catch(e){if(token===generation){rows.value=null;cursor.value=null;status.value='Termination failed or outcome unknown; refresh before retrying. '+(e instanceof Error?e.message:'')}}
- finally{if(token===generation)busy.value=false}
+ finally{if(token===generation){busy.value=false;terminating=false}}
 }
 function output(row:BackgroundTerminal){const message=props.messages.find(message=>message.id===row.itemId&&message.commandExecution);return message?.commandExecution?(message.commandExecution.aggregatedOutput.slice(-6000)||'No output captured in loaded history.'):'Recent output unavailable in loaded history.'}
 </script>
