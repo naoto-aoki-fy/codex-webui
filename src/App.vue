@@ -77,58 +77,14 @@
             @remove-project="onRemoveProject"
             @copy-thread-chat="onCopyThreadChat" @export-thread="onExportThread" />
           <p v-if="exportStatus" class="feature-panel" role="status">{{ exportStatus }}</p>
-          <ArchivedThreads v-if="!isSidebarCollapsed" :epoch="operationEpoch" :restore="restoreThreadById" />
+          <button v-if="!isSidebarCollapsed" type="button" class="sidebar-settings-button" @click="isArchiveOpen=true">Archived conversations</button>
         </div>
 
         <div
           v-if="!isSidebarCollapsed"
           ref="settingsAreaRef"
           class="sidebar-settings-area"
-          @click="onSettingsAreaClick"
         >
-          <Transition name="settings-panel">
-            <div
-              v-if="isSettingsOpen"
-              ref="settingsPanelRef"
-              class="sidebar-settings-panel"
-              @click.stop
-            >
-              <AccountSettingsPanel :epoch="operationEpoch" :warnings="diagnosticWarnings"
-                :native-auth="nativeAuthentication" :ensure-native-auth="ensureNativeAuthentication"
-                :auth-available="codexAuthAvailable"
-                :refreshing="isRefreshingCodexAuth"
-                :change-blocked="isCodexAuthChangeBlocked"
-                :error="accountActionError"
-                @refresh="onRefreshCodexAuth"
-                @logout="onLogoutCodex"
-              />
-
-              <GeneralPreferencesSettings
-                :send-with-enter="sendWithEnter"
-                :dark-mode="darkMode"
-                :chat-width-label="chatWidthLabel"
-                :help="SETTINGS_HELP"
-                @toggle-send-with-enter="toggleSendWithEnter"
-                @cycle-dark-mode="cycleDarkMode"
-                @cycle-chat-width="cycleChatWidth"
-              />
-              <div
-                v-if="showThreadContextBadge"
-                class="sidebar-settings-row sidebar-settings-context-row"
-                :data-state="threadContextBadgeState"
-                :title="threadContextTooltip"
-              >
-                <span class="sidebar-settings-label">{{ ('Context') }}</span>
-                <span class="sidebar-settings-context-value" :data-state="threadContextBadgeState">
-                  {{ threadContextPrimaryText }}
-                  <span class="sidebar-settings-context-meta">{{ threadContextSecondaryText }}</span>
-                </span>
-              </div>
-              <div class="sidebar-settings-rate-limits">
-                <RateLimitStatus :snapshots="accountRateLimitSnapshots" />
-              </div>
-            </div>
-          </Transition>
           <button
             ref="settingsButtonRef"
             class="sidebar-settings-button"
@@ -328,6 +284,53 @@
       </section>
     </template>
   </DesktopLayout>
+  <ArchivedThreads :open="isArchiveOpen" :epoch="operationEpoch" :restore="restoreThreadById" @close="isArchiveOpen=false" />
+  <ManagementDialog :open="isSettingsOpen" title="Settings" @close="isSettingsOpen=false">
+    <div class="settings-layout">
+      <nav class="settings-categories" aria-label="Settings categories">
+        <button v-for="category in settingsCategories" :key="category" type="button" :aria-current="settingsCategory===category ? 'page' : undefined" @click="settingsCategory=category">{{ category }}</button>
+      </nav>
+      <div class="settings-content">
+        <section v-if="settingsLoaded" v-show="settingsCategory==='Codex account'" aria-label="Codex account">
+              <AccountSettingsPanel :epoch="operationEpoch" :warnings="diagnosticWarnings"
+                :native-auth="nativeAuthentication" :ensure-native-auth="ensureNativeAuthentication"
+                :auth-available="codexAuthAvailable"
+                :refreshing="isRefreshingCodexAuth"
+                :change-blocked="isCodexAuthChangeBlocked"
+                :error="accountActionError"
+                @refresh="onRefreshCodexAuth"
+                @logout="onLogoutCodex"
+              />
+        </section>
+        <section v-show="settingsCategory==='General'" aria-label="General preferences">
+              <GeneralPreferencesSettings
+                :send-with-enter="sendWithEnter"
+                :dark-mode="darkMode"
+                :chat-width-label="chatWidthLabel"
+                :help="SETTINGS_HELP"
+                @toggle-send-with-enter="toggleSendWithEnter"
+                @cycle-dark-mode="cycleDarkMode"
+                @cycle-chat-width="cycleChatWidth"
+              />
+              <div
+                v-if="showThreadContextBadge"
+                class="sidebar-settings-row sidebar-settings-context-row"
+                :data-state="threadContextBadgeState"
+                :title="threadContextTooltip"
+              >
+                <span class="sidebar-settings-label">{{ ('Context') }}</span>
+                <span class="sidebar-settings-context-value" :data-state="threadContextBadgeState">
+                  {{ threadContextPrimaryText }}
+                  <span class="sidebar-settings-context-meta">{{ threadContextSecondaryText }}</span>
+                </span>
+              </div>
+              <div class="sidebar-settings-rate-limits">
+                <RateLimitStatus :snapshots="accountRateLimitSnapshots" />
+              </div>
+        </section>
+      </div>
+    </div>
+  </ManagementDialog>
   <div v-if="transferPicker" class="transfer-picker-backdrop" role="presentation">
     <section class="transfer-picker" role="dialog" aria-modal="true" aria-label="Transfer conversation">
       <h2>Portable Fork</h2>
@@ -354,6 +357,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useNewThreadCwdRoute } from './composables/useNewThreadCwdRoute'
 import DesktopLayout from './components/layout/DesktopLayout.vue'
 import GeneralPreferencesSettings from './components/sidebar/GeneralPreferencesSettings.vue'
+import ManagementDialog from './components/shared/ManagementDialog.vue'
 import ArchivedThreads from './components/sidebar/ArchivedThreads.vue'
 import AccountSettingsPanel from './components/sidebar/AccountSettingsPanel.vue'
 import SidebarThreadTree from './components/sidebar/SidebarThreadTree.vue'
@@ -532,7 +536,6 @@ const isSidebarSearchVisible = ref(false)
 const sidebarScrollableRef = ref<HTMLElement | null>(null)
 const sidebarSearchInputRef = ref<HTMLInputElement | null>(null)
 const settingsAreaRef = ref<HTMLElement | null>(null)
-const settingsPanelRef = ref<HTMLElement | null>(null)
 const settingsButtonRef = ref<HTMLElement | null>(null)
 const serverMatchedThreadIds = ref<string[] | null>(null)
 const serverSearchGroups = ref<typeof projectGroups.value>([])
@@ -556,6 +559,11 @@ let sidebarScrollRestoreRequestId = 0
 let isRestoringSidebarScroll = false
 const homeDirectory = ref('')
 const isSettingsOpen = ref(false)
+const isArchiveOpen = ref(false)
+const settingsCategories = ['General', 'Codex account']
+const settingsCategory = ref('Codex account')
+const settingsLoaded = ref(false)
+watch(isSettingsOpen, open => { if (open) settingsLoaded.value = true })
 const accountActionError = ref('')
 const codexAuthAvailable = ref<boolean | null>(null)
 const isRefreshingCodexAuth = ref(false)
@@ -731,7 +739,6 @@ const contentStyle = computed(() => {
   }
 })
 onMounted(() => {
-  document.addEventListener('pointerdown', onDocumentPointerDown)
   window.addEventListener('keydown', onWindowKeyDown)
   document.addEventListener('visibilitychange', onDocumentVisibilityChange)
   window.addEventListener('pageshow', onWindowPageShow)
@@ -749,7 +756,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  document.removeEventListener('pointerdown', onDocumentPointerDown)
   window.removeEventListener('keydown', onWindowKeyDown)
   document.removeEventListener('visibilitychange', onDocumentVisibilityChange)
   window.removeEventListener('pageshow', onWindowPageShow)
@@ -1012,24 +1018,6 @@ function onWindowKeyDown(event: KeyboardEvent): void {
     setSidebarCollapsed(!isSidebarCollapsed.value)
     return
   }
-}
-
-function onDocumentPointerDown(event: PointerEvent): void {
-  const target = event.target
-  if (!(target instanceof Node)) return
-  if (!isSettingsOpen.value) return
-  if (settingsPanelRef.value?.contains(target)) return
-  if (settingsButtonRef.value?.contains(target)) return
-  isSettingsOpen.value = false
-}
-
-function onSettingsAreaClick(event: MouseEvent): void {
-  if (!isSettingsOpen.value) return
-  const target = event.target
-  if (!(target instanceof Node)) return
-  if (settingsPanelRef.value?.contains(target)) return
-  if (settingsButtonRef.value?.contains(target)) return
-  isSettingsOpen.value = false
 }
 
 function onDocumentVisibilityChange(): void {

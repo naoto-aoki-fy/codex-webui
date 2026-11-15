@@ -1342,3 +1342,45 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .native-shell textarea { display:block;width:100%;min-height:80px;padding:6px 8px;border:1px solid #a1a1aa;border-radius:6px;background:#fff;color:#18181b; }
 :root.dark .native-shell textarea { border-color:#71717a;background:#27272a;color:#f4f4f5; }
 .native-shell pre { white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto; }
+
+/* Management uses the same zinc surfaces and Tabler controls as chat. */
+.management-dialog { width: min(1000px, calc(100vw - 48px)); max-width: none; height: min(800px, calc(100dvh - 64px)); max-height: none; margin: auto; padding: 0; border: 1px solid #e4e4e7; border-radius: 16px; background: #fff; color: #3f3f46; box-shadow: 0 24px 70px #0003; font: inherit; font-size: 14px; line-height: 1.5; overflow: hidden; }
+.management-dialog[open] { display: flex; flex-direction: column; }
+.management-dialog::backdrop { background: #09090b66; }
+.management-dialog-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 20px 24px; border-bottom: 1px solid #e4e4e7; flex-shrink: 0; }
+.management-dialog-header > div { min-width: 0; overflow-wrap: anywhere; }
+.management-dialog-header h2 { margin: 0; font-size: 16px; font-weight: 600; color: #18181b; }
+.management-dialog-header p { margin: 4px 0 0; color: #71717a; font-size: 13px; }
+.management-dialog-close { flex-shrink: 0; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+.management-dialog-close svg { width: 20px; height: 20px; }
+.management-dialog-close:hover { background: #f4f4f5; }
+.management-dialog :focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.management-dialog-body { padding: 24px; overflow: auto; min-height: 0; min-width: 0; flex: 1; overscroll-behavior: contain; }
+.management-dialog .feature-panel { padding: 12px 0; max-height: none; overflow: visible; }
+.management-dialog .feature-panel ul { max-height: none; }
+.management-dialog .feature-panel li { padding: 8px 0; }
+.management-dialog .feature-panel button + button { margin-left: 6px; }
+.management-dialog pre { max-width: 100%; overflow: auto; }
+.management-dialog .sidebar-settings-account-section { padding: 0; background: transparent; border: 0; }
+.management-dialog .sidebar-settings-account-empty { font-size: 14px; line-height: 1.5; }
+.settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 32px; min-height: 100%; }
+.settings-categories { display: flex; flex-direction: column; gap: 4px; }
+.settings-categories button { padding: 10px 12px; border: 0; border-radius: 8px; text-align: left; cursor: pointer; }
+.settings-categories button:hover, .settings-categories button[aria-current] { background: #f4f4f5; color: #18181b; }
+.settings-content { min-width: 0; }
+.archive-browser li > span { min-width: 0; overflow-wrap: anywhere; }
+.archive-browser li > button { flex-shrink: 0; }
+:root.dark .management-dialog { background: #18181b; color: #d4d4d8; border-color: #3f3f46; }
+:root.dark .management-dialog-header { border-color: #3f3f46; }
+:root.dark .management-dialog-header h2 { color: #f4f4f5; }
+:root.dark .management-dialog-header p { color: #a1a1aa; }
+:root.dark .management-dialog-close:hover, :root.dark .settings-categories button:hover, :root.dark .settings-categories button[aria-current] { background: #27272a; color: #f4f4f5; }
+:root.dark .management-dialog .sidebar-settings-account-section { background: transparent; }
+@media (max-width: 640px) {
+  .management-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); border-radius: 12px; }
+  .management-dialog-header { padding: 16px; }
+  .management-dialog-body { padding: 16px; }
+  .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
+  .settings-categories { flex-direction: row; flex-wrap: wrap; }
+  .settings-categories button { padding: 8px; }
+}
