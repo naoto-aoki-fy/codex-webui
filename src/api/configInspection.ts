@@ -14,13 +14,22 @@ export function configInspection(value:unknown){
  const origins=record(result.origins)
  const effective=Object.entries(projection(result.config,settings)).map(([key,value])=>({key,value,origin:hasOwn(origins,key)?layerIdentity(record(origins[key]).name):'Unavailable'}))
  const profiles=new Map<string,Record<string,string>>()
+ let profilesBounded=false
+ function addProfile(name:string,value:unknown){
+  const key=executionText(name).slice(0,200)
+  // Native layers are ordered from highest to lowest priority. Retain the
+  // first public definition, and bound the total across all layers.
+  if(profiles.has(key))return
+  if(profiles.size>=100){profilesBounded=true;return}
+  profiles.set(key,projection(value,settings))
+ }
  const layers=(Array.isArray(result.layers)?result.layers:[]).slice(0,40).map(value=>{
   const row=record(value),name=record(row.name),config=record(row.config)
-  if(name.type==='user'&&name.profile==null){const candidates=record(config.profiles);let count=0;for(const key in candidates){if(!hasOwn(candidates,key))continue;if(++count>100)break;profiles.set(executionText(key).slice(0,200),projection(candidates[key],settings))}}
-  if(name.type==='user'&&typeof name.profile==='string')profiles.set(executionText(name.profile).slice(0,200),projection(config,settings))
+  if(name.type==='user'&&name.profile==null){const candidates=record(config.profiles);let count=0;for(const key in candidates){if(!hasOwn(candidates,key))continue;if(++count>100){profilesBounded=true;break}addProfile(key,candidates[key])}}
+  if(name.type==='user'&&typeof name.profile==='string')addProfile(name.profile,config)
   return {identity:layerIdentity(name),version:typeof row.version==='string'?row.version.slice(0,1000):'Unavailable',disabled:row.disabledReason==null?null:executionText(row.disabledReason),settings:projection(config,settings)}
  })
- return {effective,layers,layersAvailable:Array.isArray(result.layers),profiles:[...profiles].map(([name,settings])=>({name,settings})),bounded:Array.isArray(result.layers)&&result.layers.length>40,userTarget:activeUserConfig(value)}
+ return {effective,layers,layersAvailable:Array.isArray(result.layers),profiles:[...profiles].map(([name,settings])=>({name,settings})),profilesBounded,bounded:Array.isArray(result.layers)&&result.layers.length>40,userTarget:activeUserConfig(value)}
 }
 export function requirementsInspection(value:unknown){const result=record(value)
  if(!hasOwn(result,'requirements')||result.requirements!=null&&(typeof result.requirements!=='object'||Array.isArray(result.requirements)))throw new Error('Managed restrictions unavailable')
