@@ -30,6 +30,8 @@ function turn(index, large) {
 }
 async function setup(context, root, large = false) {
  const page=await context.newPage(), calls=[], payloads=[], errors=[], assetRequests=[]
+ let socketConnections=0,peakOpenSockets=0
+ const openSockets=new Set()
  page.on('pageerror',e=>errors.push(e.message))
  page.on('request',request=>{const path=new URL(request.url()).pathname;if(path.startsWith('/assets/'))assetRequests.push(path)})
  const total=large?TURN_COUNT:2
@@ -66,28 +68,31 @@ async function setup(context, root, large = false) {
   }
   return route.fulfill({status:404,body:''})
  })
- await page.routeWebSocket('**/codex-api/ws',()=>{})
+ await page.routeWebSocket('**/codex-api/ws',socket=>{socketConnections++;openSockets.add(socket);peakOpenSockets=Math.max(peakOpenSockets,openSockets.size);socket.onClose(()=>openSockets.delete(socket))})
  await page.goto(base+'/#/thread/tools-fixture')
  await page.getByText(large?`TURN_${TURN_COUNT-1}_ANSWER`:'Latest Markdown',{exact:false}).first().waitFor()
- return {page,calls,payloads,errors,assetRequests}
+ return {page,calls,payloads,errors,assetRequests,sockets:()=>({attempts:socketConnections,peakOpen:peakOpenSockets,openAtSample:openSockets.size})}
 }
 ;(async()=>{
  const browser=await chromium.launch({headless:true})
  const report={environment:{node:process.version,productionBuilds:true,gzipLevel:6,viewport:'1280x900',startupWaitMs:7000,fixture:'Same metadata/model/project/history/empty-pin responses; mocked WS opens without notifications; no eager archive/usage/history operation'},bundles:{before:bundles(beforeRoot),after:bundles(afterRoot)},startup:[],largeExport:null}
  try {
   for(let trial=1;trial<=3;trial++)for(const [revision,root] of [['before',beforeRoot],['after',afterRoot]]){
+   console.log('Measuring startup',revision,trial)
    const context=await browser.newContext({viewport:{width:1280,height:900}})
    try {
-    const {page,calls,payloads,errors,assetRequests}=await setup(context,root)
+    const {page,calls,payloads,errors,assetRequests,sockets}=await setup(context,root)
     await page.waitForTimeout(7000)
     assert.deepEqual(errors,[])
     assert.equal(calls.some(call=>call.params?.archived===true||call.method==='account/usage/read'||call.path.endsWith('/thread-turn-page')),false)
     const counts={};for(const call of calls){const key=call.method||call.path;counts[key]=(counts[key]||0)+1}
-    assert.equal(assetRequests.some(path=>/\/(ConversationTools|AppsPicker|PromptLibrary|RemoteControlStatus)-/.test(path)),false,'Optional feature module fetched before opening it')
+    assert.equal(assetRequests.some(path=>/\/(ConversationTools|AppsPicker|PromptLibrary|RemoteControlStatus|AuthInspection|NativeAuthentication|nativeAuthentication|threadDeletion|NativeShell|nativeShell)-/.test(path)),false,'Optional feature module fetched before opening it')
     const javascriptBytes=[...new Set(assetRequests)].filter(path=>path.endsWith('.js')).reduce((sum,path)=>sum+readFileSync(join(root,'dist',path.slice(1))).length,0)
-    report.startup.push({revision,trial,assetRequests,javascriptBytes,count:calls.length,responseBytes:payloads.reduce((a,b)=>a+b,0),counts})
+    report.startup.push({revision,trial,assetRequests,javascriptBytes,nativeConnections:sockets(),count:calls.length,responseBytes:payloads.reduce((a,b)=>a+b,0),counts})
+    console.log('Startup measured',revision,trial,calls.length,sockets())
    } finally{await context.close()}
   }
+  console.log('Measuring large export')
   const context=await browser.newContext({viewport:{width:1280,height:900},acceptDownloads:true})
   try {
    const {page,calls,payloads,errors}=await setup(context,afterRoot,true)

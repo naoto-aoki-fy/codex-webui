@@ -1,5 +1,8 @@
 # Risk-first feature implementation
 
+Final outcomes, verification, performance and the complete file/commit manifest
+are in the [completion report](risk-first-completion.md).
+
 This assessment starts from clean `main` at `42a9790`. It supersedes neither
 the protected requirements nor the acceptance limitations in
 [the previous feature report](approved-features.md). In particular, live acceptance
@@ -534,7 +537,7 @@ contract. It requires account-owned backend authentication not exposed through
 this repository's supported native RPC boundary. No private endpoint proxy, token
 extraction, CLI spawning, task submission or result application is introduced.
 
-### 26 — BLOCKED, native local-host escape hatch lacks required ownership contract
+### 26 — initial thread-shell path blocked (superseded by standalone workflow)
 
 The operation is real: `thread/shellCommand` in official 0.169.0 accepts a shell
 string and timeout, explicitly **unsandboxed with full access**. Inspection of
@@ -672,7 +675,7 @@ production build, integration fixture and six browser views, including native
 identity/termination, output bounds/redaction, unknown outcomes and deletion/send
 barriers. No native command was executed against a real App Server.
 
-### 26 — supported POSIX standalone command workflow
+### 26 — IMPLEMENTED for supported POSIX standalone contexts
 
 After the read-only gate, the native per-command `sandboxPolicy` contract was
 extended to explicit Full access. `CommandExecRequestProcessor` validates it via
