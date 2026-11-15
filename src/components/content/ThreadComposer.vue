@@ -279,7 +279,7 @@
           @update:model-value="onReasoningEffortSelect"
         />
 
-        <button v-if="!isNewThread" type="button" class="thread-composer-control" :aria-pressed="input.queueMode.value" :disabled="disabled"
+        <button v-if="!isNewThread" type="button" class="thread-composer-control thread-composer-queue-mode" :aria-pressed="input.queueMode.value" :disabled="disabled"
           @click="input.queueMode.value=!input.queueMode.value;if(input.queueMode.value)emit('thread-action','queue')">{{ input.queueMode.value?'Queue mode':'Immediate mode' }}</button>
         <div
           class="thread-composer-actions"

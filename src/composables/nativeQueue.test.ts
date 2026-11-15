@@ -34,3 +34,21 @@ it('bounds native payload retention and disables lossy rich-input editing',()=>{
  expect(queueEntry({...queued(),input:[{type:'image',url:'x'.repeat(2000001)}]}).input).toBe(null)
  expect(()=>queuePage({data:Array(21).fill(queued())})).toThrow();expect(()=>queuePage({data:[],nextCursor:5})).toThrow()
 })
+it('updates only the first text and preserves exact image/skill/app inputs and client identity',async()=>{
+ const input=[{type:'text',text:'old',text_elements:[]},{type:'image',url:'data:image/png;base64,AAAA'},{type:'skill',name:'s',path:'/remote/SKILL.md'},{type:'mention',name:'App',path:'app://native'}]
+ let current={...queued(),input};const request=vi.fn(async(method,params)=>{if(method==='thread/queue/list')return {data:[current],nextCursor:null};current={...current,input:params.input};return {queuedSubmission:current}})
+ const {owner,stop}=setup(request);await owner.refresh();await owner.manage('update','q','edited')
+ expect(current.input).toEqual([{...input[0],text:'edited'},...input.slice(1)]);expect(request.mock.calls[1]?.[1]).not.toHaveProperty('responsesapiClientMetadata');stop()
+})
+it('native full-order and exact-ID removal/start do not rewrite a client-owned queue',async()=>{
+ let entries=[queued(),{...queued(),id:'q2'}];const request=vi.fn(async(method,params)=>{
+  if(method==='thread/queue/list')return {data:entries,nextCursor:null}
+  if(method==='thread/queue/reorder'){expect(params.queuedSubmissionIds).toEqual(['q2','q']);entries=entries.slice().reverse();return {}}
+  if(method==='thread/queue/delete'){entries=[];return {deleted:false}}
+  return {turn:{id:'turn',status:'inProgress'}}
+ });const {owner,stop}=setup(request);await owner.refresh();await owner.manage('reorder','q2');expect(owner.rows.value[0]?.id).toBe('q2');await owner.manage('start','q2');expect(owner.status.value).toContain('turn accepted');await owner.manage('delete','q');expect(owner.status.value).toContain('already absent');stop()
+})
+it('native rejection differs from uncertain transport and stale native snapshots block operations',async()=>{
+ const request=vi.fn(async(method)=>{if(method==='thread/queue/list')return {data:[queued()],nextCursor:null};throw Object.assign(new Error('entry gone'),{rpcCode:-32602})})
+ const {owner,stop}=setup(request);await owner.refresh();await owner.manage('delete','q');expect(owner.uncertain.value).toBe('');expect(owner.status.value).toContain('rejected');await expect(owner.manage('start','q')).rejects.toThrow('Refresh');stop()
+})

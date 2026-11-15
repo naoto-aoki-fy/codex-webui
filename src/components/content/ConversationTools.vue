@@ -49,7 +49,7 @@ const reviewTargetOptions = [
                 <ImportPreview :cwd="cwd" :epoch="epoch" :disconnected="disconnected" />
                 <PermissionsInspection :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" :security="security" />
                 <DeniedActions :thread-id="threadId" :rows="deniedActions" />
-                <NativeQueuePanel :thread-id="threadId" :disconnected="disconnected" :queue="queue" />
+                <NativeQueuePanel :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" :queue="queue" :in-progress="inProgress" :blocked="sending||incomplete||compaction.busy.value||review.busy.value" />
                 <BackgroundTerminals :thread-id="threadId" :epoch="epoch" :messages="messages" :disconnected="disconnected" />
                 <WorkingTreePanel :cwd="cwd" :epoch="epoch" />
 </template>

@@ -2,7 +2,7 @@ import {computed,ref,watch,type Ref} from 'vue'
 import {rpcCall,type RpcNotification} from '../api/codexRpcClient'
 import {queueEntry,queuePage,queuedInput,type QueueEntry} from '../api/nativeQueue'
 import type {SubmitPayload} from '../components/content/composerContracts'
-export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;ready:()=>boolean;blocked:()=>boolean},request:typeof rpcCall=rpcCall){
+export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;ready:()=>boolean;blocked:()=>boolean;active?:()=>boolean;refreshHistory?:(id:string)=>Promise<void>},request:typeof rpcCall=rpcCall){
  const rows=ref<QueueEntry[]>([]),cursor=ref<string|null>(null),loaded=ref(false),stale=ref(false),reading=ref(false),writing=ref(false),status=ref(''),readError=ref(''),operationThread=ref(''),uncertainByThread=ref<Record<string,string>>({})
  const uncertain=computed(()=>uncertainByThread.value[deps.selected.value]??'')
  const available=computed(()=>loaded.value&&!stale.value&&!uncertain.value&&deps.ready())
@@ -31,10 +31,44 @@ export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;r
    status.value=`Accepted by native queue: ${row.id}. Native settings apply when it runs.`
    if(deps.selected.value===id){stale.value=true;await refresh()}
    return true
-  }catch(e){if(token===writeJob){uncertainByThread.value={...uncertainByThread.value,[id]:`Queue outcome unknown. Client message: ${clientId}. Inspect queue and history before another submission. ${e instanceof Error?e.message:'Request failed'}`};status.value=uncertainByThread.value[id]!}throw e}
+  }catch(e){if(token===writeJob){if(typeof (e as {rpcCode?:number})?.rpcCode==='number')status.value=`Native queue rejected the submission. ${e instanceof Error?e.message:'Request rejected'}`
+   else{uncertainByThread.value={...uncertainByThread.value,[id]:`Queue outcome unknown. Client message: ${clientId}. Inspect queue and history before another submission. ${e instanceof Error?e.message:'Request failed'}`};status.value=uncertainByThread.value[id]!}}throw e}
   finally{if(token===writeJob)writing.value=false}
  }
  function observe(event:RpcNotification){const p=event.params as {threadId?:unknown}|null;if(event.method==='thread/queue/changed'&&p?.threadId===deps.selected.value){readJob++;reading.value=false;stale.value=true}}
+ async function manage(kind:'update'|'delete'|'reorder'|'start',rowId:string,text?:string){
+  if(writing.value||!available.value||deps.blocked()||kind==='start'&&deps.active?.())throw new Error('Refresh the queue and wait for conflicting work before acting')
+  const row=rows.value.find(r=>r.id===rowId)
+  if(!row)throw new Error('Queued identity is no longer in this snapshot')
+  const id=deps.selected.value,token=++writeJob
+  let params:Record<string,unknown>={threadId:id,queuedSubmissionId:row.id}
+  if(kind==='update'){
+   if(!row.input||row.text===null||typeof text!=='string'||!text.trim()||text.length>32000)throw new Error('This structured prompt cannot be safely edited here')
+   params.input=row.input.map((part,index)=>index===0?{...part,text}:part)
+  }
+  if(kind==='reorder'){
+   const index=rows.value.indexOf(row)
+   if(cursor.value||index<=0)throw new Error('Load the entire bounded queue before reordering')
+   const ids=rows.value.map(row=>row.id);[ids[index-1],ids[index]]=[ids[index]!,ids[index-1]!]
+   params={threadId:id,queuedSubmissionIds:ids}
+  }
+  writing.value=true;operationThread.value=id;status.value=`Requesting native queue ${kind}…`
+  try{
+   const result=await request<Record<string,unknown>>(`thread/queue/${kind}`,params)
+   if(token!==writeJob)return
+   if(kind==='update'){const updated=queueEntry(result?.queuedSubmission);if(updated.id!==row.id||updated.clientId!==row.clientId)throw new Error('Queue update identity mismatch')}
+   if(kind==='delete'&&typeof result?.deleted!=='boolean')throw new Error('Queue removal outcome unavailable')
+   if(kind==='start'){
+    const turn=result?.turn as Record<string,unknown>
+    if(typeof turn?.id!=='string'||!turn.id)throw new Error('Native queue start identity unavailable')
+    status.value=`Native turn accepted: ${turn.id}. Completion follows normal thread events.`
+    try{await deps.refreshHistory?.(id)}catch{status.value+=' History reconciliation failed; inspect the conversation.'}
+   }else status.value=kind==='delete'&&!result.deleted?'Native entry was already absent; it may have run.':`Native queue ${kind} acknowledged. Refreshing persisted state.`
+   if(deps.selected.value===id){stale.value=true;await refresh()}
+  }catch(e){if(token===writeJob){if(typeof (e as {rpcCode?:number})?.rpcCode==='number'){status.value=`Native queue ${kind} rejected. Refresh before acting again. ${e instanceof Error?e.message:'Request rejected'}`;stale.value=true}
+   else{uncertainByThread.value={...uncertainByThread.value,[id]:`Queue ${kind} outcome unknown for ${row.id}; inspect native queue and history. ${e instanceof Error?e.message:'Request failed'}`};status.value=uncertainByThread.value[id]!}}}
+  finally{if(token===writeJob)writing.value=false}
+ }
  function acknowledgeUnknown(){if(!loaded.value||reading.value||writing.value)return;const next={...uncertainByThread.value};delete next[deps.selected.value];uncertainByThread.value=next;status.value='Uncertain result acknowledged. Inspect history as well: an absent queue entry may already have run.';operationThread.value=deps.selected.value}
- return {rows,cursor,loaded,stale,reading,writing,status,readError,operationThread,uncertain,available,refresh,add,observe,acknowledgeUnknown}
+ return {rows,cursor,loaded,stale,reading,writing,status,readError,operationThread,uncertain,available,refresh,add,manage,observe,acknowledgeUnknown}
 }
