@@ -1412,3 +1412,9 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
   .management-dialog .directory-header { flex-wrap: wrap; }
   .management-dialog .directory-header > div { min-width: 0; overflow-wrap: anywhere; }
 }
+.thread-composer-control.thread-composer-queue-mode { flex-shrink: 0; }
+.thread-composer .thread-composer-actions { flex-shrink: 0; }
+@media (max-width: 400px) {
+  .thread-composer .thread-composer-controls { flex-wrap: wrap; gap: 6px; }
+  .thread-composer .thread-composer-control { max-width: calc(100% - 48px); }
+}
