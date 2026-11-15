@@ -9,6 +9,7 @@ export function executionText(value: unknown): string {
     if (typeof value === 'string') {
       const text = value.slice(0, remaining)
         .replace(/\b(?:authorization|cookie|bearer|basic)\s*[:= ]\s*[^\r\n]+/gi, '[credential omitted]')
+        .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, '$1[credentials omitted]@')
         .replace(/\bsk-[\w-]+/g, '[key omitted]')
         .replace(/\b([\w-]*(?:token|secret|password|api[_-]?key|credential)[\w-]*)\s*[=:]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, '$1=[redacted]')
       remaining -= text.length
@@ -17,7 +18,10 @@ export function executionText(value: unknown): string {
     if (Array.isArray(value)) return value.slice(0, 40).map(v => clean(v, depth + 1))
     if (value && typeof value === 'object') {
       const result: Record<string, unknown> = {}
-      for (const key of Object.keys(value).slice(0, 40)) {
+      let keys = 0
+      for (const key in value) {
+        if (!Object.prototype.hasOwnProperty.call(value,key)) continue
+        if (++keys > 40) break
         if (/meta|instruction|credential|secret|password|token|api.?key|authorization|cookie/i.test(key)) continue
         result[key.slice(0, 100)] = clean((value as Record<string, unknown>)[key], depth + 1)
       }
