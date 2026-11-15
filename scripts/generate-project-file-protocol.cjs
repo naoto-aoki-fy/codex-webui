@@ -10,9 +10,6 @@ const temp = mkdtempSync(join(tmpdir(), 'codex-project-protocol-'))
 try {
   execFileSync(binary, ['app-server', 'generate-ts', '--experimental', '--out', temp], { stdio: 'inherit' })
   const target = join(process.cwd(), 'src/server/protocol/0.167.2')
-  mkdirSync(join(target, 'v2'), { recursive: true })
-  for (const name of ['AbsolutePathBuf.ts', 'InitializeResponse.ts']) copyFileSync(join(temp, name), join(target, name))
-  for (const name of readdirSync(join(temp, 'v2')).filter(name => /^Fs.*\.ts$/.test(name))) copyFileSync(join(temp, 'v2', name), join(target, 'v2', name))
   const copied = new Set()
   function copyType(source) {
     if (copied.has(source)) return
@@ -24,9 +21,30 @@ try {
       copyType(resolve(dirname(source), match[1] + '.ts'))
     }
   }
-  const dtoSource = readFileSync(join(process.cwd(), 'src/api/appServerDtos.ts'), 'utf8')
-  const dtoTypes = [...dtoSource.matchAll(/protocol\/0\.167\.2\/([^'"]+)/g)].map(match => match[1])
-  for (const name of ['v2/CommandExecParams', 'v2/CommandExecResponse', 'FuzzyFileSearchParams', 'FuzzyFileSearchResponse', 'v2/ProjectListParams', 'v2/ProjectListResponse', 'v2/ProjectReadParams', 'v2/ProjectReadResponse', 'v2/ProjectCreateParams', 'v2/ProjectImportParams', 'v2/ProjectUpdateParams', 'v2/ProjectMoveParams', 'v2/ProjectDeleteParams', 'v2/ThreadMetadataUpdateParams', 'v2/ThreadMetadataUpdateResponse', ...dtoTypes]) copyType(join(temp, name + '.ts'))
+  const roots = new Set()
+  function inspectConsumers(directory) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const file = join(directory, entry.name)
+      if (entry.isDirectory()) {
+        if (file !== target) inspectConsumers(file)
+      } else if (/\.(ts|vue)$/.test(entry.name)) {
+        for (const match of readFileSync(file, 'utf8').matchAll(/(?:from\s*|import\s*\()(['"])([^'"]*protocol\/0\.167\.2\/[^'"]+)\1/g)) {
+          const source = resolve(dirname(file), match[2].replace(/\.js$/, '') + '.ts')
+          roots.add(relative(target, source))
+        }
+      }
+    }
+  }
+  inspectConsumers(join(process.cwd(), 'src'))
+  for (const name of roots) copyType(join(temp, name))
+  function removeStale(directory) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const file = join(directory, entry.name)
+      if (entry.isDirectory()) removeStale(file)
+      else if (entry.name.endsWith('.ts') && !copied.has(join(temp, relative(target, file)))) rmSync(file)
+    }
+  }
+  removeStale(target)
   const methods = name => [...new Set([...readFileSync(join(temp, name + '.ts'), 'utf8').matchAll(/"method": "([^"]+)"/g)].map(match => match[1]))].sort()
   writeFileSync(join(process.cwd(), 'src/server/appServerMethods.json'), JSON.stringify({ methods: methods('ClientRequest'), notifications: methods('ServerNotification') }, null, 2) + '\n')
 } finally { rmSync(temp, { recursive: true, force: true }) }

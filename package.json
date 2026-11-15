@@ -36,7 +36,7 @@
     "test:unit": "vitest run",
     "preview": "vite preview",
     "profile:browser": "node scripts/profile-browser-runtime.cjs",
-    "profile:thread": "PROFILE_ROUTE='#/thread/019da7c0-4e12-7a91-837c-f7c11cc8ab6c' node scripts/profile-browser-runtime.cjs",
+    "profile:thread": "node scripts/profile-browser-runtime.cjs --thread",
     "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
     "test:integration:fixture": "node scripts/test-external-app-server.cjs",
     "generate:project-file-protocol": "node scripts/generate-project-file-protocol.cjs",

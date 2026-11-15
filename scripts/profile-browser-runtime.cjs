@@ -2,8 +2,13 @@ const { chromium } = require('playwright')
 const { mkdirSync, writeFileSync } = require('node:fs')
 const { resolve } = require('node:path')
 
-const baseUrl = process.env.PROFILE_BASE_URL || 'http://localhost:5173'
-const route = process.env.PROFILE_ROUTE || '/'
+const baseUrl = process.env.PROFILE_BASE_URL || 'http://127.0.0.1:4173'
+const threadMode = process.argv.includes('--thread')
+if (threadMode && !process.env.PROFILE_THREAD_ID && !process.env.PROFILE_ROUTE) {
+  console.error('Set PROFILE_THREAD_ID=<native-thread-id> or PROFILE_ROUTE=#/thread/<native-thread-id> for profile:thread.')
+  process.exit(1)
+}
+const route = process.env.PROFILE_ROUTE || (process.env.PROFILE_THREAD_ID ? `#/thread/${process.env.PROFILE_THREAD_ID}` : '/')
 const waitMs = Number.parseInt(process.env.PROFILE_WAIT_MS || '7000', 10)
 const threadLoadTimeoutMs = Number.parseInt(process.env.PROFILE_THREAD_LOAD_TIMEOUT_MS || '15000', 10)
 const headless = process.env.PROFILE_HEADLESS !== 'false'

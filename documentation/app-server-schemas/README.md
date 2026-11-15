@@ -8,12 +8,11 @@ catalog or the server version.
 
 Run `pnpm run generate:project-file-protocol` after installing the locked dev
 dependencies. The script checks `codex --version`, runs `codex app-server
-generate-ts --experimental --out <temporary-directory>`, copies the filesystem,
-command, search, native Project request and frontend DTO dependency closures into
+generate-ts --experimental --out <temporary-directory>`, discovers handwritten TypeScript/Vue imports and copies their transitive dependency closure into
 `src/server/protocol/0.167.2/`, and extracts sorted method and notification names
 from `ClientRequest.ts` and `ServerNotification.ts` into
 `src/server/appServerMethods.json`. Run it twice and compare diffs to verify
-reproducibility, then run typecheck, unit tests and build.
+reproducibility, then run typecheck, unit tests and build. Stale generated TypeScript outside that closure is removed; the method catalog still comes from the full upstream schema.
 
 `src/api/appServerDtos.ts` contains re-exports, not independent DTO definitions.
 The previous unversioned snapshots and duplicated JSON schemas had unknown
