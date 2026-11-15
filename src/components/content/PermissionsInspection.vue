@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {nativeWriteError} from '../../api/nativeWriteOutcome'
 import {ref,watch} from 'vue'
 import type {ThreadSecurity} from '../../api/threadSecurity'
 import {readConfigRestrictions} from '../../api/configInspection'
@@ -15,8 +16,8 @@ watch(()=>[props.threadId,props.epoch],()=>{generation++;busy.value=false;error.
 watch(()=>[props.security,approval.value,sandbox.value],()=>{confirmed.value=false},{flush:'sync'})
 async function read(){if(busy.value||props.disconnected)return;const token=++generation;busy.value=true;error.value='';requirements.value=undefined
  choices.value=null;confirmed.value=false;approval.value='';sandbox.value=''
- try{const value=await readPermissionConfiguration();if(token===generation){requirements.value=value.display;choices.value=value.choices}}catch(e){if(token===generation)error.value=e instanceof Error?e.message:'Restrictions unavailable'}finally{if(token===generation)busy.value=false}}
-async function apply(){if(!confirmed.value||props.blocked||busy.value||props.disconnected)return;const id=props.threadId,epoch=props.epoch;try{await props.changes.run(approval.value,sandbox.value,choices.value)}catch(e){if(id===props.threadId&&epoch===props.epoch)error.value=e instanceof Error?e.message:'Permission change unavailable'}finally{if(id===props.threadId&&epoch===props.epoch)confirmed.value=false}}
+ try{const value=await readPermissionConfiguration();if(token===generation){requirements.value=value.display;choices.value=value.choices}}catch(e){if(token===generation)error.value=nativeWriteError(e,'Restrictions unavailable')}finally{if(token===generation)busy.value=false}}
+async function apply(){if(!confirmed.value||props.blocked||busy.value||props.disconnected)return;const id=props.threadId,epoch=props.epoch;try{await props.changes.run(approval.value,sandbox.value,choices.value)}catch(e){if(id===props.threadId&&epoch===props.epoch)error.value=nativeWriteError(e,'Permission change unavailable')}finally{if(id===props.threadId&&epoch===props.epoch)confirmed.value=false}}
 </script>
 <template>
  <details class="feature-panel permissions-inspection"><summary>Permissions inspection</summary>

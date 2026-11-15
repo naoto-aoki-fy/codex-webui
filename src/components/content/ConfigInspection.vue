@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import {ref,watch} from 'vue'
+import {ref,watch,onBeforeUnmount} from 'vue'
 import {readConfiguration,readConfigRestrictions} from '../../api/configInspection'
 import ComposerDropdown from './ComposerDropdown.vue'
 import {saveUserModelDefault} from '../../api/userConfigDefaults'
+import {nativeWriteRejected,nativeWriteError} from '../../api/nativeWriteOutcome'
 const props=defineProps<{cwd:string;epoch:number;disconnected:boolean;blocked:boolean}>()
 const busy=ref(false),error=ref(''),data=ref<Awaited<ReturnType<typeof readConfiguration>>|null>(null),requirements=ref<Awaited<ReturnType<typeof readConfigRestrictions>>|undefined>(undefined)
 let generation=0
+onBeforeUnmount(()=>{generation++})
 const field=ref('model'),value=ref(''),confirmed=ref(false),writing=ref(false),status=ref(''),unknown=ref(false)
 watch(()=>[props.cwd,props.epoch],()=>{generation++;busy.value=false;error.value='';data.value=null;requirements.value=undefined;confirmed.value=false;if(writing.value){status.value='Connection/project changed during configuration write; outcome unknown. Inspect the original App Server.';unknown.value=true}writing.value=false},{flush:'sync'})
 watch([field,value],()=>{confirmed.value=false},{flush:'sync'})
@@ -13,14 +15,14 @@ async function read(){if(busy.value||writing.value||props.disconnected||!props.c
  const results=await Promise.allSettled([readConfiguration(props.cwd),readConfigRestrictions()]);if(token!==generation)return
  if(results[0].status==='fulfilled')data.value=results[0].value
  if(results[1].status==='fulfilled')requirements.value=results[1].value
- error.value=results.filter(r=>r.status==='rejected').map(r=>r.status==='rejected'?String(r.reason instanceof Error?r.reason.message:'Configuration unavailable'):'').join('\n').slice(0,2000);busy.value=false}
+ error.value=results.filter(r=>r.status==='rejected').map(r=>r.status==='rejected'?String(nativeWriteError(r.reason,'Configuration unavailable')):'').join('\n').slice(0,2000);busy.value=false}
 async function save(){if(writing.value||busy.value||props.blocked||props.disconnected||!confirmed.value||unknown.value||!data.value?.userTarget)return;const token=++generation,target={...data.value.userTarget},key=field.value as 'model'|'model_reasoning_effort',next=value.value;writing.value=true;status.value='Requesting targeted native configuration write…';confirmed.value=false
  try{const ack=await saveUserModelDefault(target,key,next);if(token!==generation)return;status.value=`Saved acknowledged${ack.overridden?' (overridden by another layer)':''}; checking the saved layer and effective project view.`
   const fresh=await readConfiguration(props.cwd);if(token!==generation)return;data.value=fresh
   const saved=fresh.userTarget
   if(!saved||saved.filePath!==target.filePath||(key==='model'?saved.model:saved.effort)!==next)throw new Error('Saved-layer value not confirmed. Inspect native configuration before another write')
   status.value='Completed: saved user-layer value verified. Effective project settings and existing thread overrides may differ; no conversation was changed.'
- }catch(e){if(token===generation){unknown.value=typeof (e as {rpcCode?:number})?.rpcCode!=='number';status.value=`Configuration write ${unknown.value?'outcome unknown':'rejected'}. Read current configuration before another explicit action. ${e instanceof Error?e.message:'Request failed'}`;data.value=null}}
+ }catch(e){if(token===generation){unknown.value=!nativeWriteRejected(e);status.value=`Configuration write ${unknown.value?'outcome unknown':'rejected'}. Read current configuration before another explicit action. ${nativeWriteError(e)}`;data.value=null}}
  finally{if(token===generation)writing.value=false}}
 </script>
 <template>

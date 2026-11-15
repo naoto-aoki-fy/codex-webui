@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {nativeWriteError} from '../../api/nativeWriteOutcome'
 import {ref,watch} from 'vue'
 import ComposerDropdown from './ComposerDropdown.vue'
 import {detectExternalConfiguration,type ImportSource} from '../../api/importPreview'
@@ -9,7 +10,7 @@ let generation=0
 watch(()=>[props.cwd,props.epoch,source.value],()=>{generation++;busy.value=false;error.value='';data.value=null},{flush:'sync'})
 async function read(){if(busy.value||props.disconnected||!props.cwd)return;const token=++generation;busy.value=true;error.value='';data.value=null
  try{const value=await detectExternalConfiguration(props.cwd,source.value);if(token===generation)data.value=value}
- catch(e){if(token===generation)error.value=e instanceof Error?e.message:'Migration discovery unavailable'}finally{if(token===generation)busy.value=false}}
+ catch(e){if(token===generation)error.value=nativeWriteError(e,'Migration discovery unavailable')}finally{if(token===generation)busy.value=false}}
 </script>
 <template>
  <details class="feature-panel import-preview"><summary>External-agent import preview</summary>
