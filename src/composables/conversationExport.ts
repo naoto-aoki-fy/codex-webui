@@ -6,7 +6,9 @@ import { generationMetadataLabel, readGenerationMetadata } from '../turnGenerati
 const MAX_PAGES = 1000
 const MAX_TEXT_CHARS = 32 * 1024 * 1024
 function fence(text: string, language = 'text'): string {
-  const marker = '`'.repeat(Math.max(3, ...[...text.matchAll(/`+/g)].map(match => match[0].length + 1)))
+  let length = 3
+  for (const match of text.matchAll(/`+/g)) length = Math.max(length, match[0].length + 1)
+  const marker = '`'.repeat(length)
   return `${marker}${language}\n${text}\n${marker}`
 }
 export function safeExportFilename(title: string): string {

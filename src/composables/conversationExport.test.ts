@@ -57,6 +57,12 @@ describe('complete Markdown export (CAP-002/003)', () => {
     expect(text).toContain('````text\n')
     expect(text).toContain('```output```')
   })
+  it('exports large valid command output with many backtick runs', () => {
+    const output = '`x'.repeat(150_000)
+    const text = conversationMarkdown('title', 'id', [msg('large-command', '', { commandExecution: { command: 'cat transcript', cwd: '/fixture', status: 'completed', exitCode: 0, aggregatedOutput: output } })], false)
+    expect(text).toContain(output)
+    expect(text).toContain('```text\n')
+  })
   it('omits internal payloads and never invents missing metadata', () => {
     const text = conversationMarkdown('title', 'id', [msg('ok', 'visible'), msg('raw', 'secret', { isUnhandled: true, rawPayload: 'secret' })], false)
     expect(text).toContain('visible'); expect(text).not.toContain('secret'); expect(text).not.toContain('Answered:')
