@@ -91,3 +91,30 @@ Three unit tests, type checks and six browser views passed, including secret
 omission, disabled/untrusted distinction, empty/error and disconnect during a
 pending read. One lazy request, no new subscription or Hook execution. Live
 acceptance: **NOT RUN**. Mutation assessment follows in Phase 3.
+
+### 23 — PARTIAL (inspection delivered)
+
+`config/read {cwd,includeLayers:true}` and `configRequirements/read` expose
+effective project defaults, native layer/version/origin metadata, named profiles
+and managed restrictions. The release's `request_processors/config_processor.rs`
+loads effective configuration and maps restrictions; the UI projects a fixed
+public-settings allowlist and never displays raw configuration or instruction
+payloads. Thread overrides are explicitly distinguished. Residual inspection
+risk 1/2/1/2 = **8**; writes remain pending Phase 3 assessment.
+
+Three unit tests, full type checks and six browser views passed, including
+secrets in effective/layer/profile payloads, empty/error and stale disconnect.
+No new startup requests, polling or subscriptions. Live acceptance **NOT RUN**.
+
+### 30 — BLOCKED (Phase 1 contract assessment)
+
+The official release contains `cloud-tasks` and `cloud-tasks-client`, but the App
+Server request enum (`app-server-protocol/src/protocol/common.rs`) has no Cloud
+task listing/detail/submission/cancellation/application contract. The CLI client
+uses authenticated ChatGPT backend task endpoints (`cloud-tasks-client/src/http.rs`),
+not a public App Server API. This repository has no existing remote Cloud bridge
+with server-owned account/environment binding. Adding a private endpoint proxy or
+local CLI execution would breach the independently managed App Server boundary.
+No placeholder browser or speculative RPC is added. Both inspection and
+mutations are blocked pending an official integration contract; full risk 24,
+no shipped behavioral risk. Live acceptance **NOT RUN**.
