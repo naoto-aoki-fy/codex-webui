@@ -709,3 +709,21 @@ screenshots. Native definition/source inspection, typed-cwd and changed-policy
 failure injection establish the grant boundary. The deletion browser gate passed
 again afterward. Screenshot review corrected stale read-only wording and retired
 process identity during a new inspection; both are regression-tested.
+
+### Final feature gate — permanent deletion after standalone commands
+
+Deletion is now blocked by any known pending/uncertain standalone command in this
+browser connection, including a command whose originating conversation is not
+selected. The UI explains the dependency and the controller independently checks
+it before preflight or write. This is the final feature-code change after the
+late-discovered native command alternative; it restores the required final
+irreversible-operation gate without rewriting earlier commits. A desktop-state
+regression covers a different originating thread. One existing reactive boolean
+check; no additional requests, fanout, persistence, subscriptions or cleanup.
+
+The final deletion gate passed: full units 1,484/two skipped, type checks, build,
+integration fixture and CLI loading. A real changed-UI browser case navigates to
+another conversation while a standalone command is pending and confirms deletion
+is disabled with an explanation; the complete deletion fixture then passes in
+both themes/all three sizes. This final gate introduces no additional native
+write, automatic termination or cleanup.

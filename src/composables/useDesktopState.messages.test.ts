@@ -2503,5 +2503,6 @@ it('keeps standalone native commands separate and blocks conflicting chat and hi
  await expect(state.sendMessageToSelectedThread('do not steer')).rejects.toThrow('native conversation action')
  expect(await state.forkNativeThreadById(thread.id)).toBe('');expect(await state.executeThreadRevert(thread.id,'turn-1','revert')).toBe('')
  await state.review.run();await state.compaction.run();const deletion=await state.ensureNativeDeletion();await deletion?.prepare()
+ shell!.thread.value='another-thread';await deletion?.prepare();expect(deletion?.state.value).toBe('idle')
  expect(fetch).not.toHaveBeenCalled();expect(gateway.startThreadTurn).not.toHaveBeenCalled()
 })

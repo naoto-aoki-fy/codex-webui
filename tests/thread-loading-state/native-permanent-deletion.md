@@ -44,3 +44,10 @@ Lazy-loading ownership: delay the first deletion-controller module, click Inspec
 on conversation A, then navigate before releasing the module. No preview request
 may be sent for replacement conversation B on behalf of the old click. A fresh
 explicit Inspect on B must work. Controller tests also enforce captured identity.
+
+Final standalone-command exclusion: while an owned command is pending or uncertain
+in another conversation, select a different idle native thread. Permanent deletion
+must remain disabled with an explanation, and the controller must send no metadata
+or delete RPC. Finish/inspect the original command first. No process is terminated
+by deleting, changing selection or showing this guard. Re-run this destructive
+workflow's fixture gate after the standalone command suite.
