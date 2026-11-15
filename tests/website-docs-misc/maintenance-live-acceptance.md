@@ -76,3 +76,28 @@ The API gateway unit suite additionally checks pin/unpin native section moves.
 These are mocked RPC/isolated filesystem checks, not authenticated migration tests.
 Cleanup: tests remove their temporary directories and restore environment variables;
 no user-state rollback or migration is performed.
+
+## Credential-free maintenance UI regression
+
+Prerequisites: installed dependencies and Playwright Chromium; current checkout's
+verification server on 127.0.0.1:4173 (inspect listener/cwd first).
+Run `node scripts/test-maintenance-ui.cjs`. If browsers are installed outside the
+usual cache, supply PLAYWRIGHT_BROWSERS_PATH.
+
+The harness intercepts all APIs and WebSocket notifications. It opens a disposable
+native fixture thread in 1440x1000, 375x812 and 768x1024, in light/dark themes;
+checks English document language, rendered Markdown/file-link href/title/text,
+and draft persistence after reload. Expected: six successful cases and
+`output/playwright/maintenance-ui.json` plus matching screenshots. No real server
+state is used or changed. Cleanup: browser contexts close automatically; generated
+output can be deleted. This does not replace live transfer/approval/reconnect tests.
+
+For generator maintenance, run `pnpm run generate:project-file-protocol` twice;
+the second run must leave the protocol diff unchanged. Run the full typecheck,
+unit, build and integration fixture sequence. CLI is ESM: use
+`node dist-cli/index.js --help`, not a fabricated CJS require API.
+
+The fixture also opens the actual Skills management route at desktop size in
+both themes, reads SKILL.md details and asserts disable/enable RPC payloads and
+native paths. Expected additional artifacts: maintenance-skills-light.png and
+maintenance-skills-dark.png. No live Skills configuration is written.

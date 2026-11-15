@@ -1,5 +1,8 @@
 # Scoped persistence maintenance evidence
 
+> Historical verification record. Numbering and commands describe that review.
+> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [migration policy](native-project-migration.md).
+
 Baseline: fresh checkpoint `0cb06a31d805f1ffead3ed23b0469268f5ba0d8a`,
 created on clean `main` after `ebd3df5`. No earlier cleanup was reset.
 Implementation: `c1f21517ca1b65ec982016b7d23e5cdebb567f3d`.

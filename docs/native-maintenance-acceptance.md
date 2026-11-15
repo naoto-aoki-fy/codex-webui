@@ -1,5 +1,8 @@
 # Native cleanup acceptance audit
 
+> Historical verification record. Numbering and commands describe that review.
+> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [migration policy](native-project-migration.md).
+
 Audit baseline (the proposed cleanup): `8565c81`.
 Original pre-cleanup baseline: `3f659043adef2fb075919dec669e88e843fe4889`.
 The final audit commit is reported in the completion message; use `HEAD` below

@@ -1,5 +1,8 @@
 # Focused native maintenance cleanup
 
+> Historical verification record. Numbering and commands describe that review.
+> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [migration policy](native-project-migration.md).
+
 | Item | Change |
 | --- | --- |
 | 3 | Removed historical-image prompt heuristics and send-time image lookup. Explicit images and historical rendering remain. |
