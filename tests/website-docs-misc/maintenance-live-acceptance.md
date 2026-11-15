@@ -112,3 +112,39 @@ stream repair, uncertain sends, pagination and fork/revert stage boundaries.
 Expected: one notification owner, stale reads do not publish, destructive requests
 are not replayed, and all cases pass. Test scopes stop polling and clear timers;
 no user-state cleanup is required. This is mocked lifecycle verification.
+
+## UI responsibility extraction regression
+
+Prerequisites: dependencies and Playwright Chromium installed; verify 4173 belongs
+to this checkout before reusing it. Run `node scripts/test-maintenance-ui.cjs`
+(with PLAYWRIGHT_BROWSERS_PATH if using a nondefault browser cache).
+All HTTP responses and WebSocket notifications are disposable fixtures.
+
+Actions performed by the harness:
+
+1. Open the conversation in light/dark at 1440x1000, 375x812 and 768x1024;
+   inspect Markdown and file-link href/title/text, then reload a saved draft.
+2. Attach a disposable file, reload, dispatch an IME Enter and then explicitly
+   send. Expect the attachment to survive refresh, IME to send nothing, and the
+   explicit action to produce exactly one turn/start including the file.
+3. Deliver a streaming delta, completion and reconnect-ready notification.
+   Expect the visible response to survive reconciliation without another send.
+4. On desktop, pin/unpin, open/cancel Rename, filter/clear search, wait for the
+   native second page, and select that row then return to the source route.
+5. Switch to an isolated browser connection-profile namespace and back. Expect
+   an empty isolated draft and restoration of the original namespace's draft.
+6. Open Skills details and disable/enable the fixture skill in both themes.
+
+Expected: all assertions pass; screenshots and per-case request counts appear in
+`output/playwright/maintenance-ui.json` and the existing testchat-maintenance and
+maintenance-skills screenshot paths. Browser contexts close automatically.
+Delete generated output if no longer needed; no real Projects, pins, files,
+credentials or conversations are modified. This is mocked acceptance, not an
+independently managed authenticated Codex server test.
+
+Focused boundary checks:
+`pnpm exec vitest run src/appOrchestration.test.ts src/components/content/composerAttachments.test.ts src/components/content/ThreadComposer.submission.test.ts src/components/content/ThreadConversation.test.ts src/components/sidebar/SidebarThreadTree.test.ts`.
+They cover dialog cancellation during preparation, single pending confirmation,
+serialized route selection, failed-send navigation, stale upload sessions,
+clipboard text/image coexistence, cache work, viewport ownership and native
+Sidebar ordering. Tests use disposable state and remove their listeners/timers.
