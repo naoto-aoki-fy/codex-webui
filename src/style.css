@@ -1323,3 +1323,7 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .apps-picker { max-height: 35vh; overflow: auto; overflow-wrap: anywhere; }
 
 .mcp-configuration { overflow-wrap: anywhere; max-height: 45vh; overflow: auto; }
+
+.curated-plugins { max-height: 50vh; overflow: auto; overflow-wrap: anywhere; }
+.curated-plugins input { background: transparent; color: inherit; border: 1px solid #a1a1aa; padding: .3rem; }
+.curated-plugins pre { white-space: pre-wrap; overflow-wrap: anywhere; }
