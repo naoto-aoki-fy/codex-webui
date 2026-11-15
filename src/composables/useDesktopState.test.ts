@@ -1202,6 +1202,17 @@ describe('native archive restore', () => {
     await state.restoreThreadById('restored')
     expect(state.projectGroups.value.flatMap(group => group.threads).some(row => row.id === 'restored' && row.projectId === 'project-id')).toBe(true)
   })
+  it('retains fresher native metadata and read receipts from the post-restore list', async () => {
+    const state = useDesktopState()
+    const restored = { ...thread('restored', '/remote'), projectName: 'project-id', projectId: 'project-id' }
+    const refreshed = { ...restored, title: 'Fresh native title', nativeReadState: { revision: 'new-revision', firstUnread: { type: 'threadStart' as const } } }
+    gatewayMocks.unarchiveThread.mockResolvedValue(restored)
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({ groups: [{ projectName: 'project-id', threads: [refreshed] }], nextCursor: null })
+    await state.restoreThreadById('restored')
+    const row = state.projectGroups.value.flatMap(group => group.threads).find(row => row.id === 'restored')
+    expect(row?.title).toBe('Fresh native title')
+    expect(row?.nativeReadState).toEqual(refreshed.nativeReadState)
+  })
   it('does not add a rejected restore to active lists', async () => {
     const state = useDesktopState()
     gatewayMocks.unarchiveThread.mockRejectedValue(new Error('Restore rejected'))
