@@ -19,3 +19,8 @@ it('distinguishes unavailable details from empty results and observed lifecycle'
 it('omits URL userinfo credentials in public execution text',()=>{
  expect(executionText('https://user:password@example.test/path')).not.toContain('user:password')
 })
+
+it('renders public structured results without confusing absent text with an empty result',()=>{
+ const message=normalizeExecutionItem({id:'s',type:'mcpToolCall',server:'s',tool:'t',status:'completed',result:{content:[],structuredContent:{answer:'public structured result',apiKey:'SECRET',debug:{hidden:'INTERNAL'}},_meta:{hidden:'INTERNAL'}}})!
+ expect(message.text).toContain('public structured result');expect(message.text).not.toContain('Empty result');expect(message.text).not.toMatch(/SECRET|INTERNAL/)
+})
