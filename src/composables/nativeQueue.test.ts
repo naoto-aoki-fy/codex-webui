@@ -52,3 +52,7 @@ it('native rejection differs from uncertain transport and stale native snapshots
  const request=vi.fn(async(method)=>{if(method==='thread/queue/list')return {data:[queued()],nextCursor:null};throw Object.assign(new Error('entry gone'),{rpcCode:-32602})})
  const {owner,stop}=setup(request);await owner.refresh();await owner.manage('delete','q');expect(owner.uncertain.value).toBe('');expect(owner.status.value).toContain('rejected');await expect(owner.manage('start','q')).rejects.toThrow('Refresh');stop()
 })
+it('treats numeric internal errors after queue writes as uncertain rather than rejected',async()=>{
+ const request=vi.fn(async(method)=>{if(method==='thread/queue/list')return {data:[],nextCursor:null};throw Object.assign(new Error('storage reply failed'),{rpcCode:-32603})})
+ const {owner,stop}=setup(request);await owner.refresh();await expect(owner.add(payload)).rejects.toThrow();expect(owner.uncertain.value).toContain('unknown');await expect(owner.add(payload)).rejects.toThrow('Read');expect(request.mock.calls.filter(c=>c[0]==='thread/queue/add')).toHaveLength(1);stop()
+})

@@ -13,7 +13,7 @@ const {setup,assert}=require('./approved-fixture.cjs')
     assert.deepEqual(Object.keys(body.params).sort(),['expectedVersion','filePath','keyPath','mergeStrategy','value'].sort());assert.equal(body.params.keyPath,'model');assert.equal(body.params.filePath,'/remote/work.config.toml')
     if(mode==='conflict')return {status:502,json:{error:'Configuration version conflict',rpcCode:-32600}}
     assert.equal(body.params.expectedVersion,version);model=body.params.value;version='v'+(Number(version.slice(1))+1)
-    if(mode==='lost')return {status:502,json:{error:'Configuration reply lost'}}
+    if(mode==='lost')return {status:502,json:{error:'Configuration reply lost',rpcCode:-32603}}
     return {json:{result:{status:'okOverridden',version,filePath:'/remote/work.config.toml'}}}
    }
   })

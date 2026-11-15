@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {nativeWriteError} from '../../api/nativeWriteOutcome'
 import {ref,watch,onBeforeUnmount} from 'vue'
 import {rpcCall} from '../../api/codexRpcClient'
 import {planWorktree,createRemoteWorktree,verifyCreatedWorktree,WorktreeOutcomeError,type WorktreePlan} from '../../api/createWorktree'
@@ -10,14 +11,14 @@ function scopedRequest(token:number){const cwd=props.cwd,epoch=props.epoch;retur
 watch(()=>[props.cwd,props.epoch],()=>{generation++;plan.value=null;confirmed.value=false;created.value='';status.value=busy.value?'Connection/project changed during the operation. Outcome may be unknown; inspect the original App Server.':'';busy.value=false;unknown.value=false},{flush:'sync'})
 watch([destination,branch],()=>{if(!busy.value&&!unknown.value){plan.value=null;confirmed.value=false;created.value='';status.value=''}},{flush:'sync'})
 async function preview(){if(busy.value||props.blocked||unknown.value)return;const token=++generation;busy.value=true;status.value='';confirmed.value=false;plan.value=null;created.value=''
- try{const value=await planWorktree(props.cwd,destination.value,branch.value,scopedRequest(token));if(token===generation)plan.value=value}catch(e){if(token===generation)status.value=e instanceof Error?e.message:'Worktree preview unavailable'}finally{if(token===generation)busy.value=false}}
+ try{const value=await planWorktree(props.cwd,destination.value,branch.value,scopedRequest(token));if(token===generation)plan.value=value}catch(e){if(token===generation)status.value=nativeWriteError(e,'Worktree preview unavailable')}finally{if(token===generation)busy.value=false}}
 async function create(){if(busy.value||props.blocked||!plan.value||!confirmed.value||unknown.value)return;const token=++generation,p=plan.value;busy.value=true;status.value='Requesting remote worktree creation…'
  try{const path=await createRemoteWorktree(p,scopedRequest(token));if(token===generation){created.value=path;status.value='Completed: native Git path, new branch and commit verified.';confirmed.value=false}}
- catch(e){if(token===generation){unknown.value=e instanceof WorktreeOutcomeError&&e.submitted;status.value=(unknown.value?'Failed or partial/unknown creation. Inspect path and branch before any further action. ':'Rejected before creation. ')+(e instanceof Error?e.message:'Request failed')}}finally{if(token===generation)busy.value=false}}
+ catch(e){if(token===generation){unknown.value=e instanceof WorktreeOutcomeError&&e.submitted;status.value=(unknown.value?'Failed or partial/unknown creation. Inspect path and branch before any further action. ':'Rejected before creation. ')+(nativeWriteError(e,'Request failed'))}}finally{if(token===generation)busy.value=false}}
 async function reconcile(){if(busy.value||props.blocked||!plan.value)return;const token=++generation;busy.value=true
  try{const path=await verifyCreatedWorktree(plan.value,scopedRequest(token));if(token===generation){created.value=path;unknown.value=false;status.value='Completed: exact native worktree reconciled.'}}
- catch(e){if(token===generation)status.value=e instanceof Error?e.message:'Reconciliation unavailable'}finally{if(token===generation)busy.value=false}}
-async function open(){if(busy.value||props.blocked||!created.value)return;const token=++generation;busy.value=true;try{await props.openProject(created.value)}catch(e){if(token===generation)status.value=e instanceof Error?e.message:'Project registration failed; worktree remains intact'}finally{if(token===generation)busy.value=false}}
+ catch(e){if(token===generation)status.value=nativeWriteError(e,'Reconciliation unavailable')}finally{if(token===generation)busy.value=false}}
+async function open(){if(busy.value||props.blocked||!created.value)return;const token=++generation;busy.value=true;try{await props.openProject(created.value)}catch(e){if(token===generation)status.value=nativeWriteError(e,'Project registration failed; worktree remains intact')}finally{if(token===generation)busy.value=false}}
 </script>
 <template>
  <details class="feature-panel create-worktree"><summary>Create remote Git worktree</summary>

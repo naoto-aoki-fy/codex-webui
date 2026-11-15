@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {nativeWriteError} from '../../api/nativeWriteOutcome'
 import {ref,watch} from 'vue'
 import {readNativeAccount,readLoginMethods} from '../../api/authInspection'
 const props=defineProps<{epoch:number}>()
@@ -9,7 +10,7 @@ async function read(){if(busy.value)return;const token=++generation;busy.value=t
  const result=await Promise.allSettled([readNativeAccount(),readLoginMethods()]);if(token!==generation)return
  if(result[0].status==='fulfilled')account.value=result[0].value
  if(result[1].status==='fulfilled')methods.value=result[1].value
- error.value=result.filter(r=>r.status==='rejected').map(r=>r.status==='rejected'?(r.reason instanceof Error?r.reason.message:'Authentication state unavailable'):'').join('\n').slice(0,2000);busy.value=false}
+ error.value=result.filter(r=>r.status==='rejected').map(r=>r.status==='rejected'?(nativeWriteError(r.reason,'Authentication state unavailable')):'').join('\n').slice(0,2000);busy.value=false}
 </script>
 <template>
  <details class="feature-panel auth-inspection"><summary>Native authentication details</summary>

@@ -183,3 +183,11 @@ Screenshots: `output/playwright/risk-23-changes-{1280,375,768}-{light,dark}.png`
 Performance: one targeted write and one post-write config read; no polling,
 automatic reload, thread resume or extra startup requests. Generic default config
 error responses remain unchanged, verified alongside the new opt-in response.
+
+Shared failure injection: return native `-32603` after persisting a fixture write,
+then disconnect/reconnect. Queue, permission and config controls must retain an
+unknown outcome and require inspection; a numeric error alone is not rejection.
+Only verified validation/method errors are definitive rejections. Inject a very
+large error containing credential assignments: at most 2,000 characters are
+processed/rendered and recognizable credentials are redacted. Generic RPC error
+objects remain unchanged for unrelated consumers.

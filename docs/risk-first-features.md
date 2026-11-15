@@ -394,3 +394,21 @@ identity, one-key preservation, version rejection, saved/effective mismatch,
 refresh persistence and unknown reconciliation. Performance: two explicit reads,
 one write and one verification config read; no new startup calls/subscriptions.
 Live **NOT RUN**; only test configuration data was mutated.
+
+### Shared corrective gate — uncertain native internal errors
+
+Failure-mode review established that `-32603`/storage errors can occur after
+native persistence. New queue, permission and configuration workflows now treat
+only the verified client-validation/method codes (-32600/-32601/-32602) as
+definitive rejection; other failures remain unknown and retain their inspection
+barriers. No generic RPC body or previous unrelated consumer was changed.
+Operation-specific error rendering is credential-redacted and capped at 2,000
+characters, including the queue's outer composer error. Config component teardown
+also cancels ownership before a post-write verification read.
+
+Two helper tests and queue/permission internal-error regressions were added.
+Full working-tree suite **1,445 passed / two skipped**, type checks and repeated
+permission/queue/config browser matrices passed. Config browser failure injection
+uses a coded internal error **after** a simulated persisted write. No replay or
+false rejection occurs. Performance: bounded error processing, no additional RPC,
+polling, persistence or subscription. Live evidence remains NOT RUN.

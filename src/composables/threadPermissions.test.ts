@@ -29,3 +29,6 @@ it('keeps rejection and connection-change unknown distinct and ignores late repl
 it('uses the operation thread snapshot after selection changes, never the replacement thread settings',async()=>{
  const {owner,selected,snapshots,stop}=setup(async()=>({}));await owner.run('on-request','',choices);selected.value='other';snapshots.other=threadSecurity({approvalPolicy:'on-request'});owner.observe(event);expect(owner.state.value).toBe('accepted');snapshots.t=threadSecurity({approvalPolicy:'on-request'});owner.observe(event);expect(owner.state.value).toBe('completed');stop()
 })
+it('holds an uncertain permission barrier on native internal errors too',async()=>{
+ const {owner,stop}=setup(async()=>{throw Object.assign(new Error('persistence confirmation failed'),{rpcCode:-32603})});await owner.run('on-request','',choices);expect(owner.state.value).toBe('unknown');expect(owner.blocking.value).toBe(true);stop()
+})

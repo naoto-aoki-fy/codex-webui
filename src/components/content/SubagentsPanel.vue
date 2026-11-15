@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {nativeWriteError} from '../../api/nativeWriteOutcome'
 import {ref,watch} from 'vue'
 import {listChildAgents,readAgent,type AgentThread} from '../../api/subagents'
 const props=defineProps<{threadId:string;epoch:number;disconnected:boolean}>()
@@ -17,14 +18,14 @@ async function load(more=false){
   if(page.cursor)seen.add(page.cursor)
   const byId=new Map(rows.value.map(row=>[row.id,row]));for(const row of page.rows)byId.set(row.id,row)
   rows.value=[...byId.values()].slice(0,200);cursor.value=page.cursor;if(self)parent.value=self;loaded.value=true
- }catch(e){if(token===generation)error.value=e instanceof Error?e.message:'Agent list unavailable'}
+ }catch(e){if(token===generation)error.value=nativeWriteError(e,'Agent list unavailable')}
  finally{if(token===generation)busy.value=false}
 }
 async function inspect(id:string){
  if(busy.value||props.disconnected)return
  const token=++generation;busy.value=true;error.value='';detail.value=null
  try{const value=await readAgent(id);if(token===generation){if(value.parent!==props.threadId)throw new Error('Agent parent changed; refresh the list');detail.value=value}}
- catch(e){if(token===generation)error.value=e instanceof Error?e.message:'Agent details unavailable'}
+ catch(e){if(token===generation)error.value=nativeWriteError(e,'Agent details unavailable')}
  finally{if(token===generation)busy.value=false}
 }
 const href=(id:string)=>`#/thread/${encodeURIComponent(id)}`
