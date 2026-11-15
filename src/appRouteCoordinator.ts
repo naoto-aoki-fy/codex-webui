@@ -18,6 +18,7 @@ export function createAppRouteCoordinator(deps: {
         path: string;
     }>, fileAttachments?: FileAttachment[], projectId?: string) => Promise<string>;
     newThreadProjectId: ComputedRef<string>;
+    onThreadCreated?: (threadId: string) => void;
     router: Pick<Router, 'replace'>;
     scheduleMobileConversationJumpToLatest: () => void;
 }) {
@@ -77,6 +78,7 @@ export function createAppRouteCoordinator(deps: {
             const threadId = await deps.sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments, deps.newThreadProjectId.value || undefined);
             if (!threadId)
                 return false;
+            deps.onThreadCreated?.(threadId);
             await deps.router.replace({ name: 'thread', params: { threadId } });
             deps.scheduleMobileConversationJumpToLatest();
             return true;

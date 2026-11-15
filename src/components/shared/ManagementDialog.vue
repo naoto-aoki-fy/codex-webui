@@ -10,16 +10,22 @@ function restoreFocus() {
   returnFocus = null
 }
 watch(() => props.open, async open => {
+  if (open && typeof document !== 'undefined') {
+    const active = document.activeElement
+    if (active instanceof HTMLElement) {
+      returnFocus = active.closest('form')?.querySelector<HTMLElement>('.thread-composer-attach-trigger')
+        ?? active.closest('details')?.querySelector<HTMLElement>('summary') ?? active
+    }
+  }
   await nextTick()
   if (!dialog.value || props.open !== open) return
   if (open && !dialog.value.open) {
-    returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     dialog.value.showModal()
   } else if (!open && dialog.value.open) {
     dialog.value.close()
     restoreFocus()
   }
-}, { immediate: true, flush: 'post' })
+}, { immediate: true, flush: 'pre' })
 function backdrop(event: MouseEvent) {
   if (!dialog.value || event.target !== dialog.value) return
   const box = dialog.value.getBoundingClientRect()
