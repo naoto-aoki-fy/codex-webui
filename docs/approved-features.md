@@ -207,3 +207,16 @@ Authoritative floor source links:
 - [Plugin list side effects and vertical branch](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server/src/request_processors/plugins.rs)
 - [Shared skills roots setter](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server/src/request_processors/catalog_processor.rs)
 - [Config layers and versioned writes](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server-protocol/src/protocol/v2/config.rs)
+
+## Shared-path review follow-up
+
+The full suite initially passed 1,382 tests (two opt-in live tests skipped).
+Focused review then exposed live overlay ordering across tool/command/agent
+buckets. A transient WeakMap tracks first-observed object order (including Vue
+raw/proxy identity), merging the existing four ordered buckets in linear time.
+No message fields, persistence, cache or subscriptions are added; native persisted
+order remains authoritative. The reproducing desktop-state test and focused
+4-suite run now pass (227 tests). Tool text additionally redacts URL userinfo and
+bounds object-key traversal without allocating an unbounded key array.
+Browser execution matrix rerun passed with explicit tool → command → agent ordering,
+one execution row, and zero item-driven history reloads. Typecheck passed.

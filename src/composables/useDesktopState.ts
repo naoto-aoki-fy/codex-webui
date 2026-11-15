@@ -1,3 +1,4 @@
+import { createLiveItemOrder } from './liveItemOrder'
 import { createThreadReview } from './threadReview'
 import { createThreadCompaction } from './threadCompaction'
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
@@ -182,6 +183,7 @@ export function useDesktopState() {
     get clearCompletedTurnLiveState() { return clearCompletedTurnLiveState; },
     get setTurnErrorForThread() { return setTurnErrorForThread; }
   })
+  const liveItemOrder = createLiveItemOrder()
   const livePlanMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveAgentMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveReasoningTextByThreadId = ref<Record<string, string>>({})
@@ -475,8 +477,7 @@ export function useDesktopState() {
     const liveFileChanges = liveFileChangeMessagesByThreadId.value[threadId] ?? []
     const combined = [
       ...persisted.map((message) => liveAgentById.get(message.id) ?? message),
-      ...livePlan, ...liveCommands, ...liveFileChanges,
-      ...liveAgent.filter((message) => !persistedIds.has(message.id)),
+      ...liveItemOrder.merge([livePlan, liveCommands, liveFileChanges, liveAgent].map(group => group.filter(message => !persistedIds.has(message.id)))),
     ].map((message) => {
       const metadata = message.turnId ? generationMetadataByThreadId.value[threadId]?.[message.turnId] : undefined
       if (message.role !== 'assistant' || !metadata) return message
@@ -1284,6 +1285,7 @@ export function useDesktopState() {
     const previous = livePlanMessagesByThreadId.value[threadId] ?? []
     nextMessage = { ...nextMessage, turnId: nextMessage.turnId
       || previous.find((message) => message.id === nextMessage.id)?.turnId || activeTurnIdByThreadId.value[threadId] }
+    liveItemOrder.remember(previous, nextMessage)
     const next = upsertMessage(previous, nextMessage)
     setLivePlanMessagesForThread(threadId, next)
   }
@@ -1292,12 +1294,14 @@ export function useDesktopState() {
     const previous = liveAgentMessagesByThreadId.value[threadId] ?? []
     nextMessage = { ...nextMessage, turnId: nextMessage.turnId
       || previous.find((message) => message.id === nextMessage.id)?.turnId || activeTurnIdByThreadId.value[threadId] }
+    liveItemOrder.remember(previous, nextMessage)
     const next = upsertMessage(previous, nextMessage)
     setLiveAgentMessagesForThread(threadId, next)
   }
 
   function upsertLiveFileChangeMessage(threadId: string, nextMessage: UiMessage): void {
     const previous = liveFileChangeMessagesByThreadId.value[threadId] ?? []
+    liveItemOrder.remember(previous, nextMessage)
     const next = upsertMessage(previous, nextMessage)
     setLiveFileChangeMessagesForThread(threadId, next)
   }
@@ -1511,7 +1515,9 @@ export function useDesktopState() {
       const turnIndex = turnIndexByTurnId[message.turnId]
       if (typeof turnIndex !== 'number') return message
       changed = true
-      return { ...message, turnIndex }
+      const rebound = { ...message, turnIndex }
+      liveItemOrder.remember(current, rebound)
+      return rebound
     })
 
     if (!changed) return
@@ -1607,6 +1613,7 @@ export function useDesktopState() {
 
   function upsertLiveCommand(threadId: string, msg: UiMessage): void {
     const previous = liveCommandsByThreadId.value[threadId] ?? []
+    liveItemOrder.remember(previous, msg)
     const next = upsertMessage(previous, msg)
     if (next === previous) return
     liveCommandsByThreadId.value = { ...liveCommandsByThreadId.value, [threadId]: next }

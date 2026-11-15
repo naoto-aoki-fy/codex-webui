@@ -2457,3 +2457,13 @@ it.each(['fast', 'standard'] as const)('restores an existing thread with saved F
     collaborationMode: { mode: 'default', settings: { model: 'gpt-5.5', reasoning_effort: null, developer_instructions: null } },
   } }])
 })
+it('keeps native tools, commands and agent text in first-event order without duplicate execution rows',async()=>{
+ const state=await loadState()
+ const item=(value:unknown,method='item/started')=>notify({method,params:{threadId:thread.id,turnId:'order-turn',item:value}})
+ item({id:'search-order',type:'webSearch',query:'q',results:null})
+ item({id:'command-order',type:'commandExecution',command:'pwd',status:'inProgress'})
+ notify({method:'item/agentMessage/delta',params:{threadId:thread.id,turnId:'order-turn',itemId:'agent-order',delta:'answer'}})
+ item({id:'search-order',type:'webSearch',query:'q',results:[]},'item/completed')
+ expect(state.messages.value.filter(m=>m.id.endsWith('-order')).map(m=>m.id)).toEqual(['search-order','command-order','agent-order'])
+ expect(state.messages.value.filter(m=>m.id==='search-order')).toHaveLength(1)
+})

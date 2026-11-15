@@ -16,3 +16,6 @@ it('distinguishes unavailable details from empty results and observed lifecycle'
  expect(normalizeExecutionItem(item)?.text).toContain('Status: unavailable')
  expect(normalizeExecutionItem({type:'mcpToolCall'})).toBeNull()
 })
+it('omits URL userinfo credentials in public execution text',()=>{
+ expect(executionText('https://user:password@example.test/path')).not.toContain('user:password')
+})
