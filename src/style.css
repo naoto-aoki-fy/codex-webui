@@ -1404,3 +1404,11 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .composer-send-modes p { margin: 4px 12px; font-size: 12px; line-height: 1.4; color: #71717a; }
 .thread-composer-attach-menu { max-height: min(70dvh, 620px); overflow-y: auto; }
 :root.dark .composer-send-modes legend, :root.dark .composer-send-modes p { color: #a1a1aa; }
+.management-dialog .directory-hub { height: auto; overflow: visible; padding: 0; }
+.management-dialog .directory-title { font-size: 18px; line-height: 1.5; font-weight: 500; }
+.management-dialog .skills-embedded-toggle { min-height: 36px; gap: 8px; }
+.management-dialog .skills-embedded-chevron, .management-dialog .mcp-skill-chevron { width: 16px; height: 16px; flex-shrink: 0; }
+@media (max-width: 640px) {
+  .management-dialog .directory-header { flex-wrap: wrap; }
+  .management-dialog .directory-header > div { min-width: 0; overflow-wrap: anywhere; }
+}
