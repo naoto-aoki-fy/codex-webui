@@ -568,7 +568,7 @@ Full/attempted limited risk 4/5/5/5 = **24**; delivered mutation risk **none**
 not a live command. Live **NOT RUN**. This assessment precedes enabling the final
 irreversible deletion workflow.
 
-### 10 — PARTIAL, confirmed native leaf-conversation deletion, implemented last
+### 10 — PARTIAL, confirmed native deletion with child prechecks, implemented last
 
 Official `thread_delete.rs` owns persistence, owned-agent subtree deletion,
 attached-thread checks and Fork-history conflict rejection. It acknowledges and
@@ -605,6 +605,11 @@ including post-refresh native absence. Three bounded lazy reads per preview and
 three rechecks before one write; child presence rejects immediately, no recursive
 walk or polling. Existing event coalescing handles list refresh; no new stream or
 subscription. Live **NOT RUN**; no real conversation was deleted.
+
+The [subsequent evidence review](high-impact-evidence-review.md#1-permanent-deletion-and-concurrent-child-creation)
+explicitly withholds a leaf-only safety guarantee: a child created after the final
+precheck can enter the native deletion subtree. Client prechecks do not prevent
+that race. Preserve this limitation when interpreting the fixture results.
 
 ### Final audit correction: total named-profile bound
 

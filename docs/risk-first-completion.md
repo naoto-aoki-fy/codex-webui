@@ -31,6 +31,11 @@ processes, repositories, devices, paid sessions or Cloud tasks were provided.
 Fixtures and disposable Git repositories are development evidence, not live
 App Server acceptance. No blocker was bypassed through global configuration.
 
+The subsequent [high-impact evidence review](high-impact-evidence-review.md)
+records corrective commits and remaining deletion, account-isolation and queue
+guarantee gaps. It preserves these feature classifications and does not close
+high-impact live acceptance.
+
 Risks are estimates: tuple **P/I/R/T**, score **P + 2I + R + T**. The first score
 is the reassessed full feature (previous assessment in parentheses); the second
 is the initial delivered mutation/inspection scope before safeguards; the third
