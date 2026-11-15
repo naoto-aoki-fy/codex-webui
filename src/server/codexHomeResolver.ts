@@ -22,7 +22,7 @@ export function sessionCodexHome(value: unknown): string {
 export class CodexHomeResolver {
   private scope: string
   private epoch = {}
-  private home = process.env.CODEX_HOME?.trim() || ''
+  private home = ''
   private pending: Promise<string> | undefined
 
   constructor(private readonly rpc: (method: string, params: unknown) => Promise<unknown>,
@@ -33,13 +33,19 @@ export class CodexHomeResolver {
   reset(): void {
     this.scope = this.activeScope()
     this.epoch = {}
-    this.home = process.env.CODEX_HOME?.trim() || ''
+    this.home = ''
     this.pending = undefined
   }
 
   token(): object {
     if (this.scope !== this.activeScope()) this.reset()
     return this.epoch
+  }
+
+  observeInitialization(metadata: unknown, token: object): void {
+    if (token !== this.token() || this.home) return
+    const home = asRecord(metadata)?.codexHome
+    if (remotePath(home)) this.home = home
   }
 
   observeThreadRead(result: unknown, token: object): void {

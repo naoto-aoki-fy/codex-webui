@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CodexHomeResolver, sessionCodexHome } from './codexHomeResolver'
 
-beforeEach(() => vi.stubEnv('CODEX_HOME', ''))
+beforeEach(() => vi.stubEnv('CODEX_HOME', '/webui/state'))
 afterEach(() => vi.unstubAllEnvs())
 const config = (file: string, profile: string | null = null) => ({ layers: [{ name: { type: 'user', file, profile } }] })
 const thread = (home: string) => ({ thread: { path: `${home}/sessions/2026/11/15/rollout-test.jsonl` } })
@@ -17,11 +17,11 @@ function deferred() {
   return { promise, resolve }
 }
 
-it('initializes from trimmed CODEX_HOME with zero discovery requests', async () => {
-  vi.stubEnv('CODEX_HOME', '  /configured/home  ')
+it('uses the server effective home instead of WebUI CODEX_HOME with zero discovery requests', async () => {
   const f = fixture()
+  f.resolver.observeInitialization({ codexHome: '/server/state' }, f.resolver.token())
   f.resolver.observeThreadRead(thread('/other'), f.resolver.token())
-  expect(await f.resolver.resolve()).toBe('/configured/home')
+  expect(await f.resolver.resolve()).toBe('/server/state')
   expect(f.rpc).not.toHaveBeenCalled()
 })
 
@@ -92,14 +92,16 @@ it.each(['connection', 'profile'])('invalidates cached/in-flight state on %s cha
   f.change()
   const b = f.resolver.resolve()
   f.resolver.observeThreadRead(thread('/stale'), token)
+  f.resolver.observeInitialization({ codexHome: '/obsolete' }, token)
   old.resolve(config('/stale/config.toml'))
   await retired
   expect(f.resolver.resolve()).toBe(b)
   fresh.resolve(config('/fresh/config.toml'))
   expect(await b).toBe('/fresh')
   f.change()
-  vi.stubEnv('CODEX_HOME', ' /reset/home ')
-  expect(await f.resolver.resolve()).toBe('/reset/home')
+  f.resolver.observeInitialization({ codexHome: '/new/server/home' }, f.resolver.token())
+  f.resolver.observeInitialization({ codexHome: '/stale' }, token)
+  expect(await f.resolver.resolve()).toBe('/new/server/home')
   expect(f.rpc).toHaveBeenCalledTimes(2)
 })
 
@@ -115,4 +117,19 @@ it.each([
   const file = home.includes('\\') ? home + '\\config.toml' : home + '/config.toml'
   f.rpc.mockResolvedValue(config(file))
   expect((await f.resolver.resolve()).split('\\').join('/')).toBe(expected.split('\\').join('/'))
+})
+
+it.each([null, {}, { codexHome: '' }, { codexHome: 'relative' }, { codexHome: '/x/../wrong' }, { codexHome: '/bad\u0000path' }])('ignores invalid initialization despite WebUI CODEX_HOME: %j', async metadata => {
+  const f = fixture()
+  f.resolver.observeInitialization(metadata, f.resolver.token())
+  expect(await f.resolver.resolve()).toBe('/custom/home')
+  expect(f.rpc).toHaveBeenCalledTimes(1)
+})
+
+it.each(['/server/.codex', 'C:\\server\\custom', '\\\\host\\share\\custom'])('accepts remote initialization path %s and retains it', async home => {
+  const f = fixture()
+  f.resolver.observeInitialization({ codexHome: home }, f.resolver.token())
+  f.resolver.observeInitialization({ codexHome: '/later' }, f.resolver.token())
+  expect(await f.resolver.resolve()).toBe(home)
+  expect(f.rpc).not.toHaveBeenCalled()
 })
