@@ -4,6 +4,7 @@ import { createThreadCompaction } from './threadCompaction'
 import {createThreadSecurityObservation} from './threadSecurityObservation'
 import {createDeniedActionObservation} from './deniedActionObservation'
 import {createNativeQueue} from './nativeQueue'
+import {createThreadPermissions} from './threadPermissions'
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
 import { appendDiagnosticWarning, type DiagnosticWarning } from '../diagnostics'
 import { createDesktopConnection } from './desktopConnection'
@@ -245,13 +246,13 @@ export function useDesktopState() {
   const operationEpoch = ref(0)
   watch(operationEpoch,()=>{securityObservation.clear();deniedActions.clear()},{flush:'sync'})
   const review = createThreadReview({ epoch: operationEpoch, selected: selectedThreadId,
-    blocked: () => isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value ||
+    blocked: () => isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value || permissionChanges.blocking.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
     interrupt: (threadId, turnId) => interruptThreadTurn(threadId, turnId),
   })
   const compaction = createThreadCompaction({ epoch: operationEpoch, selected: selectedThreadId,
-    blocked: () => isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || review.busy.value ||
+    blocked: () => isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || review.busy.value || permissionChanges.blocking.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
     refresh: id => history.loadMessages(id, { force: true }),
@@ -260,7 +261,12 @@ export function useDesktopState() {
     active:()=>inProgressById.value[selectedThreadId.value]===true,
     refreshHistory:id=>history.loadMessages(id,{force:true}),
     ready:()=>transportState.value!=='disconnected',
-    blocked:()=>isRollingBack.value||compaction.busy.value||review.busy.value||turns.isSendingMessage.value||
+    blocked:()=>isRollingBack.value||compaction.busy.value||review.busy.value||permissionChanges.blocking.value||turns.isSendingMessage.value||
+      history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
+  })
+  const permissionChanges=createThreadPermissions({epoch:operationEpoch,selected:selectedThreadId,
+    ready:()=>transportState.value!=='disconnected',snapshot:id=>securityObservation.snapshots.value[id]??null,
+    blocked:()=>isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||compaction.busy.value||review.busy.value||nativeQueue.writing.value||turns.isSendingMessage.value||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
   })
 
@@ -1675,6 +1681,7 @@ export function useDesktopState() {
 
   function applyRealtimeUpdates(notification: RpcNotification): void {
     securityObservation.observe(notification)
+    permissionChanges.observe(notification)
     deniedActions.observe(notification)
     nativeQueue.observe(notification)
     review.observe(notification)
@@ -2486,7 +2493,7 @@ export function useDesktopState() {
   }
 
   function hasPendingNativeAction(threadId: string): boolean {
-    return (compaction.busy.value && compaction.thread.value === threadId)
+    return ((permissionChanges.busy.value || permissionChanges.state.value==='unknown') && permissionChanges.thread.value === threadId) || (compaction.busy.value && compaction.thread.value === threadId)
       || (review.busy.value && review.thread.value === threadId)
   }
 
@@ -2789,6 +2796,7 @@ export function useDesktopState() {
     deniedActions,
     compaction, review,
     nativeQueue,
+    permissionChanges,
     diagnosticWarnings,
     renameThreadById,
     forkThreadById,
@@ -2797,7 +2805,7 @@ export function useDesktopState() {
     executeThreadRevert,
 
     sendMessageToSelectedThread: (...args: Parameters<typeof turns.sendMessageToSelectedThread>) => {
-      if (compaction.selectedBusy.value || review.selectedBusy.value) return Promise.reject(new Error('Wait for the native conversation action to finish.'))
+      if (compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value&&permissionChanges.thread.value===selectedThreadId.value) return Promise.reject(new Error('Wait for the native conversation action to finish.'))
       return turns.sendMessageToSelectedThread(...args)
     },
     sendMessageToNewThread: turns.sendMessageToNewThread,
