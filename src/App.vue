@@ -177,7 +177,7 @@
         </div>
         <section class="content-body">
           <template v-if="isSkillsRoute">
-            <SkillsMcpHub
+            <SkillsMcpHub :epoch="operationEpoch"
               @skills-changed="onSkillsChanged"
             />
           </template>

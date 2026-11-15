@@ -143,3 +143,19 @@ Focused 6 suites: 338 passed (plus bounded selection regression); typecheck pass
 removed selection, connection invalidation/errors; all sizes/themes passed after
 rerunning on stable source (initial HMR interrupted the first run). Performance in
 manual test. Live NOT RUN; risk medium.
+
+## 16 validation and scope limitation
+
+Partial: targeted version-checked enabled scalar editing for existing simple-name
+MCP definitions in a single base user config layer. config.rs ConfigRead/ValueWrite
+and native config_rpc.rs tests establish layer identity, expectedVersion and
+ok/okOverridden semantics. Only selected key/boolean/file/version is written;
+secrets/unrelated config never round-trip. Existing status/OAuth/reload/tools remain.
+Saved config is not claimed effective; no reload or installation is automatic.
+Full add/remove/command/transport/secret editing remains blocked in this iteration:
+managed/project/profile origins, omitted secrets and full-definition validation
+require broader edit ownership and conflict handling. Scalar edits remain useful.
+`pnpm exec vitest run src/api/mcpConfiguration.test.ts src/components/content/SkillsMcpHub.navigation.test.ts`: 3 passed. Typecheck passed after using the repository's
+existing JS library target. `node scripts/test-approved-mcp.cjs`: lazy read, exact
+version/file/scalar, confirmation, no secrets/reload and conflicts; all sizes/themes
+passed. Performance in manual test. Live NOT RUN; narrow scope medium risk.
