@@ -1,3 +1,4 @@
+import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
 import { appendDiagnosticWarning, type DiagnosticWarning } from '../diagnostics'
 import { createDesktopConnection } from './desktopConnection'
 import { createDesktopTurns } from './desktopTurns'
@@ -1925,6 +1926,20 @@ export function useDesktopState() {
       if (completedReasoningMessageId === liveReasoningMessageId(activeReasoningItemId)) {
         activeReasoningItemId = ''
       }
+    }
+
+    if (notification.method === 'item/started' || notification.method === 'item/completed') {
+      const params = asRecord(notification.params)
+      const item = normalizeExecutionItem(params?.item, notification.method === 'item/started' ? 'started' : 'completed')
+      if (item) upsertLiveAgentMessage(notificationThreadId, { ...item, turnId: readString(params?.turnId) || undefined })
+    }
+    if (notification.method === 'item/mcpToolCall/progress') {
+      const params = asRecord(notification.params)
+      const id = readString(params?.itemId)
+      const current = (liveAgentMessagesByThreadId.value[notificationThreadId] ?? []).find(message => message.id === id)
+      if (current?.executionLabel) upsertLiveAgentMessage(notificationThreadId, {
+        ...current, text: `${current.text.split('\nProgress:')[0]}\nProgress: ${executionText(params?.message)}`.slice(0, 12_000),
+      })
     }
 
     const commandStarted = readCommandExecutionStarted(notification)

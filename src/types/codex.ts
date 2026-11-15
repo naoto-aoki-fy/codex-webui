@@ -80,6 +80,7 @@ export type UiMessage = {
   fileAttachments?: UiFileAttachment[]
   fileChanges?: UiFileChange[]
   fileChangeStatus?: UiFileChangeStatus
+  executionLabel?: string
   messageType?: string
   rawPayload?: string
   isUnhandled?: boolean

@@ -1,3 +1,4 @@
+import { normalizeExecutionItem } from './executionDetails'
 import { isAppAssetUrl } from '../../appAssetUrl.js'
 import { readMessageTimestamp } from '../../messageTimestamps'
 import type {
@@ -295,6 +296,9 @@ export function toUiFileChanges(changes: unknown): UiFileChange[] {
 }
 
 function toUiMessages(item: ThreadItem): UiMessage[] {
+  const execution = normalizeExecutionItem(item)
+  if (execution) return [execution]
+
   if (item.type === 'agentMessage') {
     return [
       {
