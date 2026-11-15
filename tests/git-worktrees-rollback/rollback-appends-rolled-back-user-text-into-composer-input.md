@@ -1,5 +1,7 @@
 ### Feature: Revert and Fork and Revert restore the selected prompt for editing
 
+Requirement: [CAP-001](../../docs/product-requirements.md#cap-001-fork-and-revert).
+
 Prerequisites: a disposable persisted paginated thread with three completed turns,
 known second prompt, and a visible composer. Use an independently managed test
 App Server; run in both light and dark themes.
@@ -9,7 +11,8 @@ Actions and expected results:
    destination has only the first turn, the source still has three turns, the
    route and selected conversation both point to the destination, and its composer
    contains the exact second prompt for editing. No inference is started.
-2. Reload the destination. The prompt survives as an ordinary composer draft.
+2. Navigate away and reopen the destination, then reload. Its preceding history
+   and prompt survive; the prompt remains an ordinary composer draft.
    There is no fresh-fork registry or separate recovery state machine.
 3. Test ordinary Revert on another disposable conversation. It removes the chosen
    turn and later history, then appends the prompt to any existing composer text.

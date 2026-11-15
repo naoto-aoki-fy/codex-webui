@@ -2,6 +2,8 @@
 
 This document describes the repository implementation, not every capability in the
 upstream protocol. Source and automated tests take precedence over protocol snapshots.
+[Protected product requirements](docs/product-requirements.md) define permanent
+behavioral guarantees; this inventory describes the current implementation.
 
 ## Architecture
 
@@ -42,6 +44,9 @@ and bundled method metadata do not guarantee UI support or live server capabilit
 | Status | Capabilities |
 | --- | --- |
 | Implemented | Thread listing/pagination, create/resume/archive, manual naming, forking and rollback; pins, unread state and project grouping |
+| Implemented — CAP-001 | Non-destructive Fork and Revert restores a historical prompt as an editable draft in a separate conversation, awaiting explicit submission |
+| Implemented — CAP-002 | Portable Fork transfers readable conversation text to a selected provider for continuation, with persisted imported history |
+| Implemented — CAP-003 | Historical response timestamps, model and reasoning effort from reliable evidence, independent of current composer settings |
 | Implemented | Streaming chat, interrupt, immediate steering during active turns, approval requests, plans, token usage, command output and file-change/diff presentation |
 | Implemented | Official Codex model catalog, per-context model/reasoning choices and collaboration modes; effort choices follow model capabilities |
 | Implemented | Existing project/worktree folder selection, file attachments/search, installed skills, MCP status/authentication |

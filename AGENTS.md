@@ -1,5 +1,30 @@
 # AGENTS.md
 
+## Protected Product Capabilities
+
+The following are intentional, project-specific product requirements:
+
+- CAP-001: Fork and Revert
+- CAP-002: Portable Fork
+- CAP-003: Historical Response Metadata (timestamp, model, reasoning effort)
+
+See [protected product requirements](docs/product-requirements.md) for rationale,
+required behavior, limitations and regression criteria. These capabilities are not
+candidates for removal or functional reduction during ordinary maintenance,
+refactoring, upstream API migration, UI simplification or dead-code cleanup.
+
+Before modifying related functionality:
+
+1. Review the corresponding protected requirements.
+2. Identify affected user-facing behavior and persistence guarantees.
+3. Preserve those guarantees when replacing or restructuring the implementation.
+4. Update and execute the relevant regression tests.
+5. Treat removal or reduction as an explicit product requirement change requiring
+   deliberate approval.
+
+Protection applies to product behavior, not specific functions, APIs, file names
+or implementation strategies.
+
 ## Git Workflow
 
 - Before any merge, rebase, sync, or continuation after interruption, re-check live state:

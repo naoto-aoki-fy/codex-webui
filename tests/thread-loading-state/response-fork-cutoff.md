@@ -1,5 +1,8 @@
 # Native fork and portable conversation transfer
 
+Requirement: [CAP-002 Portable Fork](../../docs/product-requirements.md#cap-002-portable-fork).
+Native Fork checks also protect the inclusive-cutoff distinction from CAP-001.
+
 Prerequisites: connect an independently managed app-server supporting
 `thread/inject_items`; configure two providers/models. Create a source with at
 least 25 turns, text, a tool observation and an image. Stop any active turn.

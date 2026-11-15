@@ -1,5 +1,8 @@
 # Conversation transfer
 
+Product guarantees: [CAP-001 Fork and Revert and CAP-002 Portable Fork](product-requirements.md).
+This document owns current transfer implementation details.
+
 Both “Fork conversation” and “Fork from this response” use the same split-button
 pattern as Revert. The main **Fork** button immediately runs **Native Fork**.
 Its arrow opens **Native Fork** / **Portable Fork** options without reading
