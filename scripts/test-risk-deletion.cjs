@@ -16,6 +16,15 @@ const {setup,assert,thread}=require('./approved-fixture.cjs')
   })
   await page.getByText('Permanent native conversation deletion',{exact:true}).click()
   const inspect=page.getByRole('button',{name:'Inspect permanent deletion scope',exact:true})
+  if(width===1280&&process.env.APPROVED_DIST_ROOT){
+   let releaseModule,seenModule;const requested=new Promise(resolve=>seenModule=resolve)
+   await page.route('**/assets/threadDeletion-*.js',async route=>{seenModule();await new Promise(resolve=>releaseModule=resolve);await route.fallback()})
+   const before=calls.filter(c=>c.method==='thread/read'&&c.params.includeTurns===false).length
+   await inspect.click();await requested;await page.evaluate(()=>location.hash='#/');await page.waitForURL(/#\/$/);releaseModule();await page.waitForTimeout(400);await page.unroute('**/assets/threadDeletion-*.js')
+   assert.equal(calls.filter(c=>c.method==='thread/read'&&c.params.includeTurns===false).length,before)
+   assert.equal(calls.some(c=>c.method==='thread/delete'),false)
+   await page.evaluate(()=>location.hash='#/thread/approved-fixture');await page.getByText('Fixture answer',{exact:true}).waitFor();await page.getByText('Conversation tools',{exact:true}).click();await page.getByText('Permanent native conversation deletion',{exact:true}).click()
+  }
   mode='imported';await inspect.click();await page.getByText(/Permanent deletion of Portable imported history is withheld/).waitFor()
   mode='children';await inspect.click();await page.getByText(/has native child agents/).waitFor()
   mode='active';await inspect.click();await page.getByText(/Exact native identity, working directory and idle state are required/).waitFor()
