@@ -1256,7 +1256,7 @@ export async function markNativeThreadRead(threadId: string, expectedRevision: s
   return result.readState
 }
 
-export async function prepareConversationTransfer(threadId: string, turnIndex?: number, turnId?: string): Promise<{ id: string; warnings: string[]; messageCount: number }> {
+export async function prepareConversationTransfer(threadId: string, turnIndex?: number, turnId?: string): Promise<{ id: string; warnings: string[]; messageCount: number; sourceModelProvider?: string }> {
   return callRpc('conversation-transfer/prepare', { threadId, turnIndex, turnId })
 }
 export async function cancelConversationTransfer(id: string): Promise<void> {

@@ -25,7 +25,7 @@ const source = { id: 'source', name: 'Fork methods source', preview: 'Fork metho
 }
 const mutations = new Set(['conversation-transfer/create', 'thread/fork', 'thread/fork-at-response', 'thread/start', 'thread/inject_items', 'turn/start'])
 
-async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false, importedOnly = false, sameProvider = false } = {}) {
+async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false, importedOnly = false, sameProvider = false, providers = ['P', 'Q'] } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -40,8 +40,10 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   let snapshotNumber = 0
   let rejectNative = nativeFails
   let skillHubReads = 0
-  const destinationProvider = sameProvider ? 'P' : 'Q'
-  const destinationDefault = sameProvider ? 'A' : 'C'
+  const defaultProvider = providers.find(provider => provider !== conversation.modelProvider) || providers[0]
+  const providerLabel = provider => ({ P: 'Source', Q: 'Destination', R: 'Third provider' })[provider]
+  const destinationProvider = sameProvider ? 'P' : defaultProvider
+  const destinationDefault = destinationProvider === 'P' ? 'A' : 'C'
   await page.route('**/codex-api/**', async route => {
     const request = route.request()
     if (request.url().includes('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': mock\n\n' })
@@ -57,8 +59,8 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     let result = {}
     if (rpc === 'thread/list') result = { data: [conversation, ...[...destinations.values()].map(row => row.thread)], nextCursor: null }
     if (rpc === 'thread/read' || rpc === 'thread/resume') result = destinations.get(params.threadId) || { thread: conversation, model: 'A', modelProvider: 'P', ...(importedOnly ? { importedTranscript: importedPrefix, importStage: 'ready' } : {}) }
-    if (rpc === 'modelProvider/list') result = { data: [{ id: 'P', displayName: 'Source', isDefault: true }, { id: 'Q', displayName: 'Destination' }] }
-    if (rpc === 'model/list') result = { data: params.modelProvider === 'Q'
+    if (rpc === 'modelProvider/list') result = { data: providers.map(id => ({ id, displayName: providerLabel(id), isDefault: id === 'P' })) }
+    if (rpc === 'model/list') result = { data: params.modelProvider !== 'P'
       ? [{ id: 'A', displayName: 'Alternate', priority: 9 }, { id: 'C', displayName: 'C', priority: 0, isDefault: true }, { id: 'D', displayName: 'D', priority: 1 }]
       : [{ id: 'A', displayName: 'A', priority: 0 }, { id: 'P-only', displayName: 'P only', priority: 1 }] }
     if (rpc === 'account/read') result = { account: { type: 'apiKey' } }
@@ -70,7 +72,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       const id = `snapshot-${++snapshotNumber}`
       snapshots.set(id, turns)
       if (pendingPreparation) await new Promise(resolve => preparations.push({ id, resolve }))
-      result = { id, warnings: [], messageCount: turns.length * 2 }
+      result = { id, warnings: [], messageCount: turns.length * 2, sourceModelProvider: conversation.modelProvider }
     }
     if (rpc === 'conversation-transfer/cancel') snapshots.delete(params.id)
     if (rpc === 'thread/fork' || rpc === 'thread/fork-at-response') {
@@ -140,7 +142,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     await page.getByRole('dialog', { name: 'Transfer conversation' }).waitFor()
     assert.equal(await page.locator('.transfer-picker').getByText('Native Fork', { exact: true }).count(), 0)
     assert.equal((await page.locator('.transfer-picker').innerText()).includes('omitted'), false)
-    if (!pendingPreparation && !prepareFails) await page.getByRole('button', { name: 'Provider', exact: true }).waitFor()
+    if (!pendingPreparation && !prepareFails) await page.locator('.transfer-picker').getByRole('button', { name: providerLabel(defaultProvider), exact: true }).waitFor()
     if (prepareFails) await page.getByRole('alert').filter({ hasText: '8 MiB' }).waitFor()
     assert.equal(await page.locator('.transfer-picker .composer-dropdown').count(), pendingPreparation ? 0 : 1)
     assert.equal(await page.locator('.transfer-picker').getByText(/skills/i).count(), 0)
@@ -150,13 +152,14 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     assert.equal(calls.filter(call => call.method === 'skills/config/write').length, 0, 'portable dialog must not change skill configuration')
   }
   async function selectProvider() {
-    assert.equal(await page.getByRole('button', { name: 'Create conversation', exact: true }).isDisabled(), true)
-    await page.getByRole('button', { name: 'Provider', exact: true }).click()
-    await page.getByRole('listbox').getByRole('button', { name: 'Source', exact: true }).click()
-    if (!sameProvider) {
-      await page.getByRole('button', { name: 'Source', exact: true }).click()
-      await page.getByRole('listbox').getByRole('button', { name: 'Destination', exact: true }).click()
-    }
+    const picker = page.locator('.transfer-picker')
+    await picker.getByRole('button', { name: providerLabel(defaultProvider), exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Create conversation', exact: true }).isEnabled(), true)
+    await picker.locator('.composer-dropdown-trigger').click()
+    assert.deepEqual(await picker.getByRole('listbox').getByRole('button').allTextContents(), providers.map(providerLabel))
+    assert.equal(await picker.locator('.composer-dropdown-option.is-selected').innerText(), providerLabel(defaultProvider))
+    if (sameProvider) await picker.getByRole('listbox').getByRole('button', { name: 'Source', exact: true }).click()
+    else await page.keyboard.press('Escape')
     assert.equal(await page.getByRole('button', { name: 'Create conversation', exact: true }).isEnabled(), true)
   }
   await page.goto(`${baseUrl}/#/thread/source`)
@@ -266,7 +269,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   const selectedModel = effectiveMethod === 'native' ? 'A' : destinationDefault
   await page.getByRole('button', { name: selectedModel, exact: true }).click()
   const labels = await page.getByRole('listbox').getByRole('button').allTextContents()
-  assert.deepEqual(new Set(labels), new Set(effectiveMethod === 'native' || sameProvider ? ['A', 'P only'] : ['Alternate', 'C', 'D']))
+  assert.deepEqual(new Set(labels), new Set(effectiveMethod === 'native' || destinationProvider === 'P' ? ['A', 'P only'] : ['Alternate', 'C', 'D']))
   if (entry === 'full' && effectiveMethod === 'portable' && !sameProvider) {
     await page.waitForTimeout(2200)
     await page.screenshot({ path: resolve(output, 'provider-models-destination-dark.png') })
@@ -287,7 +290,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   assert.equal(sends[0].params.model, continuationModel)
   assert.equal(calls.filter(call => ['thread/start', 'thread/inject_items'].includes(call.method)).length, 0, 'portable creation is mocked at the backend service boundary')
   assert.deepEqual(errors, [])
-  const report = { entry, method, prepareFails, nativeFails, pendingPreparation, importedOnly, sameProvider, url: page.url(), viewport: { width: 1280, height: 900 },
+  const report = { entry, method, prepareFails, nativeFails, pendingPreparation, importedOnly, sameProvider, providers, defaultProvider, url: page.url(), viewport: { width: 1280, height: 900 },
     creationCalls, explicitSends: sends.length, importMetadataAfterReload: !!resumed.importedTranscript, displayPrefixes: false, assertions: 'passed' }
   await context.close()
   return report
@@ -301,6 +304,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     for (const entry of ['full', 'response']) for (const method of ['portable', 'native', 'native-menu']) cases.push([entry, method])
     cases.push(['response', 'portable', { prepareFails: true }], ['full', 'native', { nativeFails: true }],
       ['response', 'portable', { pendingPreparation: true }], ['response', 'portable', { importedOnly: true }], ['response', 'portable', { sameProvider: true }])
+    for (const providers of [['P'], ['P', 'Q', 'R'], ['R', 'P', 'Q']]) cases.push(['response', 'portable', { providers }])
     const selected = process.env.FORK_TEST_CASES?.split(',').map(Number)
     for (const [index, args] of cases.entries()) {
       if (selected && !selected.includes(index)) continue

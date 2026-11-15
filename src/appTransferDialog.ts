@@ -53,6 +53,10 @@ export function createAppTransferDialog(deps: {
             // Cancellation can finish while this read is pending.
             if (transferPicker.value !== picker)
                 await cancelConversationTransfer(prepared.id);
+            else {
+                const options = transferProviderOptions.value;
+                transferProvider.value = (options.find(option => option.value !== prepared.sourceModelProvider) ?? options[0])?.value ?? '';
+            }
         }
         catch (cause) {
             picker.failure = cause instanceof Error ? cause.message : String(cause);
