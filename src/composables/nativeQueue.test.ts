@@ -1,10 +1,11 @@
 import {effectScope,ref} from 'vue'
-import {expect,it,vi} from 'vitest'
+import {afterEach,expect,it,vi} from 'vitest'
 import {createNativeQueue} from './nativeQueue'
 import {queueEntry,queuePage,queuedInput} from '../api/nativeQueue'
 function setup(request:(method:string,params:any)=>Promise<any>){const selected=ref('t'),epoch=ref(0),scope=effectScope();const owner=scope.run(()=>createNativeQueue({selected,epoch,ready:()=>true,blocked:()=>false},request as any))!;return {owner,selected,epoch,stop:()=>scope.stop()}}
 const payload={text:'queued text',imageUrls:[],fileAttachments:[],skills:[]}
 const queued=(clientId='c')=>({id:'q',clientUserMessageId:clientId,input:[{type:'text',text:'queued text'}]})
+afterEach(()=>vi.unstubAllGlobals())
 it('requires an observed supported list, sends structured input once and validates native acknowledgment',async()=>{
  let resolve:(v:any)=>void=()=>{};let sent:any
  const request=vi.fn(async(method,params)=>{if(method==='thread/queue/list')return {data:[],nextCursor:null};sent=params;return new Promise(r=>resolve=r)})
@@ -55,4 +56,27 @@ it('native rejection differs from uncertain transport and stale native snapshots
 it('treats numeric internal errors after queue writes as uncertain rather than rejected',async()=>{
  const request=vi.fn(async(method)=>{if(method==='thread/queue/list')return {data:[],nextCursor:null};throw Object.assign(new Error('storage reply failed'),{rpcCode:-32603})})
  const {owner,stop}=setup(request);await owner.refresh();await expect(owner.add(payload)).rejects.toThrow();expect(owner.uncertain.value).toContain('unknown');await expect(owner.add(payload)).rejects.toThrow('Read');expect(request.mock.calls.filter(c=>c[0]==='thread/queue/add')).toHaveLength(1);stop()
+})
+it('retains a lost-acknowledgment registration guard across owner recreation and reconnect',async()=>{
+ const storage=new Map<string,string>()
+ vi.stubGlobal('window',{localStorage:{getItem:(key:string)=>storage.get(key)??null,setItem:(key:string,value:string)=>storage.set(key,value)}})
+ let persisted:any[]=[],clientId=''
+ const request=vi.fn(async(method,params)=>{
+  if(method==='thread/queue/list')return {data:persisted,nextCursor:null}
+  clientId=params.clientUserMessageId;persisted=[queued(clientId)]
+  throw new Error('remote enqueue committed; HTTP reply lost')
+ })
+ const first=setup(request);await first.owner.refresh();await expect(first.owner.add(payload)).rejects.toThrow('reply lost');first.stop()
+ expect([...storage.values()].join('')).not.toContain(payload.text)
+ const reopened=setup(request);await reopened.owner.refresh();expect(reopened.owner.rows.value[0]?.clientId).toBe(clientId)
+ await expect(reopened.owner.add(payload)).rejects.toThrow('Read');reopened.epoch.value++;await reopened.owner.refresh();await expect(reopened.owner.add(payload)).rejects.toThrow('Read')
+ expect(request.mock.calls.filter(([method])=>method==='thread/queue/add')).toHaveLength(1)
+ // Absence could mean execution; it is never proof that enqueue failed.
+ persisted=[];await reopened.owner.refresh();expect(reopened.owner.available.value).toBe(false)
+ reopened.owner.acknowledgeUnknown();expect(reopened.owner.status.value).toContain('can duplicate execution');reopened.stop()
+})
+it('fails before enqueue when a reload recovery marker cannot be stored',async()=>{
+ vi.stubGlobal('window',{localStorage:{getItem:()=>null,setItem:()=>{throw new Error('storage unavailable')}}})
+ const request=vi.fn(async()=>({data:[],nextCursor:null})),f=setup(request);await f.owner.refresh()
+ await expect(f.owner.add(payload)).rejects.toThrow('storage unavailable');expect(request).toHaveBeenCalledTimes(1);f.stop()
 })

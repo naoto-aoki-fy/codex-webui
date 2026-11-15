@@ -4,10 +4,14 @@ import {queueEntry,queuePage,queuedInput,type QueueEntry} from '../api/nativeQue
 import type {SubmitPayload} from '../components/content/composerContracts'
 import {nativeWriteRejected,nativeWriteError} from '../api/nativeWriteOutcome'
 import {clientMessageId} from '../utils/clientMessageId'
+import {readQueueSubmissionReceipts,writeQueueSubmissionReceipt} from '../utils/queueSubmissionReceipts'
 export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;ready:()=>boolean;blocked:()=>boolean;active?:()=>boolean;refreshHistory?:(id:string)=>Promise<void>},request:typeof rpcCall=rpcCall){
  const rows=ref<QueueEntry[]>([]),cursor=ref<string|null>(null),loaded=ref(false),stale=ref(false),reading=ref(false),writing=ref(false),status=ref(''),readError=ref(''),operationThread=ref(''),uncertainByThread=ref<Record<string,string>>({})
  const uncertain=computed(()=>uncertainByThread.value[deps.selected.value]??'')
- const available=computed(()=>loaded.value&&!stale.value&&!uncertain.value&&deps.ready())
+ const recoveryError=ref('')
+ function recoverSubmissions(){try{for(const [id,clientId]of Object.entries(readQueueSubmissionReceipts()))uncertainByThread.value={...uncertainByThread.value,[id]:`Queue submission may already have been registered or executed. Client message: ${clientId}. Inspect native queue and history; submitting again is not an idempotent retry.`};recoveryError.value=''}catch(e){recoveryError.value=nativeWriteError(e,'Queue recovery storage unavailable')}}
+ recoverSubmissions()
+ const available=computed(()=>loaded.value&&!stale.value&&!uncertain.value&&!recoveryError.value&&deps.ready())
  let readJob=0,writeJob=0
  const seen=new Set<string>()
  function reset(){readJob++;rows.value=[];cursor.value=null;loaded.value=false;stale.value=false;reading.value=false;readError.value='';seen.clear()}
@@ -24,16 +28,21 @@ export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;r
   }catch(e){if(token===readJob){loaded.value=false;readError.value=nativeWriteError(e,'Native queue unavailable')}}finally{if(token===readJob)reading.value=false}
  }
  async function add(payload:SubmitPayload){
+  recoverSubmissions()
   if(writing.value||!available.value||deps.blocked())throw new Error('Read the native queue and resolve pending actions before queuing')
   if(Object.keys(uncertainByThread.value).length>=20)throw new Error('Resolve uncertain queue operations before submitting more')
   const id=deps.selected.value,token=++writeJob,clientId=clientMessageId(),input=queuedInput(payload)
+  // Persist identity before sending. A lost reply or document reload must not
+  // turn the retained draft into an unguarded second native registration.
+  writeQueueSubmissionReceipt(id,clientId)
   writing.value=true;operationThread.value=id;status.value='Requesting native queue submission…'
   try{const result=await request<{queuedSubmission:unknown}>('thread/queue/add',{threadId:id,input,clientUserMessageId:clientId});if(token!==writeJob)throw new Error('Queue outcome unknown after connection change')
    const row=queueEntry(result?.queuedSubmission);if(row.clientId!==clientId)throw new Error('Queue acknowledgment identity mismatch')
+   writeQueueSubmissionReceipt(id,null)
    status.value=`Accepted by native queue: ${row.id}. Native settings apply when it runs.`
    if(deps.selected.value===id){stale.value=true;await refresh()}
    return true
-  }catch(e){if(token===writeJob){if(nativeWriteRejected(e))status.value=`Native queue rejected the submission. ${nativeWriteError(e)}`
+  }catch(e){if(token===writeJob){if(nativeWriteRejected(e)){try{writeQueueSubmissionReceipt(id,null)}catch{/* Retain a conservative recovery marker if storage failed. */}status.value=`Native queue rejected the submission. ${nativeWriteError(e)}`}
    else{uncertainByThread.value={...uncertainByThread.value,[id]:`Queue outcome unknown. Client message: ${clientId}. Inspect queue and history before another submission. ${nativeWriteError(e)}`};status.value=uncertainByThread.value[id]!}}throw new Error(nativeWriteError(e))}
   finally{if(token===writeJob)writing.value=false}
  }
@@ -71,6 +80,6 @@ export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;r
    else{uncertainByThread.value={...uncertainByThread.value,[id]:`Queue ${kind} outcome unknown for ${row.id}; inspect native queue and history. ${nativeWriteError(e)}`};status.value=uncertainByThread.value[id]!}}}
   finally{if(token===writeJob)writing.value=false}
  }
- function acknowledgeUnknown(){if(!loaded.value||reading.value||writing.value)return;const next={...uncertainByThread.value};delete next[deps.selected.value];uncertainByThread.value=next;status.value='Uncertain result acknowledged. Inspect history as well: an absent queue entry may already have run.';operationThread.value=deps.selected.value}
- return {rows,cursor,loaded,stale,reading,writing,status,readError,operationThread,uncertain,available,refresh,add,manage,observe,acknowledgeUnknown}
+ function acknowledgeUnknown(){if(!loaded.value||stale.value||reading.value||writing.value)return;try{writeQueueSubmissionReceipt(deps.selected.value,null)}catch(e){recoveryError.value=nativeWriteError(e,'Queue recovery storage unavailable');return}const next={...uncertainByThread.value};delete next[deps.selected.value];uncertainByThread.value=next;status.value='Uncertain result acknowledged. This does not prove non-execution: an absent entry may already have run. Submitting the retained draft again can duplicate execution; no idempotent retry is available.';operationThread.value=deps.selected.value}
+ return {rows,cursor,loaded,stale,reading,writing,status,readError,recoveryError,operationThread,uncertain,available,refresh,add,manage,observe,acknowledgeUnknown}
 }
