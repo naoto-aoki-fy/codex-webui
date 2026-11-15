@@ -11,6 +11,7 @@ import PermissionsInspection from './PermissionsInspection.vue'
 import DeniedActions from './DeniedActions.vue'
 import NativeQueuePanel from './NativeQueuePanel.vue'
 import CreateWorktree from './CreateWorktree.vue'
+import DaybreakStatus from './DaybreakStatus.vue'
 import type {createNativeQueue} from '../../composables/nativeQueue'
 import type {createThreadPermissions} from '../../composables/threadPermissions'
 import type {DeniedAction} from '../../composables/deniedActionObservation'
@@ -47,6 +48,7 @@ const reviewTargetOptions = [
                   <p v-if="compaction.thread.value === threadId" role="status">{{ compaction.status.value }}</p>
                 </details>
                 <MemoryStatus :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" />
+                <DaybreakStatus :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" />
                 <SubagentsPanel :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" />
                 <HooksInspection :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" :blocked="inProgress||sending||incomplete||queue.writing.value||compaction.busy.value||review.busy.value" />
                 <ConfigInspection :cwd="cwd" :epoch="epoch" :disconnected="disconnected" :blocked="inProgress||sending||incomplete||queue.writing.value||compaction.busy.value||review.busy.value" />
