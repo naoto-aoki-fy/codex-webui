@@ -14,7 +14,7 @@ import { MODEL_USAGE_STORAGE_KEY, loadModelUsageOrder, REASONING_BY_MODEL_STORAG
 import { areStringArraysEqual, areMessageArraysEqual, normalizeMessageText, isOptimisticUserMessage, upsertMessage } from '../utils/desktopMessageReconciliation'
 import { computed, ref, watch } from 'vue'
 import { formatTurnDuration, parseIsoTimestamp } from '../utils/turnTiming'
-import { createConversationTransfer, archiveThread, forkThread, forkThreadFromResponse, getAvailableCollaborationModes, getAccountRateLimits, renameThread, getAvailableModelIds, acquireReasoningCatalog, reasoningCatalog, reasoningOptions, resolveReasoningEffort, findReasoningModel, getCurrentModelConfig, getSkillsList, getBackgroundThreadListLimit, pickCodexRateLimitSnapshot, revertThreadHistory, validateThreadRevert, getThreadDetailForRevert, invalidateResumeThread, resumeThreadSubscription, getThreadGroupsPage, getWorkspaceRootsState, getWorkspaceRootsStateGeneration, setCodexSpeedMode, updateWorkspaceRootsState, invalidateWorkspaceRootsStateCache, type RpcNotification, type SkillInfo, type WorkspaceRootsState } from '../api/codexGateway'
+import { createConversationTransfer, unarchiveThread, archiveThread, forkThread, forkThreadFromResponse, getAvailableCollaborationModes, getAccountRateLimits, renameThread, getAvailableModelIds, acquireReasoningCatalog, reasoningCatalog, reasoningOptions, resolveReasoningEffort, findReasoningModel, getCurrentModelConfig, getSkillsList, getBackgroundThreadListLimit, pickCodexRateLimitSnapshot, revertThreadHistory, validateThreadRevert, getThreadDetailForRevert, invalidateResumeThread, resumeThreadSubscription, getThreadGroupsPage, getWorkspaceRootsState, getWorkspaceRootsStateGeneration, setCodexSpeedMode, updateWorkspaceRootsState, invalidateWorkspaceRootsStateCache, type RpcNotification, type SkillInfo, type WorkspaceRootsState } from '../api/codexGateway'
 import { CodexApiError } from '../api/codexErrors'
 import { normalizeFileChangeStatus, toUiFileChanges } from '../api/normalizers/v2'
 import { readGenerationMetadata, mergeGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata'
@@ -229,6 +229,7 @@ export function useDesktopState() {
   const projectDisplayNameById = ref<Record<string, string>>({})
   const workspaceRootsState = ref<WorkspaceRootsState | null>(null)
 
+  const operationEpoch = ref(0)
   const connection = createDesktopConnection({
     get history() { return history; },
     get setLiveAgentMessagesForThread() { return setLiveAgentMessagesForThread; },
@@ -1688,6 +1689,7 @@ export function useDesktopState() {
       }
       return
     }
+    if (notification.method === 'app-server/reconnected' || notification.method === 'app-server/disconnected') operationEpoch.value++
     if (notification.method === 'app-server/reconnected') {
       transportState.value = 'connected'
       void connection.recoverBridgeState(true)
@@ -2392,6 +2394,21 @@ export function useDesktopState() {
     }
   }
 
+  async function restoreThreadById(threadId: string): Promise<void> {
+    const epoch = operationEpoch.value
+    const restored = await unarchiveThread(threadId)
+    if (epoch !== operationEpoch.value) throw new Error('Connection changed. Refresh the archive before retrying.')
+    history.invalidateThreadHistory(threadId)
+    invalidateResumeThread(threadId)
+    loadedThreadListGroups = mergeThreadGroupPages(loadedThreadListGroups, [{ projectName: restored.projectName, threads: [restored] }])
+    applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
+    try { await loadThreads({ force: true }) }
+    catch { error.value = 'Conversation restored, but refreshing active conversations failed. Reload to reconcile.' }
+    if (epoch !== operationEpoch.value) throw new Error('Connection changed. Refresh archived conversations.')
+    loadedThreadListGroups = mergeThreadGroupPages(loadedThreadListGroups, [{ projectName: restored.projectName, threads: [restored] }])
+    applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
+  }
+
   async function renameThreadById(threadId: string, threadName: string) {
     const normalizedName = threadName.trim()
     if (!threadId || !normalizedName) return
@@ -2693,6 +2710,8 @@ export function useDesktopState() {
     loadOlderMessages: history.loadOlderMessages,
     ensureThreadMessagesLoaded: history.ensureThreadMessagesLoaded,
     archiveThreadById,
+    restoreThreadById,
+    operationEpoch,
     renameThreadById,
     forkThreadById,
     forkNativeThreadById,

@@ -75,6 +75,7 @@
             @fork-thread="onForkThread"
             @remove-project="onRemoveProject"
             @copy-thread-chat="onCopyThreadChat" />
+          <ArchivedThreads v-if="!isSidebarCollapsed" :epoch="operationEpoch" :restore="restoreThreadById" />
         </div>
 
         <div
@@ -328,6 +329,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useNewThreadCwdRoute } from './composables/useNewThreadCwdRoute'
 import DesktopLayout from './components/layout/DesktopLayout.vue'
 import GeneralPreferencesSettings from './components/sidebar/GeneralPreferencesSettings.vue'
+import ArchivedThreads from './components/sidebar/ArchivedThreads.vue'
 import AccountSettingsPanel from './components/sidebar/AccountSettingsPanel.vue'
 import SidebarThreadTree from './components/sidebar/SidebarThreadTree.vue'
 import ContentHeader from './components/content/ContentHeader.vue'
@@ -424,6 +426,8 @@ const {
   ensureThreadMessagesLoaded,
   loadOlderMessages,
   archiveThreadById,
+  restoreThreadById,
+  operationEpoch,
   forkThreadById,
   forkNativeThreadById,
   renameThreadById,

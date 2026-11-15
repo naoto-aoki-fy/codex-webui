@@ -11,6 +11,7 @@ import type { WorkspaceRootsState } from '../api/codexGateway'
 const gatewayMocks = vi.hoisted(() => ({
   markNativeThreadRead: vi.fn(),
   archiveThread: vi.fn(),
+  unarchiveThread: vi.fn(),
   forkThread: vi.fn(),
   forkThreadFromResponse: vi.fn(),
   createConversationTransfer: vi.fn(),
@@ -1189,4 +1190,22 @@ it('preserves inactive legacy project preference data during startup', () => {
   expect(window.localStorage.removeItem).not.toHaveBeenCalledWith('codex-web-local.project-order.v1')
   expect(window.localStorage.removeItem).not.toHaveBeenCalledWith('codex-web-local.project-display-name.v1')
   state.stopPolling()
+})
+
+
+describe('native archive restore', () => {
+  it('reconciles the acknowledged identity into its native project without changing selection', async () => {
+    const state = useDesktopState()
+    gatewayMocks.unarchiveThread.mockResolvedValue({ ...thread('restored', '/remote'), projectName: 'project-id', projectId: 'project-id' })
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({ groups: [], nextCursor: null })
+    gatewayMocks.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: ['project-id'], projectMode: 'native', nativeProjects: [{ id: 'project-id', name: 'Project', roots: [] }] })
+    await state.restoreThreadById('restored')
+    expect(state.projectGroups.value.flatMap(group => group.threads).some(row => row.id === 'restored' && row.projectId === 'project-id')).toBe(true)
+  })
+  it('does not add a rejected restore to active lists', async () => {
+    const state = useDesktopState()
+    gatewayMocks.unarchiveThread.mockRejectedValue(new Error('Restore rejected'))
+    await expect(state.restoreThreadById('rejected')).rejects.toThrow('Restore rejected')
+    expect(state.projectGroups.value.flatMap(group => group.threads)).toEqual([])
+  })
 })
