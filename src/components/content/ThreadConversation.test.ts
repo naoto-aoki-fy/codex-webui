@@ -27,9 +27,17 @@ function setup(initial: Record<string, unknown> = {}) {
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
   vi.stubGlobal('window', { removeEventListener() {} })
   const parseCalls = vi.fn()
-  const instrumentedSource = source.replace('function parseMessageBlocks(text: string): MessageBlock[] {', 'function parseMessageBlocks(text: string): MessageBlock[] { recordParse();')
+  const markdownSource = readFileSync(resolve('src/components/content/conversationMarkdown.ts'), 'utf8')
+    .replace('function parseMessageBlocks(text: string): MessageBlock[] {', 'function parseMessageBlocks(text: string): MessageBlock[] { recordParse();')
+  const markdownCode = ts.transpileModule(markdownSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+  const instrumentedSource = source
   const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, loadMoreAbove, conversationListRef, renderWindowStart, isLoadingMore, scheduleConversationScroll, editMessage, forkResponse, bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput, messageBlockCache, inlineSegmentCache, markdownHtmlCache, highlightHtmlCache };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const state = scope.run(() => new Function('exports', 'require', 'defineProps', 'defineEmits', 'defineExpose', 'recordParse', code)({}, (path: string) => {
+    if (path.endsWith('/conversationMarkdown')) {
+      const exports = {}
+      new Function('exports', 'require', 'recordParse', markdownCode)(exports, (name: string) => name === 'vue' ? vue : name === 'highlight.js/lib/common' ? { default: hljs } : imports[name], parseCalls)
+      return exports
+    }
     if (path === 'highlight.js/lib/common') return { default: hljs }
     if (path === 'vue') return { ...vue, onMounted() {}, onBeforeUnmount: (fn: () => void) => unmount.push(fn) }
     if (path.includes('codexGateway')) return { updateThreadFileChanges: update }
