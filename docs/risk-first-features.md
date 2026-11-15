@@ -161,3 +161,21 @@ resume. Managed constraints are read explicitly using `configRequirements/read`.
 Residual observation risk 1/2/1/2 = **8**. Full unit suite, type checks and six
 browser views cover settings/unknown/managed/other-thread/stale/disconnected cases.
 Permission mutations remain pending Phase 3 assessment. Live **NOT RUN**.
+
+### 04 — PARTIAL (native denial observation delivered)
+
+The existing event owner captures `item/autoApprovalReview/completed` denials,
+retaining exact thread/turn/review/item identifiers and bounded public action
+details. Fifty transient rows maximum, deduplicated by thread/review, cleared
+on connection change. Ordinary manual rejection/history is not fabricated.
+Eligibility remains unavailable: the public notification carries a temporary
+`GuardianApprovalReviewAction` projection; the retry endpoint consumes a serialized
+core `GuardianAssessmentEvent` (`v2/thread.rs:ThreadApproveGuardianDeniedActionParams`,
+`thread_processor.rs::thread_approve_guardian_denied_action_inner`). It is not
+safe to reconstruct that event from rendered denial text. No retry control is
+enabled in Phase 1. Residual inspection risk 1/2/1/2 = **8**.
+
+Three focused unit tests, type checks and six browser views passed, including
+duplicates, other-thread identity, credential omission and disconnect cleanup.
+Zero new requests or subscriptions. Live acceptance **NOT RUN**. Retry contract
+and staleness validation remain a Phase 3 gate.

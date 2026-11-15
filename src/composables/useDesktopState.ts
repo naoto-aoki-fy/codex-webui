@@ -2,6 +2,7 @@ import { createLiveItemOrder } from './liveItemOrder'
 import { createThreadReview } from './threadReview'
 import { createThreadCompaction } from './threadCompaction'
 import {createThreadSecurityObservation} from './threadSecurityObservation'
+import {createDeniedActionObservation} from './deniedActionObservation'
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
 import { appendDiagnosticWarning, type DiagnosticWarning } from '../diagnostics'
 import { createDesktopConnection } from './desktopConnection'
@@ -155,6 +156,7 @@ export function useDesktopState() {
   const sourceGroups = ref<UiProjectGroup[]>([])
   const selectedThreadId = ref(loadSelectedThreadId())
   const securityObservation = createThreadSecurityObservation()
+  const deniedActions = createDeniedActionObservation()
   const history = createDesktopHistory({
     securityObservation,
     get selectedThreadId() { return selectedThreadId; },
@@ -240,7 +242,7 @@ export function useDesktopState() {
 
   const diagnosticWarnings = ref<DiagnosticWarning[]>([])
   const operationEpoch = ref(0)
-  watch(operationEpoch,()=>securityObservation.clear(),{flush:'sync'})
+  watch(operationEpoch,()=>{securityObservation.clear();deniedActions.clear()},{flush:'sync'})
   const review = createThreadReview({ epoch: operationEpoch, selected: selectedThreadId,
     blocked: () => isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
@@ -1665,6 +1667,7 @@ export function useDesktopState() {
 
   function applyRealtimeUpdates(notification: RpcNotification): void {
     securityObservation.observe(notification)
+    deniedActions.observe(notification)
     review.observe(notification)
     compaction.observe(notification)
     if (notification.method === 'warning') diagnosticWarnings.value = appendDiagnosticWarning(diagnosticWarnings.value, notification.params, notification.atIso)
@@ -2774,6 +2777,7 @@ export function useDesktopState() {
     restoreThreadById,
     operationEpoch,
     securityObservation,
+    deniedActions,
     compaction, review,
     diagnosticWarnings,
     renameThreadById,
