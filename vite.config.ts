@@ -4,10 +4,16 @@ import { createCodexBridgeMiddleware } from "./src/server/codexAppServerBridge";
 import { createLocalFileMiddleware } from "./src/server/localFileHttp";
 import tailwindcss from "@tailwindcss/vite";
 import { attachBrowserNotificationTransport } from "./src/server/browserNotificationTransport";
+import { getBuildMetadata } from "./scripts/build-metadata";
 
 const WS_UPGRADE_ATTACHED_KEY = "__codexBridgeWsAttached__";
+const buildMetadata = getBuildMetadata();
 
 export default defineConfig({
+  define: {
+    __BUILD_COMMIT_SHA__: JSON.stringify(buildMetadata.commitSha),
+    __BUILD_TIMESTAMP__: JSON.stringify(buildMetadata.timestamp),
+  },
   build: { manifest: true },
   server: {
     host: "0.0.0.0",
