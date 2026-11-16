@@ -11,7 +11,7 @@ it('requires an observed supported list, sends structured input once and validat
  const request=vi.fn(async(method,params)=>{if(method==='thread/queue/list')return {data:[],nextCursor:null};sent=params;return new Promise(r=>resolve=r)})
  const {owner,stop}=setup(request)
  await expect(owner.add(payload)).rejects.toThrow('Read');await owner.refresh()
- const pending=owner.add(payload);await expect(owner.add(payload)).rejects.toThrow();expect(sent.clientUserMessageId).toBeTruthy();resolve({queuedSubmission:queued(sent.clientUserMessageId)})
+ const pending=owner.add(payload);await expect(owner.add(payload)).rejects.toThrow();await Promise.resolve();expect(sent.clientUserMessageId).toBeTruthy();resolve({queuedSubmission:queued(sent.clientUserMessageId)})
  await expect(pending).resolves.toBe(true);expect(request.mock.calls.filter(c=>c[0]==='thread/queue/add')).toHaveLength(1);stop()
 })
 it('preserves images, local file prompt, skill and exact native app mentions',()=>{
@@ -22,7 +22,7 @@ it('uncertain writes are never replayed and block another add until explicit ins
  const request=vi.fn(async(method)=>{if(method==='thread/queue/list')return {data:[],nextCursor:null};throw new Error('network lost')})
  const {owner,epoch,stop}=setup(request);await owner.refresh();await expect(owner.add(payload)).rejects.toThrow('network');expect(owner.uncertain.value).toContain('unknown')
  epoch.value++;await owner.refresh();await expect(owner.add(payload)).rejects.toThrow('Read');expect(request.mock.calls.filter(c=>c[0]==='thread/queue/add')).toHaveLength(1)
- owner.acknowledgeUnknown();expect(owner.available.value).toBe(true);stop()
+ await owner.acknowledgeUnknown();expect(owner.available.value).toBe(true);stop()
 })
 it('discards read results after selection, connection change and native queue change',async()=>{
  let resolve:(v:any)=>void=()=>{};const {owner,selected,epoch,stop}=setup(async()=>new Promise(r=>resolve=r))
@@ -59,6 +59,7 @@ it('treats numeric internal errors after queue writes as uncertain rather than r
 })
 it('retains a lost-acknowledgment registration guard across owner recreation and reconnect',async()=>{
  const storage=new Map<string,string>()
+ vi.stubGlobal('navigator',{locks:{request:async (_name:string,action:()=>unknown)=>action()}})
  vi.stubGlobal('window',{localStorage:{getItem:(key:string)=>storage.get(key)??null,setItem:(key:string,value:string)=>storage.set(key,value)}})
  let persisted:any[]=[],clientId=''
  const request=vi.fn(async(method,params)=>{
@@ -73,9 +74,10 @@ it('retains a lost-acknowledgment registration guard across owner recreation and
  expect(request.mock.calls.filter(([method])=>method==='thread/queue/add')).toHaveLength(1)
  // Absence could mean execution; it is never proof that enqueue failed.
  persisted=[];await reopened.owner.refresh();expect(reopened.owner.available.value).toBe(false)
- reopened.owner.acknowledgeUnknown();expect(reopened.owner.status.value).toContain('can duplicate execution');reopened.stop()
+ await reopened.owner.acknowledgeUnknown();expect(reopened.owner.status.value).toContain('can duplicate execution');reopened.stop()
 })
 it('fails before enqueue when a reload recovery marker cannot be stored',async()=>{
+ vi.stubGlobal('navigator',{locks:{request:async (_name:string,action:()=>unknown)=>action()}})
  vi.stubGlobal('window',{localStorage:{getItem:()=>null,setItem:()=>{throw new Error('storage unavailable')}}})
  const request=vi.fn(async()=>({data:[],nextCursor:null})),f=setup(request);await f.owner.refresh()
  await expect(f.owner.add(payload)).rejects.toThrow('storage unavailable');expect(request).toHaveBeenCalledTimes(1);f.stop()

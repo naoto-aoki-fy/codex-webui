@@ -74,3 +74,23 @@ on explicit request. No server requests, timers, fanout, or cache invalidation
 are introduced. Archived snapshots can consume quota; this is deliberately
 preferred to silently deleting recoverable drafts. IndexedDB/blob migration and
 an explicit archive-management UI remain possible future improvements.
+
+## Queue receipt atomicity
+
+`queue-submissions.v1` keeps its bounded, prompt-free schema. Every mutation runs
+inside a profile-scoped Web Lock. Unsupported Web Locks use an IndexedDB
+`codex-web-local.persistence-locks.v1` database, version 1, empty `locks` object
+store: an exclusive readwrite transaction holds the synchronous localStorage
+critical section until completion. No user data is stored in that database.
+If locking/storage fails, submission fails before the RPC; there is no unsafe
+unlocked fallback. The native queue controller marks itself busy before awaiting
+the reservation. Existing receipts prevent same-thread replacement. Accepted or
+rejected replies clear only their own exact client identity. Explicit uncertain
+acknowledgment is still required; absent queue rows never imply non-execution.
+An aborted transaction after a localStorage reservation can leave a conservative
+marker; it cannot cause replay. Transactions do not roll back localStorage.
+
+Performance: one bounded (20 entries/90 KB) critical section per reservation or
+settlement, no lock held over network traffic, no polling or submission replay.
+All same-origin tabs running this version must use the same available locking
+facility; old versions cannot participate and should be reloaded before queue use.

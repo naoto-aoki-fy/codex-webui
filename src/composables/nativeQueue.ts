@@ -34,15 +34,17 @@ export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;r
   const id=deps.selected.value,token=++writeJob,clientId=clientMessageId(),input=queuedInput(payload)
   // Persist identity before sending. A lost reply or document reload must not
   // turn the retained draft into an unguarded second native registration.
-  writeQueueSubmissionReceipt(id,clientId)
-  writing.value=true;operationThread.value=id;status.value='Requesting native queue submission…'
+  writing.value=true;operationThread.value=id
+  try { await writeQueueSubmissionReceipt(id,clientId) } catch(e) { writing.value=false; throw e }
+  if(token!==writeJob){writing.value=false;throw new Error('Queue outcome unknown after connection change; recovery marker retained')}
+  status.value='Requesting native queue submission…'
   try{const result=await request<{queuedSubmission:unknown}>('thread/queue/add',{threadId:id,input,clientUserMessageId:clientId});if(token!==writeJob)throw new Error('Queue outcome unknown after connection change')
    const row=queueEntry(result?.queuedSubmission);if(row.clientId!==clientId)throw new Error('Queue acknowledgment identity mismatch')
-   writeQueueSubmissionReceipt(id,null)
+   await writeQueueSubmissionReceipt(id,null,clientId)
    status.value=`Accepted by native queue: ${row.id}. Native settings apply when it runs.`
    if(deps.selected.value===id){stale.value=true;await refresh()}
    return true
-  }catch(e){if(token===writeJob){if(nativeWriteRejected(e)){try{writeQueueSubmissionReceipt(id,null)}catch{/* Retain a conservative recovery marker if storage failed. */}status.value=`Native queue rejected the submission. ${nativeWriteError(e)}`}
+  }catch(e){if(token===writeJob){if(nativeWriteRejected(e)){try{await writeQueueSubmissionReceipt(id,null,clientId)}catch{/* Retain a conservative recovery marker if storage failed. */}status.value=`Native queue rejected the submission. ${nativeWriteError(e)}`}
    else{uncertainByThread.value={...uncertainByThread.value,[id]:`Queue outcome unknown. Client message: ${clientId}. Inspect queue and history before another submission. ${nativeWriteError(e)}`};status.value=uncertainByThread.value[id]!}}throw new Error(nativeWriteError(e))}
   finally{if(token===writeJob)writing.value=false}
  }
@@ -80,6 +82,6 @@ export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;r
    else{uncertainByThread.value={...uncertainByThread.value,[id]:`Queue ${kind} outcome unknown for ${row.id}; inspect native queue and history. ${nativeWriteError(e)}`};status.value=uncertainByThread.value[id]!}}}
   finally{if(token===writeJob)writing.value=false}
  }
- function acknowledgeUnknown(){if(!loaded.value||stale.value||reading.value||writing.value)return;try{writeQueueSubmissionReceipt(deps.selected.value,null)}catch(e){recoveryError.value=nativeWriteError(e,'Queue recovery storage unavailable');return}const next={...uncertainByThread.value};delete next[deps.selected.value];uncertainByThread.value=next;status.value='Uncertain result acknowledged. This does not prove non-execution: an absent entry may already have run. Submitting the retained draft again can duplicate execution; no idempotent retry is available.';operationThread.value=deps.selected.value}
+ async function acknowledgeUnknown(){if(!loaded.value||stale.value||reading.value||writing.value)return;const id=deps.selected.value;writing.value=true;try{const expected=readQueueSubmissionReceipts()[id];if(expected)await writeQueueSubmissionReceipt(id,null,expected)}catch(e){recoveryError.value=nativeWriteError(e,'Queue recovery storage unavailable');return}finally{writing.value=false}const next={...uncertainByThread.value};delete next[id];uncertainByThread.value=next;status.value='Uncertain result acknowledged. This does not prove non-execution: an absent entry may already have run. Submitting the retained draft again can duplicate execution; no idempotent retry is available.';operationThread.value=id}
  return {rows,cursor,loaded,stale,reading,writing,status,readError,recoveryError,operationThread,uncertain,available,refresh,add,manage,observe,acknowledgeUnknown}
 }

@@ -69,3 +69,22 @@ identity pairs (90,000-character parse bound), no input bytes and no timers,
 subscriptions or new RPCs. Markers are removed only after a checked acknowledgment,
 native rejection or explicit inspection acknowledgment. Native exactly-once
 execution and recovery after browser-data removal are not established.
+
+## Concurrent recovery receipts
+
+Setup: Two same-origin tabs, same profile, credential-free queue fixture or a
+matching independently managed App Server. Keep draft text distinct.
+
+1. Submit to different native queues concurrently. Lose both acknowledgments,
+   reload both tabs: both client identities must remain blocked for inspection.
+2. Submit concurrently to the same thread: only one reservation may succeed;
+   another must fail before sending. A stale acknowledgment must never clear a
+   different client identity.
+3. After reading queue/history, explicitly acknowledge uncertainty in one tab.
+   The other thread's receipt must remain intact. No automatic replay is allowed.
+4. Repeat with `navigator.locks` unavailable (IndexedDB transaction fallback).
+5. Disable both facilities or deny storage writes. Queue add must fail before RPC
+   and preserve the draft. Corrupt existing receipts must also block add.
+
+Cleanup: Inspect queue/history before removing disposable receipts or threads.
+Never infer non-execution from an absent queue entry.
