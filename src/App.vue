@@ -139,9 +139,16 @@
         <p v-if="nativeDeletion?.state.value==='completed'" class="feature-panel" role="status">{{ nativeDeletion.status.value }}</p>
         <p v-if="nativeForkFailure" class="composer-runtime-error" role="alert">{{ nativeForkFailure }}</p>
 
-        <div v-if="transportState === 'disconnected' || selectedRecoveryState || selectedUnknownOutcome || selectedLostApproval" class="connection-recovery-status" role="status">
-          <span v-if="transportState === 'disconnected'">{{ ('App-server disconnected. Reconnecting…') }}</span>
-          <span v-if="selectedRecoveryState">{{ ('Thread subscription') }}: {{ (selectedRecoveryState) }}</span>
+        <div v-if="browserConnectionNotice" class="connection-recovery-status" :class="{ 'connection-recovery-success': browserConnectionNotice === 'reconnected' }" role="status" data-connection="browser">
+          <strong>WebUI Backend: {{ browserConnectionNotice === 'reconnected' ? 'Reconnected' : 'Disconnected' }}</strong>
+          <span v-if="browserConnectionNotice !== 'reconnected'">{{ browserConnectionNotice === 'reconnecting' ? 'Reconnecting…' : 'Waiting for connection…' }}</span>
+        </div>
+        <div v-if="appServerConnectionNotice" class="connection-recovery-status" :class="{ 'connection-recovery-success': appServerConnectionNotice === 'reconnected' }" role="status" data-connection="app-server">
+          <strong>Codex App Server: {{ appServerConnectionNotice === 'reconnected' ? 'Reconnected' : 'Disconnected' }}</strong>
+          <span v-if="appServerConnectionNotice !== 'reconnected'">Reconnecting…</span>
+        </div>
+        <div v-if="selectedRecoveryState || selectedUnknownOutcome || selectedLostApproval" class="connection-recovery-status" :class="{ 'connection-recovery-success': selectedRecoveryState === 'recovered' && !selectedUnknownOutcome && !selectedLostApproval }" role="status" data-connection="subscription">
+          <strong v-if="selectedRecoveryState">Thread subscription: {{ ({ recovering: 'Recovering', recovered: 'Recovered', failed: 'Failed', disconnected: 'Disconnected' } as Record<string, string>)[selectedRecoveryState] || selectedRecoveryState }}</strong>
           <button v-if="selectedRecoveryState === 'failed'" type="button" @click="retrySelectedSubscription">{{ ('Retry subscription') }}</button>
           <span v-if="selectedLostApproval">{{ ('The previous approval expired with the connection. Inspect the thread on the server host; only newly delivered approvals can be answered.') }}</span>
           <span v-if="selectedUnknownOutcome">{{ ('Submission outcome unknown. Inspect refreshed history before resending; missing history does not prove failure.') }}</span>
@@ -489,6 +496,7 @@ const {
   isInterruptingTurn,
   isSelectedThreadInterruptPending,
   isUpdatingSpeedMode,
+  browserConnectionNotice, appServerConnectionNotice,
   transportState, selectedRecoveryState, selectedUnknownOutcome, selectedLostApproval,
   retrySelectedSubscription, reconcileSelectedHistory,
   error: desktopError,

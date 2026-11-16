@@ -38,6 +38,7 @@ import {
   respondServerRequest,
   subscribeRpcNotifications,
   type RpcNotification,
+  type BrowserConnectionState,
 } from './codexRpcClient'
 import type {
   CollaborationModeListResponse,
@@ -309,8 +310,11 @@ export async function getMethodCatalog(): Promise<string[]> {
   return fetchRpcMethodCatalog()
 }
 
-export function subscribeCodexNotifications(onNotification: (value: RpcNotification) => void): () => void {
-  return subscribeRpcNotifications(onNotification)
+export function subscribeCodexNotifications(
+  onNotification: (value: RpcNotification) => void,
+  onConnectionState?: (state: BrowserConnectionState) => void,
+): () => void {
+  return subscribeRpcNotifications(onNotification, onConnectionState)
 }
 
 export type { RpcNotification }

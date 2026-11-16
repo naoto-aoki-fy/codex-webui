@@ -123,7 +123,9 @@ export class AppServerClient {
   private nextApprovalId = randomInt(2 ** 40)
   private reconnectPromise: Promise<void> | null = null
   private readonly subscribedThreads = new Set<string>()
+  private connectionState: 'connected' | 'disconnected' | undefined
   private transport = new AppServerWebSocketClient((frame) => this.handleLine(frame), () => {
+    this.connectionState = 'disconnected'
     this.connectionGeneration++
     this.codexHome.reset()
     this.historyPager.invalidate()
@@ -387,6 +389,10 @@ export class AppServerClient {
     await this.transport.connect()
     if (token !== this.codexHome.token()) throw new Error('Retired app-server initialization')
     this.codexHome.observeInitialization(this.getInitializationMetadata(), token)
+    if (this.connectionState !== 'connected') {
+      this.connectionState = 'connected'
+      this.emitNotification({ method: 'app-server/transportState', params: { state: 'connected' } })
+    }
   }
 
   private readonly recovery = new SubscriptionRecovery(
@@ -450,6 +456,14 @@ export class AppServerClient {
 
   onNotification(listener: (value: { method: string; params: unknown }) => void): () => void {
     this.notificationListeners.add(listener)
+    // Reconcile transport events missed during a browser outage, without an RPC
+    // or replaying any thread events, approvals, or mutations.
+    try {
+      if (this.connectionState) listener({ method: 'app-server/transportState', params: { state: this.connectionState } })
+    } catch (error) {
+      this.notificationListeners.delete(listener)
+      throw error
+    }
     return () => {
       this.notificationListeners.delete(listener)
     }

@@ -330,3 +330,102 @@ it('reconnects an opened WebSocket once after close and cancels pending reconnec
   expect(BrowserSocket.instances).toHaveLength(2)
   expect(vi.getTimerCount()).toBe(0)
 })
+
+it.each(['ws', 'sse'])('reports independent browser status, deduplicates failures and waits for ready on %s', transport => {
+  if (transport === 'sse') vi.stubGlobal('WebSocket', undefined)
+  const status = vi.fn()
+  const notify = vi.fn()
+  const dispose = subscribeRpcNotifications(notify, status)
+  const ready = () => {
+    if (transport === 'ws') BrowserSocket.instances[BrowserSocket.instances.length - 1]!.onmessage({ data: '{"method":"ready","params":{"ok":true}}' })
+    else BrowserEvents.instances[BrowserEvents.instances.length - 1]!.dispatchEvent(new MessageEvent('ready', { data: '{"ok":true}' }))
+  }
+  if (transport === 'ws') BrowserSocket.instances[0]!.onopen()
+  expect(status).not.toHaveBeenCalled()
+  ready()
+  expect(status).toHaveBeenLastCalledWith('connected')
+  if (transport === 'ws') BrowserSocket.instances[0]!.onclose()
+  else { BrowserEvents.instances[0]!.readyState = 0; BrowserEvents.instances[0]!.onerror(); BrowserEvents.instances[0]!.onerror() }
+  expect(status.mock.calls.map(row => row[0])).toEqual(['connected', transport === 'ws' ? 'disconnected' : 'reconnecting'])
+  if (transport === 'ws') {
+    vi.advanceTimersByTime(1000)
+    BrowserSocket.instances[BrowserSocket.instances.length - 1]!.onopen()
+  }
+  vi.advanceTimersByTime(60000)
+  expect(status).not.toHaveBeenLastCalledWith('connected')
+  expect(status).not.toHaveBeenLastCalledWith('connected')
+  ready()
+  expect(status).toHaveBeenLastCalledWith('connected')
+  expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ method: 'ready', params: { ok: true, reconnected: true } }))
+  ready()
+  expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ method: 'ready', params: { ok: true } }))
+  expect(status.mock.calls.filter(row => row[0] === 'connected')).toHaveLength(2)
+  dispose()
+})
+
+it.each(['ws', 'sse'])('reports offline, online and suspended-tab recovery on %s without trusting stale readiness', transport => {
+  if (transport === 'sse') vi.stubGlobal('WebSocket', undefined)
+  const status = vi.fn()
+  const dispose = subscribeRpcNotifications(vi.fn(), status)
+  browserNavigator.onLine = false
+  browserWindow.dispatchEvent(new Event('offline'))
+  expect(status).toHaveBeenLastCalledWith('disconnected')
+  vi.advanceTimersByTime(60000)
+  expect(status).toHaveBeenCalledTimes(1)
+  browserNavigator.onLine = true
+  browserWindow.dispatchEvent(new Event('online'))
+  expect(status).toHaveBeenLastCalledWith('reconnecting')
+  vi.advanceTimersByTime(100)
+  const ready = () => {
+    if (transport === 'ws') BrowserSocket.instances[BrowserSocket.instances.length - 1]!.onmessage({ data: '{"method":"ready"}' })
+    else BrowserEvents.instances[BrowserEvents.instances.length - 1]!.dispatchEvent(new MessageEvent('ready', { data: '{}' }))
+  }
+  ready()
+  expect(status).toHaveBeenLastCalledWith('connected')
+  setVisibility('hidden')
+  setVisibility('visible')
+  expect(status).toHaveBeenLastCalledWith('reconnecting')
+  if (transport === 'ws') BrowserSocket.instances[BrowserSocket.instances.length - 1]!.onmessage({ data: '{"method":"ready"}' })
+  else BrowserEvents.instances[BrowserEvents.instances.length - 1]!.dispatchEvent(new MessageEvent('ready', { data: '{}' }))
+  expect(status).toHaveBeenLastCalledWith('reconnecting')
+  vi.advanceTimersByTime(100)
+  ready()
+  expect(status).toHaveBeenLastCalledWith('connected')
+  dispose()
+})
+
+it('shows startup offline status immediately and cannot clear it with a retired callback', () => {
+  browserNavigator.onLine = false
+  const status = vi.fn()
+  const dispose = subscribeRpcNotifications(vi.fn(), status)
+  expect(status).toHaveBeenCalledExactlyOnceWith('disconnected')
+  vi.advanceTimersByTime(60000)
+  expect(BrowserSocket.instances).toHaveLength(0)
+  dispose()
+  browserWindow.dispatchEvent(new Event('online'))
+  expect(status).toHaveBeenCalledTimes(1)
+})
+
+it('keeps the fallback warning until SSE ready and ignores a retired WebSocket ready', () => {
+  const status = vi.fn()
+  const dispose = subscribeRpcNotifications(vi.fn(), status)
+  const retired = BrowserSocket.instances[0]!
+  vi.advanceTimersByTime(2500)
+  expect(status).toHaveBeenLastCalledWith('disconnected')
+  retired.onmessage({ data: '{"method":"ready"}' })
+  expect(status).toHaveBeenLastCalledWith('disconnected')
+  const source = BrowserEvents.instances[0]!
+  source.dispatchEvent(new MessageEvent('ready', { data: '{}' }))
+  expect(status).toHaveBeenLastCalledWith('connected')
+  source.readyState = BrowserEvents.CLOSED
+  source.onerror()
+  expect(status).toHaveBeenLastCalledWith('disconnected')
+  vi.advanceTimersByTime(1000)
+  expect(status).toHaveBeenLastCalledWith('reconnecting')
+  BrowserEvents.instances[1]!.dispatchEvent(new MessageEvent('ready', { data: '{}' }))
+  expect(status).toHaveBeenLastCalledWith('connected')
+  dispose()
+  source.onerror()
+  expect(status).toHaveBeenLastCalledWith('connected')
+  expect(vi.getTimerCount()).toBe(0)
+})

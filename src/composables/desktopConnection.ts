@@ -1,4 +1,5 @@
 import type { Ref } from 'vue';
+import type { BrowserConnectionState } from '../api/codexRpcClient';
 import { ref } from 'vue';
 import { invalidateResumeThread, resumeThreadSubscription, subscribeCodexNotifications, type RpcNotification } from '../api/codexGateway';
 import type { UiMessage } from '../types/codex';
@@ -25,6 +26,7 @@ type FileAttachment = {
 };
 /** Owns the single notification subscription, readiness identity, coalescing timer and refresh queues. startPolling is idempotent; the desktop stopPolling teardown closes the subscription and timer before dropping shared state. */
 export function createDesktopConnection(deps: {
+    onBrowserConnectionState: (state: BrowserConnectionState) => void;
     invalidateReadJobs: () => void;
     history: ReturnType<typeof createDesktopHistory>;
     setLiveAgentMessagesForThread: (threadId: string, nextMessages: UiMessage[]) => void;
@@ -262,6 +264,8 @@ export function createDesktopConnection(deps: {
             }
             deps.applyRealtimeUpdates(notification);
             queueEventDrivenSync(notification);
+        }, state => {
+            if (generation === lifecycleGeneration) deps.onBrowserConnectionState(state);
         });
     }
     return {
