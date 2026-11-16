@@ -1,4 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// These orchestration fixtures begin with an already verified backend account.
+// Backend hydration/race behavior is exercised in backendAuthentication.test.ts.
+vi.mock('./backendAuthentication', async importOriginal => {
+  const actual = await importOriginal<typeof import('./backendAuthentication')>()
+  return { createBackendAuthentication: () => {
+    const auth = actual.createBackendAuthentication()
+    auth.observe({phase:'ready',blocking:false,revision:1})
+    return {...auth,refresh:vi.fn(async()=>{})}
+  } }
+})
 import { useDesktopState } from './useDesktopState'
 import { reasoningCatalog } from '../api/codexGateway'
 import type { ResumedThread, RpcNotification } from '../api/codexGateway'
@@ -2506,14 +2516,14 @@ it('keeps standalone native commands separate and blocks conflicting chat and hi
  shell!.thread.value='another-thread';await deletion?.prepare();expect(deletion?.state.value).toBe('idle')
  expect(fetch).not.toHaveBeenCalled();expect(gateway.startThreadTurn).not.toHaveBeenCalled()
 })
-it('invalidates account views and preserves the sending/queue barrier across document recreation',async()=>{
+it('invalidates account views and hydrates the sending/queue barrier from backend state across document recreation',async()=>{
  const state=await loadState();const epoch=state.operationEpoch.value
  notify({method:'account/updated',params:{authMode:'chatgpt'}})
  expect(state.operationEpoch.value).toBe(epoch+1);expect(state.nativeAuthenticationBlocked.value).toBe(true);expect(state.availableModelIds.value).toEqual([])
  await expect(state.sendMessageToSelectedThread('blocked')).rejects.toThrow();await expect(state.sendMessageToNewThread('/remote','blocked')).rejects.toThrow('authentication')
  await expect(state.nativeQueue.add({text:'blocked',imageUrls:[],fileAttachments:[],skills:[]})).rejects.toThrow()
  expect(gateway.startThreadTurn).not.toHaveBeenCalled()
- const restored=createState();expect(restored.nativeAuthenticationBlocked.value).toBe(true)
+ const restored=createState();restored.startPolling();notify({method:'native-authentication/state',params:{phase:'reconciliation',blocking:true,revision:2}});expect(restored.nativeAuthenticationBlocked.value).toBe(true)
  const auth=await restored.ensureNativeAuthentication();expect(auth?.state.value).toBe('unknown');expect(auth?.needsRefresh.value).toBe(true)
  notify({method:'app-server/disconnected',params:{}});notify({method:'app-server/reconnected',params:{}})
  expect(restored.nativeAuthenticationBlocked.value).toBe(true);expect(gateway.startThreadTurn).not.toHaveBeenCalled()

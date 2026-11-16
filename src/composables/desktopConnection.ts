@@ -244,6 +244,7 @@ export function createDesktopConnection(deps: {
                 deps.invalidateReadJobs();
                 if (reloadForConnectionProfile(readString(asRecord(notification.params)?.connectionProfile)))
                     return;
+                deps.applyRealtimeUpdates(notification);
                 const instanceId = readString(asRecord(notification.params)?.backendInstanceId);
                 // Hydration can precede the first ready. An unknown instance must also
                 // establish subscriptions, rather than trusting browser-only resume flags.

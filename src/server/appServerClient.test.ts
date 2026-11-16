@@ -119,7 +119,7 @@ it('reuses the current runtime across middleware instances and disposes the acti
 
 it('uses the injected journal without recording turn metadata without creating or connecting another runtime', async () => {
   const { AppServerClient: ClientCore } = await import('./appServerClient')
-  const call = vi.fn().mockResolvedValue({ turn: { id: 'turn' } })
+  const call = vi.fn(async (method: string, _params: unknown) => method === 'account/read' ? {account:{type:'chatgpt'},requiresOpenaiAuth:true} : { turn: { id: 'turn' } })
   const threadIndex = { call: vi.fn(async (method, params, rpc) => rpc(method, params)) }
   const client = new ClientCore({ threadIndex })
   const internal = client as any
@@ -131,9 +131,9 @@ it('uses the injected journal without recording turn metadata without creating o
     const params = { threadId: 'thread', model: 'fixture', effort: 'high' }
     const result = await client.rpc('turn/start', params) as any
     expect(threadIndex.call).toHaveBeenCalledOnce()
-    expect(call).toHaveBeenCalledExactlyOnceWith('turn/start', params)
+    expect(call.mock.calls.filter(([method])=>method==='turn/start')).toEqual([['turn/start',params]])
     expect(result.turn).not.toHaveProperty('generationMetadata')
-    expect(listener).not.toHaveBeenCalled()
+    expect(listener.mock.calls.every(([event])=>event.method==='native-authentication/state')).toBe(true)
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try { await expect(client.rpc('turn/start', params)).resolves.toHaveProperty('turn.id', 'turn') }
     finally { warn.mockRestore() }

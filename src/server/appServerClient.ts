@@ -1,3 +1,4 @@
+import { NativeAuthenticationStateMachine, AUTHENTICATED_WRITES } from './nativeAuthenticationState.js'
 import { CodexHomeResolver } from './codexHomeResolver.js'
 import { getConnectionProfileId } from './connectionProfile.js'
 import { RemoteHistoryPager } from './remoteHistoryPager.js'
@@ -66,6 +67,11 @@ export class AppServerClient {
 
   getInitializationMetadata() { return this.transport.getInitializationMetadata() }
 
+  private readonly authentication = new NativeAuthenticationStateMachine(
+    (method, params) => this.call(method, params),
+    state => this.emitNotification({ method: 'native-authentication/state', params: state }),
+  )
+
   private connectionGeneration = 0
   private readonly codexHome = new CodexHomeResolver(
     (method, params) => this.call(method, params),
@@ -126,6 +132,7 @@ export class AppServerClient {
   private connectionState: 'connected' | 'disconnected' | undefined
   private transport = new AppServerWebSocketClient((frame) => this.handleLine(frame), () => {
     this.connectionState = 'disconnected'
+    this.authentication.disconnect()
     this.connectionGeneration++
     this.codexHome.reset()
     this.historyPager.invalidate()
@@ -190,6 +197,7 @@ export class AppServerClient {
   }
 
   private emitNotification(notification: { method: string; params: unknown }): void {
+    this.authentication.observe(notification.method, notification.params)
     this.recordStreamEvent(notification)
     const nThreadId = this.extractThreadIdFromParams(notification.params)
     if (nThreadId && notification.method !== 'turn/generationMetadata') {
@@ -360,6 +368,9 @@ export class AppServerClient {
 
   private async callObserved(method: string, params: unknown, deadlineMs?: number): Promise<unknown> {
     await this.ensureInitialized()
+    // No await between this guard and the wire write: initialization may yield
+    // while another browser starts login or an account notification arrives.
+    if (AUTHENTICATED_WRITES.has(method)) this.authentication.assertReady()
     const id = this.nextId++
 
     return new Promise((resolve, reject) => {
@@ -412,6 +423,15 @@ export class AppServerClient {
   async rpc(method: string, params: unknown): Promise<unknown> {
     const homeToken = this.codexHome.token()
     await this.ensureInitialized()
+    if (method === 'native-authentication/read') return this.authentication.read()
+    if (method === 'native-authentication/reconcile') return this.authentication.reconcile()
+    if (method === 'account/login/start') return this.authentication.start(params)
+    if (method === 'account/login/cancel') return this.authentication.cancel(params)
+    if (AUTHENTICATED_WRITES.has(method)) await this.authentication.assertCanSend()
+    const guardedCall = (m: string, p: unknown) => {
+      if (AUTHENTICATED_WRITES.has(m)) this.authentication.assertReady()
+      return this.call(m, p)
+    }
     if (method === 'thread/generationMetadata/refresh') {
       this.recoverRolloutMetadata(readNonEmptyString(asRecord(params)?.threadId), null, true)
       return {}
@@ -423,7 +443,7 @@ export class AppServerClient {
       let result = method === 'thread/resume'
         ? await this.recovery.request(readNonEmptyString(asRecord(params)?.threadId), params)
         : method === 'thread/list' ? await this.call(method, params)
-        : await this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, (m, p) => this.call(m, p))
+        : await this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, guardedCall)
       if (joiningBackgroundRecovery) result = await this.call('thread/read', { threadId: resumeId, includeTurns: true })
       if (method === 'thread/read') this.codexHome.observeThreadRead(result, homeToken)
       const record = asRecord(result)
@@ -451,7 +471,7 @@ export class AppServerClient {
       }
       return result
     }
-    return this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, (m, p) => this.call(m, p))
+    return this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, guardedCall)
   }
 
   onNotification(listener: (value: { method: string; params: unknown }) => void): () => void {

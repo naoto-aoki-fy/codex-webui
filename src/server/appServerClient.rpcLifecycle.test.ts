@@ -181,6 +181,9 @@ it.each(['tunnel', 'server restart'])('restores one subscription per thread afte
     const turn = client.rpc('turn/start', { threadId: 'running', input: [] })
     const rejected = expect(turn).rejects.toThrow('disconnected')
     await flush()
+    old.reply(old.frames.find((f: any) => f.method === 'account/read').id, {account:{type:'chatgpt'},requiresOpenaiAuth:true})
+    await flush()
+    expect(old.frames.some((f: any) => f.method === 'turn/start')).toBe(true)
     old.terminate()
     await rejected
     await Promise.all([client.reconnect(), client.reconnect()])
