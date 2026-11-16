@@ -37,7 +37,7 @@ const cleanup: Array<() => void> = []
 afterEach(() => { cleanup.splice(0).forEach(fn => fn()); vi.unstubAllGlobals() })
 function mount(initial: Record<string, unknown> = {}) {
   const storage = new Map<string, string>()
-  vi.stubGlobal('window', { localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) }, addEventListener() {}, removeEventListener() {} })
+  vi.stubGlobal('window', { localStorage: { get length() { return storage.size }, key: (i: number) => [...storage.keys()][i] ?? null, getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) }, addEventListener() {}, removeEventListener() {} })
   vi.stubGlobal('Document', class {})
   vi.stubGlobal('ShadowRoot', class {})
   vi.stubGlobal('document', { addEventListener() {}, removeEventListener() {} })
@@ -476,4 +476,43 @@ it('notifies the parent layout on expansion and every exit path while keeping a 
   await expand()
   cleanup.pop()!()
   expect(expanded).toHaveBeenLastCalledWith(false)
+})
+
+
+it('recovers a copy through the exposed Settings action, archiving all current fields before replacing without sending or consuming the source', async () => {
+  const c = mount()
+  const current = { ...payload, apps: [{ id: 'current_app', name: 'Current App' }] }
+  c.exposed.hydrateDraft(current)
+  await vue.nextTick()
+  const legacyKey = 'codex-web-local.thread-draft.v1.child'
+  const source = { ...payload, text: 'Legacy recovery', apps: [{ id: 'source_app', name: 'Source App' }] }
+  c.storage.set(legacyKey, JSON.stringify(source))
+  const drafts = imports['../../utils/composerDraftStorage'] as typeof import('../../utils/composerDraftStorage')
+  const entry = drafts.recoverableDrafts('child').find(row => row.key === legacyKey)!
+  expect(entry.draft).toEqual(source)
+  expect(c.nodes().some(n => n.text?.includes('Recover saved drafts') || n.props.class === 'draft-recovery')).toBe(false)
+  expect(c.exposed.recoverDraft(entry.draft)).toBe(true)
+  // Archival is synchronous: it must exist before the next reactive persistence flush.
+  expect(JSON.parse([...c.storage.entries()].find(([key]) => key.includes('.archive-'))![1])).toEqual(current)
+  await vue.nextTick()
+  expect(JSON.parse([...c.storage.entries()].find(([key]) => key.startsWith('codex-web-local.thread-draft.v2.child.') && !key.includes('.archive-'))![1])).toEqual(source)
+  expect(c.storage.get(legacyKey)).toBe(JSON.stringify(source))
+  expect(drafts.recoverableDrafts('child').map(row => row.draft)).toEqual(expect.arrayContaining([source, current]))
+  expect(c.submitted).not.toHaveBeenCalled()
+})
+
+it('leaves the live draft intact and does not submit if preserving it fails during Settings recovery', async () => {
+  const c = mount()
+  c.exposed.hydrateDraft(payload)
+  await vue.nextTick()
+  const before = new Map(c.storage)
+  const write = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded') })
+  try {
+    expect(c.exposed.recoverDraft({ ...payload, text: 'Must not replace current draft' })).toBe(false)
+    await vue.nextTick()
+    expect(c.storage).toEqual(before)
+    expect((c.nodes().find(n => n.tag === 'textarea') as unknown as { value: string }).value).toBe(payload.text)
+    expect(c.nodes().some(n => n.props.role === 'alert' && n.text?.includes('Could not preserve the current draft'))).toBe(true)
+    expect(c.submitted).not.toHaveBeenCalled()
+  } finally { write.mockRestore() }
 })

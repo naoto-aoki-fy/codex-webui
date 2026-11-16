@@ -8,14 +8,7 @@
     <ManagementDialog :open="promptLibraryOpen" title="Prompts & commands" @close="promptLibraryOpen=false">
       <PromptLibrary v-if="promptLibraryLoaded" :open="promptLibraryOpen" @close="promptLibraryOpen=false" @choose="populatePrompt" />
     </ManagementDialog>
-    <div v-if="activeThreadId" class="draft-recovery">
-      <button type="button" @click="draftRecovery = recoverableDrafts(activeThreadId)">Recover saved drafts</button>
-      <p v-if="draftRecovery && !draftRecovery.length">No other saved drafts for this conversation.</p>
-      <ul v-if="draftRecovery?.length"><li v-for="entry in draftRecovery" :key="entry.key">
-        <button type="button" @click="recoverDraft(entry.draft)">Recover copy: {{ entry.draft.text.slice(0, 80) || 'Attachments / Skills / Apps' }}</button>
-      </li></ul>
-      <p v-if="draftSaveWarning" role="alert">{{ draftSaveWarning }}</p>
-    </div>
+    <p v-if="draftSaveWarning" role="alert">{{ draftSaveWarning }}</p>
     <p v-if="promptStorageNotice" role="status">{{ promptStorageNotice }}</p>
 
     <Teleport to="body">
@@ -393,15 +386,14 @@ const AppsPicker = defineAsyncComponent(() => import('./AppsPicker.vue'))
 const isAppsPickerOpen = ref(false)
 const appsPickerLoaded = ref(false)
 watch(isAppsPickerOpen, open => { if (open) appsPickerLoaded.value = true })
-const draftRecovery = ref<ReturnType<typeof recoverableDrafts> | null>(null)
 const draftSaveWarning = ref('')
-function recoverDraft(payload: ComposerDraftPayload) {
+function recoverDraft(payload: ComposerDraftPayload): boolean {
   if (input.hasUnsavedDraft.value && !archiveDraftBeforeRecovery(props.activeThreadId, input.getCurrentDraftPayload())) {
     draftSaveWarning.value = 'Could not preserve the current draft. Copy it before recovering another draft.'
-    return
+    return false
   }
   input.hydrateDraft(payload)
-  draftRecovery.value = null
+  return true
 }
 const promptLibraryLoaded = ref(false)
 const PromptLibrary = defineAsyncComponent(() => import('./PromptLibrary.vue'))
@@ -410,7 +402,7 @@ import { createComposerInput } from './composerInput'
 import { createComposerSettings } from './composerSettings'
 import { createComposerAttachments } from './composerAttachments'
 
-import { loadPersistedDraftForThread, persistDraftForThread, recoverableDrafts, draftStorageError, archiveDraftBeforeRecovery, type FileAttachment, type ComposerDraftPayload } from '../../utils/composerDraftStorage'
+import { loadPersistedDraftForThread, persistDraftForThread, draftStorageError, archiveDraftBeforeRecovery, type FileAttachment, type ComposerDraftPayload } from '../../utils/composerDraftStorage'
 import { reasoningCatalog } from '../../api/codexGateway'
 import { parseModelSelection, defaultModelForProvider, modelSelectionKey } from '../../api/modelCapabilities'
 
@@ -655,6 +647,7 @@ onMounted(() => {
 
 defineExpose<ThreadComposerExposed>({
   hydrateDraft: input.hydrateDraft,
+  recoverDraft,
   appendTextToDraft: input.appendTextToDraft,
   hasUnsavedDraft: () => input.hasUnsavedDraft.value,
 })
@@ -676,7 +669,6 @@ watch(
     if (lastActiveThreadId) {
       persistDraftForThread(lastActiveThreadId, input.getCurrentDraftPayload())
     }
-    draftRecovery.value = null
     isComposerCollapsed.value = false
     input.clearDraftState()
     const restored = loadPersistedDraftForThread(nextThreadId)

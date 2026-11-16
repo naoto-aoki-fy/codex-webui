@@ -333,7 +333,7 @@
   <ManagementDialog :open="isSettingsOpen" title="Settings" @close="isSettingsOpen=false">
     <div class="settings-layout">
       <nav class="settings-categories" aria-label="Settings categories">
-        <button v-for="category in settingsCategories" :key="category" type="button" :aria-current="settingsCategory===category ? 'page' : undefined" @click="settingsCategory=category">{{ category }}</button>
+        <button v-for="category in settingsCategories" :key="category" type="button" :aria-current="settingsCategory===category ? 'page' : undefined" @click="settingsCategory=category">{{ category }}<span v-if="category === 'General' && recoverableDraftCount" class="draft-recovery-count">{{ recoverableDraftCount }} {{ recoverableDraftCount === 1 ? 'draft' : 'drafts' }}</span></button>
       </nav>
       <div class="settings-content">
         <section v-if="settingsLoaded" v-show="settingsCategory==='Codex account'" aria-label="Codex account">
@@ -357,6 +357,11 @@
                 @toggle-send-with-enter="toggleSendWithEnter"
                 @cycle-dark-mode="cycleDarkMode"
                 @cycle-chat-width="cycleChatWidth"
+              />
+              <DraftRecoverySettings v-if="isSettingsOpen" :key="composerThreadContextId"
+                :thread-id="composerThreadContextId" :disabled="!activeDraftComposer"
+                :recover-draft="payload => activeDraftComposer?.recoverDraft(payload) ?? false"
+                @count="recoverableDraftCount=$event"
               />
               <div class="sidebar-settings-rate-limits">
                 <RateLimitStatus :snapshots="accountRateLimitSnapshots" />
@@ -398,6 +403,7 @@ import { useNewThreadCwdRoute } from './composables/useNewThreadCwdRoute'
 import DesktopLayout from './components/layout/DesktopLayout.vue'
 import GeneralPreferencesSettings from './components/sidebar/GeneralPreferencesSettings.vue'
 import AboutSettings from './components/sidebar/AboutSettings.vue'
+import DraftRecoverySettings from './components/sidebar/DraftRecoverySettings.vue'
 import ManagementDialog from './components/shared/ManagementDialog.vue'
 import ArchivedThreads from './components/sidebar/ArchivedThreads.vue'
 import AccountSettingsPanel from './components/sidebar/AccountSettingsPanel.vue'
@@ -621,6 +627,7 @@ let sidebarScrollRestoreRequestId = 0
 let isRestoringSidebarScroll = false
 const homeDirectory = ref('')
 const isSettingsOpen = ref(false)
+const recoverableDraftCount = ref(0)
 const isArchiveOpen = ref(false)
 const settingsCategories = ['General', 'Codex account', 'Apps / Connectors', 'About']
 const settingsCategory = ref('Codex account')
@@ -710,6 +717,7 @@ const liveOverlay = computed(() => selectedLiveOverlay.value)
 watch(selectedThreadId, () => { isConversationToolsOpen.value = false; isContextOpen.value = false; closeConversationMenu() }, { flush: 'sync' })
 watch(isHomeRoute, (home, previous) => { if (home && !previous) restoreNewConversationPreferences() })
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
+const activeDraftComposer = computed(() => isHomeRoute.value ? homeThreadComposerRef.value : threadComposerRef.value)
 const composerSendMode = createComposerSendMode(composerThreadContextId)
 watch([composerSendMode.queue, composerThreadContextId, operationEpoch, transportState], () => {
   if (composerSendMode.queue.value && !isHomeRoute.value && selectedThreadId.value && !nativeQueue.loaded.value) void nativeQueue.refresh()
