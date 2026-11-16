@@ -137,6 +137,9 @@
         </ContentHeader>
         <p v-if="nativeAuthenticationBlocked" class="feature-panel native-auth-barrier" role="status">{{ nativeAuthenticationStatus }} <button type="button" @click="settingsCategory='Codex account';isSettingsOpen=true">Open native sign-in controls</button></p>
         <p v-if="nativeDeletion?.state.value==='completed'" class="feature-panel" role="status">{{ nativeDeletion.status.value }}</p>
+        <p v-if="modelPreferencesLoading" class="composer-model-notice" role="status">Loading model preferences…</p>
+        <p v-if="modelPreferencesError" class="composer-model-notice" role="alert">Model preferences could not be synchronized. {{ modelPreferencesError }} <button type="button" @click="refreshBackendModelPreferences">Retry</button></p>
+        <p v-if="modelPreferenceNotice" class="composer-model-notice" role="status">{{ modelPreferenceNotice }}</p>
         <p v-if="nativeForkFailure" class="composer-runtime-error" role="alert">{{ nativeForkFailure }}</p>
 
         <div v-if="browserConnectionNotice" class="connection-recovery-status" :class="{ 'connection-recovery-success': browserConnectionNotice === 'reconnected' }" role="status" data-connection="browser">
@@ -204,9 +207,9 @@
                   :cwd="composerCwd"
                   :selected-queue-mode="composerSendMode.queue.value"
                   @update:selected-queue-mode="composerSendMode.queue.value=$event"
-                  :disabled="nativeAuthenticationBlocked || !newThreadCwd.trim()"
+                  :disabled="modelPreferencesLoading || nativeAuthenticationBlocked || !newThreadCwd.trim()"
                   :collaboration-modes="availableCollaborationModes"
-                  :selected-collaboration-mode="selectedCollaborationMode"
+                  :selected-collaboration-mode="composerCollaborationMode"
                   :models="availableModelIds" :model-provider="parseModelSelection(composerSelectedModelId).provider" :selected-model="composerSelectedModelId"
                   :selected-reasoning-effort="composerReasoningEffort"
                   :reasoning-effort-options="composerReasoningOptions"
@@ -274,7 +277,7 @@
                   @update:selected-queue-mode="composerSendMode.queue.value=$event"
                   :connection-epoch="operationEpoch"
                   :collaboration-modes="availableCollaborationModes"
-                  :selected-collaboration-mode="selectedCollaborationMode"
+                  :selected-collaboration-mode="composerCollaborationMode"
                   :models="availableModelIds" :model-provider="parseModelSelection(composerSelectedModelId).provider"
                   :selected-model="composerSelectedModelId"
                   :selected-reasoning-effort="composerReasoningEffort"
@@ -482,7 +485,6 @@ const {
   selectedThreadId,
   availableCollaborationModes,
   availableModelIds,
-  selectedCollaborationMode,
   selectedModelId,
   selectedSpeedMode,
   installedSkills,
@@ -502,6 +504,11 @@ const {
   retrySelectedSubscription, reconcileSelectedHistory,
   error: desktopError,
   modelSelectionNotice,
+  restoreNewConversationPreferences,
+  modelPreferenceNotice,
+  modelPreferencesLoading,
+  modelPreferencesError,
+  refreshBackendModelPreferences,
   refreshAll,
   refreshWorkspaceRoots,
   refreshSkills,
@@ -528,6 +535,8 @@ const {
   sendMessageToNewThread,
   interruptSelectedThreadTurn,
   setSelectedCollaborationMode,
+  setSelectedCollaborationModeForThread,
+  readCollaborationModeForThread,
   readModelIdForThread,
   readReasoningEffortForThread,
   readReasoningOptionsForThread,
@@ -696,6 +705,7 @@ const filteredMessages = computed(() =>
 )
 const liveOverlay = computed(() => selectedLiveOverlay.value)
 watch(selectedThreadId, () => { isConversationToolsOpen.value = false; isContextOpen.value = false; closeConversationMenu() }, { flush: 'sync' })
+watch(isHomeRoute, (home, previous) => { if (home && !previous) restoreNewConversationPreferences() })
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
 const composerSendMode = createComposerSendMode(composerThreadContextId)
 watch([composerSendMode.queue, composerThreadContextId, operationEpoch, transportState], () => {
@@ -703,6 +713,7 @@ watch([composerSendMode.queue, composerThreadContextId, operationEpoch, transpor
 })
 const composerReasoningEffort = computed(() => readReasoningEffortForThread(composerThreadContextId.value))
 const composerReasoningOptions = computed(() => readReasoningOptionsForThread(composerThreadContextId.value))
+const composerCollaborationMode = computed(() => readCollaborationModeForThread(composerThreadContextId.value))
 const composerSelectedModelId = computed(() => readModelIdForThread(composerThreadContextId.value))
 const selectedThreadPendingRequest = computed<UiServerRequest | null>(() => {
   const rows = selectedThreadServerRequests.value
@@ -996,6 +1007,7 @@ function resolvePreferredLocalCwd(projectId: string, fallbackCwd = ''): string {
 }
 
 function onStartNewThread(projectName: string): void {
+  restoreNewConversationPreferences()
   composerSendMode.reset()
   const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
   const projectCwd = resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
@@ -1015,6 +1027,7 @@ function resolveSelectedThreadProjectCwd(): string {
 }
 
 function onStartNewThreadFromToolbar(): void {
+  restoreNewConversationPreferences()
   composerSendMode.reset()
   const resolvedCwd = resolveSelectedThreadProjectCwd()
   if (resolvedCwd) {
@@ -1460,7 +1473,7 @@ function normalizeMessageType(rawType: string | undefined, role: string): string
 }
 
 function onSelectCollaborationMode(mode: 'default' | 'plan'): void {
-  setSelectedCollaborationMode(mode)
+  setSelectedCollaborationModeForThread(composerThreadContextId.value, mode)
 }
 
 async function initialize(): Promise<void> {
