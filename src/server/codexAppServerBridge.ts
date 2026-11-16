@@ -1,3 +1,6 @@
+import { ModelPreferencesStore } from './modelPreferencesStore.js'
+import { createModelPreferenceUsage } from './modelPreferenceUsage.js'
+import type { ModelPreferences } from '../modelPreferences.js'
 import { resolveAppServerUrl } from './appServerWebSocketClient.js'
 import { NativeProjects } from './nativeProjects.js'
 import { createConversationTransfers } from './conversationTransfer.js'
@@ -450,6 +453,10 @@ type SharedBridgeState = {
   appServer: AppServerClient
   methodCatalog: MethodCatalog
   files: ProjectFileService
+  modelPreferences?: ModelPreferencesStore
+  modelPreferenceUsage?: ReturnType<typeof createModelPreferenceUsage>
+  preferenceListeners?: Set<(state: ModelPreferences) => void>
+  preferenceErrorListeners?: Set<(message: string) => void>
 }
 
 const SHARED_BRIDGE_KEY = '__codexRemoteSharedBridge__'
@@ -491,6 +498,15 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   let released = false
   const activeSse = new Set<() => void>()
   const { appServer, methodCatalog } = sharedState
+  const modelPreferences = sharedState.modelPreferences ??= new ModelPreferencesStore()
+  const modelPreferenceUsage = sharedState.modelPreferenceUsage ??= createModelPreferenceUsage(modelPreferences)
+  const preferenceListeners = sharedState.preferenceListeners ??= new Set()
+  const preferenceErrorListeners = sharedState.preferenceErrorListeners ??= new Set()
+  const publishPreferences = (state: ModelPreferences) => {
+    for (const listener of preferenceListeners) {
+      try { listener({ ...state, connectionProfile: getConnectionProfileId() }) } catch { /* A closed browser must not fail a committed update. */ }
+    }
+  }
   const transfers = createConversationTransfers((method, params) => appServer.rpc(method, params))
   const files = sharedState.files ?? new ProjectFileService(appServer)
   const projects = new NativeProjects((m, p) => appServer.rpc(m, p), () => JSON.stringify([getConnectionProfileId(), resolveAppServerUrl(), appServer.getInitializationMetadata?.()?.codexHome ?? '']))
@@ -603,6 +619,17 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 	          return
 	        }
 
+        if (body.method.startsWith('model-preferences/')) {
+          const result = body.method === 'model-preferences/read' ? await modelPreferences.read()
+            : body.method === 'model-preferences/update' ? await modelPreferences.update(body.params)
+            : body.method === 'model-preferences/migrate' ? await modelPreferences.migrate(body.params)
+            : null
+          if (!result) { setJson(res, 400, { error: 'Unknown model preferences method' }); return }
+          if (body.method !== 'model-preferences/read') publishPreferences(result)
+          setJson(res, 200, { result: { ...result, connectionProfile: getConnectionProfileId() } })
+          return
+        }
+
         if (body.method === 'getAuthStatus') {
           setJson(res, 200, { result: await readPublicAuthStatus(appServer, body.params) })
           return
@@ -700,6 +727,20 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         const errorMergedResult = THREAD_METHODS_WITH_TURNS.has(body.method)
           ? mergeStreamTurnErrorsIntoThreadResult(appServer, trimmedResult)
           : trimmedResult
+        modelPreferenceUsage.observe(body.method, rpcResult)
+        if (body.method === 'turn/start') {
+          try {
+            const preferences = await modelPreferenceUsage.accepted(body.params, rpcResult, (method, params) => appServer.rpc(method, params))
+            if (preferences) publishPreferences(preferences)
+          } catch (error) {
+            // Acceptance must remain successful: retrying here could submit a duplicate turn.
+            console.warn('Accepted turn model preferences were not persisted:', error)
+            for (const listener of preferenceErrorListeners) {
+              try { listener(getErrorMessage(error, 'Model preferences could not be saved')) } catch { /* Other clients still receive the failure. */ }
+            }
+          }
+        }
+
         const sanitizedResult = await sanitizeThreadTurnsInlinePayloads(body.method, errorMergedResult)
         if (body.method === 'thread/start' && asRecord(body.params)?.projectId) {
           const expected = asRecord(body.params)!.projectId
@@ -916,6 +957,10 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   middleware.subscribeNotifications = (
     listener: (value: { method: string; params: unknown; atIso: string }) => void,
   ) => {
+    const onPreferences = (state: ModelPreferences) => listener({ method: 'model-preferences/changed', params: state, atIso: new Date().toISOString() })
+    const onPreferenceError = (message: string) => listener({ method: 'model-preferences/error', params: { message }, atIso: new Date().toISOString() })
+    preferenceListeners.add(onPreferences)
+    preferenceErrorListeners.add(onPreferenceError)
     const unsubscribeAppServer = appServer.onNotification((notification: { method: string; params: unknown }) => {
       listener({
         ...notification,
@@ -924,6 +969,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
     })
     return () => {
       unsubscribeAppServer()
+      preferenceListeners.delete(onPreferences)
+      preferenceErrorListeners.delete(onPreferenceError)
     }
   }
 

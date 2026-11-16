@@ -45,7 +45,7 @@ async function resolveDestination(path: string, depth = 0): Promise<string> {
   return join(await resolveDestination(parent, depth + 1), basename(absolute))
 }
 
-async function readState(path: string): Promise<CodexGlobalState> {
+async function readState(path: string, recoverMalformed = false): Promise<CodexGlobalState> {
   let raw: string
   try {
     raw = await readFile(path, 'utf8')
@@ -53,20 +53,26 @@ async function readState(path: string): Promise<CodexGlobalState> {
     if (isMissing(error)) return {}
     throw error
   }
-  const state: unknown = JSON.parse(raw)
+  let state: unknown
+  try { state = JSON.parse(raw) } catch (error) {
+    if (recoverMalformed && error instanceof SyntaxError) return {}
+    throw error
+  }
   if (!state || typeof state !== 'object' || Array.isArray(state)) {
+    if (recoverMalformed) return {}
     throw new Error(`Invalid Codex global state object: ${path}`)
   }
   return state as CodexGlobalState
 }
 
-export async function readCodexGlobalState(path = getCodexGlobalStatePath()): Promise<CodexGlobalState> {
-  return readState(await resolveDestination(path))
+export async function readCodexGlobalState(path = getCodexGlobalStatePath(), recoverMalformed = false): Promise<CodexGlobalState> {
+  return readState(await resolveDestination(path), recoverMalformed)
 }
 
 export async function updateCodexGlobalState<T>(
   update: (state: CodexGlobalState) => T | Promise<T>,
   path = getCodexGlobalStatePath(),
+  recoverMalformed = false,
 ): Promise<T> {
   const destination = await resolveDestination(path)
   const previous = mutationsByPath.get(destination) ?? Promise.resolve()
@@ -79,7 +85,7 @@ export async function updateCodexGlobalState<T>(
     })
     let temporaryPath: string | null = null
     try {
-      const state = await readState(destination)
+      const state = await readState(destination, recoverMalformed)
       const before: unknown = JSON.parse(JSON.stringify(state))
       const result = await update(state)
       if (compromised) throw compromised
