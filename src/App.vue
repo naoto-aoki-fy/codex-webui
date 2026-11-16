@@ -126,6 +126,7 @@
               <summary aria-label="Conversation tools" title="Conversation tools"><IconTablerDots /></summary>
               <div class="conversation-header-menu-body">
                 <button type="button" @click="openConversationTools">Conversation tools…</button>
+                <button type="button" @click="openContext">Context</button>
                 <button type="button" @click="closeConversationMenu();onCopyThreadChat(selectedThreadId)">Copy conversation</button>
                 <button type="button" :disabled="isExporting" @click="closeConversationMenu();onExportThread(selectedThreadId)">Export conversation as Markdown</button>
                 <button type="button" @click="closeConversationMenu();onArchiveThread(selectedThreadId)">Archive conversation</button>
@@ -303,6 +304,18 @@
                     :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage || permissionChanges.blocking.value || nativeAuthenticationBlocked" :incomplete="isSelectedThreadImportIncomplete"
                     :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
   </ManagementDialog>
+  <ManagementDialog :open="isContextOpen" title="Context" :description="contextConversationTitle" @close="isContextOpen=false">
+    <section v-if="showThreadContextBadge" class="thread-context-details feature-panel" aria-label="Conversation context usage">
+      <div class="thread-context-summary" :data-state="threadContextBadgeState" :title="threadContextTooltip">
+        <span>Context</span>
+        <span class="thread-context-value" :data-state="threadContextBadgeState">
+          {{ threadContextPrimaryText }}
+          <span class="thread-context-meta">{{ threadContextSecondaryText }}</span>
+        </span>
+      </div>
+      <p class="thread-context-breakdown">{{ threadContextTooltip }}</p>
+    </section>
+  </ManagementDialog>
   <ArchivedThreads :open="isArchiveOpen" :epoch="operationEpoch" :restore="restoreThreadById" @close="isArchiveOpen=false" />
   <ManagementDialog :open="isSettingsOpen" title="Settings" @close="isSettingsOpen=false">
     <div class="settings-layout">
@@ -331,18 +344,6 @@
                 @cycle-dark-mode="cycleDarkMode"
                 @cycle-chat-width="cycleChatWidth"
               />
-              <div
-                v-if="showThreadContextBadge"
-                class="sidebar-settings-row sidebar-settings-context-row"
-                :data-state="threadContextBadgeState"
-                :title="threadContextTooltip"
-              >
-                <span class="sidebar-settings-label">{{ ('Context') }}</span>
-                <span class="sidebar-settings-context-value" :data-state="threadContextBadgeState">
-                  {{ threadContextPrimaryText }}
-                  <span class="sidebar-settings-context-meta">{{ threadContextSecondaryText }}</span>
-                </span>
-              </div>
               <div class="sidebar-settings-rate-limits">
                 <RateLimitStatus :snapshots="accountRateLimitSnapshots" />
               </div>
@@ -412,6 +413,13 @@ const ConversationTools = defineAsyncComponent(() => import('./components/conten
 const areConversationToolsLoaded = ref(false)
 const isConversationToolsOpen = ref(false)
 const toolsConversationTitle = ref('')
+const isContextOpen = ref(false)
+const contextConversationTitle = ref('')
+function openContext() {
+  closeConversationMenu()
+  contextConversationTitle.value = `${contentTitle.value} · ${selectedThreadId.value}`
+  isContextOpen.value = true
+}
 const conversationMenuRef = ref<HTMLDetailsElement | null>(null)
 function closeConversationMenu() { if (conversationMenuRef.value) conversationMenuRef.value.open = false }
 function openConversationTools() {
@@ -678,7 +686,7 @@ const filteredMessages = computed(() =>
   }),
 )
 const liveOverlay = computed(() => selectedLiveOverlay.value)
-watch(selectedThreadId, () => { isConversationToolsOpen.value = false; closeConversationMenu() }, { flush: 'sync' })
+watch(selectedThreadId, () => { isConversationToolsOpen.value = false; isContextOpen.value = false; closeConversationMenu() }, { flush: 'sync' })
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
 const composerSendMode = createComposerSendMode(composerThreadContextId)
 watch([composerSendMode.queue, composerThreadContextId, operationEpoch, transportState], () => {
@@ -1806,27 +1814,31 @@ async function onLogoutCodex(): Promise<void> {
   transform: translateY(8px);
 }
 
-.sidebar-settings-context-row {
-  @apply cursor-default;
+.thread-context-summary {
+  @apply flex flex-wrap items-center justify-between gap-3 py-3;
 }
 
-.sidebar-settings-context-value {
+.thread-context-breakdown {
+  white-space: pre-line;
+}
+
+.thread-context-value {
   @apply text-xs font-semibold text-zinc-700 text-right;
 }
 
-.sidebar-settings-context-value[data-state='ok'] {
+.thread-context-value[data-state='ok'] {
   @apply text-emerald-700;
 }
 
-.sidebar-settings-context-value[data-state='warning'] {
+.thread-context-value[data-state='warning'] {
   @apply text-amber-700;
 }
 
-.sidebar-settings-context-value[data-state='danger'] {
+.thread-context-value[data-state='danger'] {
   @apply text-rose-700;
 }
 
-.sidebar-settings-context-meta {
+.thread-context-meta {
   @apply block text-[11px] font-normal text-zinc-500;
 }
 
