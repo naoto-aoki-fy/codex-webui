@@ -42,6 +42,7 @@ export function createDesktopTurns(deps: {
     approvals: ReturnType<typeof createDesktopApprovals>;
     lifecycleGeneration: number;
     readModelIdForThread: (threadId: string) => string;
+    readCollaborationModeForThread: (threadId: string) => CollaborationModeKind;
     selectedThreadId: Ref<string, string>;
     selectedReasoningEffort: ComputedRef<string>;
     isUpdatingSpeedMode: Ref<boolean, boolean>;
@@ -69,7 +70,6 @@ export function createDesktopTurns(deps: {
         persist?: boolean;
     }) => void;
     realtimeRevisionByThreadId: Map<string, number>;
-    recordModelUsage: (modelId: string) => void;
     setPersistedMessagesForThread: (threadId: string, nextMessages: UiMessage[]) => void;
     maybeUnblockInterruptForActiveTurn: (threadId: string, turnId: string) => void;
     pendingThreadMessageRefresh: Set<string>;
@@ -209,7 +209,7 @@ export function createDesktopTurns(deps: {
         }
         const selectedModel = deps.readModelIdForThread(NEW_THREAD_COLLABORATION_MODE_CONTEXT).trim();
         const reasoningEffort = deps.readReasoningEffortForThread(NEW_THREAD_COLLABORATION_MODE_CONTEXT);
-        const selectedMode = deps.selectedCollaborationMode.value;
+        const selectedMode = deps.readCollaborationModeForThread(NEW_THREAD_COLLABORATION_MODE_CONTEXT);
         const speedMode = deps.selectedSpeedMode.value;
         if (!nextText && imageUrls.length === 0 && fileAttachments.length === 0)
             return '';
@@ -343,8 +343,6 @@ export function createDesktopTurns(deps: {
                 modelId = deps.readModelIdForThread(threadId);
             const reasoningEffort = modelId === context.modelId ? context.reasoningEffort : deps.readReasoningEffortForThread(threadId);
             // Submit exactly once even if disposal occurred while resuming the server thread.
-            if (generation === deps.lifecycleGeneration)
-                deps.recordModelUsage(modelId);
             submissionAttempted = true;
             const args: Parameters<typeof startThreadTurn> = [threadId, nextText, normalizedImageUrls, modelId || undefined, reasoningEffort || undefined, skills.length > 0 ? skills : undefined, fileAttachments, collaborationMode, context.speedMode ?? deps.selectedSpeedMode.value];
             if (context.apps?.length) args.push(context.apps);

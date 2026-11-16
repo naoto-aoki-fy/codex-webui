@@ -1,3 +1,5 @@
+import { createBackendModelPreferences } from './backendModelPreferences'
+import { preferenceModelKey, type ModelPreferences, type ModelSettings } from '../modelPreferences'
 import { createLiveItemOrder } from './liveItemOrder'
 import { createThreadReview } from './threadReview'
 import { createThreadCompaction } from './threadCompaction'
@@ -23,7 +25,7 @@ import { interruptThreadTurn, markNativeThreadRead, refreshThreadGenerationMetad
 import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
 import { getWorkspaceProjectId, filterGroupsByWorkspaceRoots } from '../utils/desktopProjectGroups'
 import { readPlanUpdate, asRecord, readString, readNumber, readThreadTokenUsageUpdate, extractThreadIdFromNotification, readTurnErrorMessage, readNotificationErrorState, readTurnActivity, liveReasoningMessageId, readReasoningStartedItemId, readReasoningDelta, readReasoningSectionBreakMessageId, readReasoningCompletedId, readAgentMessageStartedId, readAgentMessageDelta, readAgentMessageCompleted, readCompletedImageView, readCommandOutputDelta, isAgentContentEvent, type TurnActivityState } from './desktopNotificationReaders'
-import { MODEL_USAGE_STORAGE_KEY, loadModelUsageOrder, REASONING_BY_MODEL_STORAGE_KEY, NEW_THREAD_MODEL_CONTEXT, normalizeStoredModelId, createStringKeyedRecord, cloneStringKeyedRecord, omitStringKeyedRecordKey, pruneThreadContextStateMap, isNewThreadContextId, toThreadContextId, loadSelectedModelMap, readSelectedModel, saveSelectedModelMap, loadReasoningPreferences, loadSelectedCollaborationModeMap, readSelectedCollaborationMode, writeSelectedCollaborationModeForContext, saveSelectedCollaborationModeMap, loadThreadTokenUsageMap, saveThreadTokenUsageMap, loadSelectedThreadId, saveSelectedThreadId } from './desktopStatePersistence'
+import { loadLegacyGlobalCollaborationMode, NEW_THREAD_MODEL_CONTEXT, normalizeStoredModelId, createStringKeyedRecord, cloneStringKeyedRecord, omitStringKeyedRecordKey, pruneThreadContextStateMap, isNewThreadContextId, toThreadContextId, loadSelectedModelMap, readSelectedModel, saveSelectedModelMap, loadReasoningPreferences, loadSelectedCollaborationModeMap, readSelectedCollaborationMode, writeSelectedCollaborationModeForContext, saveSelectedCollaborationModeMap, loadThreadTokenUsageMap, saveThreadTokenUsageMap, loadSelectedThreadId, saveSelectedThreadId } from './desktopStatePersistence'
 import { areStringArraysEqual, areMessageArraysEqual, normalizeMessageText, isOptimisticUserMessage, upsertMessage } from '../utils/desktopMessageReconciliation'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { formatTurnDuration, parseIsoTimestamp } from '../utils/turnTiming'
@@ -211,36 +213,101 @@ export function useDesktopState() {
     collaborationMode: CollaborationModeKind
   }
   const availableModelIds = ref<string[]>([])
-  const modelUsageOrder = ref(loadModelUsageOrder())
+  const catalogModelIds = ref<string[] | null>(null)
+  const modelUsageOrder = ref<string[]>([])
   const orderedModelIds = computed(() => orderModelIdsByUsage(availableModelIds.value, modelUsageOrder.value))
-
-  function recordModelUsage(modelId: string): void {
-    const model = modelId.trim()
-    if (!model || modelUsageOrder.value[0] === model) return
-    modelUsageOrder.value = [model, ...modelUsageOrder.value.filter((id) => id !== model)]
-    try {
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(MODEL_USAGE_STORAGE_KEY, JSON.stringify(modelUsageOrder.value))
-      }
-    } catch {
-      // Keep in-memory ordering working when storage is unavailable.
-    }
-  }
   const availableCollaborationModes = ref<CollaborationModeOption[]>([
     { value: 'default', label: 'Default' },
     { value: 'plan', label: 'Plan' },
   ])
   const selectedCollaborationModeByContext = ref<Record<string, CollaborationModeKind>>(
-    loadSelectedCollaborationModeMap(),
+    Object.fromEntries(Object.entries(loadSelectedCollaborationModeMap()).filter(([key]) => key !== '__new-thread__')),
   )
-  const selectedModelIdByContext = ref<Record<string, string>>(loadSelectedModelMap())
+  const legacyModelMap = loadSelectedModelMap()
+  const legacyReasoning = loadReasoningPreferences()
+  const legacyCollaboration = loadSelectedCollaborationModeMap()
+  const selectedModelIdByContext = ref<Record<string, string>>(Object.fromEntries(
+    Object.entries(legacyModelMap).filter(([key]) => !key.startsWith('__new-thread')),
+  ))
   const selectedCollaborationMode = ref<CollaborationModeKind>(
     readSelectedCollaborationMode(selectedCollaborationModeByContext.value, selectedThreadId.value),
   )
   const selectedModelId = ref(readSelectedModel(selectedModelIdByContext.value, selectedThreadId.value))
-  const reasoningByModel = ref(loadReasoningPreferences())
+  const reasoningByModel = ref(createStringKeyedRecord<string>())
   // Automatic catalog fallbacks affect the display, never the saved user choice.
   const automaticModelByContext = ref(createStringKeyedRecord<string>())
+  let newThreadEffortEdited = false
+  let newThreadModelEdited = false
+  let newThreadModeEdited = false
+  const backendPreferences = createBackendModelPreferences(async () => {
+    const saved = legacyModelMap[NEW_THREAD_MODEL_CONTEXT] || legacyModelMap['__new-thread__'] || ''
+    const selection = parseModelSelection(saved)
+    if (!selection.provider && !legacyCatalogProvider && (saved || Object.keys(legacyReasoning).length)) {
+      const config = await getCurrentModelConfig()
+      legacyCatalogProvider = config.modelProvider?.trim() || ''
+    }
+    const provider = selection.provider || legacyCatalogProvider || resolveSelectionProvider(saved)
+    if (saved && !provider) throw new Error('Legacy model provider could not be resolved. Refresh the model catalog or use a model once to establish backend preferences; browser preferences were preserved.')
+    const reasoning: Record<string, string> = {}
+    for (const [key, value] of Object.entries(legacyReasoning)) {
+      try {
+        const [p, m] = JSON.parse(key) as string[]
+        if (p && m) reasoning[preferenceModelKey(p === 'codex' && legacyCatalogProvider ? legacyCatalogProvider : p, m)] = value
+      } catch { /* Ignore invalid legacy keys. */ }
+    }
+    return {
+      ...(provider && selection.model ? { preferred: {
+        providerId: provider, modelId: selection.model,
+        reasoningEffort: reasoning[preferenceModelKey(provider, selection.model)] || '',
+        collaborationMode: legacyCollaboration['__new-thread__'] || loadLegacyGlobalCollaborationMode(),
+      } } : {}),
+      reasoningByModel: reasoning,
+    }
+  }, applyBackendPreferences)
+
+  function applyBackendPreferences(state: ModelPreferences): void {
+    reasoningByModel.value = { ...state.reasoningByModel }
+    modelUsageOrder.value = Object.values(state.modelUsage)
+      .sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt))
+      .map(entry => modelSelectionKey(entry.providerId, entry.modelId))
+    const defaults = state.lastUsed || state.preferred
+    if (defaults && !newThreadModelEdited) {
+      const saved = modelSelectionKey(defaults.providerId, defaults.modelId)
+      selectedModelIdByContext.value[NEW_THREAD_MODEL_CONTEXT] = saved
+      automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, NEW_THREAD_MODEL_CONTEXT)
+      if (catalogModelIds.value?.length) automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = resolveModelPreference(catalogModelIds.value, saved, '')
+      if (!selectedThreadId.value) selectedModelId.value = readModelIdForThread('')
+    }
+    if (defaults && !newThreadModeEdited) {
+      selectedCollaborationModeByContext.value['__new-thread__'] = defaults.collaborationMode
+      if (!selectedThreadId.value) selectedCollaborationMode.value = defaults.collaborationMode
+    }
+  }
+
+  function restoreNewConversationPreferences(): void {
+    newThreadModelEdited = false
+    newThreadModeEdited = false
+    newThreadEffortEdited = false
+    applyBackendPreferences(backendPreferences.state.value)
+  }
+
+  function saveThreadModelMap(map: Record<string, string>): void {
+    const legacyDefaults = backendPreferences.state.value.initialized ? {} : Object.fromEntries(Object.entries(legacyModelMap).filter(([key]) => key.startsWith('__new-thread')))
+    saveSelectedModelMap({ ...legacyDefaults, ...Object.fromEntries(Object.entries(map).filter(([key]) => !key.startsWith('__new-thread'))) })
+  }
+
+  function currentPreferenceSettings(threadId: string): ModelSettings | null {
+    const model = readModelIdForThread(threadId)
+    const selection = parseModelSelection(model)
+    const provider = resolveSelectionProvider(model, effectiveThreadProviders.get(threadId))
+    if (!provider || !selection.model) return null
+    return { providerId: provider, modelId: selection.model, reasoningEffort: readReasoningEffortForThread(threadId),
+      collaborationMode: readSelectedCollaborationMode(selectedCollaborationModeByContext.value, threadId) }
+  }
+  function saveGlobalChoice(threadId: string): void {
+    const preferred = currentPreferenceSettings(threadId)
+    if (preferred) void backendPreferences.update({ preferred })
+  }
   const selectedReasoningEffort = computed(() => readReasoningEffortForThread(selectedThreadId.value))
   const selectedSpeedMode = ref<SpeedMode>('standard')
   const projectDisplayNameById = ref<Record<string, string>>({})
@@ -356,6 +423,7 @@ export function useDesktopState() {
     get approvals() { return approvals; },
     get lifecycleGeneration() { return connection.lifecycleGeneration; }, set lifecycleGeneration(value) { connection.lifecycleGeneration = value; },
     get readModelIdForThread() { return readModelIdForThread; },
+    get readCollaborationModeForThread() { return readCollaborationModeForThread; },
     get selectedThreadId() { return selectedThreadId; },
     get selectedReasoningEffort() { return selectedReasoningEffort; },
     get isUpdatingSpeedMode() { return isUpdatingSpeedMode; },
@@ -376,7 +444,6 @@ export function useDesktopState() {
     get resumedThreadById() { return resumedThreadById; },
     get setSelectedThreadId() { return setSelectedThreadId; },
     get realtimeRevisionByThreadId() { return realtimeRevisionByThreadId; },
-    get recordModelUsage() { return recordModelUsage; },
     get setPersistedMessagesForThread() { return setPersistedMessagesForThread; },
     get maybeUnblockInterruptForActiveTurn() { return maybeUnblockInterruptForActiveTurn; },
     get pendingThreadMessageRefresh() { return connection.pendingThreadMessageRefresh; },
@@ -590,6 +657,12 @@ export function useDesktopState() {
   const blockedProviderNotice = ref('')
   const modelSelectionNotice = computed(() => blockedProviderContext.value === selectedThreadId.value
     ? blockedProviderNotice.value : '')
+  const modelPreferenceNotice = computed(() => {
+    const defaults = backendPreferences.state.value.lastUsed || backendPreferences.state.value.preferred
+    if (!defaults || !catalogModelIds.value?.length) return ''
+    const saved = modelSelectionKey(defaults.providerId, defaults.modelId)
+    return catalogModelIds.value.includes(saved) ? '' : `Saved model ${defaults.providerId}/${defaults.modelId} is unavailable. New conversations use an available fallback; your saved preference is preserved.`
+  })
 
   function resolveSelectionProvider(model: string, threadProvider = ''): string {
     const selection = parseModelSelection(model)
@@ -632,6 +705,9 @@ export function useDesktopState() {
     if (selectedThreadId.value === nextThreadId) return
     selectionGeneration += 1
     selectedThreadId.value = nextThreadId
+    if (!nextThreadId) {
+      restoreNewConversationPreferences()
+    }
     if (options.persist !== false) {
       saveSelectedThreadId(nextThreadId)
     }
@@ -670,9 +746,9 @@ export function useDesktopState() {
     selectedModelIdByContext.value = next
     if (threadId.trim() === selectedThreadId.value) selectedModelId.value = readModelIdForThread(threadId)
     ensureAvailableModelIds(model)
-    saveSelectedModelMap(next)
+    saveThreadModelMap(next)
     persistExplicitModelContexts()
-    recordModelUsage(model)
+    if (isNewThreadContextId(toThreadContextId(threadId))) { newThreadModelEdited = true; saveGlobalChoice(threadId) }
   }
 
   function setSelectedModelId(modelId: string): void {
@@ -705,7 +781,7 @@ export function useDesktopState() {
     if (selectedThreadId.value === normalizedThreadId) {
       selectedModelId.value = readModelIdForThread(selectedThreadId.value)
     }
-    saveSelectedModelMap(selectedModelIdByContext.value)
+    saveThreadModelMap(selectedModelIdByContext.value)
   }
 
   function setThreadTokenUsage(threadId: string, usage: UiThreadTokenUsage | null): void {
@@ -729,6 +805,11 @@ export function useDesktopState() {
     saveThreadTokenUsageMap(threadTokenUsageByThreadId.value)
   }
 
+  function readCollaborationModeForThread(threadId: string): CollaborationModeKind {
+    const saved = readSelectedCollaborationMode(selectedCollaborationModeByContext.value, threadId)
+    return availableCollaborationModes.value.some(mode => mode.value === saved) ? saved : 'default'
+  }
+
   function setSelectedCollaborationMode(mode: CollaborationModeKind): void {
     const nextMode: CollaborationModeKind = mode === 'plan' ? 'plan' : 'default'
     const contextId = toThreadContextId(selectedThreadId.value)
@@ -740,7 +821,8 @@ export function useDesktopState() {
       contextId,
       nextMode,
     )
-    saveSelectedCollaborationModeMap(selectedCollaborationModeByContext.value)
+    if (isNewThreadContextId(contextId)) { newThreadModeEdited = true; saveGlobalChoice('') }
+    saveSelectedCollaborationModeMap(Object.fromEntries(Object.entries(selectedCollaborationModeByContext.value).filter(([key]) => key !== '__new-thread__')))
   }
 
   function setSelectedCollaborationModeForThread(threadId: string, mode: CollaborationModeKind): void {
@@ -753,7 +835,8 @@ export function useDesktopState() {
     if (threadId.trim() === selectedThreadId.value) {
       selectedCollaborationMode.value = nextMode
     }
-    saveSelectedCollaborationModeMap(selectedCollaborationModeByContext.value)
+    if (isNewThreadContextId(toThreadContextId(threadId))) { newThreadModeEdited = true; saveGlobalChoice(threadId) }
+    saveSelectedCollaborationModeMap(Object.fromEntries(Object.entries(selectedCollaborationModeByContext.value).filter(([key]) => key !== '__new-thread__')))
   }
 
   function setCodexRateLimit(nextSnapshot: UiRateLimitSnapshot | null): void {
@@ -770,7 +853,12 @@ export function useDesktopState() {
   }
 
   function readReasoningEffortForThread(threadId: string): ReasoningEffort | '' {
-    return resolveReasoningEffort(reasoningModelForThread(threadId), reasoningByModel.value[reasoningPreferenceKey(threadId)])
+    const last = backendPreferences.state.value.lastUsed
+    const selection = parseModelSelection(readModelIdForThread(threadId))
+    const saved = isNewThreadContextId(toThreadContextId(threadId)) && !newThreadModelEdited && !newThreadEffortEdited
+      && last?.providerId === selection.provider && last?.modelId === selection.model
+      ? last.reasoningEffort : reasoningByModel.value[reasoningPreferenceKey(threadId)]
+    return resolveReasoningEffort(reasoningModelForThread(threadId), saved)
   }
 
   function readReasoningOptionsForThread(threadId: string) {
@@ -784,14 +872,13 @@ export function useDesktopState() {
     if (!modelId) return
     const resolved = resolveReasoningEffort(reasoningModelForThread(threadId), effort)
     if (!resolved) return
+    if (reasoningByModel.value[reasoningPreferenceKey(threadId)] === resolved) return
+    if (isNewThreadContextId(toThreadContextId(threadId))) newThreadEffortEdited = true
     reasoningByModel.value[reasoningPreferenceKey(threadId)] = resolved
-    try {
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(REASONING_BY_MODEL_STORAGE_KEY, JSON.stringify(reasoningByModel.value))
-      }
-    } catch {
-      // Preserve the in-memory preference when storage is unavailable.
-    }
+    const selection = parseModelSelection(modelId)
+    const provider = resolveSelectionProvider(modelId)
+    if (provider) void backendPreferences.update({ reasoning: { providerId: provider, modelId: selection.model, effort: resolved } })
+
   }
 
   async function updateSelectedSpeedMode(mode: SpeedMode): Promise<void> {
@@ -823,7 +910,7 @@ export function useDesktopState() {
       if (generation !== connection.lifecycleGeneration) return
       availableCollaborationModes.value = modes
       if (!modes.some((mode) => mode.value === selectedCollaborationMode.value)) {
-        setSelectedCollaborationMode('default')
+        selectedCollaborationMode.value = 'default'
       }
     } catch {
       // Keep the last known collaboration mode choices on transient failures.
@@ -848,6 +935,8 @@ export function useDesktopState() {
       legacyCatalogIds = new Set(catalog.models.every(entry => !entry.modelProvider?.trim())
         ? catalog.ids.filter(id => !parseModelSelection(id).provider) : [])
       legacyCatalogProvider = config.modelProvider?.trim() || catalog.defaultProvider?.trim() || ''
+
+      if (generation !== connection.lifecycleGeneration || version !== modelRefreshVersion || threadId !== selectedThreadId.value) return
       // Older servers return a single unqualified catalog; bind it only to the
       // server's configured provider, never to a saved unavailable provider.
       if (config.modelProvider && catalog.models.length && catalog.models.every((entry) => !entry.modelProvider)) {
@@ -859,14 +948,16 @@ export function useDesktopState() {
         ? modelSelectionKey(defaultProvider, value) : value
       const saved = qualify(readModelIdForThread(threadId))
       const configured = modelSelectionKey(defaultProvider, config.model)
-      const ids = buildModelCatalogIds(catalog.ids, saved, configured)
-      const model = parseModelSelection(saved).provider ? saved : resolveModelPreference(ids, saved, configured)
+      const defaultIds = buildModelCatalogIds(catalog.ids, '', configured)
+      catalogModelIds.value = defaultIds
+      const ids = buildModelCatalogIds(catalog.ids, context === NEW_THREAD_MODEL_CONTEXT ? '' : saved, configured)
+      const model = context !== NEW_THREAD_MODEL_CONTEXT && parseModelSelection(saved).provider ? saved : resolveModelPreference(ids, saved, configured)
       if (model && !ids.includes(model)) ids.push(model)
       availableModelIds.value = ids
       automaticModelByContext.value[context] = model
       if (context !== NEW_THREAD_MODEL_CONTEXT) {
         const savedDefault = normalizeStoredModelId(selectedModelIdByContext.value[NEW_THREAD_MODEL_CONTEXT])
-        automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = qualify(savedDefault) || resolveModelPreference(ids, '', configured)
+        automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = resolveModelPreference(defaultIds, qualify(savedDefault), configured)
       }
       selectedModelId.value = model
       publication.publish(catalog.models.map(entry => entry.modelProvider === defaultProvider && config.model
@@ -1034,7 +1125,7 @@ export function useDesktopState() {
     if (nextSelectedModelMap !== selectedModelIdByContext.value) {
       selectedModelIdByContext.value = nextSelectedModelMap
       selectedModelId.value = readAvailableSelectedModel(readModelIdForThread(selectedThreadId.value))
-      saveSelectedModelMap(nextSelectedModelMap)
+      saveThreadModelMap(nextSelectedModelMap)
       for (const context of explicitModelContexts) {
         if (!nextSelectedModelMap[context]) explicitModelContexts.delete(context)
       }
@@ -1053,7 +1144,7 @@ export function useDesktopState() {
         nextSelectedCollaborationModeMap,
         selectedThreadId.value,
       )
-      saveSelectedCollaborationModeMap(nextSelectedCollaborationModeMap)
+      saveSelectedCollaborationModeMap(Object.fromEntries(Object.entries(nextSelectedCollaborationModeMap).filter(([key]) => key !== '__new-thread__')))
     }
     history.hasMoreOlderMessagesByThreadId.value = pruneThreadStateMap(history.hasMoreOlderMessagesByThreadId.value, activeThreadIds)
     history.loadingOlderMessagesByThreadId.value = pruneThreadStateMap(history.loadingOlderMessagesByThreadId.value, activeThreadIds)
@@ -1734,6 +1825,10 @@ export function useDesktopState() {
   }
 
   function applyRealtimeUpdates(notification: RpcNotification): void {
+    if (notification.method === 'model-preferences/changed') { backendPreferences.observe(notification.params as ModelPreferences); return }
+    if (notification.method === 'model-preferences/error') { backendPreferences.error.value = readString(asRecord(notification.params)?.message) || 'Model preferences could not be saved'; return }
+    if (notification.method === 'ready' && asRecord(notification.params)?.reconnected === true) void backendPreferences.refresh()
+    if(notification.method==='app-server/reconnected')void backendPreferences.refresh()
     if(notification.method==='ready'||notification.method==='app-server/reconnected')void backendAuthentication.refresh()
     if(notification.method==='native-authentication/state'){backendAuthentication.observe(notification.params);return}
     if(notification.method==='app-server/disconnected')backendAuthentication.disconnect()
@@ -2477,7 +2572,10 @@ export function useDesktopState() {
     const awaitAncillaryRefreshes = options.awaitAncillaryRefreshes === true
 
     try {
-      await loadThreads({ force: options.forceThreadRefresh === true })
+      await Promise.all([
+        loadThreads({ force: options.forceThreadRefresh === true }),
+        backendPreferences.state.value.initialized ? Promise.resolve() : backendPreferences.refresh(),
+      ])
       if (!isCurrent()) return
       if (includeSelectedThreadMessages) {
         try {
@@ -2749,6 +2847,7 @@ export function useDesktopState() {
     recoveryDismissTimerByThreadId.clear()
     browserConnection.dispose()
     appServerConnection.dispose()
+    backendPreferences.dispose()
     ++connection.lifecycleGeneration
     ++connection.eventSyncGeneration
     ++threadListLoadGeneration
@@ -2862,6 +2961,12 @@ export function useDesktopState() {
     availableCollaborationModes,
     availableModelIds: orderedModelIds,
     selectedCollaborationMode,
+    restoreNewConversationPreferences,
+    modelPreferenceNotice,
+    modelPreferencesLoading: backendPreferences.loading,
+    modelPreferencesError: backendPreferences.error,
+    refreshBackendModelPreferences: backendPreferences.refresh,
+    settleModelPreferenceWrites: backendPreferences.settled,
     selectedModelId,
     selectedReasoningEffort,
     availableReasoningEfforts,
@@ -2913,6 +3018,8 @@ export function useDesktopState() {
     interruptSelectedThreadTurn: turns.interruptSelectedThreadTurn,
     setSelectedCollaborationMode,
     readModelIdForThread,
+    readCollaborationModeForThread,
+    setSelectedCollaborationModeForThread,
     readReasoningEffortForThread,
     readReasoningOptionsForThread,
     setSelectedModelIdForThread,
@@ -2922,7 +3029,7 @@ export function useDesktopState() {
     updateSelectedSpeedMode,
     respondToPendingServerRequest: approvals.respondToPendingServerRequest,
     removeProject,
-    startPolling: connection.startPolling,
+    startPolling: () => { backendPreferences.resume(); connection.startPolling() },
     stopPolling,
     primeSelectedThread,
   }

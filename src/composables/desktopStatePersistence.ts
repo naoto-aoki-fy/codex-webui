@@ -109,12 +109,19 @@ export function loadSelectedModelMap(): Record<string, string> {
     // Fall back to the legacy global preference below.
   }
 
-  const legacyModelId = normalizeStoredModelId(window.localStorage.getItem(profileStorageKey(LEGACY_SELECTED_MODEL_STORAGE_KEY)))
   const next = createStringKeyedRecord<string>()
-  if (legacyModelId) {
-    next[NEW_THREAD_COLLABORATION_MODE_CONTEXT] = legacyModelId
-  }
+  try {
+    const legacyModelId = normalizeStoredModelId(window.localStorage.getItem(profileStorageKey(LEGACY_SELECTED_MODEL_STORAGE_KEY)))
+    if (legacyModelId) next[NEW_THREAD_COLLABORATION_MODE_CONTEXT] = legacyModelId
+  } catch { /* Unavailable browser storage cannot prevent backend hydration. */ }
   return next
+}
+
+export function loadLegacyGlobalCollaborationMode(): CollaborationModeKind {
+  try {
+    return typeof window === 'undefined' ? 'default'
+      : normalizeCollaborationMode(window.localStorage.getItem(profileStorageKey(LEGACY_COLLABORATION_MODE_STORAGE_KEY)))
+  } catch { return 'default' }
 }
 
 export function readSelectedModel(
@@ -145,7 +152,7 @@ export function loadReasoningPreferences(): Record<string, string> {
   const next = createStringKeyedRecord<string>()
   if (typeof window === 'undefined') return next
   try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(REASONING_BY_MODEL_STORAGE_KEY) || '{}')
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(profileStorageKey(REASONING_BY_MODEL_STORAGE_KEY)) || '{}')
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       for (const [key, value] of Object.entries(parsed)) {
         if (typeof value === 'string') next[key] = value
@@ -199,9 +206,6 @@ export function writeSelectedCollaborationModeForContext(
   mode: CollaborationModeKind,
 ): Record<string, CollaborationModeKind> {
   const contextId = toThreadContextId(threadId)
-  if (isNewThreadContextId(contextId)) {
-    return omitStringKeyedRecordKey(state, contextId)
-  }
   if (mode === 'plan') {
     const next = cloneStringKeyedRecord(state)
     next[contextId] = 'plan'
