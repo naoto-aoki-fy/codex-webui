@@ -32,3 +32,10 @@ export function savePreferenceRecords(base: string, state: Record<string, string
     catch { /* Optional preferences must not prevent in-memory editing. */ }
   }
 }
+
+export function readPreferenceRecord(base: string, id: string): string | null {
+  try {
+    const value: unknown = JSON.parse(window.localStorage.getItem(`${base}.${encodeURIComponent(id)}`) || 'null')
+    return typeof value === 'string' ? value : null
+  } catch { return null }
+}

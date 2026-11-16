@@ -1,5 +1,5 @@
 import { profileStorageKey } from '../utils/browserConnectionProfile'
-import { readPreferenceRecords, savePreferenceRecords } from '../utils/browserPreferenceRecords'
+import { readPreferenceRecord, readPreferenceRecords, savePreferenceRecords } from '../utils/browserPreferenceRecords'
 import { createBackendModelPreferences } from './backendModelPreferences'
 import { preferenceModelKey, type ModelPreferences, type ModelSettings } from '../modelPreferences'
 import { createLiveItemOrder } from './liveItemOrder'
@@ -300,9 +300,11 @@ export function useDesktopState() {
     savedCollaborationMap = { ...map }
   }
 
-  function saveThreadModelMap(map: Record<string, string>): void {
-    const legacyDefaults = backendPreferences.state.value.initialized ? {} : Object.fromEntries(Object.entries(legacyModelMap).filter(([key]) => key.startsWith('__new-thread')))
-    const next = { ...legacyDefaults, ...Object.fromEntries(Object.entries(map).filter(([key]) => !key.startsWith('__new-thread'))) }
+  function saveThreadModelChoice(context: string, model: string): void {
+    if (context.startsWith('__new-thread')) return // Backend owns global choices.
+    const next = { ...savedThreadModelMap }
+    if (model) next[context] = model
+    else delete next[context]
     saveSelectedModelMap(next, savedThreadModelMap)
     savedThreadModelMap = next
   }
@@ -779,7 +781,7 @@ export function useDesktopState() {
     selectedModelIdByContext.value = next
     if (threadId.trim() === selectedThreadId.value) selectedModelId.value = readModelIdForThread(threadId)
     ensureAvailableModelIds(model)
-    saveThreadModelMap(next)
+    saveThreadModelChoice(context, model)
     persistExplicitModelContexts()
     if (isNewThreadContextId(toThreadContextId(threadId))) { newThreadModelEdited = true; saveGlobalChoice(threadId) }
   }
@@ -792,12 +794,16 @@ export function useDesktopState() {
     const normalizedThreadId = threadId.trim()
     if (!normalizedThreadId) return
 
+    if (!explicitModelContexts.has(normalizedThreadId) && readPreferenceRecord(explicitModelStorageKey, normalizedThreadId) === '1') {
+      const saved = readPreferenceRecord(profileStorageKey('codex-web-local.selected-model-by-context.v2'), normalizedThreadId)
+      if (saved) { selectedModelIdByContext.value = { ...selectedModelIdByContext.value, [normalizedThreadId]: saved }; explicitModelContexts.add(normalizedThreadId) }
+    }
     const confirmedProvider = provider?.trim() || parseModelSelection(modelId).provider
     if (confirmedProvider) effectiveThreadProviders.set(normalizedThreadId, confirmedProvider)
     const previousProvider = parseModelSelection(readModelIdForThread(normalizedThreadId)).provider
     const providerChanged = !!confirmedProvider && !!previousProvider && confirmedProvider !== previousProvider
     if (explicitModelContexts.has(normalizedThreadId) && !providerChanged) return
-    if (providerChanged) { explicitModelContexts.delete(normalizedThreadId); persistExplicitModelContexts() }
+    if (providerChanged) { explicitModelContexts.delete(normalizedThreadId); persistExplicitModelContexts(); saveThreadModelChoice(normalizedThreadId, '') }
     const incoming = parseModelSelection(modelId.trim())
     const effectiveProvider = confirmedProvider || resolveSelectionProvider(modelId) || resolveSelectionProvider(readModelIdForThread(threadId))
     const fallbackModel = providerChanged ? defaultModelForProvider(reasoningCatalog.value, effectiveProvider) : parseModelSelection(readModelIdForThread(threadId)).model
@@ -814,7 +820,7 @@ export function useDesktopState() {
     if (selectedThreadId.value === normalizedThreadId) {
       selectedModelId.value = readModelIdForThread(selectedThreadId.value)
     }
-    saveThreadModelMap(selectedModelIdByContext.value)
+    saveThreadModelChoice(normalizedThreadId, normalizedModelId)
   }
 
   function setThreadTokenUsage(threadId: string, usage: UiThreadTokenUsage | null): void {
@@ -2487,7 +2493,6 @@ export function useDesktopState() {
               lastThreadListLoadAt = Date.now()
               const threads = flattenThreads(projectGroups.value)
               pruneThreadScopedState(threads)
-              if (!selectedThreadId.value) setSelectedThreadId(threads[0]?.id ?? '')
             }
           }
         } catch (cause) {
