@@ -253,8 +253,9 @@
                 </p>
                 <p v-if="modelSelectionNotice" class="composer-model-notice" role="status">{{ (modelSelectionNotice) }}</p>
                 <ThreadComposer
-                  v-if="!selectedThreadPendingRequest"
+                  v-show="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
+                  :has-pending-request="!!selectedThreadPendingRequest"
                   :disabled="nativeShell?.selectedBlocking.value || nativeDeletion?.selectedBlocking.value || nativeAuthenticationBlocked || isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
                   :allow-interrupt-when-disabled="nativeShell?.selectedBlocking.value===true && !nativeDeletion?.selectedBlocking.value && !nativeAuthenticationBlocked && !isSelectedThreadImportIncomplete && !compaction.selectedBusy.value && !review.selectedBusy.value && !permissionChanges.blocking.value"
                   :active-thread-id="composerThreadContextId"

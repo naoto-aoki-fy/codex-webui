@@ -1,6 +1,7 @@
 import type { CollaborationModeKind, CollaborationModeOption, ReasoningEffort, SpeedMode } from '../../types/codex';
 import type { ComposerDraftPayload, FileAttachment } from '../../utils/composerDraftStorage';
 export type ComposerProps = {
+    hasPendingRequest?: boolean;
     queueReady?: boolean;
     selectedQueueMode?: boolean;
     connectionEpoch?: number;

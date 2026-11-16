@@ -84,6 +84,7 @@ export function createComposerInput(deps: {
     const isFileMentionOpen = ref(false);
     const fileMentionHighlightedIndex = ref(0);
     const isComposerExpanded = ref(false);
+    const isComposerCollapsed = ref(false);
     const isDraftOverflowing = ref(false);
     let composerOverflowMeasurementQueued = false;
     const draftGeneration = ref(0);
@@ -223,7 +224,7 @@ export function createComposerInput(deps: {
     }
     function updateComposerOverflowState(): void {
         const input = inputRef.value;
-        if (!input) {
+        if (!input || isComposerCollapsed.value) {
             isDraftOverflowing.value = false;
             return;
         }
@@ -462,6 +463,7 @@ fileMentionSuggestions,
 isFileMentionOpen,
 fileMentionHighlightedIndex,
 isComposerExpanded,
+isComposerCollapsed,
 get fileMentionDebounceTimer() { return fileMentionDebounceTimer; },
 set fileMentionDebounceTimer(value) { fileMentionDebounceTimer = value; },
 canSubmit,
