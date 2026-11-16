@@ -111,6 +111,27 @@ or implementation strategies.
 - Browser assertions must inspect the real changed UI, not sidebar previews or base page load.
 - For refresh-persistence fixes, include post-refresh evidence that the state persisted.
 
+### Design Consistency
+
+- Treat the existing UI as an established design system. Preserve its visual identity and design language when implementing new features or modifying existing UI.
+- Before making UI changes, inspect the surrounding components, `src/style.css`, existing styles, and reusable UI patterns. Reuse existing implementations wherever possible.
+- Preserve the existing:
+  - Typography: font families, font sizes, weights, line heights and text hierarchy.
+  - Color palette: background, foreground, border, accent, semantic and interactive colors.
+  - Layout: spacing, padding, margins, alignment, sizing and proportions.
+  - Visual styling: border radius, shadows, borders, gradients and icon styles.
+  - Interaction patterns: buttons, inputs, dropdowns, dialogs, hover, focus and active states.
+- Do not introduce arbitrary new fonts, colors, visual effects, component libraries or styling conventions when existing project patterns can be reused.
+- Prefer existing CSS classes, design tokens, shared components and established Tailwind utility patterns over one-off styling.
+- Maintain visual consistency across both light and dark themes. New UI must support both themes correctly.
+- Maintain responsive behavior and consistency across desktop, tablet and mobile layouts.
+- When adding a new component, make it look and behave as if it naturally belongs to the existing application.
+- Avoid unrelated visual changes, broad restyling or redesigning existing components as part of a feature implementation.
+- If a design change is genuinely necessary, keep it scoped to the requested feature and align it with the existing design language.
+- Before considering UI work complete, compare the result with neighboring existing screens and verify that typography, colors, spacing and component styling remain consistent.
+
+**Core principle:** Extend the existing design system; do not create a new one.
+
 ## External App-Server Verification
 
 - Use `pnpm run test:unit` and, after build, `pnpm run test:integration:fixture` for credential-free protocol/entry-point checks. The fixture is not a real Codex server.
