@@ -23,7 +23,9 @@ for (const node of ts.createSourceFile('composer.ts', script.content, ts.ScriptT
 }
 type Node = { tag: string; props: Record<string, any>; children: Node[]; parent?: Node; text?: string }
 const node = (tag: string): Node => ({ tag, props: {}, children: [], focus() {}, blur() {}, addEventListener() {}, removeEventListener() {}, getRootNode: () => ({ activeElement: null }), tagName: tag.toUpperCase(), style: {}, scrollHeight: 30, clientHeight: 30 } as Node)
+let teleportTarget = node('body')
 const renderer = vue.createRenderer<Node, Node>({
+  querySelector: selector => selector === 'body' ? teleportTarget : null,
   createElement: tag => node(tag), createText: text => ({ ...node('#text'), text }), createComment: () => node('#comment'),
   setText: (n, text) => { n.text = text }, setElementText: (n, text) => { n.text = text },
   parentNode: n => n.parent!, nextSibling: () => null,
@@ -52,6 +54,7 @@ function mount(initial: Record<string, unknown> = {}) {
   })
   const submitted = vi.fn()
   const root = node('root')
+  const body = teleportTarget = node('body')
   const selectedModels = vi.fn()
   const props = vue.reactive<Record<string, any>>({ activeThreadId: 'child', models: [], selectedModel: '', selectedReasoningEffort: '', selectedSpeedMode: 'standard', collaborationModes: [], selectedCollaborationMode: 'default', onSubmit: submitted,
     'onUpdate:selectedModel': (value: string) => { selectedModels(value); props.selectedModel = value }, ...initial })
@@ -64,7 +67,7 @@ function mount(initial: Record<string, unknown> = {}) {
   function find(n: Node, tag: string): Node | undefined { return n.tag === tag ? n : n.children.map(child => find(child, tag)).find(Boolean) }
   function findModel(n: Node): Node | undefined { return n.tag === 'dropdown' && n.props.placeholder === 'Model' ? n : n.children.map(findModel).find(Boolean) }
   function all(n: Node): Node[] { return [n, ...n.children.flatMap(all)] }
-  return { storage, exposed, submitted, props, selectedModels, nodes: () => all(root), model: () => findModel(root)!, submit: () => find(root, 'form')!.props.onSubmit({ preventDefault() {} }) }
+  return { storage, exposed, submitted, props, selectedModels, nodes: () => [...all(root), ...all(body)], model: () => findModel(root)!, submit: () => find(root, 'form')!.props.onSubmit({ preventDefault() {} }) }
 }
 const payload = { text: 'follow-up', imageUrls: ['data:image/png;base64,abc'], fileAttachments: [{ label: 'file', path: '/file', fsPath: '/file' }], skills: [{ name: 'skill', path: '/skill' }] }
 it('hides the skills selector by default and toggles it without losing selected chips or submission skills', async () => {
@@ -317,7 +320,7 @@ it('collapses empty and populated drafts independently of full-screen editing wi
   const c = mount({ models: ['model'], selectedModel: 'model', selectedReasoningEffort: 'high' })
   const button = (label: string) => c.nodes().find(n => n.props['aria-label'] === label)!
   const restore = () => c.nodes().find(n => n.tag === 'button' && n.props['aria-expanded'] === false && n.props['aria-controls'])
-  const collapse = async () => { button('Collapse message input').props.onClick(); await vue.nextTick() }
+  const collapse = async () => { button('Minimize message input').props.onClick(); await vue.nextTick() }
   expect(restore()).toBeUndefined()
   expect(button('Expand composer')).toBeUndefined()
   await collapse()
@@ -332,7 +335,7 @@ it('collapses empty and populated drafts independently of full-screen editing wi
   button('Expand composer').props.onClick()
   await vue.nextTick()
   expect(button('Exit full screen composer')).toBeDefined()
-  expect(button('Collapse message input')).toBeUndefined()
+  expect(button('Minimize message input')).toBeUndefined()
   button('Exit full screen composer').props.onClick()
   await vue.nextTick()
   await collapse()
@@ -351,10 +354,10 @@ it('keeps Stop in the collapsed view with a draft and respects pending and disab
   const c = mount({ isTurnInProgress: true, onInterrupt: interrupt })
   c.exposed.hydrateDraft(payload)
   await vue.nextTick()
-  c.nodes().find(n => n.props['aria-label'] === 'Collapse message input')!.props.onClick()
+  c.nodes().find(n => n.props['aria-label'] === 'Minimize message input')!.props.onClick()
   await vue.nextTick()
-  const bar = () => c.nodes().find(n => n.props.class === 'thread-composer-shell thread-composer-collapsed-bar')!
-  const stop = () => bar().children.find(n => n.props.class === 'thread-composer-stop')!
+  const floating = () => c.nodes().find(n => n.props.class === 'thread-composer-floating-actions')!
+  const stop = () => floating().children.find(n => n.props.class === 'thread-composer-stop')!
   expect(stop().props.disabled).toBeFalsy()
   expect(interrupt).not.toHaveBeenCalled()
   expect(c.submitted).not.toHaveBeenCalled()
@@ -385,7 +388,7 @@ it('opens each thread inline and restores only that thread’s draft after colla
   const c = mount()
   c.exposed.hydrateDraft(payload)
   await vue.nextTick()
-  c.nodes().find(n => n.props['aria-label'] === 'Collapse message input')!.props.onClick()
+  c.nodes().find(n => n.props['aria-label'] === 'Minimize message input')!.props.onClick()
   await vue.nextTick()
   c.props.activeThreadId = 'other'
   await vue.nextTick()
@@ -417,10 +420,11 @@ it('closes composer popovers for pending requests without losing skills or the c
   c.props.hasPendingRequest = false
   await vue.nextTick()
   expect(c.nodes().find(n => n.tag === 'skill-dropdown')!.props.selectedValues).toEqual(['/skill'])
-  button('Collapse message input').props.onClick()
+  button('Minimize message input').props.onClick()
   await vue.nextTick()
   c.props.hasPendingRequest = true
   await vue.nextTick()
+  expect(c.nodes().some(n => n.props.class === 'thread-composer-floating-actions')).toBe(false)
   c.props.hasPendingRequest = false
   await vue.nextTick()
   expect(c.nodes().some(n => n.props['aria-expanded'] === false && n.props['aria-controls'])).toBe(true)

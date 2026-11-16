@@ -22,6 +22,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         const { calls, errors, emit } = await setup(page, (body, _page, url) => {
           if (url.pathname.endsWith('/upload-file')) return { json:{ path:'/remote/uploads/collapse.txt' } }
           if (url.pathname.endsWith('/server-requests/respond')) return { json:{ ok:true } }
+          if (body.method === 'thread/goal/get') return { json:{ result:{ goal:{ threadId:'approved-fixture', objective:'Keep goal actions accessible', status:'active' } } } }
           if (body.method === 'turn/interrupt') turnActive = false
           if (body.method === 'thread/resume' || body.method === 'thread/read') return { json:{ result:{
             thread:{ id:'approved-fixture', name:'Composer collapse fixture', cwd:'/remote/project', status:{ type:turnActive ? 'active' : 'idle' }, turns:[{ id:'t', status:'completed', items:[
@@ -32,10 +33,37 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         }, false)
         await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), theme === 'dark')
         const input = page.locator('.thread-composer-input')
-        const collapse = page.getByRole('button', { name:'Collapse message input', exact:true })
+        const collapse = page.getByRole('button', { name:'Minimize message input', exact:true })
         const restore = page.getByRole('button', { name:'Show message input', exact:true })
         const list = page.locator('.conversation-list')
         await collapse.waitFor()
+        await page.locator('.thread-goal-summary').waitFor()
+        assert.equal(await collapse.innerText(), '', 'minimize is an icon with no visible label')
+        assert.equal(await collapse.getAttribute('title'), 'Minimize message input')
+        assert.equal(await restore.count(), 0, 'inline is the default view')
+        const restoreBox = async () => restore.evaluate(el => {
+          const r = el.getBoundingClientRect()
+          return { x:r.x, y:r.y, width:r.width, height:r.height, right:r.right, bottom:r.bottom }
+        })
+        const assertFloating = async () => {
+          assert.equal(await page.locator('.thread-composer-collapsed-bar').count(), 0)
+          assert.equal(await page.locator('.thread-composer-floating-actions').evaluate(el => el.parentElement === document.body && getComputedStyle(el).position === 'fixed'), true)
+          assert.equal(await restore.innerText(), '', 'restore is an icon with no visible label')
+          assert.equal(await restore.getAttribute('title'), 'Show message input')
+          const box = await restoreBox()
+          assert.equal(box.width, 40)
+          assert.equal(box.height, 40)
+          assert.equal(viewport.width - box.right, 16)
+          assert.equal(viewport.height - box.bottom, 16)
+          assert.equal(await restore.evaluate(el => {
+            const r = el.getBoundingClientRect()
+            return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+          }), true, 'restore is not covered by other controls')
+          const goalBox = await page.locator('.thread-goal-summary').boundingBox()
+          const actionsBox = await page.locator('.thread-composer-floating-actions').boundingBox()
+          assert.ok(goalBox.x + goalBox.width <= actionsBox.x - 8, 'goal controls clear the floating buttons')
+          return box
+        }
         const normalHeight = await list.evaluate(el => el.clientHeight)
         const readPosition = await list.evaluate(el => { el.scrollTop = Math.floor((el.scrollHeight - el.clientHeight) / 2); return el.scrollTop })
         await page.waitForTimeout(200)
@@ -45,11 +73,20 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         await restore.waitFor()
         assert.equal(await restore.getAttribute('aria-expanded'), 'false')
         assert.equal(await restore.evaluate(el => el === document.activeElement), true)
+        const floatingBox = await assertFloating()
+        assert.equal(await page.locator('.thread-composer').evaluate(el => el.getBoundingClientRect().height), 0, 'no compact bar or reserved height')
         assert.equal(await input.isVisible(), false)
         assert.equal(await page.getByRole('button', { name:'Send message', exact:true }).isVisible(), false)
         const compactHeight = await list.evaluate(el => el.clientHeight)
         assert.ok(compactHeight - normalHeight >= 40, `${normalHeight} -> ${compactHeight}`)
         assert.ok(Math.abs(await list.evaluate(el => el.scrollTop) - readPosition) <= 2, 'reading position on collapse')
+        await list.evaluate(el => { el.scrollTop += 100 })
+        assert.deepEqual(await restoreBox(), floatingBox, 'restore stays at the viewport edge while history scrolls')
+        await list.evaluate((el, position) => { el.scrollTop = position }, readPosition)
+        // A transformed ancestor must not become the fixed-position containing block.
+        await page.locator('.content-root').evaluate(el => { el.style.transform = 'translateY(25px)' })
+        assert.deepEqual(await restoreBox(), floatingBox, 'restore is independent of transformed chat layout')
+        await page.locator('.content-root').evaluate(el => { el.style.transform = '' })
         await page.keyboard.press('Space')
         await input.waitFor()
         assert.equal(await input.evaluate(el => el === document.activeElement), true)
@@ -66,7 +103,15 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         const stored = () => page.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([k]) => k.includes('thread-draft'))))
         await input.evaluate(el => el.setSelectionRange(12, 19))
         const draftSnapshot = await stored()
-        await page.getByRole('button', { name:'Expand composer', exact:true }).click()
+        const maximize = page.getByRole('button', { name:'Expand composer', exact:true })
+        const minusRect = await collapse.boundingBox()
+        const maxRect = await maximize.boundingBox()
+        assert.equal(minusRect.y, maxRect.y, 'minimize and maximize align')
+        assert.equal(minusRect.width, maxRect.width)
+        assert.equal(minusRect.height, maxRect.height)
+        assert.equal(maxRect.x - minusRect.x - minusRect.width, 4, 'minus is immediately left of maximize')
+        assert.equal(await collapse.evaluate(el => getComputedStyle(el).backgroundColor), await maximize.evaluate(el => getComputedStyle(el).backgroundColor))
+        await maximize.click()
         assert.equal(await collapse.count(), 0)
         const fullscreen = await page.locator('.thread-composer').boundingBox()
         assert.ok(fullscreen.height >= viewport.height - 2)
@@ -100,14 +145,23 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         await page.waitForTimeout(2200)
         const screenshot = `output/playwright/composer-collapsed-${viewport.width}-${theme}.png`
         await page.screenshot({ path:screenshot })
-        const colors = await page.locator('.thread-composer-collapsed-bar').evaluate(el => {
+        await assertFloating()
+        const stopBox = await page.getByRole('button', { name:'Stop', exact:true }).boundingBox()
+        const showBox = await restoreBox()
+        assert.ok(stopBox.x + stopBox.width + 8 <= showBox.x, 'Stop and restore have separate touch targets')
+        const jump = page.getByRole('button', { name:'Jump to latest output', exact:true })
+        if (await jump.isVisible()) {
+          const jumpBox = await jump.boundingBox()
+          assert.ok(jumpBox.x + jumpBox.width < stopBox.x || jumpBox.y + jumpBox.height < stopBox.y, 'floating controls do not cover jump to latest')
+        }
+        const colors = await restore.evaluate(el => {
           const r = el.getBoundingClientRect()
           return { background:getComputedStyle(el).backgroundColor, left:r.left, right:r.right, height:r.height }
         })
         assert.ok(colors.left >= 0 && colors.right <= viewport.width)
         assert.ok(colors.height <= 55)
         assert.ok((theme === 'dark' ? ['rgb(39, 39, 42)', 'oklch(0.274 0.006 286.033)'] : ['rgb(255, 255, 255)']).includes(colors.background), colors.background)
-        // A pending request must replace the bar without destroying the draft owner.
+        // Pending requests must hide the teleported controls without destroying the draft owner.
         emit('server/request', { id:99, method:'item/commandExecution/requestApproval', params:{ threadId:'approved-fixture', turnId:'live', command:'echo approved' } })
         const panel = page.locator('.thread-pending-request')
         await panel.waitFor()
@@ -130,10 +184,15 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         // Only an explicit Stop click may interrupt the active response.
         await collapse.click()
         await page.getByRole('button', { name:'Stop', exact:true }).click()
-        await page.waitForFunction(() => !document.querySelector('.thread-composer-stop:not(:disabled)'))
+        await page.waitForFunction(() => !document.querySelector('.thread-composer-floating-actions .thread-composer-stop'))
+        await assertFloating()
+        assert.equal(await page.locator('.thread-composer-floating-actions button').count(), 1, 'idle minimized view has only the restore icon')
+        await page.waitForTimeout(2200)
+        const idleScreenshot = `output/playwright/composer-minimized-${viewport.width}-${theme}.png`
+        await page.screenshot({ path:idleScreenshot })
         assert.equal(calls.filter(c => c.method === 'turn/interrupt').length, 1)
         assert.deepEqual(errors, [])
-        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, freedPixels:compactHeight-normalHeight, readingPosition:readPosition, zeroApiToggleCycles:5, toggleRoundTripMs:toggleMs, colors, screenshot, apiRequestsDuringEmptyToggle:0 })
+        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, freedPixels:compactHeight-normalHeight, readingPosition:readPosition, zeroApiToggleCycles:5, toggleRoundTripMs:toggleMs, colors, screenshot, idleScreenshot, apiRequestsDuringEmptyToggle:0 })
         console.log('PASS', viewport.width, theme, 'empty/long draft, attachments, focus, reading position, fullscreen, streaming, Stop, approval and user input')
         await page.close()
       }
