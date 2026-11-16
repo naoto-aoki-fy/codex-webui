@@ -29,26 +29,49 @@ Deleting a thread recovers from Codex `no rollout found` archive failures and re
 #### Rollback/Cleanup
 - None.
 
-## Archived conversation browser and restore (09)
+## Archived conversations Settings category and restore
 
 Setup: use a credential-free server fixture with more than 50 archived threads,
 native project IDs, and controllable `thread/unarchive` failures.
 
-1. Open home; verify no `archived: true` list request. Expand **Archived conversations**.
-2. Load another page; verify opaque cursor forwarding and no duplicate rows.
-3. Restore a named archived thread in an older native project. It disappears from
+1. Open home; verify no `archived: true` list request and no standalone
+   **Archived conversations** button in the sidebar. Open **Settings**; verify
+   General, Codex account, Apps / Connectors, Archived conversations and About
+   appear as categories. Opening Settings or selecting other categories must not
+   request archives.
+2. Select **Archived conversations**; verify the list renders in the Settings
+   content area with exactly one open dialog and a loading indicator while the
+   request is pending. Load another page; verify opaque cursor forwarding and no
+   duplicate rows. Refresh/Restore/Load more must be disabled while busy.
+3. Switch between every Settings category and back, then close and reopen Settings
+   using both the Close button and Escape. Expect normal navigation, focus return,
+   cached rows and pagination, and no additional archive reads. Returning while the
+   first request is pending must not start a duplicate request.
+4. Click **Refresh archived conversations**; verify one first-page request replaces
+   the cached list and resets pagination. Load another page again.
+5. Restore a named archived thread in an older native project. It disappears from
    archived rows and appears under that same project with its original ID/name.
-4. Reload and reopen archives: the server's restored thread remains active. Open it
-   and verify original history, pins/read state and metadata remain native.
-5. Reject a restore: the row remains, an error appears, and no active row is invented.
-6. Return an empty page, method-not-found, permission error and disconnect during a
+6. Reload and reopen Settings → Archived conversations: the server's restored
+   thread remains active. Open it and verify original history, pins/read state
+   and metadata remain native.
+7. Reject a restore: the row remains, an error appears, and no active row is invented.
+8. Return an empty page, method-not-found, permission error and disconnect during a
    page: verify distinct empty/error text and no stale results after reconnect.
-7. Check the expanded list in light/dark at desktop, 375×812 and 768×1024.
+   Refresh after a failure to verify recovery. A failed initial load must not show
+   the empty-state message. After a connection change, revisiting the category
+   must fetch current data instead of reusing invalidated rows.
+9. Check the Settings archive list, navigation and actions in light/dark at desktop,
+   375×812 and 768×1024. Long conversation titles must wrap without horizontal
+   overflow, and Settings must remain scrollable with its close control visible.
 
 Cleanup: restore fixture state. No permanent deletion or archive index is added.
-Performance: zero startup archive calls; one 50-row RPC per requested page, serial
-requests and deduplicated rows. Restore uses one mutation and the existing forced
-active-list refresh; no new subscriptions or polling. Live latency was not measured.
+Performance: zero startup archive calls or additional reads on cached category and
+dialog visits; one 50-row RPC per requested page or explicit refresh, serial
+requests and deduplicated rows. The mounted panel retains pages until refresh or
+connection-epoch invalidation. Restore uses one mutation and the existing forced
+active-list refresh; no new subscriptions, polling, blocking work or unbounded
+request fanout. Synthetic browser checks verify these request counts; live latency
+was not measured.
 
 
 ## Preserve post-restore native metadata
