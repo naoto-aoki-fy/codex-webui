@@ -28,3 +28,26 @@ Live model acceptance NOT RUN (fixture protocol only).
 While the main draft contains text, focus Preset name and press Enter. It must
 neither submit the chat nor alter its draft. Use Save text preset explicitly.
 IME composition confirmation in the name input is not intercepted.
+
+## Opt-in history and concurrent presets
+
+Setup: Two tabs in one profile. Seed an existing `prompt-library.v1` with a preset
+and history entry, but no `prompt-history-enabled.v1` setting.
+
+1. Open Prompts & commands in both tabs. Existing preset/history must remain;
+   recording must be disabled. Submit harmless text: it must not be recorded.
+2. Click **Enable recent prompt history**. Accept a prompt, reopen the library:
+   text appears once. Credential-like and >8,000-character text must not be saved.
+3. Create distinct presets concurrently in both tabs. Both must appear, including
+   after reload. Edit/delete different presets concurrently: neither action may
+   undo the other's change. Open dialogs update through storage events.
+4. Clear recent history in one tab while saving a preset in the other. Presets
+   must survive. Disabling recording must retain existing history for explicit
+   clearing. The bounds remain 20 presets and 30 history entries.
+5. Repeat with Web Locks disabled (IndexedDB fallback), then with all browser
+   persistence denied: errors must be visible and submission must still work.
+6. Repeat in light/dark themes and at 375x812 and 768x1024. Selecting a preset
+   changes only the current tab's editable text and never submits automatically.
+
+Cleanup: Clear disposable history/presets explicitly; restore fixtures and opt-in
+setting. Never clear all localStorage as part of migration or recovery.

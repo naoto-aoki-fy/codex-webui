@@ -159,7 +159,7 @@ export function createComposerInput(deps: {
             isSubmitting.value = false;
             if (!accepted)
                 return;
-            promptStorageNotice.value = recordSubmittedPrompt(text);
+            void recordSubmittedPrompt(text).then(notice => { promptStorageNotice.value = notice; });
             // Acceptance may arrive after a thread switch or after the user edits again.
             if (deps.props.activeThreadId !== threadId || JSON.stringify(getCurrentDraftPayload()) !== snapshot)
                 return;
