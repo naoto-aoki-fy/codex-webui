@@ -42,7 +42,7 @@ export function savePromptLibrary(value:PromptLibrary,previous:PromptLibrary=loa
  })
 }
 export function clearPromptHistory():Promise<PromptLibrary>{return updateLibrary(current=>({...current,history:[]}))}
-export function clearAllPrompts():Promise<PromptLibrary>{return updateLibrary(()=>({presets:[],history:[]}))}
+export function clearAllPrompts():Promise<PromptLibrary>{return withBrowserStorageLock(key(),()=>{const empty={presets:[],history:[]};window.localStorage.setItem(key(),JSON.stringify(empty));return empty})}
 export function containsCredential(text:string):boolean { return /\b(?:sk-[\w-]{8,}|(?:authorization|password|api[_-]?key|access[_-]?token|secret)\s*[:=]\s*\S+|bearer\s+\S+)/i.test(text) }
 export async function recordSubmittedPrompt(text:string):Promise<string> {
  try{

@@ -44,7 +44,7 @@ and history entry, but no `prompt-history-enabled.v1` setting.
 4. Clear recent history in one tab while saving a preset in the other. Presets
    must survive. Disabling recording must retain existing history for explicit
    clearing. The bounds remain 20 presets and 30 history entries.
-5. Repeat with Web Locks disabled (IndexedDB fallback), then with all browser
+5. Repeat with Web Locks disabled (the same IndexedDB transaction path), then with all browser
    persistence denied: errors must be visible and submission must still work.
 6. Repeat in light/dark themes and at 375x812 and 768x1024. Selecting a preset
    changes only the current tab's editable text and never submits automatically.

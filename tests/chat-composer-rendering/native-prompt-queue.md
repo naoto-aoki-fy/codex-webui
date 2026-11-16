@@ -82,7 +82,7 @@ matching independently managed App Server. Keep draft text distinct.
    different client identity.
 3. After reading queue/history, explicitly acknowledge uncertainty in one tab.
    The other thread's receipt must remain intact. No automatic replay is allowed.
-4. Repeat with `navigator.locks` unavailable (IndexedDB transaction fallback).
+4. Repeat with `navigator.locks` unavailable (the same IndexedDB transaction path).
 5. Disable both facilities or deny storage writes. Queue add must fail before RPC
    and preserve the draft. Corrupt existing receipts must also block add.
 

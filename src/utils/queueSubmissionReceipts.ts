@@ -27,4 +27,3 @@ export async function writeQueueSubmissionReceipt(threadId:string,clientId:strin
  if(typeof window!=='undefined')window.localStorage.setItem(profileStorageKey('codex-web-local.queue-submissions.v1'),JSON.stringify(receipts))
  })
 }
-
