@@ -35,8 +35,8 @@ export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;r
   // Persist identity before sending. A lost reply or document reload must not
   // turn the retained draft into an unguarded second native registration.
   writing.value=true;operationThread.value=id
-  try { await writeQueueSubmissionReceipt(id,clientId) } catch(e) { writing.value=false; throw e }
-  if(token!==writeJob){writing.value=false;throw new Error('Queue outcome unknown after connection change; recovery marker retained')}
+  try { await writeQueueSubmissionReceipt(id,clientId) } catch(e) { if(token===writeJob)writing.value=false; throw e }
+  if(token!==writeJob){throw new Error('Queue outcome unknown after connection change; recovery marker retained')}
   status.value='Requesting native queue submission…'
   try{const result=await request<{queuedSubmission:unknown}>('thread/queue/add',{threadId:id,input,clientUserMessageId:clientId});if(token!==writeJob)throw new Error('Queue outcome unknown after connection change')
    const row=queueEntry(result?.queuedSubmission);if(row.clientId!==clientId)throw new Error('Queue acknowledgment identity mismatch')

@@ -2,6 +2,15 @@ import {effectScope,ref} from 'vue'
 import {afterEach,expect,it,vi} from 'vitest'
 import {createNativeQueue} from './nativeQueue'
 import {queueEntry,queuePage,queuedInput} from '../api/nativeQueue'
+
+// These controller tests mock the atomic-storage boundary; the browser fixture
+// exercises actual IndexedDB serialization across independent documents.
+vi.mock('../utils/browserStorageLock', () => {
+ let tail: Promise<unknown> = Promise.resolve()
+ return { withBrowserStorageLock: (_name: string, action: () => unknown) => {
+  const result = tail.then(action); tail = result.catch(() => {}); return result
+ } }
+})
 function setup(request:(method:string,params:any)=>Promise<any>){const selected=ref('t'),epoch=ref(0),scope=effectScope();const owner=scope.run(()=>createNativeQueue({selected,epoch,ready:()=>true,blocked:()=>false},request as any))!;return {owner,selected,epoch,stop:()=>scope.stop()}}
 const payload={text:'queued text',imageUrls:[],fileAttachments:[],skills:[]}
 const queued=(clientId='c')=>({id:'q',clientUserMessageId:clientId,input:[{type:'text',text:'queued text'}]})

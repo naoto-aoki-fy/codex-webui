@@ -1,6 +1,15 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { readQueueSubmissionReceipts, writeQueueSubmissionReceipt } from './queueSubmissionReceipts'
 
+
+// These controller tests mock the atomic-storage boundary; the browser fixture
+// exercises actual IndexedDB serialization across independent documents.
+vi.mock('./browserStorageLock', () => {
+ let tail: Promise<unknown> = Promise.resolve()
+ return { withBrowserStorageLock: (_name: string, action: () => unknown) => {
+  const result = tail.then(action); tail = result.catch(() => {}); return result
+ } }
+})
 afterEach(() => vi.unstubAllGlobals())
 function setup() {
   const data = new Map<string, string>()
@@ -28,5 +37,6 @@ it('fails closed on malformed legacy records and unavailable locking', async () 
   await expect(writeQueueSubmissionReceipt('thread', 'client')).rejects.toThrow()
   vi.stubGlobal('navigator', {})
   vi.stubGlobal('indexedDB', undefined)
-  await expect(writeQueueSubmissionReceipt('thread', 'client')).rejects.toThrow('Atomic browser')
+  const { withBrowserStorageLock } = await vi.importActual<typeof import('./browserStorageLock')>('./browserStorageLock')
+  await expect(withBrowserStorageLock('queue', () => {})).rejects.toThrow('Atomic browser')
 })

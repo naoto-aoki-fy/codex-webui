@@ -1,19 +1,19 @@
-/** Execute synchronous localStorage work under an origin-wide lock. Never await
- * inside the IndexedDB callback: the readwrite transaction is the fallback lock.
- * If neither facility works, reject rather than perform an unsafe queue write.
+/** Serialize synchronous localStorage mutations with one IndexedDB readwrite
+ * transaction per critical section. Using the same primitive in every tab avoids
+ * splitting ownership when Web Locks is exposed in only some contexts.
+ * No localStorage rollback is implied; failed reservations stay conservative.
  */
 export async function withBrowserStorageLock<T>(name: string, action: () => T): Promise<T> {
-  if (typeof navigator !== 'undefined' && navigator.locks?.request) {
-    return navigator.locks.request(name, action)
-  }
   if (typeof indexedDB === 'undefined') throw new Error('Atomic browser recovery storage unavailable; queue submission is disabled')
   return new Promise<T>((resolve, reject) => {
     const request = indexedDB.open('codex-web-local.persistence-locks.v1', 1)
     request.onupgradeneeded = () => request.result.createObjectStore('locks')
     request.onerror = () => reject(request.error)
-    request.onblocked = () => reject(new Error('Browser recovery storage is blocked'))
+    let blocked = false
+    request.onblocked = () => { blocked = true; reject(new Error('Browser recovery storage is blocked')) }
     request.onsuccess = () => {
       const db = request.result
+      if (blocked) { db.close(); return }
       let result: T
       try {
         const tx = db.transaction('locks', 'readwrite')

@@ -1,5 +1,14 @@
 import {afterEach,expect,it,vi} from 'vitest'
 import {loadPromptLibrary,savePromptLibrary,recordSubmittedPrompt,setPromptHistoryEnabled,promptHistoryEnabled,clearPromptHistory} from './promptLibrary'
+
+// These controller tests mock the atomic-storage boundary; the browser fixture
+// exercises actual IndexedDB serialization across independent documents.
+vi.mock('./browserStorageLock', () => {
+ let tail: Promise<unknown> = Promise.resolve()
+ return { withBrowserStorageLock: (_name: string, action: () => unknown) => {
+  const result = tail.then(action); tail = result.catch(() => {}); return result
+ } }
+})
 afterEach(()=>vi.unstubAllGlobals())
 function storage(){
  const values=new Map<string,string>();let tail:Promise<unknown>=Promise.resolve()
