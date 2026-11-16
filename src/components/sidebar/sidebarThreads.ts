@@ -1,3 +1,4 @@
+import { readUiPreference } from '../../utils/browserUiStorage'
 import { computed, ref } from 'vue';
 import { getPinnedThreadState, getThreadSummary, setThreadPinned, subscribeCodexNotifications, } from '../../api/codexGateway';
 import type { UiProjectGroup, UiThread } from '../../types/codex';
@@ -17,13 +18,13 @@ export function createSidebarThreads(deps: {
     const pinnedThreadIds = ref<string[]>([]);
     const hydratedPinnedThreadById = ref<Record<string, UiThread>>({});
     const optimisticallyArchivedThreadIds = ref<string[]>([]);
-    const chatSortMode = ref<ThreadSortMode>(typeof window !== 'undefined' && window.localStorage.getItem(deps.CHAT_SORT_MODE_STORAGE_KEY) === 'created' ? 'created' : 'updated');
+    const chatSortMode = ref<ThreadSortMode>(typeof window !== 'undefined' && readUiPreference(deps.CHAT_SORT_MODE_STORAGE_KEY) === 'created' ? 'created' : 'updated');
     const sortedGroups = computed(() => sortThreadGroups(deps.props.groups, chatSortMode.value));
     const threadViewMode = ref<'project' | 'chronological'>(loadThreadViewMode());
     function loadThreadViewMode(): 'project' | 'chronological' {
         if (typeof window === 'undefined')
             return 'project';
-        const raw = window.localStorage.getItem(deps.THREAD_VIEW_MODE_STORAGE_KEY);
+        const raw = readUiPreference(deps.THREAD_VIEW_MODE_STORAGE_KEY);
         return raw === 'chronological' ? 'chronological' : 'project';
     }
     const normalizedSearchQuery = computed(() => deps.props.searchQuery.trim().toLowerCase());

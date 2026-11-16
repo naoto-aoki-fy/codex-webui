@@ -341,6 +341,8 @@
 </template>
 
 <script setup lang="ts">
+import { readPreferenceRecords, savePreferenceRecords } from '../../utils/browserPreferenceRecords'
+import { readUiPreference, writeUiPreference } from '../../utils/browserUiStorage'
 import type { SidebarProps } from "./sidebarContracts"
 import { createSidebarMenus } from './sidebarMenus'
 import { createSidebarThreads } from './sidebarThreads'
@@ -489,7 +491,7 @@ const projectGroupElementByName = new Map<string, HTMLElement>()
 const projectNameByElement = new WeakMap<HTMLElement, string>()
 
 watch(threads.chatSortMode, value => {
-  if (typeof window !== 'undefined') window.localStorage.setItem(CHAT_SORT_MODE_STORAGE_KEY, value)
+  if (typeof window !== 'undefined') writeUiPreference(CHAT_SORT_MODE_STORAGE_KEY, value)
 })
 
 const projectGroupResizeObserver =
@@ -509,7 +511,7 @@ function loadCollapsedState(): Record<string, boolean> {
   if (typeof window === 'undefined') return {}
 
   try {
-    const raw = window.localStorage.getItem(COLLAPSED_STORAGE_KEY)
+    const raw = readUiPreference(COLLAPSED_STORAGE_KEY)
     if (!raw) return {}
     const parsed = JSON.parse(raw) as unknown
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
@@ -519,33 +521,44 @@ function loadCollapsedState(): Record<string, boolean> {
   }
 }
 
-collapsedProjects.value = loadCollapsedState()
+const collapseBase = 'codex-web-local.collapsed-projects.v2'
+const expansionBase = 'codex-web-local.sidebar-section-expansion.v2'
+function readCollapsedRecords() {
+  const legacy = Object.fromEntries(Object.entries(loadCollapsedState()).map(([key, value]) => [key, value ? '1' : '0']))
+  return readPreferenceRecords(collapseBase, legacy)
+}
+let savedCollapsed = readCollapsedRecords()
+let savedExpansion: Record<string, string> = {}
+collapsedProjects.value = Object.fromEntries(Object.entries(savedCollapsed).map(([key, value]) => [key, value === '1']))
 
 function loadSectionExpansionState(): void {
-  if (typeof window === 'undefined') return
-
+  let legacy: Record<string, string> = {}
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(SECTION_EXPANSION_STORAGE_KEY) || '{}') as {
-      pinned?: unknown
-      projects?: unknown
-    }
-    if (typeof parsed.pinned === 'boolean') isPinnedSectionExpanded.value = parsed.pinned
-    if (typeof parsed.projects === 'boolean') isProjectsSectionExpanded.value = parsed.projects
-  } catch {
-    // Keep default expanded state when saved state is invalid.
-  }
+    const parsed = JSON.parse(readUiPreference(SECTION_EXPANSION_STORAGE_KEY) || '{}')
+    if (parsed && typeof parsed === 'object') legacy = Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === 'boolean').map(([key, value]) => [key, value ? '1' : '0']))
+  } catch { /* Defaults. */ }
+  savedExpansion = readPreferenceRecords(expansionBase, legacy)
+  isPinnedSectionExpanded.value = savedExpansion.pinned !== '0'
+  isProjectsSectionExpanded.value = savedExpansion.projects !== '0'
 }
 
 function persistSectionExpansionState(): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(
-    SECTION_EXPANSION_STORAGE_KEY,
-    JSON.stringify({
-      pinned: isPinnedSectionExpanded.value,
-      projects: isProjectsSectionExpanded.value,
-    }),
-  )
+  const next = { pinned: isPinnedSectionExpanded.value ? '1' : '0', projects: isProjectsSectionExpanded.value ? '1' : '0' }
+  savePreferenceRecords(expansionBase, next, savedExpansion)
+  savedExpansion = next
 }
+
+function onSidebarStorage(event: StorageEvent): void {
+  if (event.key?.startsWith(`${collapseBase}.`)) {
+    savedCollapsed = readCollapsedRecords()
+    collapsedProjects.value = Object.fromEntries(Object.entries(savedCollapsed).map(([key, value]) => [key, value === '1']))
+  }
+  if (event.key?.startsWith(`${expansionBase}.`)) loadSectionExpansionState()
+  if (event.key === CHAT_SORT_MODE_STORAGE_KEY) threads.chatSortMode.value = readUiPreference(CHAT_SORT_MODE_STORAGE_KEY) === 'created' ? 'created' : 'updated'
+  if (event.key === THREAD_VIEW_MODE_STORAGE_KEY) threads.threadViewMode.value = readUiPreference(THREAD_VIEW_MODE_STORAGE_KEY) === 'chronological' ? 'chronological' : 'project'
+}
+onMounted(() => typeof window !== 'undefined' && window.addEventListener('storage', onSidebarStorage))
+onUnmounted(() => typeof window !== 'undefined' && window.removeEventListener('storage', onSidebarStorage))
 
 loadSectionExpansionState()
 
@@ -553,14 +566,16 @@ watch(
   collapsedProjects,
   (value) => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(value))
+    const next = Object.fromEntries(Object.entries(value).map(([key, collapsed]) => [key, collapsed ? '1' : '0']))
+    savePreferenceRecords(collapseBase, next, savedCollapsed)
+    savedCollapsed = next
   },
   { deep: true },
 )
 
 watch(threads.threadViewMode, (value) => {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(THREAD_VIEW_MODE_STORAGE_KEY, value)
+  writeUiPreference(THREAD_VIEW_MODE_STORAGE_KEY, value)
 })
 
 watch([isPinnedSectionExpanded, isProjectsSectionExpanded], persistSectionExpansionState)

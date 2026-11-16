@@ -51,3 +51,18 @@ Prerequisites: Run the current checkout in an isolated browser context. Set the 
 Expected: Browser locale and the legacy saved language cannot change the interface language. No storage reset is needed.
 
 Cleanup: Close the isolated browser context. When using a regular profile, restore the other preferences and remove the test key.
+
+## Shared UI preferences with unavailable storage
+
+Setup: Two same-origin tabs, same profile. Record current theme/sidebar settings.
+
+1. Change theme, chat width and send-with-enter behavior in one tab. The other tab
+   must update through storage events without navigating or changing draft text.
+2. Toggle different project collapse states and sidebar sections simultaneously.
+   Reload: both independent toggles must survive.
+3. Change sidebar width, sort mode and view mode. Other tabs should observe the
+   saved settings. Verify both light and dark themes.
+4. Deny localStorage access, then reload and interact with these controls. The app
+   must boot and controls must continue working in memory without uncaught errors.
+
+Cleanup: Restore the original settings; remove only disposable v2 sidebar records.

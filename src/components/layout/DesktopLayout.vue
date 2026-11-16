@@ -31,7 +31,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { readUiPreference, writeUiPreference } from '../../utils/browserUiStorage'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useMobile } from '../../composables/useMobile'
 
 const props = withDefaults(
@@ -62,13 +63,19 @@ function clampSidebarWidth(value: number): number {
 
 function loadSidebarWidth(): number {
   if (typeof window === 'undefined') return DEFAULT_SIDEBAR_WIDTH
-  const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY)
+  const raw = readUiPreference(SIDEBAR_WIDTH_KEY)
+  if (raw === null) return DEFAULT_SIDEBAR_WIDTH
   const parsed = Number(raw)
   if (!Number.isFinite(parsed)) return DEFAULT_SIDEBAR_WIDTH
   return clampSidebarWidth(parsed)
 }
 
 const sidebarWidth = ref(loadSidebarWidth())
+function onSidebarWidthStorage(event: StorageEvent) {
+  if (event.key === SIDEBAR_WIDTH_KEY) sidebarWidth.value = loadSidebarWidth()
+}
+onMounted(() => typeof window !== 'undefined' && window.addEventListener('storage', onSidebarWidthStorage))
+onUnmounted(() => typeof window !== 'undefined' && window.removeEventListener('storage', onSidebarWidthStorage))
 
 const layoutStyle = computed(() => {
   if (isMobile.value || props.isSidebarCollapsed || props.isComposerExpanded) {
@@ -85,7 +92,7 @@ const layoutStyle = computed(() => {
 
 function saveSidebarWidth(value: number): void {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(value))
+  writeUiPreference(SIDEBAR_WIDTH_KEY, String(value))
 }
 
 function onResizeHandleMouseDown(event: MouseEvent): void {
