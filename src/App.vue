@@ -292,7 +292,7 @@
       </section>
     </template>
   </DesktopLayout>
-  <ManagementDialog :open="isConversationToolsOpen" title="Conversation tools" :description="toolsConversationTitle" @close="isConversationToolsOpen=false">
+  <ManagementDialog :open="isConversationToolsOpen" title="Conversation tools" @close="isConversationToolsOpen=false">
                   <ConversationTools v-if="areConversationToolsLoaded" :thread-id="selectedThreadId" :cwd="composerCwd"
                     :security="securityObservation.snapshots.value[selectedThreadId] ?? null"
                     :denied-actions="deniedActions.rows.value"
@@ -305,7 +305,7 @@
                     :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage || permissionChanges.blocking.value || nativeAuthenticationBlocked" :incomplete="isSelectedThreadImportIncomplete"
                     :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
   </ManagementDialog>
-  <ManagementDialog :open="isContextOpen" title="Context" :description="contextConversationTitle" @close="isContextOpen=false">
+  <ManagementDialog :open="isContextOpen" title="Context" @close="isContextOpen=false">
     <section v-if="showThreadContextBadge" class="thread-context-details feature-panel" aria-label="Conversation context usage">
       <div class="thread-context-summary" :data-state="threadContextBadgeState" :title="threadContextTooltip">
         <span>Context</span>
@@ -413,19 +413,15 @@ import { copyTextToClipboard } from './utils/clipboard'
 const ConversationTools = defineAsyncComponent(() => import('./components/content/ConversationTools.vue'))
 const areConversationToolsLoaded = ref(false)
 const isConversationToolsOpen = ref(false)
-const toolsConversationTitle = ref('')
 const isContextOpen = ref(false)
-const contextConversationTitle = ref('')
 function openContext() {
   closeConversationMenu()
-  contextConversationTitle.value = `${contentTitle.value} · ${selectedThreadId.value}`
   isContextOpen.value = true
 }
 const conversationMenuRef = ref<HTMLDetailsElement | null>(null)
 function closeConversationMenu() { if (conversationMenuRef.value) conversationMenuRef.value.open = false }
 function openConversationTools() {
   closeConversationMenu()
-  toolsConversationTitle.value = `${contentTitle.value} · ${selectedThreadId.value}`
   areConversationToolsLoaded.value = true
   isConversationToolsOpen.value = true
 }
