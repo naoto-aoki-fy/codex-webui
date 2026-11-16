@@ -173,6 +173,79 @@ Cleanup: restore connectivity and theme, close the disposable test page and
 remove any temporary notification injection. Do not reset the real subscription
 or shared server merely to clear a UI notification.
 
+## 8. Independent connection warnings and temporary success notices
+
+Prerequisites: for deterministic UI checks, run this checkout on
+`http://127.0.0.1:4173` and install the Playwright Chromium browser. The fixture
+intercepts API requests and substitutes browser WS/SSE transports; no credentials
+or live App Server are required. Run:
+
+```sh
+node scripts/test-connection-status.cjs
+node scripts/test-recovery-status.cjs
+```
+
+For live acceptance, use the real-server setup above and interrupt each layer
+separately. Repeat the following in light and dark themes:
+
+1. Load a healthy thread. Expect no persistent Connected status or initial
+   Reconnected confirmation. Enter an unsent draft and record existing history.
+2. Disconnect only browser notification delivery. Expect **WebUI Backend:
+   Disconnected** immediately on WS close/SSE error/offline. Wait over three
+   seconds and start a retry; the warning must remain until the replacement
+   stream sends `ready`. Transport open alone is insufficient.
+3. Restore browser delivery. Expect **WebUI Backend: Reconnected** for about three
+   seconds, followed by no browser status. Confirm history and draft are retained.
+4. Disconnect only the backend's App Server transport. Expect **Codex App Server:
+   Disconnected** to remain during all retries. Deliver thread `recovering`,
+   `failed`, then `recovered`; expect separate **Thread subscription** labels and
+   the existing manual retry action on failure. The thread success disappears
+   after three seconds while the App Server warning remains.
+5. Fail both layers together. Restore only the browser, then only the App Server.
+   Expect each warning to clear only after its own recovery, with a temporary
+   success for that layer. Browser reconnection must reconcile the latest App
+   Server status even when its disconnect/reconnect event was missed offline.
+6. Repeat offline/online and hidden/visible transitions. Deliver an old stream's
+   late `ready` after replacement. Expect one current browser transport and one
+   warning per layer; no late callback can mark the replacement connected.
+7. Recover, disconnect again before three seconds, and wait beyond the previous
+   deadline. Expect the new warning to remain. Repeat recovery cycles and duplicate
+   success events; duplicates must not create additional rows. Browser and App
+   Server duplicate successes do not restart dismissal or reappear after dismissal.
+8. After final recovery, expect all success rows gone at three seconds and no
+   request caused by dismissal. Confirm no automatic `turn/start`, `turn/steer`,
+   approval response, or backend `/reconnect` call. Verify pending/unknown-outcome
+   safety feedback remains independent of connection success.
+
+The deterministic script exercises both transports and themes, captures warning, success
+and healthy screenshots, and records recovery request counts in
+`output/playwright/connection-status-{ws,sse}-{light,dark}.json`. It uses a virtual
+clock for the 2999/3000 ms boundary and prolonged/repeated failures. Unit tests also
+invoke retained timeout callbacks directly to establish stale-timer protection.
+These fixtures do not establish real network/suspension or authenticated Codex
+recovery; record live results separately using the earlier checklists.
+
+Automated verification on 2026-11-16: unit suite 1511 passed / 2 live tests
+skipped; typecheck, production build and credential-free integration fixture
+passed. Both browser scripts passed against this checkout at `127.0.0.1:4173`,
+1440×1000, in both themes; the connection-status script also covered both WS and
+SSE. The published application was not tested. The public ESM CLI smoke command
+`node dist-cli/index.js --help` passed (this project has no public CJS entry).
+
+Performance audit: each measured browser recovery burst made one selected-thread
+`thread/read`, one `thread/list`, one pending-approvals read and one workspace-state
+read. Dismissal caused zero requests. The two existing notification subscriptions
+(desktop and sidebar) remained at two after repeated recovery, with no accumulating
+transports. Notice updates do constant work on refs and at most one timer per
+connection layer; they add no polling, history fanout, cache invalidation or large
+payloads. The backend sends one small current-status event per new subscription.
+The production main JS chunk was 478.87 kB (152.58 kB gzip). Live network latency,
+CPU/memory profiles and authenticated App Server recovery were not measured.
+
+Cleanup: close fixture tabs and restore network restrictions/theme after live
+checks. Leave shared App Server processes and the existing development server
+running. Screenshots/reports are disposable ignored artifacts under `output/`.
+
 ## Request and performance evidence to record
 
 For one successful recovery burst, record notification connection attempts,

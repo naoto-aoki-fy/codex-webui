@@ -346,3 +346,16 @@ it('forwards native provider model lists through the existing RPC connection', a
   expect(rpc).toHaveBeenCalledExactlyOnceWith('model/list', params)
   expect(JSON.parse(s.end.mock.calls[0]![0])).toEqual({ result })
 })
+
+it('delivers the current App Server transport snapshot during SSE subscription setup', async () => {
+  appServer.onNotification.mockImplementationOnce(listener => {
+    listener({ method: 'app-server/transportState', params: { state: 'disconnected' } })
+    return release
+  })
+  const s = streams()
+  await createCodexBridgeMiddleware()(...s.args)
+  expect(s.write.mock.calls[0]![0]).toBe(`data: ${JSON.stringify({ method: 'app-server/transportState', params: { state: 'disconnected' }, atIso: '2026-11-10T00:00:00.000Z' })}\n\n`)
+  expect(s.write.mock.calls[1]![0]).toContain('event: ready')
+  expect(appServer.onNotification).toHaveBeenCalledOnce()
+  s.req.emit('close')
+})

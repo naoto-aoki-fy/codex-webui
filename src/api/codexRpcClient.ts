@@ -134,7 +134,12 @@ function emitReadyNotification(
   })
 }
 
-export function subscribeRpcNotifications(onNotification: (value: RpcNotification) => void): () => void {
+export type BrowserConnectionState = 'connected' | 'disconnected' | 'reconnecting'
+
+export function subscribeRpcNotifications(
+  onNotification: (value: RpcNotification) => void,
+  onConnectionState: (state: BrowserConnectionState) => void = () => {},
+): () => void {
   if (typeof window === 'undefined') {
     return () => {}
   }
@@ -147,6 +152,17 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
   let reconnectTimer: number | null = null
   let recoveryTimer: number | null = null
   let wasHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+
+  let connectionState: BrowserConnectionState | undefined
+  const reportConnection = (state: BrowserConnectionState) => {
+    if (closed || connectionState === state) return
+    connectionState = state
+    onConnectionState(state)
+  }
+  const markInterrupted = () => {
+    interrupted = true
+    reportConnection('disconnected')
+  }
 
   const detach = () => {
     const previous = cleanup
@@ -162,18 +178,24 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
 
   const scheduleReconnect = (attach: () => void, attempt: number) => {
     if (closed || offline || reconnectTimer !== null || recoveryTimer !== null) return
-    interrupted = true
+    markInterrupted()
     const delayMs = Math.min(1000 * (2 ** attempt), 10000)
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = null
       if (closed || offline) return
+      reportConnection('reconnecting')
       attach()
     }, delayMs)
   }
 
   const emitNotification = (notification: RpcNotification) => {
-    // Even the first ready can follow an interruption while startup/history was loading.
-    onNotification(notification.method === 'ready' && interrupted
+    // Readiness confirms only the browser notification stream, not the App Server.
+    const reconnected = notification.method === 'ready' && interrupted
+    if (notification.method === 'ready') {
+      interrupted = false
+      reportConnection('connected')
+    }
+    onNotification(reconnected
       ? { ...notification, params: { ...asRecord(notification.params), reconnected: true } }
       : notification)
   }
@@ -215,9 +237,13 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
       if (closed || isConnectionClosed) return
       interrupted = true
       if (source.readyState === EventSource.CLOSED) {
+        reportConnection('disconnected')
         isConnectionClosed = true
         source.close()
         scheduleReconnect(() => attachSse(attempt + 1), attempt)
+      } else {
+        // EventSource owns retries while CONNECTING; do not open another stream.
+        reportConnection('reconnecting')
       }
     }
 
@@ -242,6 +268,7 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
     let intentionallyClosed = false
     let fallbackTimer: number | null = window.setTimeout(() => {
       if (didOpen || closed || intentionallyClosed) return
+      markInterrupted()
       attachSse()
     }, 2500)
 
@@ -276,6 +303,7 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
       if (closed || intentionallyClosed) {
         return
       }
+      markInterrupted()
       if (!didOpen) {
         attachSse()
         return
@@ -311,7 +339,11 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
     if (closed) return
     interrupted = true
     if (typeof navigator !== 'undefined') offline = navigator.onLine === false
-    if (offline) return
+    if (offline) {
+      reportConnection('disconnected')
+      return
+    }
+    reportConnection('reconnecting')
     clearReconnectTimer()
     if (recoveryTimer !== null) return
     detach()
@@ -324,7 +356,7 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
 
   const onOffline = () => {
     offline = true
-    interrupted = true
+    markInterrupted()
     clearReconnectTimer()
     clearRecoveryTimer()
     detach()
@@ -352,6 +384,7 @@ export function subscribeRpcNotifications(onNotification: (value: RpcNotificatio
     document.addEventListener('visibilitychange', onVisibilityChange)
     document.addEventListener('resume', recover)
   }
+  if (offline) reportConnection('disconnected')
   attach()
 
   return () => {

@@ -1258,10 +1258,13 @@
   padding: 0.5rem 1rem;
   color: #713f12;
   background: #fef9c3;
+  border-left: 4px solid #ca8a04;
   font-size: 0.8rem;
 }
 .connection-recovery-status button { text-decoration: underline; cursor: pointer; }
-:root.dark .connection-recovery-status { color: #fde68a; background: #422006; }
+:root.dark .connection-recovery-status { color: #fde68a; background: #422006; border-color: #eab308; }
+.connection-recovery-status.connection-recovery-success { color: #166534; background: #dcfce7; border-color: #16a34a; }
+:root.dark .connection-recovery-status.connection-recovery-success { color: #bbf7d0; background: #052e16; border-color: #22c55e; }
 
 :root.dark .composer-model-notice {
   @apply text-zinc-400;

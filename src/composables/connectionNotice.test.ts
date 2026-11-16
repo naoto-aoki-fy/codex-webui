@@ -1,0 +1,70 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createConnectionNotice } from './connectionNotice'
+
+beforeEach(() => vi.useFakeTimers())
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
+
+it('stays unobtrusive on initial connection and keeps prolonged warnings until confirmed readiness', () => {
+  const connection = createConnectionNotice()
+  connection.update('connected')
+  expect(connection.notice.value).toBe('')
+  connection.update('disconnected')
+  vi.advanceTimersByTime(60000)
+  expect(connection.notice.value).toBe('disconnected')
+  connection.update('reconnecting')
+  vi.advanceTimersByTime(60000)
+  expect(connection.notice.value).toBe('reconnecting')
+  connection.update('connected')
+  vi.advanceTimersByTime(2999)
+  expect(connection.notice.value).toBe('reconnected')
+  vi.advanceTimersByTime(1)
+  expect(connection.notice.value).toBe('')
+  expect(connection.state.value).toBe('connected')
+})
+
+it('deduplicates success without extending its deadline or showing it again after dismissal', () => {
+  const connection = createConnectionNotice()
+  connection.update('disconnected')
+  connection.update('connected')
+  vi.advanceTimersByTime(1000)
+  connection.update('connected')
+  expect(vi.getTimerCount()).toBe(1)
+  vi.advanceTimersByTime(2000)
+  expect(connection.notice.value).toBe('')
+  connection.update('connected')
+  expect(connection.notice.value).toBe('')
+})
+
+it('rejects stale callbacks across repeated failures, recovery cycles, and disposal', () => {
+  const connection = createConnectionNotice()
+  const timeout = vi.spyOn(globalThis, 'setTimeout')
+  connection.update('disconnected')
+  connection.update('connected')
+  const stale = timeout.mock.calls[0]![0] as () => void
+  connection.update('disconnected')
+  stale()
+  expect(connection.notice.value).toBe('disconnected')
+  connection.update('connected')
+  vi.advanceTimersByTime(2000)
+  stale()
+  expect(connection.notice.value).toBe('reconnected')
+  const disposedCallback = timeout.mock.calls[1]![0] as () => void
+  connection.dispose()
+  disposedCallback()
+  expect(vi.getTimerCount()).toBe(0)
+  expect(connection.notice.value).toBe('reconnected')
+})
+
+it('keeps simultaneous connection layers independent', () => {
+  const browser = createConnectionNotice()
+  const appServer = createConnectionNotice()
+  browser.update('disconnected')
+  appServer.update('disconnected')
+  browser.update('connected')
+  vi.advanceTimersByTime(3000)
+  expect(browser.notice.value).toBe('')
+  expect(appServer.notice.value).toBe('disconnected')
+  appServer.update('connected')
+  vi.advanceTimersByTime(3000)
+  expect(appServer.notice.value).toBe('')
+})

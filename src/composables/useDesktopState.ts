@@ -9,6 +9,7 @@ import {hasPendingNativeAuthentication,persistNativeAuthenticationPending} from 
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
 import { appendDiagnosticWarning, type DiagnosticWarning } from '../diagnostics'
 import { createDesktopConnection } from './desktopConnection'
+import { createConnectionNotice } from './connectionNotice'
 import { createDesktopTurns } from './desktopTurns'
 import { createDesktopHistory } from './desktopHistory'
 import { createDesktopApprovals } from './desktopApprovals'
@@ -297,7 +298,10 @@ export function useDesktopState() {
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
   })
 
+  const browserConnection = createConnectionNotice()
+  const appServerConnection = createConnectionNotice()
   const connection = createDesktopConnection({
+    onBrowserConnectionState: browserConnection.update,
     invalidateReadJobs() { operationEpoch.value++; diagnosticWarnings.value = [] },
     get history() { return history; },
     get setLiveAgentMessagesForThread() { return setLiveAgentMessagesForThread; },
@@ -1792,15 +1796,30 @@ export function useDesktopState() {
       }
       return
     }
+    if (notification.method === 'app-server/transportState') {
+      const state = asRecord(notification.params)?.state
+      if (state === 'disconnected' && transportState.value !== 'disconnected') {
+        // A browser outage may hide the original disconnect event.
+        applyRealtimeUpdates({ ...notification, method: 'app-server/disconnected' })
+      } else if (state === 'connected') {
+        transportState.value = 'connected'
+        appServerConnection.update('connected')
+        if (error.value === connectionErrorMessage) error.value = ''
+      }
+      return
+    }
     if (notification.method === 'app-server/reconnected' || notification.method === 'app-server/disconnected') { operationEpoch.value++; diagnosticWarnings.value = [] }
     if (notification.method === 'app-server/reconnected') {
       transportState.value = 'connected'
+      appServerConnection.update('connected')
+      if (error.value === connectionErrorMessage) error.value = ''
       void connection.recoverBridgeState(true)
       return
     }
     if (notification.method === 'app-server/disconnected') {
       const message = connectionErrorMessage
       transportState.value = 'disconnected'
+      appServerConnection.update('disconnected')
       for (const threadId of Object.keys(approvals.pendingServerRequestsByThreadId.value)) {
         lostApprovalByThreadId.value = { ...lostApprovalByThreadId.value, [threadId]: true }
       }
@@ -2706,6 +2725,8 @@ export function useDesktopState() {
     diagnosticWarnings.value = []
     for (const timer of recoveryDismissTimerByThreadId.values()) clearTimeout(timer)
     recoveryDismissTimerByThreadId.clear()
+    browserConnection.dispose()
+    appServerConnection.dispose()
     ++connection.lifecycleGeneration
     ++connection.eventSyncGeneration
     ++threadListLoadGeneration
@@ -2803,6 +2824,8 @@ export function useDesktopState() {
 
   return {
     modelSelectionNotice,
+    browserConnectionState: browserConnection.state, browserConnectionNotice: browserConnection.notice,
+    appServerConnectionNotice: appServerConnection.notice,
     transportState, selectedRecoveryState, selectedUnknownOutcome, selectedLostApproval,
     retrySelectedSubscription, reconcileSelectedHistory,
     projectGroups,

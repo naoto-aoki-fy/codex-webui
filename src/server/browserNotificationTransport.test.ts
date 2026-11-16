@@ -148,3 +148,15 @@ it('releases a connected production browser subscription when the instance is di
   await closed
   expect(productionRelease).toHaveBeenCalledOnce()
 })
+
+it('forwards the current App Server snapshot to a newly ready browser without a network probe', () => {
+  const ws = Object.assign(new EventEmitter(), { readyState: WebSocket.OPEN, send: vi.fn() })
+  const snapshot = { method: 'app-server/transportState', params: { state: 'disconnected' }, atIso: notification.atIso }
+  const dispose = connectBrowserNotifications(ws as unknown as WebSocket, listener => {
+    listener(snapshot)
+    return vi.fn()
+  })
+  expect(ws.send.mock.calls.map(([frame]) => JSON.parse(frame).method)).toEqual(['ready', 'app-server/transportState'])
+  expect(JSON.parse(ws.send.mock.calls[1]![0])).toEqual(snapshot)
+  dispose()
+})
