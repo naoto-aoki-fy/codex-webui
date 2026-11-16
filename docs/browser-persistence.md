@@ -10,6 +10,7 @@ fixtures or server-side files. Source paths are relative to `src/`.
 
 | Key / schema | Read / write owner | Scope | Authority, necessity and risks |
 | --- | --- | --- | --- |
+| `portal_session`: 32 random bytes as 64 hex characters | `server/authMiddleware.ts`: `buildSessionCookie` writes on password login/link; middleware and request/WebSocket authorization read Cookie header | host-wide auth, Path=/; shared across tabs and connection profiles | Necessary WebUI authentication capability; not reconstructible from routes or App Server. HttpOnly, SameSite=Lax, 30-day Max-Age/Expires; server validates expiry against persisted sessions. Concurrent logins replace the shared cookie but both tokens remain valid. Retained unchanged; no browser migration or frontend access. |
 | `connection-profile.v1`: string | `utils/browserConnectionProfile.ts` | global default; URL override | Needed default on new visits. Existing documents retain their profile. URL is authoritative when present. |
 | `selected-thread-id.v1`: string | `composables/desktopStatePersistence.ts`, `useDesktopState.ts` | profile | Redundant with route; home already clears selection. Cross-tab last-writer navigation hazard. Remove runtime access. |
 | `model-usage-order.v1`: string array | unused loader in `desktopStatePersistence.ts` | global legacy | No runtime reader; backend model-preferences store owns accepted usage. No usage migration depends on this key. Remove loader. |
@@ -35,8 +36,9 @@ fixtures or server-side files. Source paths are relative to `src/`.
 | `sidebar-section-expansion.v1`: `{pinned,projects}` booleans | `SidebarThreadTree.vue` | global | UI preference; whole-record last-writer may lose unrelated expansion changes. |
 | `native-authentication-pending.v1`: obsolete latch | delete-only `utils/legacyNativeAuthenticationStorage.ts` | legacy + named profiles | Already retired, never used as authority. Existing narrowly scoped cleanup retained. |
 
-There is no production IndexedDB, sessionStorage, cookie, OPFS or other explicit
-browser persistence before this change. Ordinary HTTP/browser caches are managed
+There is no production IndexedDB, sessionStorage, document.cookie API, or OPFS
+usage before this change. A server-issued authentication cookie is inventoried
+below; it is browser persistence even though frontend JavaScript cannot read it. Ordinary HTTP/browser caches are managed
 by the browser. `public/sw.js` is a retirement worker: deletes only
 `codexweb-shell-*` / `codexweb-assets-*` CacheStorage entries and unregisters; it
 has no fetch handler and no new worker is registered. Old project/read-state,
@@ -69,31 +71,47 @@ still isolate writes, but recovery requires that picker. With failed localStorag
 writes, drafts remain in memory and the composer warns that closing can lose them.
 
 Performance: each save serializes one current draft, not all threads; this retains
-synchronous localStorage image costs from v1. Recovery enumeration happens only
-on explicit request. No server requests, timers, fanout, or cache invalidation
-are introduced. Archived snapshots can consume quota; this is deliberately
+synchronous localStorage image costs from v1. Full recovery payload enumeration happens only
+on explicit request. A thread with no owned/resume record also scans key names
+once to decide whether legacy auto-import is appropriate. No server requests, timers, fanout, or cache invalidation
+are introduced. Only failed saves retain an extra in-memory payload copy. Archived snapshots can consume quota; this is deliberately
 preferred to silently deleting recoverable drafts. IndexedDB/blob migration and
 an explicit archive-management UI remain possible future improvements.
 
 ## Queue receipt atomicity
 
-`queue-submissions.v1` keeps its bounded, prompt-free schema. Every mutation runs
-inside a profile-scoped Web Lock. Unsupported Web Locks use an IndexedDB
-`codex-web-local.persistence-locks.v1` database, version 1, empty `locks` object
-store: an exclusive readwrite transaction holds the synchronous localStorage
-critical section until completion. No user data is stored in that database.
-If locking/storage fails, submission fails before the RPC; there is no unsafe
-unlocked fallback. The native queue controller marks itself busy before awaiting
-the reservation. Existing receipts prevent same-thread replacement. Accepted or
-rejected replies clear only their own exact client identity. Explicit uncertain
-acknowledgment is still required; absent queue rows never imply non-execution.
-An aborted transaction after a localStorage reservation can leave a conservative
-marker; it cannot cause replay. Transactions do not roll back localStorage.
+Queue receipts now live in IndexedDB database `codex-web-local.persistence.v1`,
+version 1, object store `records`. The primary key is the profile-scoped original
+`queue-submissions.v1` key; its value keeps the bounded prompt-free object schema.
+A transaction reads the current object, validates it, applies one reservation or
+compare-clear, and writes the result. Completion is awaited **before** the RPC.
+Writes request strict durability. Unsupported/blocked/failed IndexedDB disables
+queue submission; there is no unlocked fallback and no automatic replay.
 
-Performance: one bounded (20 entries/90 KB) critical section per reservation or
-settlement, no lock held over network traffic, no polling or submission replay.
-All same-origin tabs running this version must use the same available locking
-facility; old versions cannot participate and should be reloaded before queue use.
+The old localStorage receipt map is read only when no IndexedDB record exists.
+The first successful mutation imports the complete valid map within the same
+transaction. Empty IndexedDB records override legacy data, so acknowledgment
+cannot resurrect an old marker. The original localStorage input is retained as a
+conservative backup. Malformed or oversized input blocks migration/submission.
+The controller marks itself busy before reservation and refuses changed selection,
+connection epoch or concurrent jobs during asynchronous recovery reads. Accepted
+or rejected replies clear only their exact client identity. Uncertain outcomes
+still require explicit inspection and acknowledgment; missing native queue rows
+are never evidence of non-execution.
+
+Web Locks and IndexedDB-as-a-lock around localStorage were evaluated and rejected:
+a repeated real-tab run lost 4 of 16 receipts because different renderers could
+read stale localStorage snapshots even after callback serialization. The final
+implementation stores the actual record in IndexedDB and uses one transactional
+primitive in every context, regardless of Web Locks availability.
+
+Performance: one bounded (20 entries/90 KB) record transaction per reservation or
+settlement, no transaction held over network traffic, no polling/replay. Queue
+recovery adds one asynchronous IndexedDB read at controller startup, no server
+request. Readwrite transactions serialize prompt-library writes too; payloads
+are bounded. Old open application versions cannot cooperate with this protocol;
+reload them before queue use. Downgrading to an older release cannot see new
+IndexedDB receipts and is not a safe recovery procedure.
 
 ## Navigation, model choices and token usage after changes
 
@@ -127,3 +145,209 @@ Startup/event hydration enumerates storage keys once per preference map; no new
 network requests, timers or unbounded async fanout. Legacy input remains read-only
 and may be retained indefinitely. Context tombstone compaction is deferred to
 avoid resurrecting old selections.
+
+## Prompt and UI settings after changes
+
+Prompt presets/history now live in the same IndexedDB `records` store, under the
+profile-scoped `prompt-library.v1` primary key with the original object schema.
+Missing records read the legacy localStorage snapshot. The first successful edit
+imports all valid presets/history in its transaction. Migration does not opt users
+in or delete their presets. A separate localStorage scalar
+`prompt-history-enabled.v1` (`1`/`0`, absent = off) controls future recording.
+Existing history is not consent. Credential filtering and 20 preset / 30 history /
+8,000 character bounds remain. Preset changes apply only changed IDs against the
+transaction's latest object. Same-preset edits use last-writer wins; distinct IDs
+and concurrent history writes survive. Over-capacity saves reject rather than
+silently dropping presets. Clear history and clear all are separate actions.
+After a successful explicit clear, the obsolete localStorage snapshot is removed
+so cleared history is not retained there; the IndexedDB record preserves presets.
+If that cleanup is denied, the canonical history is cleared but the legacy backup
+may remain. Clear all can explicitly replace malformed data; ordinary saves never
+do so. Oversized/unreadable migration data requires backup/repair or explicit clear.
+
+A profile-scoped `prompt-library.v1.revision` scalar (timestamp/random notification
+token, no prompt data) signals committed edits through storage events. It is not a
+second data copy or authority. Reopening the dialog always reads IndexedDB even if
+notification storage fails. Queue receipts do not write notification keys. With
+unavailable IndexedDB, prompt editing shows an error and accepted submission still
+works without recording history.
+
+Harmless UI preference reads/writes now tolerate storage denial. Scalar UI keys
+retain their schema and intentionally use last-writer wins; theme, width, send
+behavior, sidebar visibility/sort/view update through storage events. Composite
+sidebar preferences use independent string (`1`/`0`) records at
+`collapsed-projects.v2.<encoded project>` and
+`sidebar-section-expansion.v2.<pinned|projects>`, retaining v1 as read-only fallback.
+There is no shared map rewrite, and unrelated project toggles survive concurrency.
+
+Performance: no new dependencies or startup RPCs. Prompt transactions run only on
+explicit edits or opted-in accepted text. UI scalar events are constant work;
+composite preference hydration scans localStorage keys, with no network fanout.
+
+Fresh documents automatically import legacy v1/fork recovery only when no v2
+record exists for the thread. Once v2 exists, legacy snapshots remain available
+through explicit recovery rather than resurrecting submitted content. Recovery
+first archives the current nonempty draft under a new writer key; if that backup
+fails, replacement is refused. Thread IDs are encoded including dots to avoid
+prefix collisions in recovery enumeration.
+
+
+## Final storage boundaries and deferred work
+
+- URL/browser history: per-tab navigation via `src/router/index.ts` and
+  `appRouteCoordinator.ts`, plus explicit connection-profile hint. Browser back/forward
+  restores route entries; no additional localStorage navigation copy.
+- HttpOnly `portal_session` cookie: server-issued shared WebUI authentication,
+  retained unchanged and independent of connection-profile data.
+- sessionStorage: tab identity and per-profile/thread resume pointers.
+- localStorage: UI preferences/context choices, history opt-in, prompt invalidation
+  token, tab/document-owned drafts and retained migration inputs.
+- IndexedDB: atomic queue recovery receipts and prompt-library records. No draft
+  migration to IndexedDB is needed for ownership safety; unique writer keys avoid
+  shared draft mutations. Draft blob/quota handling remains a separate improvement.
+- App Server: conversation/imported history, response metadata, authoritative
+  native queue, global model preferences and accepted model usage.
+
+Intentionally deferred: automatic archive cleanup (would risk recoverable drafts),
+IndexedDB image/blob drafts, legacy/context tombstone compaction, live server
+latency profiling, and old-version simultaneous writers. Browser eviction, manual
+site-data clearing and unavailable/quota-limited storage cannot guarantee durable
+unsent recovery. No automatic replay compensates for missing browser data.
+
+## Current key disposition and runtime owners
+
+All names below still omit `codex-web-local.` and use the profile encoding defined
+above, unless explicitly marked global.
+
+| Disposition | Key / schema | Current read and write locations | Ownership / recovery |
+| --- | --- | --- | --- |
+| Retired runtime | `selected-thread-id.v1`, `model-usage-order.v1`, `thread-token-usage.v1` | None; inert legacy values untouched | URL, backend accepted usage, and observed in-memory usage respectively |
+| Migrated contexts | `selected-model-by-context.v1`, `selected-model-id.v1`, `collaboration-mode-by-context.v1`, `collaboration-mode.v1`, `reasoning-by-provider-model.v1` | Read-only fallback/migration in `composables/desktopStatePersistence.ts`, `useDesktopState.ts` | Preserved legacy profile inputs; backend owns global defaults/reasoning |
+| Retained marker migration | Global `explicit-model-contexts.v1`: string array | Read-only in `useDesktopState.ts`, only for legacy profile | Never inherited by named profiles |
+| New context records | `selected-model-by-context.v2.<encoded context>`: JSON string; `collaboration-mode-by-context.v2.<encoded context>`: JSON `plan` or empty tombstone; `explicit-model-contexts.v2.<encoded context>`: JSON `1` or empty tombstone | `utils/browserPreferenceRecords.ts`, called by `useDesktopState.ts`; storage-event hydration there | Profile/thread; distinct contexts independent, same context last-writer wins; choices cannot all be reconstructed from executed server metadata |
+| Migrated drafts | `thread-draft.v1.<thread>`, `thread-fork-recovery.v1.<thread>` | Read-only in `utils/composerDraftStorage.ts` | Profile/thread; legacy recovery preserved |
+| New owned drafts | `thread-draft.v2.<encoded thread>.<tab>.<writer>`: full draft payload; archive writer starts `archive-` | `composerDraftStorage.ts`; called by `ThreadComposer.vue`, `composerInput.ts`, existing App restoration path | Profile/thread/tab/document; empty payload tombstones; never auto-pruned |
+| New session metadata | Global `tab-id.v1`: random string; profile/thread `thread-draft.v2.<encoded thread>.resume`: owned localStorage key | `utils/browserTabIdentity.ts`, `composerDraftStorage.ts` | sessionStorage; reload lineage only, not shared navigation; collision-safe writer IDs |
+| Migrated critical records | localStorage `queue-submissions.v1`, `prompt-library.v1`: old schemas | Read-only fallback in `queueSubmissionReceipts.ts`, `promptLibrary.ts`; only prompt snapshot removed after explicit clear | Profile; retained migration backup, not runtime write authority |
+| New atomic records | IndexedDB `codex-web-local.persistence.v1` / `records`, primary keys = scoped `queue-submissions.v1`, `prompt-library.v1`; values = original bounded objects | `utils/browserTransactionalRecords.ts`, validators/mutations in receipt/library utilities; async callers `nativeQueue.ts`, `PromptLibrary.vue`, `composerInput.ts` | Profile; transactionally authoritative browser recovery/preset data |
+| New history consent | `prompt-history-enabled.v1`: raw `1`/`0` | `promptLibrary.ts`, `PromptLibrary.vue` | Profile; shared opt-in, default off; history is not server-reconstructible |
+| New invalidation signal | `prompt-library.v1.revision`: timestamp/random string | Written after committed edits by `browserTransactionalRecords.ts`; read as storage event by `PromptLibrary.vue` | Profile; no prompt content; reopen always reads IndexedDB |
+| New sidebar records | Global `collapsed-projects.v2.<encoded project>`, `sidebar-section-expansion.v2.<pinned|projects>`: JSON `1`/`0` strings | `browserPreferenceRecords.ts`, `SidebarThreadTree.vue` | Shared UI preference per entry; v1 composite keys retained read-only |
+| Retained scalar UI preferences | Global `send-with-enter.v1`, `dark-mode.v1`, `chat-width.v1`, `sidebar-collapsed.v1`, `sidebar-width.v1`, `chat-sort-mode.v1`, `thread-view-mode.v1`: schemas in original inventory | `utils/browserUiStorage.ts`, App/layout/sidebar callers in original inventory | Shared settings, best-effort storage, last-writer wins with storage-event visibility |
+| Retained connection and retirement behavior | `connection-profile.v1`, obsolete auth latch cleanup, retired service-worker caches | Original owners unchanged | No unknown data reset; active profile fixed for document |
+
+## Verification and performance evidence
+
+Verified with the current checkout and Chromium on `http://127.0.0.1:4173`:
+
+- Full unit suite: **1,589 passed, 2 skipped** (150 test files passed, 2 skipped).
+- `pnpm run typecheck`: passed (frontend and server TypeScript).
+- `pnpm run build`: passed; 318 frontend modules, main JS 495.53 KB / 158.28 KB gzip,
+  lazy prompt-library JS 5.07 KB / 2.09 KB gzip; frontend build 5.99 seconds in this
+  run. CLI remains 209.15 KB ESM. No dependency changes.
+- `pnpm run test:integration:fixture`: passed for built CLI and dev transport;
+  one upstream connection per fixture, independent fixture survives shutdown.
+- CJS host smoke on Node 22.23.2:
+  `node -e "process.argv = ['node', 'codexapp', 'help']; const entry = require('./dist-cli/index.js'); console.log('CLI entry exports:', Object.keys(entry))"`
+  exited 0, printed CLI help and `CLI entry exports: []` (CLI exports no library API).
+- `node scripts/test-browser-persistence.cjs`: passed actual concurrent document
+  operations with Web Locks both available and disabled. Includes different routes,
+  same-thread writes, clearing one writer, duplicate session identity, reload,
+  structured draft payloads, archiving before recovery, same-thread receipt
+  exclusion, compare-clear, legacy receipt/preset/history migration, history opt-in,
+  preset UI concurrency, model storage-event rendering, named-profile isolation,
+  unavailable IndexedDB, and zero native submission RPCs during the test.
+- Three further browser stress runs passed both configurations. All 16 receipts
+  survived every final transactional run; measured bursts took **32–54 ms** across
+  two pages. These are fixture/browser measurements, not live server latency.
+- `node scripts/test-connection-profiles.cjs`: passed legacy → named → legacy
+  draft restoration and same-profile document retention, light and dark.
+- `node scripts/test-approved-prompts.cjs`: passed create/edit/reload/use,
+  explicit opt-in recording, command handling, clear-all; 1280, 375 and 768 widths.
+- `node scripts/test-risk-queue.cjs`: passed accepted/delayed/lost acknowledgment,
+  double-click exclusion, draft retention, reload recovery and no replay;
+  1280, 375 and 768 widths in light/dark themes.
+
+No live App Server authentication/turns or high-volume archive profiling was
+performed. Full profiler helpers were not used because these checks intercept the
+server protocol; live startup/server timing cannot be inferred from a fixture.
+Code-path audit checked duplicate requests (no new RPC), blocking work (draft JSON
+and UI key scans remain synchronous; critical records are asynchronous), fanout
+(no per-thread startup RPCs or timers), payload bounds, and invalidation (only
+committed prompt revisions; per-tab routes/drafts never subscribe). Persistent
+context/archive key growth and localStorage image serialization remain limitations.
+
+Screenshots exercise the actual prompt dialog after reload and cross-tab edits.
+Test URL: `http://127.0.0.1:4173/?connection-profile=legacy#/thread/a`.
+Viewports: 1440x1000, 375x812, 768x1024; both light/dark. Result: presets survived,
+history opt-in/clear worked, and dark surfaces rendered correctly. Files are in
+`output/playwright/browser-persistence-<width>-<theme>.png` under this checkout
+(`/home/naoto-aoki/Projects/20261105-codexapp-dev/output/playwright/`). Generated
+screenshots are deliberately not committed. Representative evidence:
+
+![Light prompt dialog](../output/playwright/browser-persistence-375-light.png)
+![Dark prompt dialog](../output/playwright/browser-persistence-375-dark.png)
+
+Additional screenshots: `connection-profiles-{light,dark}.png`,
+`approved-25-{1280,375,768}-{light,dark}.png`, and
+`risk-07-{1280,375,768}-{light,dark}.png` in the same directory.
+
+
+## Modified files
+
+- [docs/browser-persistence.md](../docs/browser-persistence.md)
+- [scripts/test-approved-prompts.cjs](../scripts/test-approved-prompts.cjs)
+- [scripts/test-browser-persistence.cjs](../scripts/test-browser-persistence.cjs)
+- [scripts/test-connection-profiles.cjs](../scripts/test-connection-profiles.cjs)
+- [scripts/test-risk-queue.cjs](../scripts/test-risk-queue.cjs)
+- [src/App.vue](../src/App.vue)
+- [src/components/content/PromptLibrary.vue](../src/components/content/PromptLibrary.vue)
+- [src/components/content/ThreadComposer.submission.test.ts](../src/components/content/ThreadComposer.submission.test.ts)
+- [src/components/content/ThreadComposer.vue](../src/components/content/ThreadComposer.vue)
+- [src/components/content/composerInput.ts](../src/components/content/composerInput.ts)
+- [src/components/layout/DesktopLayout.vue](../src/components/layout/DesktopLayout.vue)
+- [src/components/sidebar/SidebarThreadTree.vue](../src/components/sidebar/SidebarThreadTree.vue)
+- [src/components/sidebar/sidebarThreads.ts](../src/components/sidebar/sidebarThreads.ts)
+- [src/composables/desktopStatePersistence.test.ts](../src/composables/desktopStatePersistence.test.ts)
+- [src/composables/desktopStatePersistence.ts](../src/composables/desktopStatePersistence.ts)
+- [src/composables/nativeQueue.test.ts](../src/composables/nativeQueue.test.ts)
+- [src/composables/nativeQueue.ts](../src/composables/nativeQueue.ts)
+- [src/composables/useDesktopState.messages.test.ts](../src/composables/useDesktopState.messages.test.ts)
+- [src/composables/useDesktopState.modelPreferences.test.ts](../src/composables/useDesktopState.modelPreferences.test.ts)
+- [src/composables/useDesktopState.test.ts](../src/composables/useDesktopState.test.ts)
+- [src/composables/useDesktopState.ts](../src/composables/useDesktopState.ts)
+- [src/utils/browserPersistence.multitab.test.ts](../src/utils/browserPersistence.multitab.test.ts)
+- [src/utils/browserPreferenceRecords.test.ts](../src/utils/browserPreferenceRecords.test.ts)
+- [src/utils/browserPreferenceRecords.ts](../src/utils/browserPreferenceRecords.ts)
+- [src/utils/browserTabIdentity.ts](../src/utils/browserTabIdentity.ts)
+- [src/utils/browserTransactionalRecords.ts](../src/utils/browserTransactionalRecords.ts)
+- [src/utils/browserUiStorage.test.ts](../src/utils/browserUiStorage.test.ts)
+- [src/utils/browserUiStorage.ts](../src/utils/browserUiStorage.ts)
+- [src/utils/composerDraftStorage.test.ts](../src/utils/composerDraftStorage.test.ts)
+- [src/utils/composerDraftStorage.ts](../src/utils/composerDraftStorage.ts)
+- [src/utils/promptLibrary.test.ts](../src/utils/promptLibrary.test.ts)
+- [src/utils/promptLibrary.ts](../src/utils/promptLibrary.ts)
+- [src/utils/queueSubmissionReceipts.test.ts](../src/utils/queueSubmissionReceipts.test.ts)
+- [src/utils/queueSubmissionReceipts.ts](../src/utils/queueSubmissionReceipts.ts)
+- [tests/chat-composer-rendering/composer-expands-long-drafts-to-full-screen.md](../tests/chat-composer-rendering/composer-expands-long-drafts-to-full-screen.md)
+- [tests/chat-composer-rendering/native-prompt-queue.md](../tests/chat-composer-rendering/native-prompt-queue.md)
+- [tests/chat-composer-rendering/persistent-model-reasoning-preferences.md](../tests/chat-composer-rendering/persistent-model-reasoning-preferences.md)
+- [tests/chat-composer-rendering/prompt-library.md](../tests/chat-composer-rendering/prompt-library.md)
+- [tests/theme-layout-terminal/dark-theme-settings-controls.md](../tests/theme-layout-terminal/dark-theme-settings-controls.md)
+
+## Implementation commits
+
+- `434db06 docs: inventory browser persistence ownership and concurrency risks`
+- `d0b123e fix: isolate composer drafts by tab and document writer`
+- `b63525f fix: serialize queue recovery receipt mutations before submission`
+- `a87e48a fix: shard thread preferences and retire redundant browser caches`
+- `6291866 fix: make prompt history opt-in and merge preset edits atomically`
+- `8c00305 fix: synchronize UI preferences without shared map overwrites`
+- `60fe9f3 fix: persist only affected model contexts and keep home unselected`
+- `66ced27 fix: unify atomic persistence on IndexedDB transactions`
+- `5b6a50a fix: archive live drafts before recovery and avoid legacy resurrection`
+- `d85c80c fix: store recovery receipts and prompt libraries in atomic IndexedDB records`
+- `81e900c test: verify real-tab persistence migration and queue recovery`
+
+The final documentation commit records this complete inventory and verification
+report. All work was committed on `main`; no push or branch switch was performed.
