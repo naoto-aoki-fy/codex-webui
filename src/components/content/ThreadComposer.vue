@@ -12,7 +12,7 @@
       <button type="button" @click="draftRecovery = recoverableDrafts(activeThreadId)">Recover saved drafts</button>
       <p v-if="draftRecovery && !draftRecovery.length">No other saved drafts for this conversation.</p>
       <ul v-if="draftRecovery?.length"><li v-for="entry in draftRecovery" :key="entry.key">
-        <button type="button" @click="input.hydrateDraft(entry.draft); draftRecovery = null">Recover copy: {{ entry.draft.text.slice(0, 80) || 'Attachments / Skills / Apps' }}</button>
+        <button type="button" @click="recoverDraft(entry.draft)">Recover copy: {{ entry.draft.text.slice(0, 80) || 'Attachments / Skills / Apps' }}</button>
       </li></ul>
       <p v-if="draftSaveWarning" role="alert">{{ draftSaveWarning }}</p>
     </div>
@@ -395,6 +395,14 @@ const appsPickerLoaded = ref(false)
 watch(isAppsPickerOpen, open => { if (open) appsPickerLoaded.value = true })
 const draftRecovery = ref<ReturnType<typeof recoverableDrafts> | null>(null)
 const draftSaveWarning = ref('')
+function recoverDraft(payload: ComposerDraftPayload) {
+  if (input.hasUnsavedDraft.value && !archiveDraftBeforeRecovery(props.activeThreadId, input.getCurrentDraftPayload())) {
+    draftSaveWarning.value = 'Could not preserve the current draft. Copy it before recovering another draft.'
+    return
+  }
+  input.hydrateDraft(payload)
+  draftRecovery.value = null
+}
 const promptLibraryLoaded = ref(false)
 const PromptLibrary = defineAsyncComponent(() => import('./PromptLibrary.vue'))
 import type { ComposerProps, SubmitPayload, ThreadComposerExposed } from "./composerContracts"
@@ -402,7 +410,7 @@ import { createComposerInput } from './composerInput'
 import { createComposerSettings } from './composerSettings'
 import { createComposerAttachments } from './composerAttachments'
 
-import { loadPersistedDraftForThread, persistDraftForThread, recoverableDrafts, draftStorageError, type FileAttachment, type ComposerDraftPayload } from '../../utils/composerDraftStorage'
+import { loadPersistedDraftForThread, persistDraftForThread, recoverableDrafts, draftStorageError, archiveDraftBeforeRecovery, type FileAttachment, type ComposerDraftPayload } from '../../utils/composerDraftStorage'
 import { reasoningCatalog } from '../../api/codexGateway'
 import { parseModelSelection, defaultModelForProvider, modelSelectionKey } from '../../api/modelCapabilities'
 

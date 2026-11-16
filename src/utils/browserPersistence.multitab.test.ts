@@ -54,3 +54,20 @@ it('copies legacy drafts without consuming recovery data and survives denied wri
   expect(drafts.loadPersistedDraftForThread('t')).toEqual(payload('in memory'))
   expect(drafts.draftStorageError).toContain('copy it before closing')
 })
+
+
+it('keeps dotted thread IDs and recovery backups separate and never revives submitted v1 text', async () => {
+  const local = storage(), session = storage()
+  vi.stubGlobal('window', { localStorage: local, sessionStorage: session })
+  const drafts = await import('./composerDraftStorage')
+  local.setItem('codex-web-local.thread-draft.v1.a', JSON.stringify(payload('legacy')))
+  drafts.persistDraftForThread('a', { text: '', imageUrls: [], fileAttachments: [], skills: [] })
+  drafts.persistDraftForThread('a.b', payload('other thread'))
+  expect(drafts.archiveDraftBeforeRecovery('a', payload('archived'))).toBe(true)
+  expect(drafts.recoverableDrafts('a').map(row => row.draft.text)).toEqual(['legacy', 'archived'])
+  vi.resetModules()
+  vi.stubGlobal('window', { localStorage: local, sessionStorage: storage() })
+  const fresh = await import('./composerDraftStorage')
+  expect(fresh.loadPersistedDraftForThread('a')).toBeNull()
+  expect(fresh.recoverableDrafts('a.b')[0]?.draft.text).toBe('other thread')
+})
