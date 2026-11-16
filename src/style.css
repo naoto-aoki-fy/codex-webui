@@ -73,23 +73,23 @@
   @apply border-zinc-700;
 }
 
-:root.dark .sidebar-settings-context-value {
+:root.dark .thread-context-value {
   @apply text-zinc-300;
 }
 
-:root.dark .sidebar-settings-context-value[data-state='ok'] {
+:root.dark .thread-context-value[data-state='ok'] {
   @apply text-emerald-300;
 }
 
-:root.dark .sidebar-settings-context-value[data-state='warning'] {
+:root.dark .thread-context-value[data-state='warning'] {
   @apply text-amber-300;
 }
 
-:root.dark .sidebar-settings-context-value[data-state='danger'] {
+:root.dark .thread-context-value[data-state='danger'] {
   @apply text-rose-300;
 }
 
-:root.dark .sidebar-settings-context-meta {
+:root.dark .thread-context-meta {
   @apply text-zinc-400;
 }
 

@@ -5,9 +5,10 @@
 | Feature | Entry |
 | --- | --- |
 | Archived conversations | Sidebar → Archived conversations |
-| General preferences, context and rate limits | Sidebar → Settings → General |
+| General preferences and rate limits | Sidebar → Settings → General |
 | Codex account, native authentication, Remote Control, usage and diagnostics | Sidebar → Settings → Codex account |
 | MCP connection/authentication/configuration and curated plugins | Sidebar → Settings → Apps / Connectors; also linked from Skills and the conversation App picker |
+| Current conversation context usage | Conversation header … → Context; the dialog identifies the title and native ID |
 | Conversation inspection and detailed operations | Conversation header … → Conversation tools…; the dialog identifies the title and native ID |
 | Copy, Markdown export, archive | Conversation header …; existing sidebar actions also remain |
 | Conversation App references | Composer + → Apps / Connectors, in a compact picker |
@@ -32,7 +33,11 @@ mount lazily on first use and remain mounted when closed; reopening does not cre
 new subscriptions or restart operations. Prompt storage is reread on opening so
 newly accepted history appears without discarding unsaved editor fields.
 
-Switching the selected conversation synchronously dismisses conversation tools
+Context is read-only information from the selected thread’s existing token-usage
+state. Its dialog displays the existing usage, remaining/window counts, cumulative
+usage and unavailable-data explanations. Opening it adds no fetch or subscription.
+
+Switching the selected conversation synchronously dismisses Context and conversation tools
 before their controls can be used for a different thread. Existing asynchronous
 owner/connection guards remain. Opening management does not mutate server state;
 connection authentication, configuration writes, queue start/remove and other
@@ -84,6 +89,13 @@ queue state blocks sends and links to inspection, without falling back to Immedi
   Escape/restoration, long archive titles/status content, empty/error archives,
   retained drafts/edits/scroll/mode, streaming while modal, no opening mutations,
   safe thread switching, queue snapshots and actual new-thread identity handoff.
+- `scripts/test-context-dialog.cjs`: the same fixture URL and four viewports in
+  both themes. Passed pending/unknown-window/updated usage, warning/danger colors,
+  target title/ID, Settings separation, focus/restoration, thread-switch dismissal,
+  retained draft/Queue/120px scroll/streaming, and **zero additional requests** on
+  Context opening, reopening or token updates. Before: `context-before-settings.png`;
+  after: `context-{1280,320,375,768}-{light,dark}.png`; `context-results.json` records
+  absolute paths and request counts under `output/playwright/`.
 - Updated existing fixture suites cover MCP execution, prompt CRUD/history, App
   references/reload, MCP versioned settings, curated plugins, Remote Control,
   native queue and queue management, stale response rejection, native review,
@@ -102,8 +114,8 @@ reopening Settings, and one intentional queue write despite mode changes and
 management navigation. Queue readiness uses the existing read-in-progress guard
 and 20-entry page; panel reopening adds no polling/subscription/fanout. New mode
 state consists of one boolean and one temporary destination ID; it does not copy
-history, invalidate caches or own an execution queue. Final build: main JS 473.07 kB
-(151.20 kB gzip), main CSS 250.59 kB (29.65 kB gzip); optional tools remain separate
+history, invalidate caches or own an execution queue. Final build: main JS 473.44 kB
+(151.30 kB gzip), main CSS 250.69 kB (29.67 kB gzip); optional tools remain separate
 chunks. Live latency, heap and external-service performance were not measured.
 
 All browser checks use credential-free intercepted responses and current production

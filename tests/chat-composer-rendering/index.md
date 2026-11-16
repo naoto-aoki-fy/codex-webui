@@ -17,7 +17,7 @@ Return to the [manual test index](../../tests.md).
 | [Native App references](apps-picker.md) |
 | [Composer without built-in dictation](composer-without-dictation.md) |
 | [API wrapper cleanup preserves active flows](api-wrapper-cleanup.md) |
-| [Composer cleanup preserves sidebar usage indicators](composer-usage-cleanup.md) |
+| [Conversation Context dialog preserves usage indicators](composer-usage-cleanup.md) |
 | [Attachment-only thread persistence](attachment-only-thread-persistence.md) |
 | [Copy individual user messages](copy-user-messages.md) |
 | [Per-response model and reasoning effort](per-response-model-and-reasoning-effort.md) |
