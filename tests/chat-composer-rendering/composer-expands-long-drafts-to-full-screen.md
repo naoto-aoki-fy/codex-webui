@@ -49,3 +49,26 @@ checks the current production assets with intercepted protocol fixtures at
 - Clear the draft from the composer.
 
 ---
+
+## Tab-isolated drafts and recovery
+
+Setup: Use two same-origin tabs on the same connection profile and a disposable
+conversation. Include text, an image, a file, a Skill and an App where supported.
+
+1. Edit the same conversation differently in each tab; navigate away and back in
+   both. Each tab must restore its own complete payload.
+2. Clear/submit one tab's draft. Reload the other: its draft must remain intact.
+3. Duplicate a tab, edit both copies, reload each. Copies must remain independent.
+4. Open different conversations in the two tabs; reload either. Routes and drafts
+   must remain independent. The home route must not reopen an old conversation.
+5. Close a tab and open the conversation in a fresh tab. Click **Recover saved
+   drafts** and choose the closed tab's draft: it is copied without submission.
+6. Seed a `thread-draft.v1.<thread>` payload (in the active profile namespace),
+   reload, edit it. Verify the legacy entry remains and the new writer owns a
+   distinct v2 entry. Named profiles must not load unprefixed legacy drafts.
+7. Deny storage writes: editing remains possible and a warning asks the user to
+   copy the draft before closing. Repeat in light and dark themes.
+
+Cleanup: Remove only disposable test draft entries/session pointers and test
+conversations. Do not clear unrelated browser data. Archived drafts are retained
+for recovery; no automatic age-based deletion is performed.

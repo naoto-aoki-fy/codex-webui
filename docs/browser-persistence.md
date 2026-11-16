@@ -52,3 +52,25 @@ CAP-002 source drafts and imported history remain intact. CAP-003 response metad
 is unaffected. Legacy profile data must never be imported into a named profile.
 Older open application versions cannot cooperate with a new persistence protocol;
 retained legacy inputs must not be destructively consumed.
+
+## Draft ownership after changes
+
+Drafts use profile-scoped `thread-draft.v2.<encoded thread>.<tab ID>.<writer ID>`
+keys with the original payload schema. `sessionStorage` holds `tab-id.v1` and a
+profile/thread `thread-draft.v2.<encoded thread>.resume` pointer. A new random writer
+ID is allocated for every document, even when Duplicate Tab copies the session ID
+and resume pointer. Each document writes only its own key. Reload follows the
+session pointer; duplicate tabs copy the same starting snapshot then diverge.
+Empty payloads are tombstones: clear cannot resurrect v1 or fork recovery data.
+Legacy inputs and predecessor snapshots are never consumed or automatically pruned.
+A fresh tab can explicitly copy them using **Recover saved drafts**. The picker
+never deletes another writer's data. Without sessionStorage, fresh document keys
+still isolate writes, but recovery requires that picker. With failed localStorage
+writes, drafts remain in memory and the composer warns that closing can lose them.
+
+Performance: each save serializes one current draft, not all threads; this retains
+synchronous localStorage image costs from v1. Recovery enumeration happens only
+on explicit request. No server requests, timers, fanout, or cache invalidation
+are introduced. Archived snapshots can consume quota; this is deliberately
+preferred to silently deleting recoverable drafts. IndexedDB/blob migration and
+an explicit archive-management UI remain possible future improvements.
