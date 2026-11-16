@@ -13,7 +13,7 @@ const fs = require('node:fs')
         class FixtureSocket {
           static OPEN = 1
           readyState = 1
-          constructor() { window.fixtureSocket = this; setTimeout(() => this.onopen?.({}), 0) }
+          constructor() { window.fixtureSocket = this; setTimeout(() => { this.onopen?.({}); setTimeout(() => this.onmessage?.({data:JSON.stringify({method:'ready',params:{connectionProfile:new URL(location.href).searchParams.get('connection-profile')||'legacy'}})}), 30) }, 0) }
           close() {} send() {}
         }
         window.WebSocket = FixtureSocket
@@ -23,7 +23,7 @@ const fs = require('node:fs')
         const path = new URL(route.request().url()).pathname
         if (path.endsWith('/rpc')) {
           const { method } = route.request().postDataJSON()
-          const result = method === 'thread/list' ? { data: [thread], nextCursor: null }
+          const result = method === 'native-authentication/read' ? {phase:'ready',blocking:false,revision:1} : method === 'thread/list' ? { data: [thread], nextCursor: null }
             : ['thread/read', 'thread/resume'].includes(method) ? { thread }
             : method === 'model/list' ? { data: [], nextCursor: null } : {}
           return route.fulfill({ json: { result } })
@@ -36,13 +36,13 @@ const fs = require('node:fs')
       const emitProfile = profile => page.evaluate(profile => window.fixtureSocket.onmessage({ data: JSON.stringify({ method: 'ready', params: { backendInstanceId: 'fixture-' + profile, connectionProfile: profile } }) }), profile)
       await ready()
       await page.locator('textarea').first().fill('legacy profile draft')
-      await page.waitForFunction(() => localStorage.getItem('codex-web-local.thread-draft.v1.shared-profile-thread')?.includes('legacy profile draft'))
+      await page.waitForFunction(() => Object.entries(localStorage).some(([key,value])=>key.startsWith('codex-web-local.thread-draft.v2.shared-profile-thread.')&&value.includes('legacy profile draft')))
       await emitProfile('machine-b')
       await page.waitForURL('**/?connection-profile=machine-b**')
       await ready()
       assert.equal(await page.locator('textarea').first().inputValue(), '')
       await page.locator('textarea').first().fill('machine B draft')
-      await page.waitForFunction(() => localStorage.getItem('codex-profile.machine-b.codex-web-local.thread-draft.v1.shared-profile-thread')?.includes('machine B draft'))
+      await page.waitForFunction(() => Object.entries(localStorage).some(([key,value])=>key.startsWith('codex-profile.machine-b.codex-web-local.thread-draft.v2.shared-profile-thread.')&&value.includes('machine B draft')))
       await emitProfile('legacy')
       await page.waitForURL('**/?connection-profile=legacy**')
       await ready()

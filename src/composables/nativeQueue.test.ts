@@ -95,3 +95,13 @@ it('fails before enqueue when a reload recovery marker cannot be stored',async()
  const request=vi.fn(async()=>({data:[],nextCursor:null})),f=setup(request);await f.owner.refresh()
  await expect(f.owner.add(payload)).rejects.toThrow('storage unavailable');expect(request).toHaveBeenCalledTimes(1);f.stop()
 })
+
+it('never redirects a submitted payload when selection changes during asynchronous receipt recovery', async()=>{
+ const request=vi.fn(async()=>({data:[],nextCursor:null}))
+ const f=setup(request);await f.owner.refresh()
+ const adding=f.owner.add(payload)
+ f.selected.value='other-thread'
+ await expect(adding).rejects.toThrow('Read')
+ expect(request).toHaveBeenCalledTimes(1)
+ f.stop()
+})
