@@ -18,50 +18,93 @@ function deferred<T>() {
   const promise = new Promise<T>(yes => { resolve = yes })
   return { promise, resolve }
 }
-function transfer() {
+function transfer(composerModel = modelSelectionKey('P', 'model')) {
+  const composerSelection = ref(composerModel)
   const forkThreadById = vi.fn(async () => 'destination')
   const push = vi.fn(async () => {})
   const controller = createAppTransferDialog({
     messages: computed(() => []), selectedThreadId: ref('source'), desktopError: ref(''),
+    composerSelectedModelId: computed(() => composerSelection.value),
     forkThreadById, forkThreadFromTurn: vi.fn(async () => 'destination'), forkNativeThreadById: vi.fn(async () => 'native'),
     router: { push }, isMobile: ref(false), setSidebarCollapsed: vi.fn(),
   })
-  return { controller, forkThreadById, push }
+  return { controller, composerSelection, forkThreadById, push }
 }
 it.each([
-  { providers: ['A'], current: 'A', expected: 'A' },
-  { providers: ['A', 'B', 'C'], current: 'A', expected: 'B' },
-  { providers: ['C', 'A', 'B'], current: 'A', expected: 'C' },
-  { providers: ['B', 'C'], current: 'A', expected: 'B' },
-  { providers: ['A', 'A', 'B'], current: 'A', expected: 'B' },
-  { providers: ['B', 'A'], current: undefined, expected: 'B' },
-  { providers: [], current: 'A', expected: '' },
-])('preselects $expected for source $current in provider order $providers (CAP-002)', async ({ providers, current, expected }) => {
+  { providers: ['A'], composer: 'A', source: 'A', expected: 'A' },
+  { providers: ['A', 'B', 'C'], composer: 'A', source: 'A', expected: 'A' },
+  { providers: ['A', 'B', 'C'], composer: 'B', source: 'B', expected: 'B' },
+  { providers: ['C', 'A', 'B'], composer: 'A', source: 'A', expected: 'A' },
+  { providers: ['A', 'B'], composer: 'B', source: 'A', expected: 'B' },
+  { providers: ['A', 'B'], composer: 'A', source: 'B', expected: 'A' },
+  { providers: ['A', 'A', 'B'], composer: 'A', source: 'A', expected: 'A' },
+  { providers: ['B', 'C'], composer: 'A', source: 'A', expected: 'B' },
+  { providers: ['B', 'A'], composer: '', source: undefined, expected: 'B' },
+  { providers: [], composer: 'A', source: 'A', expected: '' },
+])('preselects $expected for composer $composer and source $source in provider order $providers (CAP-002)', async ({ providers, composer, source, expected }) => {
   reasoningCatalog.value = providers.map(modelProvider => ({ id: 'model', modelProvider, isDefault: true }))
-  vi.mocked(prepareConversationTransfer).mockResolvedValueOnce({ id: 'snapshot', messageCount: 1, warnings: [], sourceModelProvider: current })
-  const { controller, forkThreadById, push } = transfer()
+  vi.mocked(prepareConversationTransfer).mockResolvedValueOnce({ id: 'snapshot', messageCount: 1, warnings: [], sourceModelProvider: source })
+  const { controller, composerSelection, forkThreadById, push } = transfer(modelSelectionKey(composer, 'model'))
   await controller.openTransferPicker('unselected-source')
   expect(controller.transferProvider.value).toBe(expected)
   expect(controller.transferProviderOptions.value.map(option => option.value)).toEqual([...new Set(providers)])
   expect(controller.canConfirmFork.value).toBe(!!expected)
+  expect(composerSelection.value).toBe(modelSelectionKey(composer, 'model'))
   expect(forkThreadById).not.toHaveBeenCalled()
   expect(push).not.toHaveBeenCalled()
   await controller.confirmTransferPicker()
   if (expected) expect(forkThreadById).toHaveBeenCalledExactlyOnceWith('unselected-source', 'snapshot', modelSelectionKey(expected, 'model'))
   else expect(forkThreadById).not.toHaveBeenCalled()
 })
-it('preserves manual provider choices and recomputes the default on reopening (CAP-002)', async () => {
+it('preserves manual provider choices without changing the composer on cancellation and reads it again on reopening (CAP-002)', async () => {
   reasoningCatalog.value = ['A', 'B', 'C'].map(modelProvider => ({ id: 'model', modelProvider, isDefault: true }))
   vi.mocked(prepareConversationTransfer).mockResolvedValue({ id: 'snapshot', messageCount: 1, warnings: [], sourceModelProvider: 'A' })
-  const { controller } = transfer()
+  const { controller, composerSelection } = transfer(modelSelectionKey('A', 'model'))
   await controller.openTransferPicker('source')
-  expect(controller.transferProvider.value).toBe('B')
-  controller.transferProvider.value = 'A'
-  reasoningCatalog.value = [...reasoningCatalog.value, { id: 'other', modelProvider: 'C' }]
   expect(controller.transferProvider.value).toBe('A')
+  controller.transferProvider.value = 'C'
+  reasoningCatalog.value = [...reasoningCatalog.value, { id: 'other', modelProvider: 'C' }]
+  expect(controller.transferProvider.value).toBe('C')
   await controller.cancelTransferPicker()
+  expect(composerSelection.value).toBe(modelSelectionKey('A', 'model'))
+  expect(cancelConversationTransfer).toHaveBeenCalledExactlyOnceWith('snapshot')
+  composerSelection.value = modelSelectionKey('B', 'model')
   await controller.openTransferPicker('source', 0)
   expect(controller.transferProvider.value).toBe('B')
+})
+it('captures the composer provider when opening, before history preparation finishes (CAP-002)', async () => {
+  reasoningCatalog.value = ['A', 'B'].map(modelProvider => ({ id: 'model', modelProvider, isDefault: true }))
+  const pending = deferred<Awaited<ReturnType<typeof prepareConversationTransfer>>>()
+  vi.mocked(prepareConversationTransfer).mockReturnValueOnce(pending.promise)
+  const { controller, composerSelection } = transfer(modelSelectionKey('B', 'model'))
+  const opening = controller.openTransferPicker('source')
+  composerSelection.value = modelSelectionKey('A', 'model')
+  pending.resolve({ id: 'snapshot', messageCount: 1, warnings: [], sourceModelProvider: 'B' })
+  await opening
+  expect(controller.transferProvider.value).toBe('B')
+  expect(composerSelection.value).toBe(modelSelectionKey('A', 'model'))
+})
+it.each([
+  { providerDefaultModel: 'configured', isDefault: true, expected: 'configured' },
+  { providerDefaultModel: undefined, isDefault: true, expected: 'declared' },
+  { providerDefaultModel: undefined, isDefault: false, expected: 'priority' },
+])('keeps provider default resolution ($expected) after initial and manual selection (CAP-002)', async ({ providerDefaultModel, isDefault, expected }) => {
+  reasoningCatalog.value = ['A', 'B'].flatMap(modelProvider => [
+    { id: 'composer-model', modelProvider, priority: 9, providerDefaultModel: providerDefaultModel && `${modelProvider}-${providerDefaultModel}` },
+    { id: `${modelProvider}-declared`, modelProvider, priority: 2, isDefault },
+    { id: `${modelProvider}-priority`, modelProvider, priority: 0 },
+  ])
+  vi.mocked(prepareConversationTransfer).mockResolvedValue({ id: 'snapshot', messageCount: 1, warnings: [], sourceModelProvider: 'A' })
+  const { controller, composerSelection, forkThreadById } = transfer(modelSelectionKey('B', 'composer-model'))
+  await controller.openTransferPicker('source')
+  expect(controller.transferProvider.value).toBe('B')
+  await controller.confirmTransferPicker()
+  expect(forkThreadById).toHaveBeenLastCalledWith('source', 'snapshot', modelSelectionKey('B', `B-${expected}`))
+  await controller.openTransferPicker('source')
+  controller.transferProvider.value = 'A'
+  await controller.confirmTransferPicker()
+  expect(forkThreadById).toHaveBeenLastCalledWith('source', 'snapshot', modelSelectionKey('A', `A-${expected}`))
+  expect(composerSelection.value).toBe(modelSelectionKey('B', 'composer-model'))
 })
 it('cancels a preparation that finishes after its dialog was dismissed without creating a destination', async () => {
   const pending = deferred<Awaited<ReturnType<typeof prepareConversationTransfer>>>()
@@ -100,15 +143,16 @@ it('does not let a cancelled preparation replace a newer dialog provider (CAP-00
   const pending = deferred<Awaited<ReturnType<typeof prepareConversationTransfer>>>()
   vi.mocked(prepareConversationTransfer).mockReturnValueOnce(pending.promise)
     .mockResolvedValueOnce({ id: 'new-snapshot', messageCount: 1, warnings: [], sourceModelProvider: 'B' })
-  const { controller } = transfer()
+  const { controller, composerSelection } = transfer(modelSelectionKey('A', 'model'))
   const opening = controller.openTransferPicker('old-source')
   await controller.cancelTransferPicker()
+  composerSelection.value = modelSelectionKey('B', 'model')
   await controller.openTransferPicker('new-source')
-  expect(controller.transferProvider.value).toBe('A')
+  expect(controller.transferProvider.value).toBe('B')
   pending.resolve({ id: 'old-snapshot', messageCount: 1, warnings: [], sourceModelProvider: 'A' })
   await opening
   expect(controller.transferPicker.value?.sourceId).toBe('new-source')
-  expect(controller.transferProvider.value).toBe('A')
+  expect(controller.transferProvider.value).toBe('B')
   expect(cancelConversationTransfer).toHaveBeenCalledExactlyOnceWith('old-snapshot')
 })
 function routing() {

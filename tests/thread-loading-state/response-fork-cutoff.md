@@ -135,33 +135,44 @@ archive disposable destinations. The dialog does not write provider defaults.
 
 ## Portable Fork initial provider selection (CAP-002)
 
-Setup: use a stopped disposable source on provider A and an app-server with
-available providers in each order below. For credential-free coverage, start the
+Setup: use stopped disposable conversations on providers A and B. Configure A
+as the global default, with different default models for A and B and at least one
+non-default model in each provider. For credential-free coverage, start the
 current dev server on 4173 and run `node scripts/test-fork-methods.cjs`.
 
-1. Open Portable Fork from both the sidebar and a response. After history
-   preparation finishes, expect `[A]` to select A, `[A, B, C]` to select B, and
-   `[C, A, B]` to select C. Open the provider menu and verify its order is unchanged.
-2. Expect Create conversation to be enabled when the selected provider has a
-   valid default model. Merely opening the dialog must not create a destination
-   or generate a turn. With no available providers, confirmation stays disabled.
-3. Manually select A or another provider. Expect that choice to remain selected
-   until the dialog closes. Confirm once and verify creation uses that provider's
-   default model. The source history and draft must remain unchanged.
-4. Cancel and reopen from each entry point. Expect the initial selection to be
-   recalculated rather than reusing the previous manual choice. Repeat from a
-   sidebar source different from the open conversation; use the source provider.
-5. Cancel while history preparation is pending. Expect no destination, generation
-   or selection applied to a subsequently opened dialog. Verify the actual
-   provider picker and selection in light and dark themes.
+1. With A selected in the composer, open Portable Fork from both the sidebar and
+   a response. After history preparation, expect A to be selected for catalogs
+   ordered `[A]`, `[A, B, C]` and `[C, A, B]`. Verify menu order is unchanged.
+2. Open a conversation using B and choose a non-default B model in the composer.
+   Open Portable Fork from both entry points. Expect B initially, despite A being
+   the global default and the first catalog entry. Opening creates no destination
+   or turn and changes neither global preferences nor the composer's selection.
+3. Expect Create conversation to be enabled when the selected provider has a
+   valid default model. With no available providers, confirmation stays disabled.
+   If the composer's provider is unavailable, retain the existing fallback: first
+   available non-source provider, then the first available provider.
+4. Manually select another provider. Expect the choice to remain until the dialog
+   closes, including after catalog updates. Confirm once; creation must use that
+   provider's configured default model (or the existing declared-default/priority
+   fallback), never inherit the composer's non-default model. History transfer,
+   cutoff, persistence and failure handling must pass the earlier checks.
+5. Manually switch provider, cancel and reopen from each entry point. Expect the
+   composer's provider again, with its model and draft unchanged by cancellation.
+   Repeat from a sidebar source different from the open conversation; use the
+   current composer's provider, regardless of the sidebar source's provider.
+6. Cancel during history preparation, open a new dialog, then let the old read
+   finish. Expect no destination, generation or old selection applied to the new
+   dialog. Each opening captures the composer provider at the time of opening.
+   Verify the actual provider picker and selection in light and dark themes.
 
 Cleanup: restore test provider configuration and archive disposable destinations.
 No provider defaults are persisted by the dialog; cancel creates no destination.
 
-Performance audit: preselection scans the existing provider options once (O(P))
-and uses the source provider returned by the existing history-preparation read.
-It adds no RPCs, history reads, timers, subscriptions or cache invalidation.
-Automated checks use mocked providers; live inference latency is not measured.
+Performance audit: preselection reads/parses the existing composer model key once
+and scans the existing provider options (O(P)). It retains the original fallback
+when that provider is unavailable and adds no RPCs, history reads, timers,
+subscriptions or cache invalidation. Automated checks use mocked providers; live
+inference latency is not measured.
 
 ## Ordinary text-only transfer
 

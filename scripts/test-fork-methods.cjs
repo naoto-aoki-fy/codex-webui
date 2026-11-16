@@ -13,11 +13,11 @@ const sourceTurn = n => ({ id: `t${n}`, status: 'completed', items: [
   { id: `reason${n}`, type: 'reasoning', content: ['REASONING_ONLY_SECRET'], summary: [], encrypted_content: 'REASONING_ONLY_SECRET' },
   { id: `a${n}`, type: 'agentMessage', text: `Original answer ${n}` },
 ] })
-const textTranscript = turns => turns.flatMap(turn => turn.items.flatMap(item => {
+const textTranscript = (turns, provider = 'P') => turns.flatMap(turn => turn.items.flatMap(item => {
   const text = item.type === 'userMessage'
     ? item.content.filter(content => content.type === 'text').map(content => content.text).join('\n')
     : item.type === 'agentMessage' ? item.text : ''
-  return text.trim() ? [{ role: item.type === 'userMessage' ? 'user' : 'assistant', text, source: 'source (P / A)' }] : []
+  return text.trim() ? [{ role: item.type === 'userMessage' ? 'user' : 'assistant', text, source: `source (${provider} / A)` }] : []
 }))
 const source = { id: 'source', name: 'Fork methods source', preview: 'Fork methods source', cwd: '/workspace',
   createdAt: 1700000000, updatedAt: 1700000001, modelProvider: 'P', model: 'A', status: { type: 'idle' },
@@ -25,15 +25,15 @@ const source = { id: 'source', name: 'Fork methods source', preview: 'Fork metho
 }
 const mutations = new Set(['conversation-transfer/create', 'thread/fork', 'thread/fork-at-response', 'thread/start', 'thread/inject_items', 'turn/start'])
 
-async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false, importedOnly = false, sameProvider = false, providers = ['P', 'Q'] } = {}) {
+async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false, importedOnly = false, sameProvider = false, providers = ['P', 'Q'], composerProvider = 'P' } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   const calls = []
-  const conversation = structuredClone(source)
+  const conversation = { ...structuredClone(source), modelProvider: composerProvider }
   if (importedOnly) conversation.turns = []
-  const importedPrefix = textTranscript([sourceTurn(0)])
+  const importedPrefix = textTranscript([sourceTurn(0)], composerProvider)
   const preparations = []
   const snapshots = new Map()
   const destinations = new Map()
@@ -42,11 +42,13 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   let skillHubReads = 0
   const defaultProvider = providers.find(provider => provider !== conversation.modelProvider) || providers[0]
   const providerLabel = provider => ({ P: 'Source', Q: 'Destination', R: 'Third provider' })[provider]
-  const destinationProvider = sameProvider ? 'P' : defaultProvider
+  const initialProvider = providers.includes(composerProvider) ? composerProvider : defaultProvider
+  const destinationProvider = sameProvider ? composerProvider : defaultProvider
   const destinationDefault = destinationProvider === 'P' ? 'A' : 'C'
   await page.route('**/codex-api/**', async route => {
     const request = route.request()
     if (request.url().includes('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': mock\n\n' })
+    if (request.url().endsWith('/thread-pins')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: { threadIds: [] } }) })
     if (request.url().endsWith('/skills-hub')) {
       skillHubReads++
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ installed: [{ name: 'Review skill', description: 'Existing skill configuration', path: '/skills/review/SKILL.md', enabled: true }] }) })
@@ -58,13 +60,17 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (rpc) calls.push({ method: rpc, params })
     let result = {}
     if (rpc === 'thread/list') result = { data: [conversation, ...[...destinations.values()].map(row => row.thread)], nextCursor: null }
-    if (rpc === 'thread/read' || rpc === 'thread/resume') result = destinations.get(params.threadId) || { thread: conversation, model: 'A', modelProvider: 'P', ...(importedOnly ? { importedTranscript: importedPrefix, importStage: 'ready' } : {}) }
+    if (rpc === 'thread/read' || rpc === 'thread/resume') result = destinations.get(params.threadId) || { thread: conversation, model: 'A', modelProvider: composerProvider, ...(importedOnly ? { importedTranscript: importedPrefix, importStage: 'ready' } : {}) }
     if (rpc === 'modelProvider/list') result = { data: providers.map(id => ({ id, displayName: providerLabel(id), isDefault: id === 'P' })) }
     if (rpc === 'model/list') result = { data: params.modelProvider !== 'P'
       ? [{ id: 'A', displayName: 'Alternate', priority: 9 }, { id: 'C', displayName: 'C', priority: 0, isDefault: true }, { id: 'D', displayName: 'D', priority: 1 }]
       : [{ id: 'A', displayName: 'A', priority: 0 }, { id: 'P-only', displayName: 'P only', priority: 1 }] }
     if (rpc === 'account/read') result = { account: { type: 'apiKey' } }
+    if (rpc === 'native-authentication/read') result = { phase: 'ready', blocking: false, revision: 1 }
     if (rpc === 'config/read') result = { config: { model: 'A', model_provider: 'P' } }
+    if (rpc === 'model-preferences/read') result = { schemaVersion: 1, revision: 1, initialized: true,
+      preferred: { providerId: 'P', modelId: 'A', reasoningEffort: '', collaborationMode: 'default' },
+      lastUsed: null, reasoningByModel: {}, modelUsage: {} }
     if (rpc === 'threadSection/list') result = { data: [] }
     if (rpc === 'conversation-transfer/prepare') {
       if (prepareFails) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'History exceeds the 8 MiB transfer request limit. No thread was created.' }) })
@@ -93,7 +99,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       assert.equal(params.model, destinationDefault, 'creation must use the provider default, not the shared source model')
       const turns = snapshots.get(params.id)
       assert(turns, 'prepared portable snapshot required')
-      const importedTranscript = textTranscript(turns)
+      const importedTranscript = textTranscript(turns, composerProvider)
       destinations.set('imported', { thread: { ...conversation, id: 'imported', turns: [] }, model: params.model,
         modelProvider: params.modelProvider, importedTranscript, importStage: 'ready' })
       result = { threadId: 'imported', model: params.model, modelProvider: params.modelProvider, warnings: [] }
@@ -142,7 +148,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     await page.getByRole('dialog', { name: 'Transfer conversation' }).waitFor()
     assert.equal(await page.locator('.transfer-picker').getByText('Native Fork', { exact: true }).count(), 0)
     assert.equal((await page.locator('.transfer-picker').innerText()).includes('omitted'), false)
-    if (!pendingPreparation && !prepareFails) await page.locator('.transfer-picker').getByRole('button', { name: providerLabel(defaultProvider), exact: true }).waitFor()
+    if (!pendingPreparation && !prepareFails) await page.locator('.transfer-picker').getByRole('button', { name: providerLabel(initialProvider), exact: true }).waitFor()
     if (prepareFails) await page.getByRole('alert').filter({ hasText: '8 MiB' }).waitFor()
     assert.equal(await page.locator('.transfer-picker .composer-dropdown').count(), pendingPreparation ? 0 : 1)
     assert.equal(await page.locator('.transfer-picker').getByText(/skills/i).count(), 0)
@@ -153,20 +159,21 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   }
   async function selectProvider() {
     const picker = page.locator('.transfer-picker')
-    await picker.getByRole('button', { name: providerLabel(defaultProvider), exact: true }).waitFor()
+    await picker.getByRole('button', { name: providerLabel(initialProvider), exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: 'Create conversation', exact: true }).isEnabled(), true)
     await picker.locator('.composer-dropdown-trigger').click()
     assert.deepEqual(await picker.getByRole('listbox').getByRole('button').allTextContents(), providers.map(providerLabel))
-    assert.equal(await picker.locator('.composer-dropdown-option.is-selected').innerText(), providerLabel(defaultProvider))
-    if (sameProvider) await picker.getByRole('listbox').getByRole('button', { name: 'Source', exact: true }).click()
-    else await page.keyboard.press('Escape')
+    assert.equal(await picker.locator('.composer-dropdown-option.is-selected').innerText(), providerLabel(initialProvider))
+    await picker.getByRole('listbox').getByRole('button', { name: providerLabel(destinationProvider), exact: true }).click()
     assert.equal(await page.getByRole('button', { name: 'Create conversation', exact: true }).isEnabled(), true)
   }
   await page.goto(`${baseUrl}/#/thread/source`)
   await page.getByText('Original answer 0', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'A', exact: true }).click()
-  await page.getByRole('listbox').getByRole('button', { name: 'P only', exact: true }).waitFor()
-  assert.deepEqual(await page.getByRole('listbox').getByRole('button').allTextContents(), ['A', 'P only'])
+  const composerModelLabel = composerProvider === 'P' ? 'A' : 'Alternate'
+  await page.getByRole('button', { name: composerModelLabel, exact: true }).click()
+  const sourceModels = composerProvider === 'P' ? ['A', 'P only'] : ['Alternate', 'C', 'D']
+  await page.getByRole('listbox').getByRole('button', { name: sourceModels[1], exact: true }).waitFor()
+  assert.deepEqual(await page.getByRole('listbox').getByRole('button').allTextContents(), sourceModels)
   await page.keyboard.press('Escape')
   await page.locator('textarea').fill('Unsent source draft')
   // Verify menu styling and shared Revert dropdown wiring on the actual source UI.
@@ -194,6 +201,8 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (pendingPreparation) await releasePreparation(true)
     assert.equal(calls.filter(call => mutations.has(call.method)).length, 0, 'cancel must not create or generate')
     assert.equal(await page.locator('textarea').inputValue(), 'Unsent source draft')
+    assert.equal(await page.locator('.thread-composer').getByRole('button', { name: composerModelLabel, exact: true }).count(), 1, 'cancel must preserve the composer selection')
+    assert.equal(calls.filter(call => ['config/value/write', 'config/batchWrite', 'model-preferences/update', 'model-preferences/migrate'].includes(call.method)).length, 0, 'opening and cancellation must not write global preferences')
     await choosePortable()
     if (pendingPreparation) await releasePreparation()
     if (prepareFails) {
@@ -203,12 +212,15 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       await split.locator('.fork-split-main').dblclick()
       effectiveMethod = 'native'
     } else {
-      await selectProvider()
       for (const theme of ['light', 'dark']) {
         await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme)
         await page.waitForTimeout(2200)
-        await page.screenshot({ path: resolve(output, `portable-provider-${entry}-${theme}.png`) })
+        const background = await page.locator('.transfer-picker').evaluate(el => getComputedStyle(el).backgroundColor)
+        assert.notEqual(background, 'rgba(0, 0, 0, 0)')
+        if (theme === 'dark') assert.notEqual(background, 'rgb(255, 255, 255)')
+        await page.screenshot({ path: resolve(output, `portable-provider-${entry}-${composerProvider}-${theme}.png`) })
       }
+      await selectProvider()
       if (entry === 'response') conversation.turns.push(sourceTurn(3))
       await page.getByRole('button', { name: 'Create conversation', exact: true }).dblclick()
     }
@@ -245,7 +257,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   assert.equal(!!resumed.importedTranscript, effectiveMethod === 'portable')
   if (effectiveMethod === 'portable') {
     assert.equal(resumed.importStage, 'ready')
-    assert.equal(resumed.importedTranscript[1].source, 'source (P / A)')
+    assert.equal(resumed.importedTranscript[1].source, `source (${composerProvider} / A)`)
     assert.equal(resumed.importedTranscript[1].text, 'Original answer 0')
     assert.equal(JSON.stringify(resumed.importedTranscript).includes('TOOL_ONLY_SECRET'), false)
     assert.equal(JSON.stringify(resumed.importedTranscript).includes('REASONING_ONLY_SECRET'), false)
@@ -270,13 +282,13 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   await page.getByRole('button', { name: selectedModel, exact: true }).click()
   const labels = await page.getByRole('listbox').getByRole('button').allTextContents()
   assert.deepEqual(new Set(labels), new Set(effectiveMethod === 'native' || destinationProvider === 'P' ? ['A', 'P only'] : ['Alternate', 'C', 'D']))
-  if (entry === 'full' && effectiveMethod === 'portable' && !sameProvider) {
+  if (entry === 'full' && effectiveMethod === 'portable' && destinationProvider !== 'P') {
     await page.waitForTimeout(2200)
     await page.screenshot({ path: resolve(output, 'provider-models-destination-dark.png') })
   }
   await page.keyboard.press('Escape')
   let continuationModel = selectedModel
-  if (entry === 'full' && effectiveMethod === 'portable' && !sameProvider) {
+  if (entry === 'full' && effectiveMethod === 'portable' && destinationProvider !== 'P') {
     await page.getByRole('button', { name: 'C', exact: true }).click()
     await page.getByRole('listbox').getByRole('button', { name: 'D', exact: true }).click()
     await page.getByRole('button', { name: 'D', exact: true }).waitFor()
@@ -290,7 +302,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   assert.equal(sends[0].params.model, continuationModel)
   assert.equal(calls.filter(call => ['thread/start', 'thread/inject_items'].includes(call.method)).length, 0, 'portable creation is mocked at the backend service boundary')
   assert.deepEqual(errors, [])
-  const report = { entry, method, prepareFails, nativeFails, pendingPreparation, importedOnly, sameProvider, providers, defaultProvider, url: page.url(), viewport: { width: 1280, height: 900 },
+  const report = { entry, method, prepareFails, nativeFails, pendingPreparation, importedOnly, sameProvider, providers, composerProvider, initialProvider, destinationProvider, url: page.url(), viewport: { width: 1280, height: 900 },
     creationCalls, explicitSends: sends.length, importMetadataAfterReload: !!resumed.importedTranscript, displayPrefixes: false, assertions: 'passed' }
   await context.close()
   return report
@@ -305,6 +317,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     cases.push(['response', 'portable', { prepareFails: true }], ['full', 'native', { nativeFails: true }],
       ['response', 'portable', { pendingPreparation: true }], ['response', 'portable', { importedOnly: true }], ['response', 'portable', { sameProvider: true }])
     for (const providers of [['P'], ['P', 'Q', 'R'], ['R', 'P', 'Q']]) cases.push(['response', 'portable', { providers }])
+    cases.push(['full', 'portable', { composerProvider: 'Q' }], ['response', 'portable', { composerProvider: 'Q' }])
     const selected = process.env.FORK_TEST_CASES?.split(',').map(Number)
     for (const [index, args] of cases.entries()) {
       if (selected && !selected.includes(index)) continue
