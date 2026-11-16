@@ -935,7 +935,7 @@ describe('async request and lifecycle characterization (current behavior)', () =
     if (navigation === 'dispose') state.stopPolling()
     else {
       // Route/workspace navigation primes the next selection before loading it.
-      state.primeSelectedThread(navigation === 'B' ? 'B' : '', { persist: false })
+      state.primeSelectedThread(navigation === 'B' ? 'B' : '')
       if (navigation === 'return-to-A') state.primeSelectedThread(thread.id)
     }
     state.error.value = 'independent action failure'
