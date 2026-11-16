@@ -1,6 +1,6 @@
 import type { ComputedRef } from 'vue';
 import { computed, ref } from 'vue';
-import type { ForkMethod, UiMessage } from '../../types/codex';
+import type { ForkMethod, RevertOperation, UiMessage } from '../../types/codex';
 import { copyTextToClipboard, copyTextWithSelectionFallback } from '../../utils/clipboard';
 import { isCopyableAssistantMessage, type TurnFileChangeSummary } from '../../utils/conversationFileChanges';
 import type { ConversationPlan } from '../../utils/conversationPlan';
@@ -68,7 +68,8 @@ export function createConversationActions(deps: {
     }) => void) & ((evt: "rollback", payload: {
         threadId: string;
         turnId: string;
-        operation: "revert" | "fork-and-revert";
+        operation: RevertOperation;
+        messageId?: string;
     }) => void) & ((evt: "implementPlan", payload: {
         turnId: string;
     }) => void);
@@ -278,12 +279,12 @@ export function createConversationActions(deps: {
         return typeof editableTurnIdByMessageId.value[message.id] === 'string';
     }
     function editMessage(messageId: string, operation: string = 'fork-and-revert'): void {
-        if (deps.props.isRevertDisabled || (operation !== 'revert' && operation !== 'fork-and-revert'))
+        if (deps.props.isRevertDisabled || (operation !== 'revert' && operation !== 'fork-and-revert' && operation !== 'portable-fork-and-revert'))
             return;
         const turnId = editableTurnIdByMessageId.value[messageId];
         if (!turnId)
             return;
-        deps.emit('rollback', { threadId: deps.props.activeThreadId, turnId, operation });
+        deps.emit('rollback', { threadId: deps.props.activeThreadId, turnId, operation, ...(operation === 'portable-fork-and-revert' ? { messageId } : {}) });
     }
     return {
 copiedResponseAnchorId,

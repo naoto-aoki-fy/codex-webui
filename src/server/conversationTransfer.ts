@@ -1,3 +1,6 @@
+import { normalizeThreadMessagesV2 } from '../api/normalizers/v2.js'
+import type { Thread } from '../api/appServerDtos.js'
+import type { PortableRevertTarget } from '../types/codex.js'
 import { randomUUID } from 'node:crypto'
 import { readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState.js'
 
@@ -32,7 +35,7 @@ export function convertTransferHistory(turns: unknown[], source: string): { mess
   return { messages, warnings: [] }
 }
 
-type Transfer = { projectId?: string | null; sourceId: string; cwd: string; messages: PortableMessage[]; warnings: string[]; stage: string; destinationId?: string; model?: string; modelProvider?: string; failure?: string }
+type Transfer = { projectId?: string | null; sourceId: string; cwd: string; messages: PortableMessage[]; warnings: string[]; stage: string; destinationId?: string; model?: string; modelProvider?: string; failure?: string; draftText?: string }
 const KEY = 'conversation-transfers-v1'
 async function transfers(): Promise<Record<string, Transfer>> { return (await readCodexGlobalState())[KEY] as Record<string, Transfer> || {} }
 async function save(id: string, transfer: Transfer) {
@@ -42,7 +45,7 @@ type Rpc = (method: string, params: any) => Promise<any>
 export function createConversationTransfers(rpc: Rpc) {
   const busy = new Set<string>()
   return {
-    async prepare(sourceId: string, cutoff?: number, expectedTurnId?: string) {
+    async prepare(sourceId: string, cutoff?: number, expectedTurnId?: string, revertTarget?: PortableRevertTarget) {
       if (!sourceId) throw new Error('Missing source thread')
       // Direct server read is uncapped; never use the browser's ten-turn presentation page.
       const thread = record((await rpc('thread/read', { threadId: sourceId, includeTurns: true })).thread)
@@ -51,7 +54,23 @@ export function createConversationTransfers(rpc: Rpc) {
       if (thread.inProgress === true || thread.status === 'inProgress' || thread.turnStatus === 'inProgress' || ['active', 'inProgress'].includes(thread.status?.type) || turns.some(t => ['inProgress', 'in_progress'].includes(record(t).status))) throw new Error('Finish or stop the current source turn before transferring.')
       if (cutoff !== undefined && (!Number.isSafeInteger(cutoff) || cutoff >= turns.length)) throw new Error('The selected response is no longer available. Refresh the thread.')
       if (expectedTurnId && cutoff !== undefined && cutoff >= 0 && record(turns[cutoff]).id !== expectedTurnId) throw new Error('Source history changed at the selected response. Refresh the thread.')
-      const selected = cutoff === undefined ? turns : cutoff < 0 ? [] : turns.slice(0, cutoff + 1)
+      let draftText: string | undefined
+      let selected: unknown[]
+      if (revertTarget) {
+        if (cutoff !== undefined || expectedTurnId) throw new Error('Cannot combine user and response cutoffs.')
+        const index = turns.findIndex(turn => record(turn).id === revertTarget.turnId)
+        if (index < 0) throw new Error('The selected user turn is no longer available. Refresh the thread.')
+        const target = record(turns[index])
+        const item = Array.isArray(target.items) ? target.items.find(item => record(item).id === revertTarget.messageId && record(item).type === 'userMessage') : undefined
+        const message = normalizeThreadMessagesV2({ thread: { ...thread, turns: [{ ...target, items: item ? [item] : [] }] } as Thread })
+          .find(message => message.id === revertTarget.messageId && message.role === 'user' && message.messageType === 'userMessage')
+        if (!message?.text.trim()) throw new Error('The selected user message is no longer available. Refresh the thread.')
+        draftText = message.text
+        // Native Fork and Revert removes the selected turn, not an inclusive response prefix.
+        selected = turns.slice(0, index)
+      } else {
+        selected = cutoff === undefined ? turns : cutoff < 0 ? [] : turns.slice(0, cutoff + 1)
+      }
       const converted = convertTransferHistory(selected, `${sourceId} (${thread.modelProvider || 'source provider'} / ${thread.model || 'source model'})`)
       const imported = Object.values(await transfers()).find(t => t.destinationId === sourceId)
       if (imported && imported.stage !== 'ready') throw new Error('The source is an incomplete transfer; inspect it before continuing.')
@@ -63,16 +82,16 @@ export function createConversationTransfers(rpc: Rpc) {
       const warnings: string[] = []
       // Explicit bounded request, never truncate. Destination context limits can be smaller.
       if (Buffer.byteLength(JSON.stringify(portableItems(messages))) > 8 * 1024 * 1024) throw new Error('History exceeds the 8 MiB transfer request limit. No thread was created.')
-      if (!messages.length) throw new Error('There is no portable conversation history to import. No thread was created.')
+      if (!messages.length && draftText === undefined) throw new Error('There is no portable conversation history to import. No thread was created.')
       if (typeof thread.cwd !== 'string' || !thread.cwd.trim()) throw new Error('The source has no working directory. Select a source with an existing workspace before transferring.')
       const id = randomUUID()
-      await save(id, { sourceId, cwd: thread.cwd, ...(thread.projectId ? { projectId: thread.projectId } : {}), messages, warnings, stage: 'prepared' })
+      await save(id, { sourceId, cwd: thread.cwd, ...(thread.projectId ? { projectId: thread.projectId } : {}), messages, warnings, ...(draftText !== undefined ? { draftText } : {}), stage: 'prepared' })
       return { id, warnings, messageCount: messages.length, sourceModelProvider: typeof thread.modelProvider === 'string' ? thread.modelProvider : undefined }
     },
     async status(id: string) {
       const transfer = (await transfers())[id]
       if (!transfer) throw new Error('Transfer record not found')
-      return { stage: transfer.stage, threadId: transfer.destinationId, model: transfer.model, modelProvider: transfer.modelProvider, warnings: [], failure: transfer.failure }
+      return { stage: transfer.stage, threadId: transfer.destinationId, model: transfer.model, modelProvider: transfer.modelProvider, warnings: [], failure: transfer.failure, ...(transfer.draftText !== undefined ? { draftText: transfer.draftText } : {}) }
     },
     async cancel(id: string) {
       await updateCodexGlobalState(state => { const rows = state[KEY] as Record<string, Transfer> || {}; if (rows[id]?.stage === 'prepared') delete rows[id] })
@@ -94,16 +113,17 @@ export function createConversationTransfers(rpc: Rpc) {
         })
         claimed = true
         const started = await rpc('thread/start', { cwd: transfer.cwd, ...(transfer.projectId ? { projectId: transfer.projectId } : {}), model, modelProvider, persistExtendedHistory: true })
+        if (started.thread?.id === transfer.sourceId) throw new Error('thread/start did not return a separate destination.')
         transfer.destinationId = started.thread?.id
         transfer.model = started.model
         transfer.modelProvider = started.modelProvider
         if (!transfer.destinationId || started.model !== model || started.modelProvider !== modelProvider) throw new Error('thread/start did not confirm the selected provider/model.')
         transfer.stage = 'injecting'
         await save(id, transfer) // durable fence before append: never replay after lost acknowledgement
-        await rpc('thread/inject_items', { threadId: transfer.destinationId, items: portableItems(transfer.messages) })
+        if (transfer.messages.length) await rpc('thread/inject_items', { threadId: transfer.destinationId, items: portableItems(transfer.messages) })
         transfer.stage = 'ready'
         await save(id, transfer)
-        return { threadId: transfer.destinationId, ...(transfer.projectId ? { projectId: transfer.projectId } : {}), model, modelProvider, warnings: [] }
+        return { threadId: transfer.destinationId, ...(transfer.projectId ? { projectId: transfer.projectId } : {}), model, modelProvider, warnings: [], ...(transfer.draftText !== undefined ? { draftText: transfer.draftText } : {}) }
       } catch (error) {
         if (transfer && claimed) {
           transfer.failure = String(error)

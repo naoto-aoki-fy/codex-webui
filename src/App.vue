@@ -65,7 +65,7 @@
             :active-project-name="activeProjectName"
             v-if="!isSidebarCollapsed"
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
-            :is-fork-disabled="isForkOperationPending"
+            :is-fork-disabled="isForkOperationPending || isRollingBack"
             :is-exporting="isExporting"
             :is-thread-list-fully-loaded="isThreadListFullyLoaded"
             :search-query="sidebarSearchQuery"
@@ -233,8 +233,8 @@
                 <ThreadConversation ref="threadConversationRef" :messages="filteredMessages" :is-loading="isLoadingMessages"
                   :active-thread-id="composerThreadContextId" :cwd="composerCwd"
                   :live-overlay="liveOverlay"
-                  :is-revert-disabled="isRollingBack || isSelectedThreadInProgress || compaction.selectedBusy.value || review.selectedBusy.value"
-                  :is-fork-disabled="isForkOperationPending"
+                  :is-revert-disabled="isForkOperationPending || isRollingBack || isSelectedThreadInProgress || compaction.selectedBusy.value || review.selectedBusy.value"
+                  :is-fork-disabled="isForkOperationPending || isRollingBack"
             :is-exporting="isExporting"
                   :pending-requests="selectedThreadServerRequests"
                   :has-more-persisted-above="hasMoreOlderMessages"
@@ -377,7 +377,7 @@
   </ManagementDialog>
   <div v-if="transferPicker" class="transfer-picker-backdrop" role="presentation">
     <section class="transfer-picker" role="dialog" aria-modal="true" aria-label="Transfer conversation">
-      <h2>Portable Fork</h2>
+      <h2>{{ transferPicker.revertTarget ? 'Portable Fork and Revert' : 'Portable Fork' }}</h2>
       <p>Select the destination provider. Its default model will be used; you can change the model afterward.</p>
       <p v-if="transferPicker.loading">Reading the complete source history…</p>
       <ComposerDropdown v-else v-model="transferProvider" :options="transferProviderOptions" placeholder="Provider" enable-search open-direction="down" :disabled="transferPicker.pending" />
@@ -1311,7 +1311,12 @@ function onInterruptTurn(): void {
   void interruptSelectedThreadTurn()
 }
 
-async function onRollback(payload: { threadId: string; turnId: string; operation: 'revert' | 'fork-and-revert' }): Promise<void> {
+async function onRollback(payload: { threadId: string; turnId: string; operation: import('./types/codex').RevertOperation; messageId?: string }): Promise<void> {
+  if (isForkOperationPending.value || isRollingBack.value) return
+  if (payload.operation === 'portable-fork-and-revert') {
+    if (payload.messageId) await openTransferPicker(payload.threadId, undefined, { turnId: payload.turnId, messageId: payload.messageId })
+    return
+  }
   const sourceRoute = route.fullPath
   const ownsRoute = routeThreadId.value === payload.threadId && selectedThreadId.value === payload.threadId
   const text = filteredMessages.value.find(message => message.role === 'user' && message.turnId === payload.turnId)?.text

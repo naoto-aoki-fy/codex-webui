@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import type { Router } from 'vue-router';
 import { cancelConversationTransfer, prepareConversationTransfer, reasoningCatalog } from './api/codexGateway';
 import { defaultModelForProvider, modelSelectionKey, parseModelSelection } from './api/modelCapabilities';
-import type { ForkMethod, UiMessage } from './types/codex';
+import type { ForkMethod, PortableRevertTarget, UiMessage } from './types/codex';
 /** Owns the existing prepare/select/confirm/cancel dialog state machine and native-fork publication. No automatic retry, injection replay, lifecycle hook or module-level state is introduced. */
 export function createAppTransferDialog(deps: {
     messages: ComputedRef<UiMessage[]>;
@@ -21,6 +21,7 @@ export function createAppTransferDialog(deps: {
         sourceId: string;
         turnIndex?: number;
         turnId?: string;
+        revertTarget?: PortableRevertTarget;
         id: string;
         loading: boolean;
         pending: boolean;
@@ -41,17 +42,17 @@ export function createAppTransferDialog(deps: {
         const model = defaultModelForProvider(reasoningCatalog.value, transferProvider.value);
         return model && transferProvider.value ? modelSelectionKey(transferProvider.value, model) : '';
     });
-    async function openTransferPicker(sourceId: string, turnIndex?: number): Promise<void> {
+    async function openTransferPicker(sourceId: string, turnIndex?: number, revertTarget?: PortableRevertTarget): Promise<void> {
         if (isForkOperationPending.value)
             return;
-        const turnId = deps.selectedThreadId.value === sourceId ? deps.messages.value.find(message => message.role === 'assistant' && message.turnIndex === turnIndex)?.turnId : undefined;
-        transferPicker.value = { sourceId, turnIndex, turnId, id: '', loading: true, pending: false, failure: '' };
+        const turnId = turnIndex !== undefined && deps.selectedThreadId.value === sourceId ? deps.messages.value.find(message => message.role === 'assistant' && message.turnIndex === turnIndex)?.turnId : undefined;
+        transferPicker.value = { sourceId, turnIndex, turnId, revertTarget, id: '', loading: true, pending: false, failure: '' };
         const picker = transferPicker.value;
         // Capture the opening selection without binding later dialog choices to the composer.
         const composerProvider = parseModelSelection(deps.composerSelectedModelId.value).provider;
         transferProvider.value = '';
         try {
-            const prepared = await prepareConversationTransfer(sourceId, turnIndex, turnId);
+            const prepared = await prepareConversationTransfer(sourceId, turnIndex, turnId, revertTarget);
             Object.assign(picker, prepared);
             // Cancellation can finish while this read is pending.
             if (transferPicker.value !== picker)

@@ -14,6 +14,7 @@ import {
   removeThreadFromGroups,
   useDesktopState,
 } from './useDesktopState'
+import { loadPersistedDraftForThread, persistDraftForThread } from '../utils/composerDraftStorage'
 import type { UiProjectGroup } from '../types/codex'
 import type { ReasoningModel } from '../api/modelCapabilities'
 import type { WorkspaceRootsState } from '../api/codexGateway'
@@ -873,6 +874,49 @@ describe('locally created threads awaiting sidebar indexing', () => {
 })
 
 describe('response fork publication', () => {
+  it('persists a portable revert draft before selection, preserves source drafts and never submits', async () => {
+    installTestWindow()
+    const sourceDraft = { text: 'Unsent source', imageUrls: ['image'], fileAttachments: [], skills: [{ name: 's', path: '/s' }] }
+    persistDraftForThread('source', sourceDraft)
+    gatewayMocks.resumeThread.mockResolvedValue({ messages: [], turnIndexByTurnId: {} })
+    gatewayMocks.getThreadDetail.mockResolvedValue({ messages: [], turnIndexByTurnId: {} })
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({ groups: [], nextCursor: null })
+    let finish!: (value: unknown) => void
+    gatewayMocks.createConversationTransfer.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const state = useDesktopState()
+    state.selectedThreadId.value = 'source'
+    const pending = state.forkThreadById('source', 'snapshot', 'selected-model')
+    await vi.waitFor(() => expect(gatewayMocks.createConversationTransfer).toHaveBeenCalled())
+    expect(await state.forkThreadById('source', 'snapshot', 'selected-model')).toBe('')
+    expect(loadPersistedDraftForThread('fork')).toBeNull()
+    finish({ threadId: 'fork', model: 'different-model', modelProvider: 'Q', draftText: 'Restored **prompt**\nnext line', warnings: [] })
+    expect(await pending).toBe('fork')
+    expect(loadPersistedDraftForThread('fork')?.text).toBe('Restored **prompt**\nnext line')
+    state.selectedThreadId.value = 'source'
+    expect(loadPersistedDraftForThread('source')).toEqual(sourceDraft)
+    state.selectedThreadId.value = 'fork'
+    expect(loadPersistedDraftForThread('fork')?.text).toBe('Restored **prompt**\nnext line')
+    expect(gatewayMocks.createConversationTransfer).toHaveBeenCalledTimes(1)
+    expect(gatewayMocks.startThreadTurn).not.toHaveBeenCalled()
+    expect(gatewayMocks.forkThread).not.toHaveBeenCalled()
+    expect(gatewayMocks.revertThreadHistory).not.toHaveBeenCalled()
+  })
+
+  it('leaves the source selection and draft intact when portable revert import fails', async () => {
+    installTestWindow()
+    const draft = { text: 'Unsent source', imageUrls: [], fileAttachments: [], skills: [] }
+    persistDraftForThread('source', draft)
+    gatewayMocks.createConversationTransfer.mockRejectedValueOnce(new Error('Incomplete destination fork; do not retry injection'))
+    const state = useDesktopState()
+    state.selectedThreadId.value = 'source'
+    expect(await state.forkThreadById('source', 'snapshot', 'selected-model')).toBe('')
+    expect(state.selectedThreadId.value).toBe('source')
+    expect(loadPersistedDraftForThread('source')).toEqual(draft)
+    expect(loadPersistedDraftForThread('fork')).toBeNull()
+    expect(gatewayMocks.createConversationTransfer).toHaveBeenCalledTimes(1)
+    expect(gatewayMocks.forkThread).not.toHaveBeenCalled()
+    expect(gatewayMocks.startThreadTurn).not.toHaveBeenCalled()
+  })
   it('waits for confirmed import and never rolls back using the browser cache', async () => {
     installTestWindow()
     gatewayMocks.resumeThread.mockResolvedValue({ messages: [], turnIndexByTurnId: {} })

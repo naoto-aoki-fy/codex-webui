@@ -74,7 +74,8 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (rpc === 'threadSection/list') result = { data: [] }
     if (rpc === 'conversation-transfer/prepare') {
       if (prepareFails) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'History exceeds the 8 MiB transfer request limit. No thread was created.' }) })
-      const turns = structuredClone(importedOnly ? [sourceTurn(0)] : params.turnIndex === undefined ? conversation.turns : conversation.turns.slice(0, params.turnIndex + 1))
+      const turns = structuredClone(params.revertTarget ? conversation.turns.slice(0, conversation.turns.findIndex(turn => turn.id === params.revertTarget.turnId)) : importedOnly ? [sourceTurn(0)] : params.turnIndex === undefined ? conversation.turns : conversation.turns.slice(0, params.turnIndex + 1))
+      if (entry === 'revert') assert.deepEqual(params.revertTarget, { turnId: 't1', messageId: 'u1' })
       const id = `snapshot-${++snapshotNumber}`
       snapshots.set(id, turns)
       if (pendingPreparation) await new Promise(resolve => preparations.push({ id, resolve }))
@@ -102,7 +103,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       const importedTranscript = textTranscript(turns, composerProvider)
       destinations.set('imported', { thread: { ...conversation, id: 'imported', turns: [] }, model: params.model,
         modelProvider: params.modelProvider, importedTranscript, importStage: 'ready' })
-      result = { threadId: 'imported', model: params.model, modelProvider: params.modelProvider, warnings: [] }
+      result = { threadId: 'imported', model: params.model, modelProvider: params.modelProvider, warnings: [], ...(entry === 'revert' ? { draftText: 'Original question 1' } : {}) }
     }
     if (rpc === 'turn/start') result = { turn: { id: 'explicit-turn', status: 'inProgress', items: [] } }
     // Keep the confirmation pending long enough to exercise duplicate clicks.
@@ -128,23 +129,23 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       }
       return page.locator('.thread-menu-panel .fork-split-button')
     }
-    const split = page.locator('.message-toolbar .fork-split-button').first()
+    const split = entry === 'revert' ? page.locator('.message-toolbar .message-revert-split').nth(1) : page.locator('.message-toolbar .fork-split-button').first()
     await split.hover()
     return split
   }
   async function openOptions() {
     const split = await splitButton()
     const before = calls.length
-    await split.getByRole('button', { name: 'Fork options', exact: true }).click()
+    await split.getByRole('button', { name: entry === 'revert' ? 'Revert options' : 'Fork options', exact: true }).click()
     await split.getByRole('listbox').waitFor()
     assert.equal(calls.slice(before).filter(call => mutations.has(call.method) || call.method === 'conversation-transfer/prepare').length, 0, 'opening the arrow must do no work')
-    assert.equal(await split.getByRole('button', { name: 'Native Fork', exact: true }).count(), 1)
-    assert.equal(await split.getByRole('button', { name: 'Portable Fork', exact: true }).count(), 1)
+    assert.equal(await split.getByRole('button', { name: entry === 'revert' ? 'Fork and Revert (Native)' : 'Native Fork', exact: true }).count(), 1)
+    assert.equal(await split.getByRole('button', { name: entry === 'revert' ? 'Portable Fork and Revert' : 'Portable Fork', exact: true }).count(), 1)
     return split
   }
   async function choosePortable() {
     const split = await openOptions()
-    await split.getByRole('button', { name: 'Portable Fork', exact: true }).click()
+    await split.getByRole('button', { name: entry === 'revert' ? 'Portable Fork and Revert' : 'Portable Fork', exact: true }).click()
     await page.getByRole('dialog', { name: 'Transfer conversation' }).waitFor()
     assert.equal(await page.locator('.transfer-picker').getByText('Native Fork', { exact: true }).count(), 0)
     assert.equal((await page.locator('.transfer-picker').innerText()).includes('omitted'), false)
@@ -273,6 +274,27 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     await page.waitForTimeout(2200)
     await page.screenshot({ path: resolve(output, `fork-messages-${entry}-${effectiveMethod}-${theme}.png`) })
   }
+  if (entry === 'revert') {
+    assert.equal(await page.locator('textarea').inputValue(), 'Original question 1', 'restored draft survives reload')
+    assert.equal(await page.locator('.message-row[data-role="user"]').filter({ hasText: 'Original question 1' }).count(), 0)
+    assert.equal((await page.locator('body').innerText()).includes('Original answer 1'), false)
+    assert.equal(calls.filter(call => call.method === 'turn/start').length, 0, 'restoring a draft must not generate')
+    assert.deepEqual(destinations.get('imported').importedTranscript.map(message => message.text), ['Original question 0', 'Original answer 0'])
+    await page.goto(`${baseUrl}/#/thread/source`)
+    await page.waitForFunction(() => document.querySelector('textarea')?.value === 'Unsent source draft')
+    await page.getByText('Original answer 2', { exact: true }).waitFor()
+    assert.equal(conversation.turns.length, 3)
+    await page.goto(`${baseUrl}/#/thread/imported`)
+    await page.waitForFunction(() => document.querySelector('textarea')?.value === 'Original question 1')
+    await page.locator('textarea').fill('Edited restored prompt\n**Still a draft**')
+    await page.goto(`${baseUrl}/#/thread/source`)
+    await page.waitForFunction(() => document.querySelector('textarea')?.value === 'Unsent source draft')
+    await page.goto(`${baseUrl}/#/thread/imported`)
+    await page.waitForFunction(() => document.querySelector('textarea')?.value === 'Edited restored prompt\n**Still a draft**')
+    await page.reload()
+    await page.waitForFunction(() => document.querySelector('textarea')?.value === 'Edited restored prompt\n**Still a draft**')
+    assert.equal(calls.filter(call => call.method === 'turn/start').length, 0)
+  }
   assert.equal((await page.locator('body').innerText()).includes('Original answer 2'), entry === 'full')
   assert.equal((await page.locator('body').innerText()).includes('Original answer 3'), false)
   const creationCalls = calls.filter(call => mutations.has(call.method))
@@ -318,6 +340,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       ['response', 'portable', { pendingPreparation: true }], ['response', 'portable', { importedOnly: true }], ['response', 'portable', { sameProvider: true }])
     for (const providers of [['P'], ['P', 'Q', 'R'], ['R', 'P', 'Q']]) cases.push(['response', 'portable', { providers }])
     cases.push(['full', 'portable', { composerProvider: 'Q' }], ['response', 'portable', { composerProvider: 'Q' }])
+    cases.push(['revert', 'portable'], ['revert', 'portable', { pendingPreparation: true }])
     const selected = process.env.FORK_TEST_CASES?.split(',').map(Number)
     for (const [index, args] of cases.entries()) {
       if (selected && !selected.includes(index)) continue

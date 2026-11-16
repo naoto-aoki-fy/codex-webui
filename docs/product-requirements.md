@@ -38,6 +38,12 @@ be revised. This is a product decision, not an incidental implementation detail.
 Forking from an assistant response retains history **through that response,
 inclusive**. Fork and Revert retains history **before the selected user message**
 and restores that message for editing. These operations are not interchangeable.
+
+**Portable Fork and Revert** combines CAP-001's exclusive user-turn cutoff and
+editable persistent draft with CAP-002's explicit provider selection and text-only
+transfer. The original native operations remain available. See
+[transfer details](cross-provider-forks.md#portable-fork-and-revert).
+
 In-place Revert truncates the existing conversation instead of preserving it in a
 separate branch. Neither operation restores workspace file bytes.
 

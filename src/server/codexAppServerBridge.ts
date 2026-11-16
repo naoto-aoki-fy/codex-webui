@@ -638,7 +638,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         if (body.method.startsWith('conversation-transfer/')) {
           const params = asRecord(body.params) ?? {}
           const result = body.method === 'conversation-transfer/prepare'
-            ? await transfers.prepare(readNonEmptyString(params.threadId), params.turnIndex as number | undefined, readNonEmptyString(params.turnId))
+            ? await transfers.prepare(readNonEmptyString(params.threadId), params.turnIndex as number | undefined, readNonEmptyString(params.turnId), params.revertTarget as import('../types/codex.js').PortableRevertTarget | undefined)
             : body.method === 'conversation-transfer/status'
               ? await transfers.status(readNonEmptyString(params.id))
             : body.method === 'conversation-transfer/cancel'

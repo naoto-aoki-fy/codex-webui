@@ -185,9 +185,12 @@ describe('conversation thread state isolation', () => {
     expect(emit).toHaveBeenLastCalledWith('rollback', { threadId: 'A', turnId: 'turn', operation: 'revert' })
     s.editMessage('user', 'fork-and-revert')
     expect(emit).toHaveBeenLastCalledWith('rollback', { threadId: 'A', turnId: 'turn', operation: 'fork-and-revert' })
+    s.editMessage('user', 'portable-fork-and-revert')
+    expect(emit).toHaveBeenLastCalledWith('rollback', { threadId: 'A', turnId: 'turn', messageId: 'user', operation: 'portable-fork-and-revert' })
     Object.assign(props, { isRevertDisabled: true })
     s.editMessage('user')
-    expect(emit).toHaveBeenCalledTimes(3)
+    s.editMessage('user', 'portable-fork-and-revert')
+    expect(emit).toHaveBeenCalledTimes(4)
   })
 })
 

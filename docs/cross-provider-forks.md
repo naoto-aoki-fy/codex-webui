@@ -37,14 +37,52 @@ A whole native fork of an imported thread relies on the app-server's stored
 context and presentation. Use Portable Transfer to retain the app's visible,
 persisted imported transcript and its internal attribution in the new conversation.
 
+## Portable Fork and Revert
+
+A historical user message's existing Revert split menu also offers
+**Fork and Revert (Native)** and **Portable Fork and Revert**. The main button
+still runs Native Fork and Revert; the in-place Revert action remains separate.
+Portable Fork and Revert opens the same provider picker as Portable Fork, with a
+matching dialog title and unchanged provider/model defaults.
+
+The portable snapshot identifies the selected user message by its persisted turn
+and item IDs. It reads the complete server history, including unloaded older turns,
+and retains only turns **before** the selected user turn. The selected message,
+its response and all later turns are excluded. This matches native Fork and Revert;
+assistant-response Portable Fork cutoffs remain **inclusive**. A previously imported
+prefix is retained once. Imported-only user messages without a native turn boundary
+have the same eligibility limitation as existing Fork and Revert.
+
+The selected prompt is normalized using the same user-message presentation rules
+as native draft restoration, then saved separately in the durable transfer receipt.
+It is never included in injected history. After confirmed import (including recovery
+of a lost browser acknowledgment), the destination's text is saved as an ordinary,
+profile/tab-scoped composer draft **before** selecting the destination. Navigation
+and reload use the existing draft hydration path. Later edits and explicit sends
+use normal draft behavior; reopening a thread does not reapply the receipt's prompt.
+Only text is restored, as with existing Fork and Revert; attachments and skill/app
+selections are not recreated. The source history, draft and provider/model settings
+are untouched. Nothing submits the draft or starts generation.
+
+Selecting the first user turn creates a draft-only destination with no injected
+history. Empty-history rejection for ordinary Portable Fork is unchanged. The
+provider/model verification, single-use transfer ID, duplicate-operation guards,
+8 MiB history budget and incomplete-destination fencing are shared with Portable
+Fork. Cancellation, including during preparation, creates no destination. Failed
+or ambiguous creation/injection never falls back to Native Fork or retries a
+mutation. Inspect the reported destination before deliberately starting another
+operation. Browser storage restrictions retain the existing tab-only draft
+fallback and warning; durable reload persistence requires writable browser storage.
+
 ## Portable transfer lifecycle
 
 Portable mode snapshots the source history before provider confirmation.
 Its filtering, persistence and failure fencing are unchanged.
 The snapshot is read directly from the connected app-server with
 `thread/read { includeTurns: true }`, bypassing the browser's ten-turn page.
-Response transfers retain the selected turn inclusively. Active source turns
-must finish or be stopped first. Activity after snapshot capture is excluded.
+Response transfers retain the selected turn inclusively; Portable Fork and Revert
+retains only preceding turns and snapshots the selected prompt separately.
+Active source turns must finish or be stopped first. Activity after snapshot capture is excluded.
 
 After selection the backend calls `thread/start` with the source working
 directory and selected provider/model, verifies the effective selection, then
@@ -96,7 +134,8 @@ the picker and completion path do not render omission notices.
 
 The initial request budget is 8 MiB; larger histories fail before creation.
 A destination can impose a smaller context limit, reported as an import failure,
-never silently truncated by the app. Empty text-only histories cannot be imported.
+never silently truncated by the app. Empty text-only histories cannot be imported
+by ordinary Portable Fork; a first-turn Portable Fork and Revert can create a draft-only destination without injection.
 Existing completed destinations are not rewritten or reinjected by this change.
 
 ## Persistence and failure recovery
@@ -134,7 +173,7 @@ independently managed server, not the bundled development dependency.
 page, stable cutoffs, cancellation, persistence decoration without reinjection,
 repeated transfers, default-selection rejection and failure/timeout fencing.
 A 2,000-turn conversion audit produced 4,000 messages (365,781 bytes) in
-9.21 ms locally, with zero RPCs during conversion. This does not measure
+10.11 ms locally, with zero RPCs during conversion. This does not measure
 remote injection latency or browser rendering.
 
 Desktop state tests cover both entry points, delayed publication, duplicate
@@ -199,3 +238,14 @@ no RPCs, blocking filesystem work, request fanout or cache invalidation. The
 existing full-read/start/inject sequence and request budget remain unchanged.
 Browser checks use mixed text/tool/reasoning/image fixtures and verify silent
 text-only presentation after reload; native fixture history retains its tools.
+
+Portable Fork and Revert adds no startup or per-message requests. Its nonempty
+transfer still uses one uncapped source read, one start and one injection. Finding
+the user turn and converting preceding history are linear; only the selected user
+item is normalized for draft restoration, avoiding conversion of its tool output.
+Draft persistence adds one ordinary destination draft write before publication;
+there is no new cache or invalidation path. The first-turn case omits injection.
+The browser regression report records a single creation and zero generation calls
+until explicit submission, including double confirmation. Full-history service tests
+verify read/start/inject counts and exclusive cutoffs. Remote provider latency and
+large-history browser rendering are not measured by these mocked checks.
