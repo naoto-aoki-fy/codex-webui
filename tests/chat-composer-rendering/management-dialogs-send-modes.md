@@ -22,10 +22,15 @@ use a disposable native conversation and a supported independently managed serve
    it. Long status text must wrap in the main content area. Merely opening any
    category must not log in/out, connect/disconnect, enable Remote Control or
    reload/write MCP configuration.
-4. Open **conversation header … → Conversation tools…**. The dialog must identify
-   the title and native ID. Inspect the existing controls and restrictions. Change
-   conversation via routing while it is open: it closes before controls retarget.
-   Pending operations remain owned by the existing App/state controllers.
+4. Open **conversation header … → Conversation tools…**. The header contains only
+   **Conversation tools** and its close button, with no conversation title, native
+   ID, or description. Inspect the existing controls and restrictions. Close with
+   Escape, then open **conversation header … → Context**: its header contains only
+   **Context** and its close button. Verify context usage content still renders
+   when available. Close with the close button; focus returns to the header menu.
+   The conversation title remains in the page header and sidebar. Change
+   conversation via routing while either dialog is open: it closes before controls
+   retarget. Pending operations remain owned by the existing App/state controllers.
 5. Open **+ → Prompts & commands** or use `/prompts`. Start an unsaved preset edit,
    close/reopen: edit remains during the same composer lifetime. Choosing a preset
    explicitly replaces draft text without sending. **+ → Apps / Connectors** opens

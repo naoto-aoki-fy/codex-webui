@@ -113,7 +113,8 @@ async function screenshot(page,name,width,theme) {
    const scroll=await list.evaluate(el=>el.scrollTop)
    await openToolsDialog(page)
    const tools=page.getByRole('dialog',{name:'Conversation tools',exact:true})
-   assert((await tools.innerText()).includes('approved-fixture'))
+   assert.equal(await tools.locator('.management-dialog-header h2').innerText(),'Conversation tools')
+   assert.equal(await tools.locator('.management-dialog-header p').count(),0)
    await noOverflow(page,true)
    images.push(await screenshot(page,'tools',width,theme))
    // Streaming continues while modal is open and remains one row when closed.
