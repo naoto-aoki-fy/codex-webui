@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Backend hydration/race behavior is exercised in backendAuthentication.test.ts.
 vi.mock('./backendAuthentication', async importOriginal => {
   const actual = await importOriginal<typeof import('./backendAuthentication')>()
-  return { createBackendAuthentication: () => {
-    const auth = actual.createBackendAuthentication()
+  return { createBackendAuthentication: (invalidate?:()=>void) => {
+    const auth = actual.createBackendAuthentication(invalidate)
     auth.observe({phase:'ready',blocking:false,revision:1})
     return {...auth,refresh:vi.fn(async()=>{})}
   } }

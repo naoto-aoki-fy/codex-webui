@@ -4,4 +4,8 @@ export type NativeAuthenticationState = {
   blocking: boolean
   revision: number
   loginId?: string | null
+  reason?: string
+  generation?: number
+  contextRevision?: number
+  operationUnresolved?: boolean
 }

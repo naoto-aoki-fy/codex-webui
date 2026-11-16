@@ -1,152 +1,228 @@
 import type { NativeAuthenticationState } from '../types/nativeAuthentication.js'
 
 type Rpc = (method: string, params: unknown) => Promise<unknown>
-const record = (value: unknown) => value !== null && typeof value === 'object' ? value as Record<string, unknown> : null
+const record = (value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 2000
 const rejected = (error: unknown) => [-32600, -32601, -32602].includes(Number(record(error)?.code))
 export const AUTHENTICATED_WRITES = new Set(['turn/start', 'turn/steer', 'thread/queue/add', 'thread/queue/update', 'thread/queue/start', 'review/start'])
+type Evidence = { usable: boolean; context: string | null }
+type Diagnostic = { reason: string; previous: string; next: string; generation: number; revision: number; unresolved: boolean }
 
-/** Owned by one AppServerClient/connection context, shared by all its browsers.
- * No timers or disk state: account/read reconstructs evidence after process restart.
- */
+/** One connection's evidence and operation ownership. No credentials or disk state. */
 export class NativeAuthenticationStateMachine {
   private state: NativeAuthenticationState = { phase: 'checking', blocking: true, revision: 0 }
   private loginId = ''
   private starting = false
+  private uncertainOperation = false
+  private operation = 0
   private early = new Map<string, boolean>()
+  private generation = 0
+  private contextRevision = 0
+  private evidenceVersion = 0
+  private verifiedContext: string | null = null
+  private explicitAcknowledgment = false
+  private acceptContext = true // Startup, matching login completion, or explicit acknowledgment.
+  private dirty = true
   private reading: Promise<void> | null = null
+  private timer: ReturnType<typeof setTimeout> | null = null
+  private disposed = false
+  private diagnostics: Diagnostic[] = []
 
   constructor(private readonly rpc: Rpc, private readonly publish: (state: NativeAuthenticationState) => void) {}
-  snapshot(): NativeAuthenticationState { return { ...this.state, loginId: this.loginId || null } }
-  private set(phase: NativeAuthenticationState['phase']) {
-    this.state = { phase, blocking: phase !== 'ready', revision: this.state.revision + 1 }
-    this.publish(this.snapshot())
+  private unresolved() { return this.starting || !!this.loginId || this.uncertainOperation }
+  snapshot(): NativeAuthenticationState {
+    return { ...this.state, loginId: this.loginId || null, generation: this.generation,
+      contextRevision: this.contextRevision, operationUnresolved: this.unresolved() }
   }
-  disconnect() { this.reading = null; this.set('disconnected') }
+  diagnosticSnapshot() { return this.diagnostics.map(row => ({ ...row })) }
+  private note(reason: string, previous = this.state.phase) {
+    this.diagnostics.push({ reason, previous, next: this.state.phase, generation: this.generation,
+      revision: this.state.revision, unresolved: this.unresolved() })
+    if (this.diagnostics.length > 32) this.diagnostics.shift()
+  }
+  private set(phase: NativeAuthenticationState['phase'], reason: string) {
+    const previous = this.state.phase
+    this.state = { phase, reason, blocking: phase !== 'ready', revision: this.state.revision + 1 }
+    this.note(reason, previous); this.publish(this.snapshot())
+  }
+  private invalidate(reason: string) {
+    if(reason==='account-update-verifying'&&this.explicitAcknowledgment){this.acceptContext=false;this.explicitAcknowledgment=false}
+    this.evidenceVersion++; this.contextRevision++; this.dirty = true
+    this.set(this.unresolved() ? 'pending' : 'checking', reason)
+    this.schedule()
+  }
+  private schedule() {
+    if (this.disposed || this.timer || this.reading || this.state.phase === 'disconnected') return
+    // A burst owns one timer, one read, and at most one queued follow-up. Failures
+    // never retry themselves; only a new event or explicit read requests more work.
+    this.timer = setTimeout(() => { this.timer = null; void this.verify() }, 25)
+    this.timer.unref?.()
+  }
+  disconnect() {
+    if(this.disposed)return
+    if(this.explicitAcknowledgment){this.acceptContext=false;this.explicitAcknowledgment=false}
+    this.generation++; this.evidenceVersion++; this.contextRevision++; this.dirty = true
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = null
+    this.set('disconnected', 'connection-disconnected')
+  }
+  dispose() { this.disposed = true; this.operation++; this.evidenceVersion++; if (this.timer) clearTimeout(this.timer); this.timer = null }
 
-  private async accountPhase(): Promise<'ready' | 'signedOut'> {
+  private async evidence(): Promise<Evidence> {
     const result = record(await this.rpc('account/read', { refreshToken: false }))
     const account = record(result?.account)
     if (!result || typeof result.requiresOpenaiAuth !== 'boolean' || !('account' in result)
-      || result.account !== null && (!account || typeof account.type !== 'string' || !account.type)) {
+      || result.account !== null && (!account || !['chatgpt','apiKey','amazonBedrock','gcp'].includes(String(account.type)))) {
       throw new Error('Native account state unavailable')
     }
-    return !result.requiresOpenaiAuth || account ? 'ready' : 'signedOut'
+    if (!result.requiresOpenaiAuth) return { usable: true, context: 'external-provider' }
+    if (!account) return { usable: false, context: null }
+    let context: string | null = null
+    if (account.type === 'chatgpt') {
+      // account/read's email/plan/workspaceName are display fields, not identity.
+      // This optional read-only API supplies stable user AND workspace identities.
+      try {
+        const sessions = record(await this.rpc('accountSession/list', { refreshWorkspaceMetadata: false }))
+        if (text(sessions?.activeSessionId) && Array.isArray(sessions.sessions) && sessions.sessions.length <= 100) {
+          const active = sessions.sessions.map(record).filter(s => s?.isActive === true)
+          const current = active.length === 1 ? active[0] : null
+          if (current?.sessionId === sessions.activeSessionId && text(current.userId) && text(current.selectedWorkspaceAccountId)) {
+            context = JSON.stringify([current.sessionId, current.userId, current.selectedWorkspaceAccountId])
+          }
+        }
+      } catch { /* Unsupported/ambiguous identity requires explicit recovery on updates. */ }
+    }
+    return { usable: true, context }
   }
 
-  /** Refresh evidence, preserving pending writes and explicit cache reconciliation. */
-  async read(): Promise<NativeAuthenticationState> {
-    if (['pending','reconciliation','unknown'].includes(this.state.phase)) return this.snapshot()
-    if (this.reading) { await this.reading; return this.snapshot() }
-    const revision = this.state.revision
+  private async verify(): Promise<void> {
+    if (this.reading) return this.reading
+    if (!this.dirty || this.disposed) return
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = null; this.dirty = false
+    const version = this.evidenceVersion, generation = this.generation
+    const current = () => !this.disposed && version === this.evidenceVersion && generation === this.generation
     const reading = (async () => {
       try {
-        const phase = await this.accountPhase()
-        if (revision !== this.state.revision) return
-        if (this.starting || this.loginId) this.set('pending')
-        else if (this.state.phase === 'reconciliation' || this.state.phase === 'unknown') return
-        else this.set(phase)
+        const evidence = await this.evidence()
+        if (!current()) { this.note('verification-superseded'); return }
+        if (this.unresolved()) { this.set(this.uncertainOperation ? 'unknown' : 'pending', 'authentication-operation-unresolved'); return }
+        if (!evidence.usable) { this.set('signedOut', 'sign-in-required'); return }
+        if (this.acceptContext || evidence.context !== null && evidence.context === this.verifiedContext) {
+          this.verifiedContext = evidence.context; this.acceptContext = false; this.explicitAcknowledgment=false
+          this.set('ready', 'account-verified'); return
+        }
+        this.set('reconciliation', evidence.context && this.verifiedContext ? 'account-context-changed' : 'account-identity-unavailable')
       } catch {
-        if (revision === this.state.revision) this.set('unknown')
+        if (current()) this.set('unknown', 'account-verification-failed')
       }
     })()
     this.reading = reading
-    try { await reading } finally { if (this.reading === reading) this.reading = null }
-    return this.snapshot()
+    try { await reading } finally {
+      if (this.reading === reading) this.reading = null
+      // New evidence must eventually be read even when it superseded an in-flight
+      // result. This is driven by invalidations, never an error retry loop.
+      if (this.dirty) this.schedule()
+    }
   }
 
+  async read(): Promise<NativeAuthenticationState> {
+    if (this.state.phase === 'disconnected') this.set(this.unresolved() ? 'pending' : 'checking', 'connection-rechecking')
+    if (this.dirty || this.reading) await this.verify()
+    else if (['unknown','reconciliation'].includes(this.state.phase) && !this.unresolved()) {
+      this.dirty = true; this.set('checking', 'verification-retry'); await this.verify()
+    }
+    return this.snapshot()
+  }
   async assertCanSend() {
     if (this.state.phase === 'checking' || this.state.phase === 'disconnected') await this.read()
     this.assertReady()
   }
   assertReady() {
-    if (this.state.blocking) throw new Error(`Native authentication is ${this.state.phase}. Inspect the account and reconcile before sending.`)
+    if (this.state.blocking) throw new Error(`Native authentication is ${this.state.phase} (${this.state.reason ?? 'verification-required'}). Check sign-in controls before sending.`)
   }
-
-  /** Explicit recovery after reconnect: a signed-in account is actual evidence;
-   * a signed-out account cannot resolve a known pending login by itself. */
   async reconcile(): Promise<NativeAuthenticationState> {
-    if (this.starting) throw new Error('Native authentication start is still unresolved')
-    const revision = this.state.revision
-    try {
-      const phase = await this.accountPhase()
-      if (revision !== this.state.revision) throw new Error('Native account changed during reconciliation; inspect again')
-      if (this.loginId && phase === 'signedOut') throw new Error('Native authentication is pending; complete or cancel the identified login first')
-      this.loginId = ''; this.early.clear(); this.set(phase)
-      return this.snapshot()
-    } catch (error) {
-      if (revision === this.state.revision && !this.loginId) this.set('unknown')
-      throw error
-    }
+    // A usable account cannot cancel or supersede a known native login identity.
+    if (this.starting || this.loginId) throw new Error('Native authentication is pending; complete or cancel the identified login first')
+    this.uncertainOperation = false; this.acceptContext = true
+    this.explicitAcknowledgment=true
+    this.invalidate('explicit-account-acknowledgment')
+    return this.read()
   }
 
   async start(params: unknown): Promise<unknown> {
-    if (this.starting || this.loginId || ['pending', 'reconciliation', 'unknown', 'disconnected'].includes(this.state.phase)) {
-      throw Object.assign(new Error('Native authentication already pending or requires reconciliation'), { code: -32600 })
+    if (this.unresolved() || ['reconciliation','unknown','disconnected','checking'].includes(this.state.phase) && this.state.revision > 0) {
+      throw Object.assign(new Error('Native authentication already pending or requires verification'), { code: -32600 })
     }
-    this.starting = true; this.early.clear(); this.set('pending')
-    const revision = this.state.revision
+    const previousPhase=this.state.phase, acceptedBefore=this.acceptContext
+    const token = ++this.operation, generation = this.generation
+    this.starting = true; this.early.clear(); this.acceptContext = false
+    this.evidenceVersion++; this.contextRevision++; this.dirty = false
+    this.set('pending', 'login-starting')
+    const version = this.evidenceVersion
+    let submitted = false
     try {
-      // Independently verify the signed-out precondition; browser preflight is advisory.
       const current = record(await this.rpc('account/read', { refreshToken: false }))
-      if (revision !== this.state.revision) throw new Error('Native account changed before login')
+      if (version !== this.evidenceVersion) throw Object.assign(new Error('Native account changed before login'), { code: -32600 })
       if (current?.account !== null || current.requiresOpenaiAuth !== true) {
         throw Object.assign(new Error('Native sign-in requires a signed-out account'), { code: -32600 })
       }
+      submitted = true
       const result = await this.rpc('account/login/start', params)
+      if (token !== this.operation || generation !== this.generation) throw new Error('Connection changed during native sign-in')
       const id = record(result)?.loginId
-      if (typeof id !== 'string' || !id || id.length > 2000) throw new Error('Native login identity unavailable')
-      // A disconnect can retire the request; never use its response in a new context.
-      if (this.state.phase === 'disconnected') throw new Error('Connection changed during native sign-in')
-      this.loginId = id
-      this.starting = false
+      if (!text(id)) throw new Error('Native login identity unavailable')
+      this.loginId = id; this.starting = false
       const completed = this.early.get(id); this.early.clear()
       if (completed !== undefined) await this.complete(completed)
-      else if (this.state.phase !== 'reconciliation') this.set('pending')
+      else this.set('pending', 'login-awaiting-completion')
       return result
     } catch (error) {
-      this.starting = false
-      if (this.state.phase !== 'disconnected') {
-        if (rejected(error) && revision === this.state.revision) { this.set('checking'); await this.read() }
-        else this.set('unknown')
+      if (token !== this.operation) throw error
+      this.starting = false; this.early.clear()
+      this.uncertainOperation = submitted && !rejected(error)
+      if (generation === this.generation) {
+        if (this.uncertainOperation) this.set('unknown', 'login-outcome-unknown')
+        else {
+          if(version===this.evidenceVersion)this.acceptContext=acceptedBefore||previousPhase==='ready'
+          this.invalidate('login-rejected');await this.read()
+        }
       }
       throw error
     }
   }
-
   async cancel(params: unknown): Promise<unknown> {
     const id = record(params)?.loginId
-    if (typeof id !== 'string' || id !== this.loginId || !id) {
-      throw Object.assign(new Error('No matching backend native login to cancel'), { code: -32602 })
-    }
-    const revision = this.state.revision
+    if (!text(id) || id !== this.loginId) throw Object.assign(new Error('No matching backend native login to cancel'), { code: -32602 })
+    const generation = this.generation, token = this.operation
     try {
       const result = await this.rpc('account/login/cancel', params)
-      if (this.loginId !== id || this.state.phase === 'disconnected') return result
-      if (record(result)?.status !== 'canceled') {
-        // A native notFound acknowledgment ends ownership of this identity, but
-        // requires fresh account reconciliation before a new operation.
+      if (token !== this.operation || this.loginId !== id || generation !== this.generation) return result
+      if (record(result)?.status === 'canceled') await this.complete(false)
+      else {
         if (record(result)?.status === 'notFound') this.loginId = ''
-        this.set('unknown'); return result
+        this.uncertainOperation = true; this.set('unknown', 'cancellation-outcome-unknown')
       }
-      this.loginId = ''
-      await this.complete(false)
       return result
-    } catch (error) { if (revision === this.state.revision) this.set('unknown'); throw error }
+    } catch (error) {
+      if (generation === this.generation && token === this.operation && this.loginId === id) {
+        this.uncertainOperation = true; this.set('unknown', 'cancellation-outcome-unknown')
+      }
+      throw error
+    }
   }
-
   private async complete(success: boolean) {
-    this.loginId = ''; this.set('reconciliation')
-    const revision = this.state.revision
-    try {
-      const phase = await this.accountPhase()
-      if (revision === this.state.revision) this.set(success || phase === 'ready' ? 'reconciliation' : phase)
-    } catch { if (revision === this.state.revision) this.set('unknown') }
+    this.operation++; this.loginId = ''; this.starting = false; this.uncertainOperation = false
+    // Only a matching native completion establishes ownership of a new account.
+    this.acceptContext = success
+    this.invalidate(success ? 'login-completed' : 'login-ended')
+    await this.read()
   }
   observe(method: string, params: unknown) {
-    if (method === 'account/updated') { this.set('reconciliation'); return }
+    if (method === 'account/updated') { this.invalidate('account-update-verifying'); return }
     if (method !== 'account/login/completed') return
     const row = record(params)
-    if (typeof row?.loginId !== 'string' || row.loginId.length > 2000 || typeof row.success !== 'boolean') return
+    if (!text(row?.loginId) || typeof row.success !== 'boolean') return
     if (this.starting) {
       if (this.early.size === 4) this.early.delete(this.early.keys().next().value!)
       this.early.set(row.loginId, row.success)

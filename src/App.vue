@@ -1427,6 +1427,7 @@ async function loadCodexAuthStatus(): Promise<void> {
   }
 }
 watch(operationEpoch,()=>{codexAuthAvailable.value=null;accountActionError.value=''},{flush:'sync'})
+watch(nativeAuthenticationBlocked,blocked=>{if(!blocked)void loadCodexAuthStatus()})
 
 function applyDarkMode(): void {
   const root = document.documentElement

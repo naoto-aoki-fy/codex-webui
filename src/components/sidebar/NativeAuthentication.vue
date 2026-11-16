@@ -21,11 +21,11 @@ async function prepare(){if(preparing.value||props.blocked)return;preparing.valu
    <button type="button" :disabled="!confirmed||blocked" @click="auth.start(method,confirmed)">Start confirmed native sign-in</button>
   </div>
   <div v-if="auth?.url.value"><a :href="auth.url.value" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open native sign-in page</a><p v-if="auth.code.value">Native device code: <code v-text="auth.code.value"></code></p><p>Login URLs/codes are kept in memory. Native expiry is not supplied here; closing this panel does not guarantee cancellation.</p></div>
-  <button v-if="auth?.active.value||auth?.loginId.value" type="button" :disabled="!auth.connected.value||auth.state.value==='canceling'||auth.state.value==='settling'" @click="auth.cancel">Cancel identified native sign-in</button>
+  <button v-if="auth?.state.value==='starting'||auth?.loginId.value" type="button" :disabled="!auth.connected.value||auth.state.value==='canceling'||auth.state.value==='settling'" @click="auth.cancel">Cancel identified native sign-in</button>
   <p v-if="auth" role="status">{{ auth.status.value }}</p>
   <p v-if="error" role="alert">{{ error }}</p>
-  <div v-if="auth?.needsRefresh.value||auth?.state.value==='unknown'"><button type="button" :disabled="!auth.connected.value||auth.inspecting.value||auth.resetting.value" @click="auth.inspect">Inspect current native account</button><p v-if="auth.account.value">Actual account: {{ auth.account.value.type }} {{ auth.account.value.email??'' }}</p>
-   <label v-if="auth.state.value==='unknown'"><input v-model="unknownConfirmed" type="checkbox"> I inspected the account and understand the original login may still be pending; reconnect without replaying it.</label>
+  <div v-if="auth?.needsRefresh.value||auth?.state.value==='unknown'"><button type="button" :disabled="!auth.connected.value" @click="auth.retryVerification">Retry account verification</button><button type="button" :disabled="!auth.connected.value||auth.inspecting.value||auth.resetting.value" @click="auth.inspect">Inspect current native account</button><p v-if="auth.account.value">Actual account: {{ auth.account.value.type }} {{ auth.account.value.email??'' }}</p>
+   <label v-if="auth.state.value==='unknown'"><input v-model="unknownConfirmed" type="checkbox"> I inspected the current account and workspace and approve using this context without replaying authentication.</label>
    <button type="button" :disabled="!auth.connected.value||!auth.account.value||auth.resetting.value||auth.state.value==='unknown'&&!unknownConfirmed" @click="auth.refreshConnection(unknownConfirmed)">Reconnect and reload account data</button>
   </div>
  </details>

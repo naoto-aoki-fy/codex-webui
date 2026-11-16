@@ -248,6 +248,7 @@ export function useDesktopState() {
 
   const diagnosticWarnings = ref<DiagnosticWarning[]>([])
   const operationEpoch = ref(0)
+  const nativeAuthenticationEpoch = ref(0)
   const nativeShell=shallowRef<import('./nativeShell').NativeShell|null>(null)
   async function ensureNativeShell(){const epoch=operationEpoch.value,owner=connection.lifecycleGeneration,module=await import('./nativeShell');if(epoch!==operationEpoch.value||owner!==connection.lifecycleGeneration)return null
     if(!nativeShell.value)nativeShell.value=module.createNativeShell({epoch:operationEpoch,selected:selectedThreadId,ready:()=>transportState.value!=='disconnected',blocked:()=>nativeDeletion.value?.selectedBlocking.value||nativeAuthenticationBlocked.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||turns.isSendingMessage.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.blocking.value||(approvals.pendingServerRequestsByThreadId.value[selectedThreadId.value]?.length??0)>0})
@@ -260,10 +261,14 @@ export function useDesktopState() {
   }
   const nativeAuthentication=shallowRef<import('./nativeAuthentication').NativeAuthentication|null>(null)
   removeLegacyNativeAuthenticationPending()
-  const backendAuthentication=createBackendAuthentication()
+  const backendAuthentication=createBackendAuthentication(()=>{
+    operationEpoch.value++;modelRefreshVersion++;rateLimitRefreshPromise=null
+    accountRateLimitSnapshots.value=[];setCodexRateLimit(null);availableModelIds.value=[]
+    catalogOwnership?.release();catalogOwnership=null
+  })
   const nativeAuthenticationBlocked=backendAuthentication.blocking
-  const nativeAuthenticationStatus=computed(()=>({
-    checking:'Checking native authentication. Sending is paused.',
+  const nativeAuthenticationStatus=computed(()=>backendAuthentication.state.value.reason==='account-context-changed'?'The native account or workspace changed. Inspect and acknowledge the new account before sending.':backendAuthentication.state.value.reason==='account-identity-unavailable'?'Native account continuity could not be established. Inspect and acknowledge the account before sending.':({
+    checking:'Verifying native account state automatically. Sending will resume when verification succeeds.',
     ready:'',
     signedOut:'Native sign-in is required before sending.',
     pending:'Native authentication is pending. Sending is paused.',
@@ -271,12 +276,17 @@ export function useDesktopState() {
     unknown:'Native authentication could not be verified. Inspect the account before sending.',
     disconnected:'Native authentication is unavailable while the connection is interrupted. Sending is paused.',
   })[backendAuthentication.state.value.phase])
-  watch(backendAuthentication.state,state=>nativeAuthentication.value?.observe({method:'native-authentication/state',params:state,atIso:new Date().toISOString()}),{flush:'sync'})
+  watch(backendAuthentication.state,(state,previous)=>{
+    nativeAuthentication.value?.observe({method:'native-authentication/state',params:state,atIso:new Date().toISOString()})
+    if(state.phase==='ready'&&previous.phase!=='ready'&&(state.contextRevision??0)>0){
+      void refreshModelPreferences();void refreshRateLimits()
+    }
+  },{flush:'sync'})
   const nativeAccountChangeBlocked=computed(()=>nativeShell.value?.blocking.value||nativeDeletion.value?.blocking.value||hasActiveInProgressThreads()||turns.isSendingMessage.value||turns.isInterruptingTurn.value||isRollingBack.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.busy.value||permissionChanges.state.value==='unknown'||Object.values(approvals.pendingServerRequestsByThreadId.value).some(rows=>rows.length>0))
   async function ensureNativeAuthentication(){
     const epoch=operationEpoch.value,owner=connection.lifecycleGeneration,module=await import('./nativeAuthentication')
     if(epoch!==operationEpoch.value||owner!==connection.lifecycleGeneration)return null
-    if(!nativeAuthentication.value)nativeAuthentication.value=module.createNativeAuthentication({epoch:operationEpoch,ready:()=>transportState.value!=='disconnected',
+    if(!nativeAuthentication.value)nativeAuthentication.value=module.createNativeAuthentication({epoch:nativeAuthenticationEpoch,ready:()=>transportState.value!=='disconnected',
       blocked:()=>nativeAccountChangeBlocked.value,
       initiallyUncertain:backendAuthentication.blocking.value && backendAuthentication.state.value.phase!=='signedOut',
       reconnectAndReload:async()=>{const current=nativeAuthentication.value;const result=await fetch('/codex-api/reconnect',{method:'POST'});if(!result.ok||(await result.json()).ok!==true)throw new Error('Native connection refresh was not acknowledged');if(nativeAuthentication.value===current&&typeof window!=='undefined'){await rpcCall('native-authentication/reconcile',{});window.location.reload()}},
@@ -313,8 +323,8 @@ export function useDesktopState() {
   const browserConnection = createConnectionNotice()
   const appServerConnection = createConnectionNotice()
   const connection = createDesktopConnection({
-    onBrowserConnectionState: state=>{browserConnection.update(state);if(state!=='connected')backendAuthentication.disconnect()},
-    invalidateReadJobs() { operationEpoch.value++; diagnosticWarnings.value = [] },
+    onBrowserConnectionState: state=>{browserConnection.update(state);if(state!=='connected'){nativeAuthenticationEpoch.value++;backendAuthentication.disconnect()}},
+    invalidateReadJobs() { operationEpoch.value++; nativeAuthenticationEpoch.value++; diagnosticWarnings.value = [] },
     get history() { return history; },
     get setLiveAgentMessagesForThread() { return setLiveAgentMessagesForThread; },
     get clearLiveReasoningForThread() { return clearLiveReasoningForThread; },
@@ -1729,14 +1739,9 @@ export function useDesktopState() {
     if(notification.method==='app-server/disconnected')backendAuthentication.disconnect()
     securityObservation.observe(notification)
     permissionChanges.observe(notification)
-    if(notification.method==='account/updated'){
-      backendAuthentication.observe({...backendAuthentication.state.value,phase:'reconciliation',blocking:true})
-      operationEpoch.value++;modelRefreshVersion++;rateLimitRefreshPromise=null
-      accountRateLimitSnapshots.value=[];setCodexRateLimit(null);availableModelIds.value=[]
-      nativeAuthentication.value?.observe(notification)
-      if(backendAuthentication.state.value.loginId)nativeAuthentication.value?.observe({method:'native-authentication/state',params:backendAuthentication.state.value,atIso:notification.atIso})
-      return
-    }
+    // Backend snapshots invalidate account caches before raw notifications arrive.
+    // Raw events have no revision and must never overwrite newer verified state.
+    if(notification.method==='account/updated')return
     nativeAuthentication.value?.observe(notification)
     nativeDeletion.value?.observe(notification)
     if(notification.method==='thread/deleted'){
@@ -1823,7 +1828,7 @@ export function useDesktopState() {
       }
       return
     }
-    if (notification.method === 'app-server/reconnected' || notification.method === 'app-server/disconnected') { operationEpoch.value++; diagnosticWarnings.value = [] }
+    if (notification.method === 'app-server/reconnected' || notification.method === 'app-server/disconnected') { operationEpoch.value++; nativeAuthenticationEpoch.value++; diagnosticWarnings.value = [] }
     if (notification.method === 'app-server/reconnected') {
       transportState.value = 'connected'
       appServerConnection.update('connected')
@@ -1858,6 +1863,7 @@ export function useDesktopState() {
     }
 
     if (notification.method === 'account/rateLimits/updated') {
+      if(nativeAuthenticationBlocked.value)return
       scheduleRateLimitRefresh()
     }
 
