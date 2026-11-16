@@ -5,11 +5,15 @@ import {queueEntry,queuePage,queuedInput} from '../api/nativeQueue'
 
 // These controller tests mock the atomic-storage boundary; the browser fixture
 // exercises actual IndexedDB serialization across independent documents.
-vi.mock('../utils/browserStorageLock', () => {
+vi.mock('../utils/browserTransactionalRecords', () => {
  let tail: Promise<unknown> = Promise.resolve()
- return { withBrowserStorageLock: (_name: string, action: () => unknown) => {
-  const result = tail.then(action); tail = result.catch(() => {}); return result
- } }
+ return {
+  readBrowserRecord: async (_name: string, legacy: () => unknown) => legacy(),
+  updateBrowserRecord: (name: string, legacy: () => unknown, action: (value: any) => unknown) => {
+   const result = tail.then(() => { const next = action(legacy()); if(typeof window!=='undefined')window.localStorage.setItem(name, JSON.stringify(next)); return next })
+   tail = result.catch(() => {}); return result
+  }
+ }
 })
 function setup(request:(method:string,params:any)=>Promise<any>){const selected=ref('t'),epoch=ref(0),scope=effectScope();const owner=scope.run(()=>createNativeQueue({selected,epoch,ready:()=>true,blocked:()=>false},request as any))!;return {owner,selected,epoch,stop:()=>scope.stop()}}
 const payload={text:'queued text',imageUrls:[],fileAttachments:[],skills:[]}
@@ -20,7 +24,7 @@ it('requires an observed supported list, sends structured input once and validat
  const request=vi.fn(async(method,params)=>{if(method==='thread/queue/list')return {data:[],nextCursor:null};sent=params;return new Promise(r=>resolve=r)})
  const {owner,stop}=setup(request)
  await expect(owner.add(payload)).rejects.toThrow('Read');await owner.refresh()
- const pending=owner.add(payload);await expect(owner.add(payload)).rejects.toThrow();await Promise.resolve();expect(sent.clientUserMessageId).toBeTruthy();resolve({queuedSubmission:queued(sent.clientUserMessageId)})
+ const pending=owner.add(payload);await expect(owner.add(payload)).rejects.toThrow();await vi.waitFor(()=>expect(sent).toBeTruthy());expect(sent.clientUserMessageId).toBeTruthy();resolve({queuedSubmission:queued(sent.clientUserMessageId)})
  await expect(pending).resolves.toBe(true);expect(request.mock.calls.filter(c=>c[0]==='thread/queue/add')).toHaveLength(1);stop()
 })
 it('preserves images, local file prompt, skill and exact native app mentions',()=>{

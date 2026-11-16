@@ -6,8 +6,8 @@ watch(()=>props.open,open=>{if(open)load()})
 const emit=defineEmits<{choose:[text:string];close:[]}>()
 const library=ref<PromptLibrary>({presets:[],history:[]}),error=ref(''),name=ref(''),text=ref(''),editing=ref(''),historyEnabled=ref(false),saving=ref(false)
 function onNameKeydown(event:KeyboardEvent){if(event.key==='Enter'&&!event.isComposing){event.preventDefault();event.stopPropagation()}}
-function load(){try{library.value=loadPromptLibrary();historyEnabled.value=promptHistoryEnabled()}catch{error.value='Browser prompt storage unavailable or invalid. Back up stored data before using Clear all stored prompts and presets.'}}
-function onStorage(event:StorageEvent){if(event.key?.endsWith('codex-web-local.prompt-library.v1')||event.key?.endsWith('codex-web-local.prompt-history-enabled.v1'))load()}
+async function load(){try{library.value=await loadPromptLibrary();historyEnabled.value=promptHistoryEnabled()}catch{error.value='Browser prompt storage unavailable or invalid. Back up stored data before using Clear all stored prompts and presets.'}}
+function onStorage(event:StorageEvent){if(event.key?.endsWith('codex-web-local.prompt-library.v1.revision')||event.key?.endsWith('codex-web-local.prompt-history-enabled.v1'))load()}
 onMounted(()=>{load();window.addEventListener('storage',onStorage)})
 onUnmounted(()=>window.removeEventListener('storage',onStorage))
 function toggleHistory(){try{setPromptHistoryEnabled(!historyEnabled.value);historyEnabled.value=!historyEnabled.value}catch{error.value='Browser storage write failed.'}}
