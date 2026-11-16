@@ -83,8 +83,28 @@ matching independently managed App Server. Keep draft text distinct.
 3. After reading queue/history, explicitly acknowledge uncertainty in one tab.
    The other thread's receipt must remain intact. No automatic replay is allowed.
 4. Repeat with `navigator.locks` unavailable (the same IndexedDB transaction path).
-5. Disable both facilities or deny storage writes. Queue add must fail before RPC
+5. Make IndexedDB unavailable or force transaction writes to fail. Queue add must fail before RPC
    and preserve the draft. Corrupt existing receipts must also block add.
 
 Cleanup: Inspect queue/history before removing disposable receipts or threads.
 Never infer non-execution from an absent queue entry.
+
+
+## Final acceptance: transaction completion boundary
+
+Setup: Current Vite server on 127.0.0.1:4173 and isolated browser fixture;
+`node scripts/test-persistence-acceptance.cjs` uses real IndexedDB and fixture RPCs.
+
+1. Observe reservation request success, transaction complete, then the submission
+   RPC, in that order. Abort after request success: no RPC may be sent.
+2. Inject quota failure and a native IndexedDB request error: the committed record
+   stays unchanged and no submission RPC runs.
+3. Delay the RPC and return a different client ID: retain the original reservation
+   and uncertainty; another submission is blocked without automatic replay.
+4. Abort the receipt-clear transaction after an accepted reply: keep the committed
+   marker and uncertain state through owner recovery/reconnect. Do not report the
+   retained draft as safe to resubmit.
+
+Cleanup: Test contexts are isolated and closed. Never run failure injection on a
+user's active browser profile or clear browser storage to acknowledge uncertainty.
+Upgrade procedure: [all-tabs reload and preservation](../../docs/browser-persistence.md#safe-upgrade-mixed-versions-are-unsupported).
