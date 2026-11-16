@@ -55,3 +55,4 @@ Return to the [manual test index](../../tests.md).
 | [Prompt and answer timestamps](message-timestamps.md) |
 | [User message toolbar alignment](user-message-toolbar-alignment.md) |
 | [Immediate steering and retired queue state](immediate-steering.md) |
+| [Draft recovery in Settings](draft-recovery-settings.md) |

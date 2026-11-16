@@ -54,6 +54,7 @@ export type SubmitPayload = {
 };
 export type ThreadComposerExposed = {
     hydrateDraft: (payload: ComposerDraftPayload) => void;
+    recoverDraft: (payload: ComposerDraftPayload) => boolean;
     appendTextToDraft: (text: string) => void;
     hasUnsavedDraft: () => boolean;
 };
