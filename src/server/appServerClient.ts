@@ -65,6 +65,8 @@ export class AppServerClient {
   readonly capabilities = new RemoteCapabilities()
   constructor(private readonly dependencies: AppServerClientDependencies) {}
 
+  getAuthenticationDiagnostics() { return this.authentication.diagnosticSnapshot() }
+
   getInitializationMetadata() { return this.transport.getInitializationMetadata() }
 
   private readonly authentication = new NativeAuthenticationStateMachine(
@@ -540,6 +542,7 @@ export class AppServerClient {
   }
   dispose(): void {
     this.disposed = true
+    this.authentication.dispose()
     this.recovery.cancel()
     if (this.retryTimer) clearTimeout(this.retryTimer)
     this.retryTimer = null

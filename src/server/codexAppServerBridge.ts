@@ -586,7 +586,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           setJson(res, 409, { error: 'Connection changed during diagnosis. Check compatibility again.' })
           return
         }
-        setJson(res, 200, { data: { connection: appServer.getInitializationMetadata() ? 'initialized' : 'unknown-or-disconnected', platformOs: appServer.getInitializationMetadata()?.platformOs ?? null, profile: getConnectionProfileId(), generation, directory, workflows: WORKFLOW_CAPABILITIES, capabilities: diagnostics.snapshot(), git } })
+        setJson(res, 200, { data: { connection: appServer.getInitializationMetadata() ? 'initialized' : 'unknown-or-disconnected', platformOs: appServer.getInitializationMetadata()?.platformOs ?? null, profile: getConnectionProfileId(), generation, directory, workflows: WORKFLOW_CAPABILITIES, capabilities: diagnostics.snapshot(), authentication: appServer.getAuthenticationDiagnostics(), git } })
         return
       }
 

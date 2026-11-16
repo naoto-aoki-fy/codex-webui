@@ -233,63 +233,67 @@ Screenshots: `output/playwright/risk-33-{1280,375,768}-{light,dark}.png`.
 Performance: zero startup calls; two initial reads, one per explicit additional
 catalog page; twenty rows/page, 100 retained rows, no new subscriptions/history.
 
-### Native managed ChatGPT sign-in (29, partial)
+### Native managed ChatGPT sign-in and automatic account verification
 
-Prerequisites: credential-free intercepted App Server; signed-out default provider,
-explicit native `allowed_login_methods: [chatgpt]`, and a complete inventory of at
-most 20 loaded idle threads. Run `node scripts/test-risk-native-authentication.cjs`
-with the documented Playwright browser path. Never sign in a real account here.
+Prerequisites: build the current checkout, use the credential-free simulated upstream
+in `scripts/test-risk-native-authentication.cjs`, and supply the installed Playwright
+browser path. The real backend state machine drives the real UI. Example:
+`PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-connection-browsers APPROVED_DIST_ROOT="$PWD" node scripts/test-risk-native-authentication.cjs`.
+Never sign in a real account in this fixture. The native preflight requires an explicit
+`allowed_login_methods: [chatgpt]` policy and at most 20 loaded idle threads.
 
-Actions: open Settings → Native Codex sign-in; prepare; review scope and confirm;
-start browser or device-code sign-in. Cancel the identified attempt, then simulate
-matching completion and actual account change. Inject an unrelated completion,
-expiry, cancellation/completion race, internal error and disconnect during start.
+Actions and expected results:
 
-Expected: no login on opening/preparing; every listed loaded thread is checked without
-resume/history reads. Only explicit confirmation starts native login. Cancellation
-uses the exact ID. Codes/URLs remain in memory and clear on completion/cancel or
-connection change. Unrelated completion is ignored; success requires matching
-native completion and account read. Sending stays paused until explicit reconnect
-and page reload invalidate account caches. Unknown writes never replay. Existing
-signed-in accounts, unknown policy, external credentials and excess inventory are
-rejected by this limited workflow. Check all three viewports in both themes.
+1. Open Settings → Codex account → Native Codex sign-in. Prepare, review and confirm
+   browser/device-code sign-in. Opening/preparing must not log in. Only explicit
+   confirmation starts it; complete idle inventory checks use no full history reads.
+2. Emit `account/updated` while pending, then reload. Sending stays blocked and the
+   exact backend login ID survives; URLs/codes do not. Cancel that identified attempt.
+   The cancellation acknowledgment must not be lost when cache invalidation occurs.
+3. Start device-code sign-in; deliver unrelated completion, then matching successful
+   completion and a usable account/session identity. Expect automatic checking and
+   enabled sending without clicking reconnect, retry or acknowledgment controls.
+4. With a verified account, emit twenty updates with unchanged session/user/workspace
+   IDs. Expect a temporary block and one coalesced account verification, followed by
+   automatic readiness. No login, cancellation or message may be replayed.
+5. Hold verification, emit another update and release the obsolete result. It cannot
+   authorize sending; the queued pass must check the latest state. Reload while a
+   check is held: hydration reflects checking and eventually readiness after release.
+6. Repeat on two browsers attached to the same backend; both recover. A separate
+   backend/profile must remain independent. Deliver an old hydration/inspection result
+   or a raw account update after readiness; none may install a stale frontend latch.
+7. Change the workspace/user ID while retaining email, plan and display name. Expect
+   cache invalidation and an explicit `account-context-changed` block. Inspection,
+   retry and acknowledgment controls remain available. Missing/unsupported stable
+   identity yields `account-identity-unavailable`, never an email-based equivalence.
+8. Return signed-out, malformed or failed account reads. Expect sign-in guidance or
+   an actionable unknown state; failures do not poll/retry themselves. A provider
+   not requiring OpenAI auth continues to recover within its unchanged context.
+9. Disconnect during verification or login start. Retired results cannot authorize
+   sends. A known pending operation survives reconnect and cannot be erased by an
+   account read or manual acknowledgment. Test exact cancellation, `notFound`, early
+   completion and cancellation/completion races. Backend restart reconstructs actual
+   account state, but cannot recover the outstanding native login identity.
+10. Seed the old localStorage key and a separate preference before reload. Only the
+    obsolete authentication key disappears. Verify frontend and final backend send
+    guards while initialization or attachment work is awaiting completion.
 
-Account-isolation regression: delay a start preflight or account read and emit
-`account/updated` before releasing the stale reply. No stale account may populate
-the view or authorize login. Deliver the native completion-then-account-update
-sequence: the account update retires earlier account evidence, pauses sending,
-clears account-scoped views, and requires fresh inspection/reconnect. Reload
-while sign-in or reconciliation is pending: retrieve the shared backend snapshot;
-no localStorage latch may be written or restored. Open recovery controls, inspect
-actual account state and explicitly reconnect/reload. A reloaded pending login
-exposes its backend-held ID for exact cancellation without restoring URLs/codes.
-Neither queued submissions nor ordinary sending may bypass backend validation.
-Seed the obsolete legacy/profile localStorage keys with `1` alongside a theme or
-draft setting: only obsolete authentication keys disappear, and a verified ready
-backend enables sending. Repeat with a second browser on the same backend; both
-observe pending/reconciled state. A separate connection profile/backend remains
-independent. Disconnect/reconnect must retain a known pending operation regardless
-of elapsed time. Restart the backend: signed-in actual account evidence restores
-sending, while an auth-required signed-out account remains blocked without restoring
-a pending marker. The native API cannot recover a login ID across backend restart.
-Cleanup: cancel fixture login attempts, remove fixture-only unrelated storage keys,
-and close browser contexts; do not reset real credentials or unrelated preferences.
-See [backend authentication state](../../docs/native-authentication-state.md).
-Truncated/missing cursors, duplicate/malformed loaded IDs and unknown/failed
-metadata reads must reject preparation. A failed metadata-only thread read must
-never be satisfied by an earlier cached idle snapshot. This inventory covers
-native listed loaded threads, not an atomic guarantee about all clients or
-standalone processes; another client or native queue can start work afterward.
+Verify the real controls/composer at 1280×900, 375×812 and 768×1024 in both themes.
+Screenshots: `output/playwright/auth-auto-ready-<width>-<theme>.png` and
+`output/playwright/auth-context-change-<width>-<theme>.png`. Confirm enabled composer
+post-refresh in recovered state and disabled composer for actual context change.
+The script does not click manual recovery during automatic-recovery scenarios.
 
-Performance audit: one state snapshot RPC per browser readiness/reconnect, coalesced
-account verification reads, and constant-time backend send guards after verification.
-Pending/reconciliation reads return snapshots without upstream requests. No polling,
-disk state, additional notification subscriptions or history fanout is introduced.
-Measure the intercepted browser fixture's readiness call counts separately from live
-App Server latency; fixture results do not establish real authentication timing.
+Performance: one scheduling slot per burst, at most one account verification in
+flight and one queued follow-up. ChatGPT verification adds at most one session-identity
+read. Verified ordinary sends add no upstream account reads. No periodic polling,
+database, new notification subscription, history scan or unbounded concurrent fanout.
+Diagnostics retain at most 32 identity-free transitions in connection diagnostics.
 
-Cleanup: close fixture browser contexts; no live account mutation. A real pending
-attempt remains server-owned; closing a panel is not a cancellation guarantee.
+Cleanup: cancel pending fixture attempts, close browser contexts, and discard their
+fixture-only unrelated settings. Do not reset real credentials, drafts or preferences.
+No production OAuth or latency claim follows from these simulated protocol checks.
+See [state policy and limitations](../../docs/native-authentication-state.md).
 
 Configuration bound regression: supply disjoint profiles in several returned
 layers, plus duplicate names with differing model values. Expect at most 100 total

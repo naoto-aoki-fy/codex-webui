@@ -44,3 +44,21 @@ it('ignores inaccessible browser storage', () => {
   vi.stubGlobal('window', { get localStorage() { throw new Error('restricted') } })
   expect(removeLegacyNativeAuthenticationPending).not.toThrow()
 })
+it('hydrates checking state on reload and invalidates caches before publishing newer readiness',async()=>{
+ const order:string[]=[],browser=createBackendAuthentication(()=>order.push(`invalidate:${browser.state.value.phase}`))
+ vi.mocked(rpcCall).mockResolvedValue({phase:'checking',blocking:true,revision:5,generation:0,contextRevision:2})
+ await browser.refresh();expect(browser.blocking.value).toBe(true)
+ browser.observe({phase:'ready',blocking:false,revision:6,generation:0,contextRevision:2})
+ expect(browser.blocking.value).toBe(false);expect(order).toEqual(['invalidate:checking'])
+ browser.observe({phase:'unknown',blocking:true,revision:4,generation:0,contextRevision:1})
+ expect(browser.state.value.phase).toBe('ready');expect(order).toHaveLength(1)
+})
+it('ignores an older hydration response that completes after automatic readiness',async()=>{
+ const browser=createBackendAuthentication();let resolve!:(value:unknown)=>void
+ vi.mocked(rpcCall).mockImplementationOnce(()=>new Promise(r=>resolve=r) as any)
+ const reading=browser.refresh()
+ browser.observe({phase:'checking',blocking:true,revision:4,contextRevision:1})
+ browser.observe({phase:'ready',blocking:false,revision:5,contextRevision:1})
+ resolve({phase:'reconciliation',blocking:true,revision:3});await reading
+ expect(browser.state.value.phase).toBe('ready')
+})

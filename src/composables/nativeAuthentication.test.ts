@@ -24,10 +24,10 @@ it('requires signed-out auth policy and a complete bounded idle inventory withou
  const f=fixture();await f.owner.prepare();expect(f.owner.state.value).toBe('prepared');expect(f.request.mock.calls.filter(([m])=>m==='thread/read')[0]?.[1]).toEqual({threadId:'t',includeTurns:false});expect(f.request.mock.calls.some(([m])=>m==='account/login/start')).toBe(false)
  for(const override of [(m:string)=>m==='thread/loaded/list'?Promise.resolve({data:Array.from({length:21},(_,i)=>String(i)),nextCursor:null}):undefined,(m:string)=>m==='thread/read'?Promise.resolve({thread:{id:'t',status:{type:'active'}}}):undefined,(m:string)=>m==='configRequirements/read'?Promise.resolve({requirements:{allowed_login_methods:[]}}):undefined]){const blocked=fixture(override);await blocked.owner.prepare();expect(blocked.owner.state.value).toBe('rejected');expect(blocked.request.mock.calls.some(([m])=>m==='account/login/start')).toBe(false)}
 })
-it('waits for exact native completion and actual account before requiring cache reconciliation',async()=>{
+it('waits for exact native completion and hands successful recovery to backend verification',async()=>{
  const f=fixture();await f.owner.prepare();await f.owner.start('chatgpt',false);expect(f.request.mock.calls.some(([m])=>m==='account/login/start')).toBe(false)
  await f.owner.start('chatgpt',true);expect(f.owner.state.value).toBe('waiting');expect(f.owner.blocking.value).toBe(true)
- f.owner.observe(event(true,'other'));expect(f.owner.state.value).toBe('waiting');f.signIn();f.owner.observe(event());await vi.waitFor(()=>expect(f.owner.state.value).toBe('completed'));expect(f.owner.url.value).toBe('');expect(f.owner.code.value).toBe(null);expect(f.owner.needsRefresh.value).toBe(true);await f.owner.refreshConnection();expect(f.reset).toHaveBeenCalledOnce()
+ f.owner.observe(event(true,'other'));expect(f.owner.state.value).toBe('waiting');f.signIn();f.owner.observe(event());await vi.waitFor(()=>expect(f.owner.state.value).toBe('completed'));expect(f.owner.url.value).toBe('');expect(f.owner.code.value).toBe(null);expect(f.owner.needsRefresh.value).toBe(false);await f.owner.refreshConnection();expect(f.reset).not.toHaveBeenCalled()
 })
 it('handles native completion before HTTP acknowledgment without exposing a stale sign-in link',async()=>{
  let release:(v:any)=>void=()=>{};const f=fixture(m=>m==='account/login/start'?new Promise(r=>release=r):undefined);await f.owner.prepare();const pending=f.owner.start('chatgpt',true);await vi.waitFor(()=>expect(f.request.mock.calls.some(([m])=>m==='account/login/start')).toBe(true));f.signIn();f.owner.observe(event());release(browserResult);await pending;expect(f.owner.state.value).toBe('completed');expect(f.owner.url.value).toBe('')
@@ -46,7 +46,7 @@ it('handles server-reported expiration and unsafe URLs without logging or storin
  for(const authUrl of ['javascript:alert(1)','https://user:password@example.invalid/','http://untrusted.example.invalid/'])expect(()=>nativeLogin({...browserResult,authUrl},'chatgpt')).toThrow()
 })
 it('native completion winning a cancellation race cannot be reported as successful cancellation',async()=>{
- let release:(v:any)=>void=()=>{};const f=fixture(m=>m==='account/login/cancel'?new Promise(r=>release=r):undefined);await f.owner.prepare();await f.owner.start('chatgpt',true);const cancel=f.owner.cancel();f.signIn();f.owner.observe(event());release({status:'notFound'});await cancel;expect(f.owner.state.value).toBe('completed');expect(f.owner.needsRefresh.value).toBe(true)
+ let release:(v:any)=>void=()=>{};const f=fixture(m=>m==='account/login/cancel'?new Promise(r=>release=r):undefined);await f.owner.prepare();await f.owner.start('chatgpt',true);const cancel=f.owner.cancel();f.signIn();f.owner.observe(event());release({status:'notFound'});await cancel;expect(f.owner.state.value).toBe('completed');expect(f.owner.needsRefresh.value).toBe(false)
 })
 it('invalidates prepared authentication when another native account change is observed',async()=>{
  const f=fixture();await f.owner.prepare();f.owner.observe({method:'account/updated',params:{authMode:'chatgpt'},atIso:'x'});await f.owner.start('chatgpt',true);expect(f.owner.preparation.value).toBe(null);expect(f.request.mock.calls.some(([m])=>m==='account/login/start')).toBe(false)
@@ -83,4 +83,23 @@ it('restores the backend-held pending identity for cancellation and releases sta
  await f.owner.prepare();await f.owner.start('chatgpt',true)
  f.owner.observe({method:'native-authentication/state',params:{phase:'ready',blocking:false,revision:4},atIso:'fixture'})
  expect(f.owner.state.value).toBe('idle');expect(f.owner.blocking.value).toBe(false);expect(f.owner.url.value).toBe('')
+})
+it('retires in-flight inspection and local recovery state when newer backend verification arrives',async()=>{
+ const f=fixture();let release!:(value:any)=>void
+ f.owner.observe({method:'native-authentication/state',params:{phase:'unknown',blocking:true,revision:1},atIso:'fixture'})
+ f.request.mockImplementationOnce(()=>new Promise(r=>release=r));const inspection=f.owner.inspect()
+ f.owner.observe({method:'native-authentication/state',params:{phase:'checking',blocking:true,revision:2},atIso:'fixture'})
+ expect(f.owner.state.value).toBe('verifying');expect(f.owner.needsRefresh.value).toBe(false)
+ f.owner.observe({method:'native-authentication/state',params:{phase:'ready',blocking:false,revision:3},atIso:'fixture'})
+ f.owner.observe({method:'account/updated',params:{authMode:'chatgpt'},atIso:'late'})
+ f.owner.observe({method:'native-authentication/state',params:{phase:'unknown',blocking:true,revision:1},atIso:'older'})
+ release({account:{type:'chatgpt',email:'STALE@example.invalid'},requiresOpenaiAuth:true});await inspection
+ expect(f.owner.account.value).toBeNull();expect(f.owner.state.value).toBe('idle');expect(f.owner.blocking.value).toBe(false)
+})
+it('accepts a restarted backend revision after retiring the previous connection epoch',()=>{
+ const f=fixture()
+ f.owner.observe({method:'native-authentication/state',params:{phase:'unknown',blocking:true,revision:20,generation:3},atIso:'old'})
+ f.epoch.value++
+ f.owner.observe({method:'native-authentication/state',params:{phase:'ready',blocking:false,revision:1,generation:0},atIso:'restart'})
+ expect(f.owner.state.value).toBe('idle');expect(f.owner.blocking.value).toBe(false)
 })
