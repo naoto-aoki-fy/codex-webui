@@ -124,6 +124,7 @@ beforeEach(() => {
   const storage = new Map<string, string>()
   vi.stubGlobal('window', {
     localStorage: {
+      get length() { return storage.size }, key: (i: number) => [...storage.keys()][i] ?? null,
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => storage.set(key, value),
       removeItem: (key: string) => storage.delete(key),

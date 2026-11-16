@@ -42,6 +42,7 @@ function notify() { for (const cb of streams) cb({ method: 'model-preferences/ch
 beforeEach(() => {
   local = new Map(); backend = emptyModelPreferences()
   vi.stubGlobal('window', { localStorage: {
+      get length() { return local.size }, key: (i: number) => [...local.keys()][i] ?? null,
     getItem: (k: string) => local.get(k) ?? null, setItem: (k: string, v: string) => local.set(k, v), removeItem: (k: string) => local.delete(k),
   }, setTimeout: vi.fn(), clearTimeout: vi.fn() })
   reasoningCatalog.value = [

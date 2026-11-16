@@ -1,3 +1,5 @@
+import { profileStorageKey } from '../utils/browserConnectionProfile'
+import { readPreferenceRecords, savePreferenceRecords } from '../utils/browserPreferenceRecords'
 import { createBackendModelPreferences } from './backendModelPreferences'
 import { preferenceModelKey, type ModelPreferences, type ModelSettings } from '../modelPreferences'
 import { createLiveItemOrder } from './liveItemOrder'
@@ -25,7 +27,7 @@ import { interruptThreadTurn, markNativeThreadRead, refreshThreadGenerationMetad
 import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
 import { getWorkspaceProjectId, filterGroupsByWorkspaceRoots } from '../utils/desktopProjectGroups'
 import { readPlanUpdate, asRecord, readString, readNumber, readThreadTokenUsageUpdate, extractThreadIdFromNotification, readTurnErrorMessage, readNotificationErrorState, readTurnActivity, liveReasoningMessageId, readReasoningStartedItemId, readReasoningDelta, readReasoningSectionBreakMessageId, readReasoningCompletedId, readAgentMessageStartedId, readAgentMessageDelta, readAgentMessageCompleted, readCompletedImageView, readCommandOutputDelta, isAgentContentEvent, type TurnActivityState } from './desktopNotificationReaders'
-import { loadLegacyGlobalCollaborationMode, NEW_THREAD_MODEL_CONTEXT, normalizeStoredModelId, createStringKeyedRecord, cloneStringKeyedRecord, omitStringKeyedRecordKey, pruneThreadContextStateMap, isNewThreadContextId, toThreadContextId, loadSelectedModelMap, readSelectedModel, saveSelectedModelMap, loadReasoningPreferences, loadSelectedCollaborationModeMap, readSelectedCollaborationMode, writeSelectedCollaborationModeForContext, saveSelectedCollaborationModeMap, loadThreadTokenUsageMap, saveThreadTokenUsageMap, loadSelectedThreadId, saveSelectedThreadId } from './desktopStatePersistence'
+import { loadLegacyGlobalCollaborationMode, NEW_THREAD_MODEL_CONTEXT, normalizeStoredModelId, createStringKeyedRecord, cloneStringKeyedRecord, omitStringKeyedRecordKey, pruneThreadContextStateMap, isNewThreadContextId, toThreadContextId, loadSelectedModelMap, readSelectedModel, saveSelectedModelMap, loadReasoningPreferences, loadSelectedCollaborationModeMap, readSelectedCollaborationMode, writeSelectedCollaborationModeForContext, saveSelectedCollaborationModeMap } from './desktopStatePersistence'
 import { areStringArraysEqual, areMessageArraysEqual, normalizeMessageText, isOptimisticUserMessage, upsertMessage } from '../utils/desktopMessageReconciliation'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { formatTurnDuration, parseIsoTimestamp } from '../utils/turnTiming'
@@ -162,7 +164,7 @@ function toForkedThreadTitle(title: string): string {
 export function useDesktopState() {
   const projectGroups = ref<UiProjectGroup[]>([])
   const sourceGroups = ref<UiProjectGroup[]>([])
-  const selectedThreadId = ref(loadSelectedThreadId())
+  const selectedThreadId = ref('')
   const securityObservation = createThreadSecurityObservation()
   const deniedActions = createDeniedActionObservation()
   const history = createDesktopHistory({
@@ -291,9 +293,18 @@ export function useDesktopState() {
     applyBackendPreferences(backendPreferences.state.value)
   }
 
+  let savedThreadModelMap = legacyModelMap
+  let savedCollaborationMap = legacyCollaboration
+  function saveCollaborationMap(map: Record<string, CollaborationModeKind>): void {
+    saveSelectedCollaborationModeMap(map, savedCollaborationMap)
+    savedCollaborationMap = { ...map }
+  }
+
   function saveThreadModelMap(map: Record<string, string>): void {
     const legacyDefaults = backendPreferences.state.value.initialized ? {} : Object.fromEntries(Object.entries(legacyModelMap).filter(([key]) => key.startsWith('__new-thread')))
-    saveSelectedModelMap({ ...legacyDefaults, ...Object.fromEntries(Object.entries(map).filter(([key]) => !key.startsWith('__new-thread'))) })
+    const next = { ...legacyDefaults, ...Object.fromEntries(Object.entries(map).filter(([key]) => !key.startsWith('__new-thread'))) }
+    saveSelectedModelMap(next, savedThreadModelMap)
+    savedThreadModelMap = next
   }
 
   function currentPreferenceSettings(threadId: string): ModelSettings | null {
@@ -390,7 +401,7 @@ export function useDesktopState() {
   const browserConnection = createConnectionNotice()
   const appServerConnection = createConnectionNotice()
   const connection = createDesktopConnection({
-    onBrowserConnectionState: state=>{browserConnection.update(state);if(state!=='connected'){nativeAuthenticationEpoch.value++;backendAuthentication.disconnect()}},
+    onBrowserConnectionState: state=>{browserConnection.update(state);if(state!=='connected'){threadTokenUsageByThreadId.value={};nativeAuthenticationEpoch.value++;backendAuthentication.disconnect()}},
     invalidateReadJobs() { operationEpoch.value++; nativeAuthenticationEpoch.value++; diagnosticWarnings.value = [] },
     get history() { return history; },
     get setLiveAgentMessagesForThread() { return setLiveAgentMessagesForThread; },
@@ -485,7 +496,7 @@ export function useDesktopState() {
   })
 
   const codexRateLimit = ref<UiRateLimitSnapshot | null>(null)
-  const threadTokenUsageByThreadId = ref<Record<string, UiThreadTokenUsage>>(loadThreadTokenUsageMap())
+  const threadTokenUsageByThreadId = ref<Record<string, UiThreadTokenUsage>>({})
 
   const installedSkills = ref<SkillInfo[]>([])
   const accountRateLimitSnapshots = ref<UiRateLimitSnapshot[]>([])
@@ -638,15 +649,40 @@ export function useDesktopState() {
   })
 
   // Explicit composer choices survive backend defaults, including after reload.
-  const explicitModelStorageKey = 'codex-web-local.explicit-model-contexts.v1'
-  const explicitModelContexts = new Set<string>((() => {
-    try {
-      const stored: unknown = JSON.parse(window.localStorage.getItem(explicitModelStorageKey) || '[]')
-      return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string' && !!selectedModelIdByContext.value[id]) : []
-    } catch { return [] }
-  })())
+  const explicitModelStorageKey = profileStorageKey('codex-web-local.explicit-model-contexts.v2')
+  const legacyExplicit: Record<string, string> = Object.create(null)
+  try {
+    // The old global key belongs only to the legacy connection profile.
+    if (profileStorageKey('codex-web-local.explicit-model-contexts.v1') === 'codex-web-local.explicit-model-contexts.v1') {
+      const stored: unknown = JSON.parse(window.localStorage.getItem('codex-web-local.explicit-model-contexts.v1') || '[]')
+      if (Array.isArray(stored)) for (const id of stored) if (typeof id === 'string' && selectedModelIdByContext.value[id]) legacyExplicit[id] = '1'
+    }
+  } catch { /* Invalid migration data cannot block startup. */ }
+  let savedExplicitContexts = readPreferenceRecords(explicitModelStorageKey, legacyExplicit)
+  const explicitModelContexts = new Set(Object.keys(savedExplicitContexts))
   function persistExplicitModelContexts(): void {
-    try { window.localStorage.setItem(explicitModelStorageKey, JSON.stringify([...explicitModelContexts])) } catch { /* Storage is optional. */ }
+    const next = Object.fromEntries([...explicitModelContexts].map(id => [id, '1']))
+    savePreferenceRecords(explicitModelStorageKey, next, savedExplicitContexts)
+    savedExplicitContexts = next
+  }
+  function onPreferenceStorage(event: StorageEvent): void {
+    const bases = ['selected-model-by-context.v2', 'collaboration-mode-by-context.v2', 'explicit-model-contexts.v2']
+      .map(key => profileStorageKey(`codex-web-local.${key}.`))
+    if (!event.key || !bases.some(base => event.key!.startsWith(base))) return
+    const models = loadSelectedModelMap()
+    const modes = loadSelectedCollaborationModeMap()
+    // Shared preferences may update; navigation and draft payloads never do.
+    selectedModelIdByContext.value = { ...Object.fromEntries(Object.entries(selectedModelIdByContext.value).filter(([key]) => key.startsWith('__new-thread'))),
+      ...Object.fromEntries(Object.entries(models).filter(([key]) => !key.startsWith('__new-thread'))) }
+    selectedCollaborationModeByContext.value = { ...Object.fromEntries(Object.entries(modes).filter(([key]) => key !== '__new-thread__')),
+      ...(selectedCollaborationModeByContext.value['__new-thread__'] ? { '__new-thread__': selectedCollaborationModeByContext.value['__new-thread__'] } : {}) }
+    savedThreadModelMap = models
+    savedCollaborationMap = modes
+    savedExplicitContexts = readPreferenceRecords(explicitModelStorageKey, legacyExplicit)
+    explicitModelContexts.clear()
+    for (const id of Object.keys(savedExplicitContexts)) explicitModelContexts.add(id)
+    selectedModelId.value = readAvailableSelectedModel(readModelIdForThread(selectedThreadId.value))
+    selectedCollaborationMode.value = readSelectedCollaborationMode(selectedCollaborationModeByContext.value, selectedThreadId.value)
   }
   // A legacy catalog belongs to the server's configured provider. When older
   // config/read omits that identity, effective thread metadata is the evidence.
@@ -701,15 +737,12 @@ export function useDesktopState() {
     return availableModelIds.value[0] ?? ''
   }
 
-  function setSelectedThreadId(nextThreadId: string, options: { persist?: boolean } = {}): void {
+  function setSelectedThreadId(nextThreadId: string): void {
     if (selectedThreadId.value === nextThreadId) return
     selectionGeneration += 1
     selectedThreadId.value = nextThreadId
     if (!nextThreadId) {
       restoreNewConversationPreferences()
-    }
-    if (options.persist !== false) {
-      saveSelectedThreadId(nextThreadId)
     }
     ensureAvailableModelIds(readModelIdForThread(nextThreadId))
     selectedModelId.value = readAvailableSelectedModel(readModelIdForThread(nextThreadId))
@@ -764,7 +797,7 @@ export function useDesktopState() {
     const previousProvider = parseModelSelection(readModelIdForThread(normalizedThreadId)).provider
     const providerChanged = !!confirmedProvider && !!previousProvider && confirmedProvider !== previousProvider
     if (explicitModelContexts.has(normalizedThreadId) && !providerChanged) return
-    if (providerChanged) explicitModelContexts.delete(normalizedThreadId)
+    if (providerChanged) { explicitModelContexts.delete(normalizedThreadId); persistExplicitModelContexts() }
     const incoming = parseModelSelection(modelId.trim())
     const effectiveProvider = confirmedProvider || resolveSelectionProvider(modelId) || resolveSelectionProvider(readModelIdForThread(threadId))
     const fallbackModel = providerChanged ? defaultModelForProvider(reasoningCatalog.value, effectiveProvider) : parseModelSelection(readModelIdForThread(threadId)).model
@@ -791,7 +824,6 @@ export function useDesktopState() {
     if (!usage) {
       if (!(normalizedThreadId in threadTokenUsageByThreadId.value)) return
       threadTokenUsageByThreadId.value = omitKey(threadTokenUsageByThreadId.value, normalizedThreadId)
-      saveThreadTokenUsageMap(threadTokenUsageByThreadId.value)
       return
     }
 
@@ -802,7 +834,6 @@ export function useDesktopState() {
       ...threadTokenUsageByThreadId.value,
       [normalizedThreadId]: usage,
     }
-    saveThreadTokenUsageMap(threadTokenUsageByThreadId.value)
   }
 
   function readCollaborationModeForThread(threadId: string): CollaborationModeKind {
@@ -822,7 +853,7 @@ export function useDesktopState() {
       nextMode,
     )
     if (isNewThreadContextId(contextId)) { newThreadModeEdited = true; saveGlobalChoice('') }
-    saveSelectedCollaborationModeMap(Object.fromEntries(Object.entries(selectedCollaborationModeByContext.value).filter(([key]) => key !== '__new-thread__')))
+    saveCollaborationMap(Object.fromEntries(Object.entries(selectedCollaborationModeByContext.value).filter(([key]) => key !== '__new-thread__')))
   }
 
   function setSelectedCollaborationModeForThread(threadId: string, mode: CollaborationModeKind): void {
@@ -836,7 +867,7 @@ export function useDesktopState() {
       selectedCollaborationMode.value = nextMode
     }
     if (isNewThreadContextId(toThreadContextId(threadId))) { newThreadModeEdited = true; saveGlobalChoice(threadId) }
-    saveSelectedCollaborationModeMap(Object.fromEntries(Object.entries(selectedCollaborationModeByContext.value).filter(([key]) => key !== '__new-thread__')))
+    saveCollaborationMap(Object.fromEntries(Object.entries(selectedCollaborationModeByContext.value).filter(([key]) => key !== '__new-thread__')))
   }
 
   function setCodexRateLimit(nextSnapshot: UiRateLimitSnapshot | null): void {
@@ -1121,31 +1152,7 @@ export function useDesktopState() {
       if (!activeThreadIds.has(threadId)) history.invalidateThreadHistory(threadId, false)
     }
     automaticModelByContext.value = pruneThreadContextStateMap(automaticModelByContext.value, activeThreadIds)
-    const nextSelectedModelMap = pruneThreadContextStateMap(selectedModelIdByContext.value, activeThreadIds)
-    if (nextSelectedModelMap !== selectedModelIdByContext.value) {
-      selectedModelIdByContext.value = nextSelectedModelMap
-      selectedModelId.value = readAvailableSelectedModel(readModelIdForThread(selectedThreadId.value))
-      saveThreadModelMap(nextSelectedModelMap)
-      for (const context of explicitModelContexts) {
-        if (!nextSelectedModelMap[context]) explicitModelContexts.delete(context)
-      }
-      persistExplicitModelContexts()
-      for (const id of effectiveThreadProviders.keys()) {
-        if (!activeThreadIds.has(id)) effectiveThreadProviders.delete(id)
-      }
-    }
-    const nextSelectedCollaborationModeMap = pruneThreadContextStateMap(
-      selectedCollaborationModeByContext.value,
-      activeThreadIds,
-    )
-    if (nextSelectedCollaborationModeMap !== selectedCollaborationModeByContext.value) {
-      selectedCollaborationModeByContext.value = nextSelectedCollaborationModeMap
-      selectedCollaborationMode.value = readSelectedCollaborationMode(
-        nextSelectedCollaborationModeMap,
-        selectedThreadId.value,
-      )
-      saveSelectedCollaborationModeMap(Object.fromEntries(Object.entries(nextSelectedCollaborationModeMap).filter(([key]) => key !== '__new-thread__')))
-    }
+    // A sidebar page is not an authoritative deletion list for saved choices.
     history.hasMoreOlderMessagesByThreadId.value = pruneThreadStateMap(history.hasMoreOlderMessagesByThreadId.value, activeThreadIds)
     history.loadingOlderMessagesByThreadId.value = pruneThreadStateMap(history.loadingOlderMessagesByThreadId.value, activeThreadIds)
     history.loadedMessagesByThreadId.value = pruneThreadStateMap(history.loadedMessagesByThreadId.value, activeThreadIds)
@@ -1831,7 +1838,11 @@ export function useDesktopState() {
     if(notification.method==='app-server/reconnected')void backendPreferences.refresh()
     if(notification.method==='ready'||notification.method==='app-server/reconnected')void backendAuthentication.refresh()
     if(notification.method==='native-authentication/state'){backendAuthentication.observe(notification.params);return}
-    if(notification.method==='app-server/disconnected')backendAuthentication.disconnect()
+    if(notification.method==='app-server/disconnected'){threadTokenUsageByThreadId.value={};backendAuthentication.disconnect()}
+    if(notification.method==='turn/started'||notification.method==='thread/reverted'){
+      const id=extractThreadIdFromNotification(notification)
+      if(id)setThreadTokenUsage(id,null)
+    }
     securityObservation.observe(notification)
     permissionChanges.observe(notification)
     // Backend snapshots invalidate account caches before raw notifications arrive.
@@ -2837,6 +2848,7 @@ export function useDesktopState() {
   }
 
   function stopPolling(): void {
+    if (typeof window !== 'undefined') window.removeEventListener?.('storage', onPreferenceStorage)
     operationEpoch.value++
     backendAuthentication.dispose()
     nativeAuthentication.value?.dispose();nativeAuthentication.value=null
@@ -2924,8 +2936,8 @@ export function useDesktopState() {
     threadTokenUsageByThreadId.value = {}
   }
 
-  function primeSelectedThread(threadId: string, options: { persist?: boolean } = {}): void {
-    setSelectedThreadId(threadId, options)
+  function primeSelectedThread(threadId: string): void {
+    setSelectedThreadId(threadId)
   }
 
   async function retrySelectedSubscription(): Promise<void> {
@@ -3029,7 +3041,7 @@ export function useDesktopState() {
     updateSelectedSpeedMode,
     respondToPendingServerRequest: approvals.respondToPendingServerRequest,
     removeProject,
-    startPolling: () => { backendPreferences.resume(); connection.startPolling() },
+    startPolling: () => { if (typeof window !== 'undefined') window.addEventListener?.('storage', onPreferenceStorage); backendPreferences.resume(); connection.startPolling() },
     stopPolling,
     primeSelectedThread,
   }

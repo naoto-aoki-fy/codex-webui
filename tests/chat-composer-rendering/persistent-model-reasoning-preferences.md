@@ -51,3 +51,24 @@
 
 - Remove only disposable threads/profile directories. Restore backed-up browser keys, backend preference files and appearance; restore fixture catalog/error behavior.
 - See [backend model preferences](../../docs/model-preferences.md) for storage, API, migration, failure semantics and the performance audit.
+
+## Concurrent context preferences and stale cache retirement
+
+Setup: Two same-origin tabs and two disposable threads; preserve existing legacy
+browser preferences. Use a profile with two valid models in the same provider.
+
+1. Select a different model and collaboration mode in each tab/thread at the same
+   time. Reload both. Both choices must survive. Repeat with two tabs editing the
+   same context: the last stored choice wins; draft text never changes.
+2. Change a thread preference in the other tab; verify storage events update the
+   shared selection without navigating either tab.
+3. Seed a legacy global explicit-context array. Legacy profile choices must still
+   survive server default hydration; a named profile must not inherit the array.
+4. Seed old selected-thread, model-order and token-usage entries. Home must stay
+   home, usage ordering must follow backend accepted usage, and stale token counts
+   must not appear after reload. Counts are unavailable until server observation.
+5. Reload with corrupt or unavailable browser storage: preferences use defaults or
+   backend migration; the app must still boot. No unknown keys may be removed.
+
+Cleanup: Remove only disposable context records and threads, restoring legacy
+fixtures if modified. No backend accepted-usage data needs to be fabricated.
