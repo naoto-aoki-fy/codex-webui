@@ -20,6 +20,7 @@ function memory() {
   return value
 }
 export let draftStorageError = ''
+let draftReadFailed = false
 function prefix(threadId: string): string {
   return profileStorageKey(`${DRAFT_STORAGE_PREFIX}${encodeURIComponent(threadId).replace(/\./g, '%2E')}.`)
 }
@@ -46,9 +47,12 @@ export function loadPersistedDraftForThread(threadId: string): ComposerDraftPayl
     const raw = memory().get(owned) ?? window.localStorage.getItem(owned)
       ?? (previous?.startsWith(prefix(normalizedThreadId)) ? window.localStorage.getItem(previous) : null)
       ?? (!hasV2Draft(normalizedThreadId) ? legacyKeys(normalizedThreadId).map(key => window.localStorage.getItem(key)).find(value => value !== null) : null)
+    if (draftReadFailed) { draftReadFailed = false; draftStorageError = '' }
     if (!raw) return null
     return parseDraft(raw)
   } catch {
+    draftReadFailed = true
+    draftStorageError = 'Browser draft storage could not be read. Existing saved drafts were not removed; retry access before continuing.'
     return null
   }
 }
@@ -102,7 +106,7 @@ export function persistDraftForThread(threadId: string, payload: ComposerDraftPa
     window.localStorage.setItem(key, raw)
     try { window.sessionStorage.setItem(pointerKey(normalizedThreadId), key) } catch { /* Manual recovery still works. */ }
     memory().delete(key)
-    draftStorageError = ''
+    if (!draftReadFailed) draftStorageError = ''
   } catch {
     memory().set(key, raw)
     draftStorageError = 'Draft is available in this tab only. Browser storage could not save it; copy it before closing.'

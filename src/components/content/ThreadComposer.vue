@@ -680,6 +680,7 @@ watch(
     isComposerCollapsed.value = false
     input.clearDraftState()
     const restored = loadPersistedDraftForThread(nextThreadId)
+    draftSaveWarning.value = draftStorageError
     if (restored) {
       input.replaceDraftState(restored)
       input.onInputChange()

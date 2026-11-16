@@ -15,7 +15,7 @@ async function clear(historyOnly:boolean){saving.value=true;try{library.value=aw
 async function save(next:PromptLibrary){saving.value=true;const previous=library.value;try{library.value=await savePromptLibrary(next,previous);error.value='';return true}catch(e){error.value=e instanceof Error?e.message:'Browser storage write failed; previous saved prompts may remain.';return false}finally{saving.value=false}}
 async function savePreset(){if(containsCredential(text.value)){error.value='Remove credential-like text before saving a preset.';return}if(!name.value.trim()||!text.value.trim()){error.value='Enter a name and text.';return}if(!editing.value&&library.value.presets.length>=20){error.value='Limit: 20 presets. Delete one first.';return}
  const preset={id:editing.value||`preset-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,name:name.value.trim().slice(0,80),text:text.value.slice(0,PROMPT_TEXT_LIMIT)}
- if(await save({...library.value,presets:editing.value?library.value.presets.map(p=>p.id===editing.value?preset:p):[...library.value.presets,preset]})){editing.value='';name.value='';text.value=''}
+ if(await save({...library.value,presets:editing.value&&library.value.presets.some(p=>p.id===editing.value)?library.value.presets.map(p=>p.id===editing.value?preset:p):[...library.value.presets,preset]})){editing.value='';name.value='';text.value=''}
 }
 </script>
 <template>

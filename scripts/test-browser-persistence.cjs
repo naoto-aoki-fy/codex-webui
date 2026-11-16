@@ -77,7 +77,7 @@ async function concurrency(browser, fallback) {
   await b.reload()
   assert.deepEqual(await moduleCall(b, 'composerDraftStorage', 'loadPersistedDraftForThread', ['structured']), payload('complete payload'))
 
-  // True simultaneous cross-page lock requests, including IndexedDB fallback.
+  // True simultaneous IndexedDB record transactions across pages; no Web Locks dependency.
   const burstStart = Date.now()
   await Promise.all(Array.from({ length: 16 }, (_, i) => moduleCall(i % 2 ? a : b, 'queueSubmissionReceipts', 'writeQueueSubmissionReceipt', [`queue-${i}`, `client-${i}`])))
   const receipts = await moduleCall(a, 'queueSubmissionReceipts', 'readQueueSubmissionReceipts')
@@ -169,8 +169,84 @@ async function concurrency(browser, fallback) {
   await context.close()
   console.log(`PASS real-tab navigation, drafts, duplicate identity, structured reload, receipts, presets and storage events (IndexedDB transactions; Web Locks ${fallback ? 'disabled' : 'available'})`)
 }
+async function focusedUI(browser) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+  const observed = await fixture(context)
+  const a = await open(context), b = await open(context)
+  await b.locator('.thread-composer-input').fill('other tab recoverable draft')
+  await a.locator('.thread-composer-input').fill('durable before quota')
+  await a.waitForFunction(() => Object.entries(localStorage).some(([key, value]) => key.includes('thread-draft.v2.') && value.includes('durable before quota')))
+  const before = await a.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.includes('thread-draft.'))))
+  await a.evaluate(() => {
+    window.restoreAcceptanceStorage = Storage.prototype.setItem
+    Storage.prototype.setItem = function (key, value) {
+      if (this === localStorage && key.includes('thread-draft.v2.')) throw new DOMException('Injected draft quota failure', 'QuotaExceededError')
+      return window.restoreAcceptanceStorage.call(this, key, value)
+    }
+  })
+  await a.locator('.thread-composer-input').fill('unsaved after quota; keep in memory')
+  await a.getByRole('alert').filter({ hasText: 'copy it before closing' }).waitFor()
+  assert.deepEqual(await a.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.includes('thread-draft.')))), before)
+  await a.getByRole('button', { name: 'Recover saved drafts', exact: true }).click()
+  await a.getByRole('button', { name: 'Recover copy: other tab recoverable draft', exact: true }).first().click()
+  await a.getByRole('alert').filter({ hasText: 'Could not preserve the current draft' }).waitFor()
+  assert.equal(await a.locator('.thread-composer-input').inputValue(), 'unsaved after quota; keep in memory')
+  assert.deepEqual(await a.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.includes('thread-draft.')))), before)
+  for (const theme of ['light', 'dark']) {
+    await a.evaluate(theme => { localStorage.setItem('codex-web-local.dark-mode.v1', theme); document.documentElement.classList.toggle('dark', theme === 'dark') }, theme)
+    await a.waitForTimeout(2200)
+    const screenshot = `output/playwright/acceptance-draft-failure-${theme}.png`
+    await a.screenshot({ path: screenshot, fullPage: true })
+    console.log(JSON.stringify({ url: a.url(), viewport: '1440x1000', theme, screenshot, result: 'visible quota and archive refusal; live draft and all saved snapshots retained' }))
+  }
+  await a.evaluate(() => { Storage.prototype.setItem = window.restoreAcceptanceStorage })
+  await a.locator('.thread-composer-input').fill('saved after quota recovered')
+  await a.waitForFunction(() => Object.entries(localStorage).some(([key, value]) => key.includes('thread-draft.v2.') && value.includes('saved after quota recovered')))
+  const savedBeforeReadFailure = await b.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.includes('thread-draft.'))))
+  await a.addInitScript(() => {
+    window.restoreAcceptanceRead = Storage.prototype.getItem
+    Storage.prototype.getItem = function (key) {
+      if (this === localStorage && key.includes('thread-draft.v2.')) throw new DOMException('Injected draft read denial', 'SecurityError')
+      return window.restoreAcceptanceRead.call(this, key)
+    }
+  })
+  await a.reload()
+  await a.getByRole('alert').filter({ hasText: 'Browser draft storage could not be read' }).waitFor()
+  const savedAfterReadFailure = await b.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.includes('thread-draft.'))))
+  for (const [key, value] of Object.entries(savedBeforeReadFailure)) assert.equal(savedAfterReadFailure[key], value)
+  await a.evaluate(() => { Storage.prototype.getItem = window.restoreAcceptanceRead })
+  const library = { presets: [{ id: 'editable', name: 'Editable', text: 'original text' }], history: [] }
+  await moduleCall(a, 'promptLibrary', 'savePromptLibrary', [library, { presets: [], history: [] }])
+  const showPrompts = async page => {
+    await page.getByRole('button', { name: 'Add attachments and settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Prompts & commands', exact: true }).click()
+  }
+  await showPrompts(a); await showPrompts(b)
+  await b.getByRole('button', { name: 'Edit preset Editable', exact: true }).click()
+  await b.getByRole('textbox', { name: 'Preset text', exact: true }).fill('retained edit after remote deletion')
+  await a.getByRole('button', { name: 'Delete preset Editable', exact: true }).click()
+  await b.getByRole('button', { name: 'Use preset Editable', exact: true }).waitFor({ state: 'detached' })
+  assert.equal(await b.getByRole('textbox', { name: 'Preset text', exact: true }).inputValue(), 'retained edit after remote deletion')
+  await b.getByRole('button', { name: 'Save preset changes', exact: true }).click()
+  await b.getByRole('button', { name: 'Use preset Editable', exact: true }).waitFor()
+  assert.equal((await moduleCall(b, 'promptLibrary', 'loadPromptLibrary')).presets[0].text, 'retained edit after remote deletion')
+  await b.reload(); await showPrompts(b)
+  await b.getByRole('button', { name: 'Use preset Editable', exact: true }).waitFor()
+  for (const theme of ['light', 'dark']) {
+    await b.evaluate(theme => { localStorage.setItem('codex-web-local.dark-mode.v1', theme); document.documentElement.classList.toggle('dark', theme === 'dark') }, theme)
+    await b.waitForTimeout(2200)
+    const screenshot = `output/playwright/acceptance-preset-conflict-${theme}.png`
+    await b.screenshot({ path: screenshot, fullPage: true })
+    console.log(JSON.stringify({ url: b.url(), viewport: '1440x1000', theme, screenshot, result: 'explicit edit after deletion recreates only edited preset and survives reload' }))
+  }
+  assert.deepEqual(observed.errors, [])
+  assert.equal(observed.calls.filter(call => ['turn/start', 'thread/queue/add'].includes(call.method)).length, 0)
+  await context.close()
+  console.log('PASS draft read, quota and recovery failures stay visible without deleting saved data')
+  console.log('PASS saving an editor after remote deletion preserves the edit and survives reload')
+}
 ;(async () => {
   fs.mkdirSync('output/playwright', { recursive: true })
   const browser = await chromium.launch({ headless: true })
-  try { await concurrency(browser, false); await concurrency(browser, true) } finally { await browser.close() }
+  try { console.log(`ENGINE ${browser.browserType().name()} ${browser.version()}`); await concurrency(browser, false); await concurrency(browser, true); await focusedUI(browser) } finally { await browser.close() }
 })().catch(error => { console.error(error); process.exitCode = 1 })

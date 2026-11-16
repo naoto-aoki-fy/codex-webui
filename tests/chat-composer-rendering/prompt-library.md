@@ -7,7 +7,7 @@ Setup: ordinary conversation or isolated `node scripts/test-approved-prompts.cjs
 Open Prompts & commands. Save a named preset, edit it, reload, select it: draft
 text changes, attachments/skills remain, no turn is sent. Delete individual presets
 and history rows; clear recent history or all stored text explicitly. Submit a
-normal prompt: only accepted text enters recent history (30 entries, deduplicated,
+normal prompt after explicitly enabling history: only accepted text enters recent history (30 entries, deduplicated,
 8,000 characters each). Rejected prompts, attachment bytes and tool output must
 not be stored. Obvious credential-like/oversized text is submitted without history.
 Storage failures show a message without blocking submission.
@@ -19,9 +19,8 @@ Both themes/all three sizes. Cleanup: Clear all stored prompts and presets in th
 fixture browser; no remote preset registry or browser-owned execution queue exists.
 
 Performance: no RPC/subscription/startup reads. Profile-local storage is read on
-opening the library and on accepted text submission; at most 20 presets/30 prompts,
-450,000 serialized characters accepted on load. Bounded synchronous storage and
-JSON processing, no attachment/conversation copies. Browser matrix verifies no
+opening the library and on opted-in accepted text submission; at most 20 presets/30 prompts,
+450,000 serialized characters accepted on load. Bounded JSON processing and asynchronous IndexedDB record transactions, no attachment/conversation copies. Browser matrix verifies no
 turn on selection or action alias, reload persistence and explicit clearing.
 Live model acceptance NOT RUN (fixture protocol only).
 
@@ -51,3 +50,24 @@ and history entry, but no `prompt-history-enabled.v1` setting.
 
 Cleanup: Clear disposable history/presets explicitly; restore fixtures and opt-in
 setting. Never clear all localStorage as part of migration or recovery.
+
+
+## Final acceptance: preset edit versus remote deletion
+
+Setup: Two tabs with Prompts & commands open and a preset named Editable.
+
+1. In tab B, edit Editable and change its text without saving.
+2. In tab A, delete Editable. Wait until the preset list in B reflects deletion.
+3. In B, click Save preset changes. The explicit edit must recreate only Editable,
+   retain the entered text, and survive reload. It must not silently clear the
+   editor without saving. Other presets remain intact.
+4. Reverse the transaction order: commit the edit, then delete. The preset stays
+   deleted. Simultaneous edits to the same preset use last committed operation.
+5. Clear history while recording an opted-in prompt in the other tab. A clear
+   committed after recording removes it; recording committed after clear remains.
+   Presets are unchanged. Verify light/dark themes.
+
+Cleanup: Delete disposable presets/history through their explicit controls;
+restore the prior history opt-in. No storage reset or automatic replay.
+Automation: `node scripts/test-persistence-acceptance.cjs` and the focused UI cases
+in `node scripts/test-browser-persistence.cjs`.

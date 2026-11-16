@@ -22,8 +22,21 @@ it('reads the existing fork recovery key and tolerates unavailable storage', asy
   vi.stubGlobal('window', { location: { href: 'http://fixture/' }, localStorage: {
     getItem: (key: string) => key.includes('thread-fork-recovery') ? JSON.stringify('Restored prompt') : null,
   } })
-  const { loadPersistedDraftForThread } = await import('./composerDraftStorage')
+  const drafts = await import('./composerDraftStorage')
+  const { loadPersistedDraftForThread } = drafts
   expect(loadPersistedDraftForThread('thread')?.text).toBe('Restored prompt')
   vi.stubGlobal('window', { get localStorage() { throw new Error('Unavailable') } })
   expect(loadPersistedDraftForThread('thread')).toBeNull()
+  expect(drafts.draftStorageError).toContain('Existing saved drafts were not removed')
+  const storage = new Map<string, string>()
+  let readable = false
+  vi.stubGlobal('window', { localStorage: {
+    getItem: (key: string) => { if (!readable) throw new Error('Read denied'); return storage.get(key) ?? null },
+    setItem: (key: string, value: string) => storage.set(key, value),
+  } })
+  drafts.persistDraftForThread('thread', { text: 'new edits', imageUrls: [], fileAttachments: [], skills: [] })
+  expect(drafts.draftStorageError).toContain('Existing saved drafts were not removed')
+  readable = true
+  expect(loadPersistedDraftForThread('thread')?.text).toBe('new edits')
+  expect(drafts.draftStorageError).toBe('')
 })
