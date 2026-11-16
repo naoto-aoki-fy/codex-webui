@@ -2,12 +2,13 @@ import type { ComputedRef, Ref } from 'vue';
 import { computed, ref } from 'vue';
 import type { Router } from 'vue-router';
 import { cancelConversationTransfer, prepareConversationTransfer, reasoningCatalog } from './api/codexGateway';
-import { defaultModelForProvider, modelSelectionKey } from './api/modelCapabilities';
+import { defaultModelForProvider, modelSelectionKey, parseModelSelection } from './api/modelCapabilities';
 import type { ForkMethod, UiMessage } from './types/codex';
 /** Owns the existing prepare/select/confirm/cancel dialog state machine and native-fork publication. No automatic retry, injection replay, lifecycle hook or module-level state is introduced. */
 export function createAppTransferDialog(deps: {
     messages: ComputedRef<UiMessage[]>;
     selectedThreadId: Ref<string, string>;
+    composerSelectedModelId: ComputedRef<string>;
     forkThreadById: (threadId: string, transferId?: string, modelId?: string) => Promise<string>;
     forkThreadFromTurn: (threadId: string, _turnIndex: number, transferId?: string, modelId?: string) => Promise<string>;
     desktopError: Ref<string, string>;
@@ -46,6 +47,8 @@ export function createAppTransferDialog(deps: {
         const turnId = deps.selectedThreadId.value === sourceId ? deps.messages.value.find(message => message.role === 'assistant' && message.turnIndex === turnIndex)?.turnId : undefined;
         transferPicker.value = { sourceId, turnIndex, turnId, id: '', loading: true, pending: false, failure: '' };
         const picker = transferPicker.value;
+        // Capture the opening selection without binding later dialog choices to the composer.
+        const composerProvider = parseModelSelection(deps.composerSelectedModelId.value).provider;
         transferProvider.value = '';
         try {
             const prepared = await prepareConversationTransfer(sourceId, turnIndex, turnId);
@@ -55,7 +58,8 @@ export function createAppTransferDialog(deps: {
                 await cancelConversationTransfer(prepared.id);
             else {
                 const options = transferProviderOptions.value;
-                transferProvider.value = (options.find(option => option.value !== prepared.sourceModelProvider) ?? options[0])?.value ?? '';
+                transferProvider.value = (options.find(option => option.value === composerProvider)
+                    ?? options.find(option => option.value !== prepared.sourceModelProvider) ?? options[0])?.value ?? '';
             }
         }
         catch (cause) {

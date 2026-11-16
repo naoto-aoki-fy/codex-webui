@@ -992,6 +992,7 @@ function onArchiveThread(threadId: string): void {
 const transfers = createAppTransferDialog({
   get messages() { return messages; },
   get selectedThreadId() { return selectedThreadId; },
+  get composerSelectedModelId() { return composerSelectedModelId; },
   get forkThreadById() { return forkThreadById; },
   get forkThreadFromTurn() { return forkThreadFromTurn; },
   get desktopError() { return desktopError; },
