@@ -69,6 +69,8 @@ A fresh tab can explicitly copy them using **Recover saved drafts**. The picker
 never deletes another writer's data. Without sessionStorage, fresh document keys
 still isolate writes, but recovery requires that picker. With failed localStorage
 writes, drafts remain in memory and the composer warns that closing can lose them.
+A failed draft read is also visible and stays flagged until a read succeeds;
+a successful subsequent write alone does not prove the earlier data was recovered.
 
 Performance: each save serializes one current draft, not all threads; this retains
 synchronous localStorage image costs from v1. Full recovery payload enumeration happens only
@@ -113,6 +115,49 @@ are bounded. Old open application versions cannot cooperate with this protocol;
 reload them before queue use. Downgrading to an older release cannot see new
 IndexedDB receipts and is not a safe recovery procedure.
 
+## Safe upgrade: mixed versions are unsupported
+
+**Old-version and new-version tabs must not submit concurrently.** This release
+has no cross-version handshake. Older code rewrites localStorage and cannot see
+new IndexedDB receipts. Once an IndexedDB record exists, newer code does not keep
+merging later legacy writes. New-version tabs alone are covered by concurrency
+tests; an old tab bypasses those protections.
+
+Use this procedure for every browser context/origin and connection profile:
+
+1. Pause submissions in **all** app tabs before opening the new build. Let known
+   in-flight requests settle. Record any lost/delayed acknowledgment as unresolved;
+   do not retry it, even if the native queue row is absent.
+2. Preserve each tab's visible draft before reloading: text, images/original image
+   sources, file paths, Skills and Apps. Older same-thread tabs may already have
+   overwritten their shared v1 draft, so copy directly from each live composer.
+   Back up only the relevant legacy/named-profile draft and queue-receipt records;
+   if a new tab has already run, preserve its IndexedDB `records` entries too.
+3. Keep unresolved thread/client message IDs from both stores. Inspect native
+   queue/history against these identities. Preserve the browser profile and saved
+   records; do **not** clear browser/site storage or delete receipts to unlock Send.
+4. Deploy the new build and reload **every** existing app tab, including duplicate,
+   pinned, background and installed-app windows, before any further submission.
+   Check that all tabs load the same deployment's assets. Do not keep an old tab
+   active for rollback or run an older release against the migrated browser data.
+5. Verify each tab's URL/profile and draft against its backup. Restore missing
+   content through **Recover saved drafts** or the preserved per-tab copy; do not
+   submit it as a migration check. v1 inputs and archived writer snapshots remain
+   available; migration does not automatically delete drafts.
+6. Verify unresolved receipt identities in the new profile-scoped IndexedDB
+   `queue-submissions.v1` record and recovery UI before resuming. First mutation
+   imports a valid legacy map when no IndexedDB record exists. If versions already
+   overlapped, do not assume a later old-tab marker was imported: preserve the
+   union of both stores' identities and inspect queue/history before proceeding.
+   This release provides no automatic mixed-version reconciliation or replay.
+   A missing row is not proof of non-execution. Explicit uncertainty acknowledgment
+   remains a deliberate decision after inspection, not an upgrade shortcut.
+
+Browser-storage clearing is not a recovery procedure. Read/storage failure means
+keep the tab and backups intact and restore access; no automatic reset is performed.
+See [focused final acceptance evidence](browser-persistence-acceptance.md) for the
+transaction traces and the distinction between fixture and live-server evidence.
+
 ## Navigation, model choices and token usage after changes
 
 Removed runtime keys/loaders: `selected-thread-id.v1`, `model-usage-order.v1`,
@@ -156,8 +201,12 @@ in or delete their presets. A separate localStorage scalar
 `prompt-history-enabled.v1` (`1`/`0`, absent = off) controls future recording.
 Existing history is not consent. Credential filtering and 20 preset / 30 history /
 8,000 character bounds remain. Preset changes apply only changed IDs against the
-transaction's latest object. Same-preset edits use last-writer wins; distinct IDs
-and concurrent history writes survive. Over-capacity saves reject rather than
+transaction's latest object. Same-preset edits/deletions follow transaction order: an edit committed after a
+delete recreates that preset; a delete committed last removes it. The editor keeps
+its entered text through remote deletion and an explicit Save applies that upsert.
+Distinct IDs and concurrent history writes survive. Clearing history removes all
+entries committed before the clear; later recordings remain. Existing presets
+are preserved in either order. Over-capacity saves reject rather than
 silently dropping presets. Clear history and clear all are separate actions.
 After a successful explicit clear, the obsolete localStorage snapshot is removed
 so cleared history is not retained there; the IndexedDB record preserves presets.
@@ -242,8 +291,8 @@ Verified with the current checkout and Chromium on `http://127.0.0.1:4173`:
 
 - Full unit suite: **1,589 passed, 2 skipped** (150 test files passed, 2 skipped).
 - `pnpm run typecheck`: passed (frontend and server TypeScript).
-- `pnpm run build`: passed; 318 frontend modules, main JS 495.53 KB / 158.28 KB gzip,
-  lazy prompt-library JS 5.07 KB / 2.09 KB gzip; frontend build 5.99 seconds in this
+- `pnpm run build`: passed; 318 frontend modules, main JS 495.69 KB / 158.33 KB gzip,
+  lazy prompt-library JS 5.11 KB / 2.10 KB gzip; frontend build 5.53 seconds in this
   run. CLI remains 209.15 KB ESM. No dependency changes.
 - `pnpm run test:integration:fixture`: passed for built CLI and dev transport;
   one upstream connection per fixture, independent fixture survives shutdown.
