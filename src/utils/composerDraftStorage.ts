@@ -1,3 +1,4 @@
+import { clientMessageId } from './clientMessageId'
 import { browserTabIdentity } from './browserTabIdentity'
 import { profileStorageKey } from './browserConnectionProfile'
 
@@ -20,7 +21,7 @@ function memory() {
 }
 export let draftStorageError = ''
 function prefix(threadId: string): string {
-  return profileStorageKey(`${DRAFT_STORAGE_PREFIX}${encodeURIComponent(threadId)}.`)
+  return profileStorageKey(`${DRAFT_STORAGE_PREFIX}${encodeURIComponent(threadId).replace(/\./g, '%2E')}.`)
 }
 function getDraftStorageKey(threadId: string): string {
   const { tabId, writerId } = browserTabIdentity()
@@ -44,7 +45,7 @@ export function loadPersistedDraftForThread(threadId: string): ComposerDraftPayl
     // are tombstones, so clearing a draft does not resurrect legacy content.
     const raw = memory().get(owned) ?? window.localStorage.getItem(owned)
       ?? (previous?.startsWith(prefix(normalizedThreadId)) ? window.localStorage.getItem(previous) : null)
-      ?? legacyKeys(normalizedThreadId).map(key => window.localStorage.getItem(key)).find(value => value !== null)
+      ?? (!hasV2Draft(normalizedThreadId) ? legacyKeys(normalizedThreadId).map(key => window.localStorage.getItem(key)).find(value => value !== null) : null)
     if (!raw) return null
     return parseDraft(raw)
   } catch {
@@ -97,12 +98,13 @@ export function persistDraftForThread(threadId: string, payload: ComposerDraftPa
   if (!normalizedThreadId) return
   const key = getDraftStorageKey(normalizedThreadId)
   const raw = JSON.stringify(payload)
-  memory().set(key, raw)
   try {
     window.localStorage.setItem(key, raw)
     try { window.sessionStorage.setItem(pointerKey(normalizedThreadId), key) } catch { /* Manual recovery still works. */ }
+    memory().delete(key)
     draftStorageError = ''
   } catch {
+    memory().set(key, raw)
     draftStorageError = 'Draft is available in this tab only. Browser storage could not save it; copy it before closing.'
   }
 }
@@ -125,4 +127,16 @@ export function recoverableDrafts(threadId: string): Array<{ key: string; draft:
     }
   } catch { /* Storage restrictions cannot destroy the live draft. */ }
   return result
+}
+
+function hasV2Draft(threadId: string): boolean {
+  for (let i = 0; i < window.localStorage.length; i++) if (window.localStorage.key(i)?.startsWith(prefix(threadId))) return true
+  return false
+}
+
+export function archiveDraftBeforeRecovery(threadId: string, payload: ComposerDraftPayload): boolean {
+  try {
+    window.localStorage.setItem(`${prefix(threadId)}${browserTabIdentity().tabId}.archive-${clientMessageId()}`, JSON.stringify(payload))
+    return true
+  } catch { return false }
 }
