@@ -20,7 +20,7 @@ Thread composer full-screen expand control for multi-line drafts.
 #### Expected Results
 - Short drafts do not show the expand control.
 - Long or overflowing drafts show an icon-only expand control.
-- **Collapse message input** is a separate inline action; see [collapsible composer](composer-collapse.md).
+- **Minimize message input** is a separate inline action; see [collapsible composer](composer-collapse.md).
 - Full-screen mode uses the same draft state and submit controls as inline mode.
 - Full-screen and inline states are readable in light theme and dark theme.
 

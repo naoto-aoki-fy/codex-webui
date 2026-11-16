@@ -1713,6 +1713,11 @@ async function onLogoutCodex(): Promise<void> {
   @apply w-full shrink-0 px-2 sm:px-6 flex flex-col gap-2;
 }
 
+/* Keep footer notices and goal actions clear of the floating restore/Stop buttons. */
+.composer-container:has(> .thread-composer--collapsed):not(:has(> .thread-pending-request)) {
+  padding-right: calc(7rem + env(safe-area-inset-right, 0px));
+}
+
 .composer-container.is-disabled {
   opacity: 0.55;
 }

@@ -10,31 +10,34 @@
     </ManagementDialog>
     <p v-if="promptStorageNotice" role="status">{{ promptStorageNotice }}</p>
 
-    <div v-if="isComposerCollapsed" class="thread-composer-shell thread-composer-collapsed-bar">
-      <button
-        ref="showInputButtonRef"
-        class="thread-composer-visibility-toggle"
-        type="button"
-        :aria-controls="editorId"
-        :aria-expanded="false"
-        @click="setComposerCollapsed(false)"
-      >
-        <IconTablerChevronDown class="thread-composer-expand-icon thread-composer-restore-icon" aria-hidden="true" />
-        Show message input
-      </button>
-      <button
-        v-if="isTurnInProgress"
-        class="thread-composer-stop"
-        type="button"
-        :aria-label="isStopPending ? 'Saving thread before stop is available' : 'Stop'"
-        :title="isStopPending ? 'Saving thread before stop is available' : 'Stop'"
-        :disabled="isStopDisabled"
-        @click="onInterrupt"
-      >
-        <span v-if="isStopPending" class="thread-composer-stop-spinner" aria-hidden="true" />
-        <IconTablerPlayerStopFilled v-else class="thread-composer-stop-icon" />
-      </button>
-    </div>
+    <Teleport to="body">
+      <div v-if="isComposerCollapsed && !hasPendingRequest" class="thread-composer-floating-actions">
+        <button
+          v-if="isTurnInProgress"
+          class="thread-composer-stop"
+          type="button"
+          :aria-label="isStopPending ? 'Saving thread before stop is available' : 'Stop'"
+          :title="isStopPending ? 'Saving thread before stop is available' : 'Stop'"
+          :disabled="isStopDisabled"
+          @click="onInterrupt"
+        >
+          <span v-if="isStopPending" class="thread-composer-stop-spinner" aria-hidden="true" />
+          <IconTablerPlayerStopFilled v-else class="thread-composer-stop-icon" />
+        </button>
+        <button
+          ref="showInputButtonRef"
+          class="thread-composer-restore"
+          type="button"
+          aria-label="Show message input"
+          title="Show message input"
+          :aria-controls="editorId"
+          :aria-expanded="false"
+          @click="setComposerCollapsed(false)"
+        >
+          <IconTablerMessage class="thread-composer-expand-icon" />
+        </button>
+      </div>
+    </Teleport>
     <div
       v-show="!isComposerCollapsed"
       :id="editorId"
@@ -155,18 +158,33 @@
           @keydown="onInputKeydown"
           @paste="onInputPaste"
         />
-        <button
-          v-if="hasExpandedComposerToggle"
-          class="thread-composer-expand"
-          type="button"
-          :aria-label="isComposerExpanded ? ('Exit full screen composer') : ('Expand composer')"
-          :title="isComposerExpanded ? ('Exit full screen composer') : ('Expand composer')"
-          :disabled="isInteractionDisabled"
-          @click="toggleComposerExpanded"
-        >
-          <IconTablerMinimize v-if="isComposerExpanded" class="thread-composer-expand-icon" />
-          <IconTablerMaximize v-else class="thread-composer-expand-icon" />
-        </button>
+        <div class="thread-composer-editor-actions">
+          <button
+            v-if="!isComposerExpanded"
+            ref="collapseInputButtonRef"
+            class="thread-composer-expand thread-composer-collapse"
+            type="button"
+            aria-label="Minimize message input"
+            title="Minimize message input"
+            :aria-controls="editorId"
+            :aria-expanded="true"
+            @click="setComposerCollapsed(true)"
+          >
+            <IconTablerMinus class="thread-composer-expand-icon" />
+          </button>
+          <button
+            v-if="hasExpandedComposerToggle"
+            class="thread-composer-expand"
+            type="button"
+            :aria-label="isComposerExpanded ? ('Exit full screen composer') : ('Expand composer')"
+            :title="isComposerExpanded ? ('Exit full screen composer') : ('Expand composer')"
+            :disabled="isInteractionDisabled"
+            @click="toggleComposerExpanded"
+          >
+            <IconTablerMinimize v-if="isComposerExpanded" class="thread-composer-expand-icon" />
+            <IconTablerMaximize v-else class="thread-composer-expand-icon" />
+          </button>
+        </div>
       </div>
 
       <div
@@ -322,20 +340,6 @@
           class="thread-composer-actions"
         >
           <button
-            v-if="!isComposerExpanded"
-            ref="collapseInputButtonRef"
-            class="thread-composer-visibility-toggle thread-composer-collapse"
-            type="button"
-            aria-label="Collapse message input"
-            title="Collapse message input"
-            :aria-controls="editorId"
-            :aria-expanded="true"
-            @click="setComposerCollapsed(true)"
-          >
-            <IconTablerChevronDown class="thread-composer-expand-icon" aria-hidden="true" />
-            <span>Collapse</span>
-          </button>
-          <button
             v-if="isTurnInProgress && (!hasSubmitContent || (disabled && allowInterruptWhenDisabled))"
             class="thread-composer-stop"
             type="button"
@@ -395,7 +399,8 @@ import type { CollaborationModeKind, ReasoningEffort, SpeedMode } from '../../ty
 import { useMobile } from '../../composables/useMobile'
 
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
-import IconTablerChevronDown from '../icons/IconTablerChevronDown.vue'
+import IconTablerMessage from '../icons/IconTablerMessage.vue'
+import IconTablerMinus from '../icons/IconTablerMinus.vue'
 import IconTablerBolt from '../icons/IconTablerBolt.vue'
 import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerMaximize from '../icons/IconTablerMaximize.vue'
@@ -699,24 +704,20 @@ export type { SubmitPayload, ThreadComposerExposed } from './composerContracts'
   @apply mx-auto flex h-full w-full max-w-[min(var(--chat-column-max,72rem),100%)] flex-col shadow-2xl;
 }
 
-.thread-composer-collapsed-bar {
-  @apply flex items-center justify-between gap-2 py-1 sm:py-1;
+.thread-composer-floating-actions {
+  @apply fixed z-20 flex items-center gap-2;
+  right: calc(1rem + env(safe-area-inset-right, 0px));
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 }
 
-.thread-composer-visibility-toggle {
-  @apply inline-flex min-h-9 items-center justify-center gap-1 rounded-lg border-0 bg-transparent px-2 text-xs font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500;
+.thread-composer-restore {
+  @apply inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 shadow-sm transition hover:bg-zinc-100 hover:text-zinc-900;
 }
 
-.thread-composer-restore-icon {
-  transform: rotate(180deg);
-}
-
-.thread-composer-collapse {
-  @apply shrink-0;
-}
-
-@media (max-width: 639px) {
-  .thread-composer-collapse span { display: none; }
+.thread-composer-restore:focus-visible,
+.thread-composer-expand:focus-visible,
+.thread-composer-floating-actions .thread-composer-stop:focus-visible {
+  @apply outline-2 outline-offset-2 outline-blue-500;
 }
 
 .thread-composer-shell--drag-active {
@@ -848,7 +849,7 @@ export type { SubmitPayload, ThreadComposerExposed } from './composerContracts'
 }
 
 .thread-composer-input {
-  @apply w-full min-w-0 min-h-10 sm:min-h-11 max-h-40 rounded-xl border-0 bg-transparent px-1 py-2 pr-10 text-sm text-zinc-900 outline-none transition resize-none overflow-y-auto;
+  @apply w-full min-w-0 min-h-10 sm:min-h-11 max-h-40 rounded-xl border-0 bg-transparent px-1 py-2 pr-20 text-sm text-zinc-900 outline-none transition resize-none overflow-y-auto;
 }
 
 .thread-composer-input-wrap--expanded .thread-composer-input {
@@ -863,8 +864,12 @@ export type { SubmitPayload, ThreadComposerExposed } from './composerContracts'
   @apply bg-zinc-100 text-zinc-500 cursor-not-allowed;
 }
 
+.thread-composer-editor-actions {
+  @apply absolute right-0.5 top-0.5 inline-flex items-center gap-1;
+}
+
 .thread-composer-expand {
-  @apply absolute right-0.5 top-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full border-0 bg-zinc-100 text-zinc-500 shadow-sm transition hover:bg-zinc-200 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-400;
+  @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-0 bg-zinc-100 text-zinc-500 shadow-sm transition hover:bg-zinc-200 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-400;
 }
 
 .thread-composer-expand-icon {
