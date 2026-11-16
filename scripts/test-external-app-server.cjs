@@ -40,7 +40,7 @@ async function run() {
       }
       const result = frame.method === 'getAuthStatus' ? { authMethod: 'apiKey', authToken: 'fixture-secret', requiresOpenaiAuth: false }
         : frame.method === 'thread/name/set' ? {}
-        : frame.method === 'account/read' ? { account: { type: 'apiKey' } }
+        : frame.method === 'account/read' ? { account: { type: 'apiKey' }, requiresOpenaiAuth: true }
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
         : frame.method === 'model/list' ? { data: [{ id: frame.params.cursor ? 'fixture-hidden' : 'fixture-model', hidden: Boolean(frame.params.cursor), isDefault: !frame.params.cursor }], nextCursor: frame.params.cursor ? null : 'fixture-next' }
         : frame.method === 'thread/list' ? { data: [], nextCursor: null } : {}
@@ -104,9 +104,11 @@ async function run() {
         const [unknown, active] = await Promise.all([call('maintenance/unknown'), call('account/read')])
         assert.equal(unknown.status, 502)
         assert.deepEqual(unknown.body, { error: 'Method not found' })
-        for (const method of ['account/usage/read', 'account/login/start', 'account/login/cancel', 'thread/compact/start', 'thread/delete', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update']) {
+        for (const method of ['account/usage/read', 'thread/compact/start', 'thread/delete', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update']) {
           assert.deepEqual(await call(method), { status: 502, body: { error: 'Method not found', rpcCode: -32601 } })
         }
+        assert.deepEqual(await call('account/login/start'),{status:502,body:{error:'Native sign-in requires a signed-out account',rpcCode:-32600}})
+        assert.deepEqual(await call('account/login/cancel'),{status:502,body:{error:'No matching backend native login to cancel',rpcCode:-32602}})
         assert.deepEqual(await call('config/value/write'),{status:502,body:{error:'Method not found'}})
         assert.deepEqual(await call('config/value/write',true),{status:502,body:{error:'Method not found',rpcCode:-32601}})
         for(const method of ['command/exec','command/exec/terminate']){assert.deepEqual(await call(method),{status:502,body:{error:'Method not found'}});assert.deepEqual(await call(method,false,true),{status:502,body:{error:'Method not found',rpcCode:-32601}})}

@@ -13,6 +13,7 @@ defineProps<{
   authAvailable: boolean | null
   refreshing: boolean
   changeBlocked: boolean
+  nativeChangeBlocked: boolean
   error: string
   nativeAuth:import('../../composables/nativeAuthentication').NativeAuthentication|null
   ensureNativeAuth:()=>Promise<import('../../composables/nativeAuthentication').NativeAuthentication|null>
@@ -35,7 +36,7 @@ const emit = defineEmits<{
     <div v-if="error" class="sidebar-settings-account-error">{{ error }}</div>
     <RemoteControlStatus :epoch="epoch" />
     <AuthInspection :epoch="epoch" />
-    <NativeAuthentication :auth="nativeAuth" :ensure-auth="ensureNativeAuth" :blocked="changeBlocked" />
+    <NativeAuthentication :auth="nativeAuth" :ensure-auth="ensureNativeAuth" :blocked="nativeChangeBlocked" :recovery-required="changeBlocked" />
     <AccountUsage :epoch="epoch" />
     <ConnectionDiagnostics :epoch="epoch" :warnings="warnings" />
     <div class="sidebar-settings-account-login">

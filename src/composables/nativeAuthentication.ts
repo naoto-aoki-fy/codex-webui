@@ -2,7 +2,7 @@ import {computed,ref,watch,type Ref} from 'vue'
 import {rpcCall,type RpcNotification} from '../api/codexRpcClient'
 import {prepareAuthentication,readAuthenticationAccount,nativeLogin,type AuthPreparation,type NativeAccount,type LoginMethod,type AuthRequest} from '../api/nativeAuthentication'
 import {nativeWriteError,nativeWriteRejected} from '../api/nativeWriteOutcome'
-export function createNativeAuthentication(deps:{epoch:Ref<number>;ready:()=>boolean;blocked:()=>boolean;reconnectAndReload:()=>Promise<void>;initiallyUncertain?:boolean;holdAccountState?:()=>void;releaseAccountState?:()=>void},request:AuthRequest=rpcCall){
+export function createNativeAuthentication(deps:{epoch:Ref<number>;ready:()=>boolean;blocked:()=>boolean;reconnectAndReload:()=>Promise<void>;initiallyUncertain?:boolean},request:AuthRequest=rpcCall){
  const state=ref<'idle'|'preparing'|'prepared'|'starting'|'waiting'|'settling'|'canceling'|'completed'|'canceled'|'failed'|'rejected'|'unknown'>('idle'),status=ref(''),preparation=ref<AuthPreparation|null>(null),account=ref<NativeAccount|null>(null),url=ref(''),code=ref<string|null>(null),loginId=ref(''),needsRefresh=ref(false),resetting=ref(false),inspecting=ref(false)
  const active=computed(()=>['starting','waiting','settling','canceling'].includes(state.value))
  const connected=computed(()=>deps.ready())
@@ -31,12 +31,12 @@ export function createNativeAuthentication(deps:{epoch:Ref<number>;ready:()=>boo
  async function start(method:LoginMethod,confirmed:boolean){
   if(!confirmed||state.value!=='prepared'||!preparation.value||!['chatgpt','chatgptDeviceCode'].includes(method)||deps.blocked()||!deps.ready())return
   const token=++job;state.value='starting';status.value='Rechecking native account/activity before sign-in…';cancelRequested=false;settling=false;needsRefresh.value=false;let submitted=false
-  try{await prepareAuthentication(scoped(token,true));if(token!==job)return;deps.holdAccountState?.();status.value='Requesting native App Server sign-in…';const pending=scoped(token,true)('account/login/start',{type:method});submitted=true;const result=await pending;if(token!==job)return
+  try{await prepareAuthentication(scoped(token,true));if(token!==job)return;status.value='Requesting native App Server sign-in…';const pending=scoped(token,true)('account/login/start',{type:method});submitted=true;const result=await pending;if(token!==job)return
    const row=result as Record<string,unknown>;if(typeof row?.loginId==='string'&&row.loginId.length<=2000){loginId.value=row.loginId;sessionEpoch=deps.epoch.value}
    const completed=early.get(loginId.value);if(completed){await settle(completed,token);return}
    if(cancelRequested&&loginId.value){state.value='waiting';await cancel();return}
    const login=nativeLogin(result,method);loginId.value=login.id;url.value=login.url;code.value=login.code;sessionEpoch=deps.epoch.value;state.value='waiting';status.value='Native sign-in accepted; waiting for its matching completion event. Expiry is controlled by the App Server.'
-  }catch(e){if(token===job){clearCredentials();state.value=!submitted||nativeWriteRejected(e)?'rejected':'unknown';needsRefresh.value=state.value==='unknown';if(state.value==='rejected')try{deps.releaseAccountState?.()}catch{state.value='unknown';needsRefresh.value=true}status.value=`Native sign-in ${state.value}. ${nativeWriteError(e)} No automatic retry.`}}
+  }catch(e){if(token===job){clearCredentials();state.value=!submitted||nativeWriteRejected(e)?'rejected':'unknown';needsRefresh.value=state.value==='unknown';status.value=`Native sign-in ${state.value}. ${nativeWriteError(e)} No automatic retry.`}}
  }
  async function cancel(){
   if(!deps.ready()||state.value==='canceling'||state.value==='settling')return
@@ -47,14 +47,21 @@ export function createNativeAuthentication(deps:{epoch:Ref<number>;ready:()=>boo
    const completed=early.get(id);if(completed){await settle(completed,token);return}
    const current=await readAuthenticationAccount(scoped(token));if(token!==job)return;account.value=current;loginId.value='';early.clear();needsRefresh.value=current.type!=='signedOut'||result.status!=='canceled';state.value=result.status==='canceled'?'canceled':'unknown';status.value=result.status==='canceled'?'Native login cancellation acknowledged; actual account state read.':'Native login was not found; cancellation/completion outcome is unknown. Inspect account state.'
    if(current.type!=='signedOut'){state.value='unknown';status.value='Cancellation acknowledged, but native account state changed. Sign-in may have completed; inspect and refresh account data.'}
-   if(!needsRefresh.value)deps.releaseAccountState?.()
   }catch(e){if(token===job){state.value='unknown';needsRefresh.value=true;status.value=`Native cancellation outcome unknown. ${nativeWriteError(e)} No automatic retry.`}}
  }
  function observe(event:RpcNotification){
+  if(event.method==='native-authentication/state'){
+   const server=event.params as {phase?:string;blocking?:boolean;loginId?:string|null}
+   if(server.phase==='ready'||server.phase==='signedOut'){
+    if(['starting','canceling','settling'].includes(state.value))return // Let this client's in-flight response settle.
+    job++;clearCredentials();loginId.value='';early.clear();needsRefresh.value=false;resetting.value=false;state.value='idle';status.value=server.phase==='ready'?'Native account verified by the backend.':'Native account is signed out. Prepare sign-in to continue.'
+   }else if((server.phase==='pending'||server.phase==='reconciliation'&&server.loginId)&&!active.value){loginId.value=server.loginId??'';sessionEpoch=deps.epoch.value;state.value=loginId.value?'waiting':'unknown';needsRefresh.value=!loginId.value;status.value='Native sign-in is pending on this backend. Complete it in the initiating client or cancel the identified login.'}
+   else if(['reconciliation','unknown'].includes(server.phase??'')&&!active.value){state.value='unknown';needsRefresh.value=true;status.value='The backend requires account inspection and reconciliation before sending.'}
+   return
+  }
   if(event.method==='account/updated'){
    job++;preparation.value=null;account.value=null;loginId.value='';early.clear();clearCredentials();inspecting.value=false
    state.value='unknown';needsRefresh.value=true;status.value='Native account changed. Earlier account reads and sign-in preparation are invalid. Inspect the current account, then reconnect and reload; no retry performed.'
-   try{deps.holdAccountState?.()}catch{status.value+=' Browser recovery storage is unavailable; keep sending paused and reconnect/reload explicitly.'}
    return
   }
   if(event.method!=='account/login/completed'||!active.value)return

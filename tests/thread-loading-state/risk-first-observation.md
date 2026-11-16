@@ -259,24 +259,34 @@ Account-isolation regression: delay a start preflight or account read and emit
 the view or authorize login. Deliver the native completion-then-account-update
 sequence: the account update retires earlier account evidence, pauses sending,
 clears account-scoped views, and requires fresh inspection/reconnect. Reload
-while sign-in or reconciliation is pending: the profile-scoped boolean recovery
-barrier must survive without retaining codes, URLs or account identity. Open
-the recovery controls, inspect actual account state and explicitly reconnect/
-reload. Neither queued submissions nor ordinary sending may bypass the barrier.
+while sign-in or reconciliation is pending: retrieve the shared backend snapshot;
+no localStorage latch may be written or restored. Open recovery controls, inspect
+actual account state and explicitly reconnect/reload. A reloaded pending login
+exposes its backend-held ID for exact cancellation without restoring URLs/codes.
+Neither queued submissions nor ordinary sending may bypass backend validation.
+Seed the obsolete legacy/profile localStorage keys with `1` alongside a theme or
+draft setting: only obsolete authentication keys disappear, and a verified ready
+backend enables sending. Repeat with a second browser on the same backend; both
+observe pending/reconciled state. A separate connection profile/backend remains
+independent. Disconnect/reconnect must retain a known pending operation regardless
+of elapsed time. Restart the backend: signed-in actual account evidence restores
+sending, while an auth-required signed-out account remains blocked without restoring
+a pending marker. The native API cannot recover a login ID across backend restart.
+Cleanup: cancel fixture login attempts, remove fixture-only unrelated storage keys,
+and close browser contexts; do not reset real credentials or unrelated preferences.
+See [backend authentication state](../../docs/native-authentication-state.md).
 Truncated/missing cursors, duplicate/malformed loaded IDs and unknown/failed
 metadata reads must reject preparation. A failed metadata-only thread read must
 never be satisfied by an earlier cached idle snapshot. This inventory covers
 native listed loaded threads, not an atomic guarantee about all clients or
 standalone processes; another client or native queue can start work afterward.
 
-Performance audit for the isolation correction: one profile-scoped boolean read
-at desktop construction; one marker write before login, removed after verified
-cancellation or an explicit reconnect acknowledgment immediately before reload.
-Account notifications invalidate the existing epoch and model/rate-limit read
-owners without extra RPCs or subscriptions. No recurring scan or history read is
-added. Metadata-only failures now fail closed instead of reusing cached status;
-ordinary history fallback is unchanged. Storage loss/removal and account changes
-that occur while this client is absent cannot be reconciled from the marker.
+Performance audit: one state snapshot RPC per browser readiness/reconnect, coalesced
+account verification reads, and constant-time backend send guards after verification.
+Pending/reconciliation reads return snapshots without upstream requests. No polling,
+disk state, additional notification subscriptions or history fanout is introduced.
+Measure the intercepted browser fixture's readiness call counts separately from live
+App Server latency; fixture results do not establish real authentication timing.
 
 Cleanup: close fixture browser contexts; no live account mutation. A real pending
 attempt remains server-owned; closing a panel is not a cancellation guarantee.

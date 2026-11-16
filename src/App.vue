@@ -135,7 +135,7 @@
             </details>
           </template>
         </ContentHeader>
-        <p v-if="nativeAuthenticationBlocked" class="feature-panel native-auth-barrier" role="status">Native authentication is pending or needs account reconciliation. Sending is paused. <button type="button" @click="settingsCategory='Codex account';isSettingsOpen=true">Open native sign-in controls</button></p>
+        <p v-if="nativeAuthenticationBlocked" class="feature-panel native-auth-barrier" role="status">{{ nativeAuthenticationStatus }} <button type="button" @click="settingsCategory='Codex account';isSettingsOpen=true">Open native sign-in controls</button></p>
         <p v-if="nativeDeletion?.state.value==='completed'" class="feature-panel" role="status">{{ nativeDeletion.status.value }}</p>
         <p v-if="nativeForkFailure" class="composer-runtime-error" role="alert">{{ nativeForkFailure }}</p>
 
@@ -339,6 +339,7 @@
                 :auth-available="codexAuthAvailable"
                 :refreshing="isRefreshingCodexAuth"
                 :change-blocked="isCodexAuthChangeBlocked"
+                :native-change-blocked="nativeAccountChangeBlocked"
                 :error="accountActionError"
                 @refresh="onRefreshCodexAuth"
                 @logout="onLogoutCodex"
@@ -514,7 +515,7 @@ const {
   deniedActions,
   nativeQueue,
   permissionChanges,
-  nativeAuthentication,nativeAuthenticationBlocked,nativeAccountChangeBlocked,ensureNativeAuthentication,
+  nativeAuthentication,nativeAuthenticationBlocked,nativeAuthenticationStatus,nativeAccountChangeBlocked,ensureNativeAuthentication,
   nativeDeletion,ensureNativeDeletion,
   nativeShell,ensureNativeShell,
   compaction, review,
