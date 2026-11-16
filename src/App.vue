@@ -77,7 +77,6 @@
             @remove-project="onRemoveProject"
             @copy-thread-chat="onCopyThreadChat" @export-thread="onExportThread" />
           <p v-if="exportStatus" class="feature-panel" role="status">{{ exportStatus }}</p>
-          <button v-if="!isSidebarCollapsed" type="button" class="sidebar-settings-button" @click="isArchiveOpen=true">Archived conversations</button>
         </div>
 
         <div
@@ -329,7 +328,6 @@
       <p class="thread-context-breakdown">{{ threadContextTooltip }}</p>
     </section>
   </ManagementDialog>
-  <ArchivedThreads :open="isArchiveOpen" :epoch="operationEpoch" :restore="restoreThreadById" @close="isArchiveOpen=false" />
   <ManagementDialog :open="isSettingsOpen" title="Settings" @close="isSettingsOpen=false">
     <div class="settings-layout">
       <nav class="settings-categories" aria-label="Settings categories">
@@ -370,6 +368,9 @@
         <section v-if="connectorsLoaded" v-show="settingsCategory==='Apps / Connectors'" aria-label="Apps / Connectors">
           <SkillsMcpHub :epoch="operationEpoch" @skills-changed="onSkillsChanged" />
         </section>
+        <ArchivedThreads v-show="settingsCategory==='Archived conversations'"
+          :active="isSettingsOpen && settingsCategory==='Archived conversations'"
+          :epoch="operationEpoch" :restore="restoreThreadById" />
         <AboutSettings v-if="settingsCategory==='About'" />
       </div>
     </div>
@@ -628,8 +629,7 @@ let isRestoringSidebarScroll = false
 const homeDirectory = ref('')
 const isSettingsOpen = ref(false)
 const recoverableDraftCount = ref(0)
-const isArchiveOpen = ref(false)
-const settingsCategories = ['General', 'Codex account', 'Apps / Connectors', 'About']
+const settingsCategories = ['General', 'Codex account', 'Apps / Connectors', 'Archived conversations', 'About']
 const settingsCategory = ref('Codex account')
 const settingsLoaded = ref(false)
 const connectorsLoaded = ref(false)

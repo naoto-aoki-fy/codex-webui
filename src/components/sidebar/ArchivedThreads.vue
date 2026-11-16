@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { toRef, watch } from 'vue'
-import ManagementDialog from '../shared/ManagementDialog.vue'
 import { createArchivedThreads } from '../../composables/archivedThreads'
-const props = defineProps<{ open: boolean; epoch: number; restore: (id: string) => Promise<void> }>()
+const props = defineProps<{ active: boolean; epoch: number; restore: (id: string) => Promise<void> }>()
 const { rows, busy, error, cursor, loaded, load, restoreRow } = createArchivedThreads(toRef(props, 'epoch'), props.restore)
-const emit = defineEmits<{ close: [] }>()
-watch(() => props.open, open => { if (open && !loaded.value) void load() })
+watch(() => props.active, active => { if (active && !loaded.value) void load() }, { immediate: true })
 </script>
 <template>
-  <ManagementDialog :open="open" title="Archived conversations" @close="emit('close')">
-  <section class="archive-browser feature-panel">
+  <section class="archive-browser feature-panel" aria-label="Archived conversations">
+    <h3 class="mb-4 text-base font-semibold">Archived conversations</h3>
     <p>Restore keeps the original conversation and native project association.</p>
     <button type="button" :disabled="busy" @click="load()">Refresh archived conversations</button>
     <p v-if="busy" role="status">Loading…</p>
@@ -23,5 +21,4 @@ watch(() => props.open, open => { if (open && !loaded.value) void load() })
     </ul>
     <button v-if="cursor" type="button" :disabled="busy" @click="load(true)">Load more archived conversations</button>
   </section>
-  </ManagementDialog>
 </template>
