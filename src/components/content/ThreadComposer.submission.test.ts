@@ -433,3 +433,46 @@ it('closes composer popovers for pending requests without losing skills or the c
   c.submit()
   expect(c.submitted.mock.calls[0]![0]).toEqual(payload)
 })
+
+it('notifies the parent layout on expansion and every exit path while keeping a disabled editor escapable', async () => {
+  const expanded = vi.fn()
+  const c = mount({ 'onUpdate:expanded': expanded })
+  const button = (label: string) => c.nodes().find(n => n.props['aria-label'] === label)!
+  const expand = async () => {
+    c.exposed.hydrateDraft({ ...payload, text: 'long draft\n'.repeat(20) })
+    await vue.nextTick()
+    button('Expand composer').props.onClick()
+    await vue.nextTick()
+    expect(expanded).toHaveBeenLastCalledWith(true)
+  }
+  await expand()
+  c.props.disabled = true
+  await vue.nextTick()
+  expect(button('Exit full screen composer').props.disabled).toBe(false)
+  button('Exit full screen composer').props.onClick()
+  await vue.nextTick()
+  expect(expanded).toHaveBeenLastCalledWith(false)
+  expect(c.exposed.hasUnsavedDraft()).toBe(true)
+  button('Expand composer').props.onClick()
+  await vue.nextTick()
+  expect(expanded).toHaveBeenLastCalledWith(false)
+  c.props.disabled = false
+  await expand()
+  c.props.hasPendingRequest = true
+  await vue.nextTick()
+  expect(expanded).toHaveBeenLastCalledWith(false)
+  expect(c.exposed.hasUnsavedDraft()).toBe(true)
+  c.props.hasPendingRequest = false
+  await expand()
+  c.submit()
+  c.submitted.mock.calls[0]![1](true)
+  await vue.nextTick()
+  expect(expanded).toHaveBeenLastCalledWith(false)
+  await expand()
+  c.props.activeThreadId = 'other'
+  await vue.nextTick()
+  expect(expanded).toHaveBeenLastCalledWith(false)
+  await expand()
+  cleanup.pop()!()
+  expect(expanded).toHaveBeenLastCalledWith(false)
+})
