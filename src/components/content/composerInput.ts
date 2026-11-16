@@ -240,7 +240,7 @@ export function createComposerInput(deps: {
         });
     }
     function toggleComposerExpanded(): void {
-        if (isInteractionDisabled.value)
+        if (isInteractionDisabled.value && !isComposerExpanded.value)
             return;
         isComposerExpanded.value = !isComposerExpanded.value;
         queueComposerOverflowMeasurement();

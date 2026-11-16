@@ -1,5 +1,5 @@
 <template>
-  <DesktopLayout :is-sidebar-collapsed="isSidebarCollapsed" @close-sidebar="setSidebarCollapsed(true)">
+  <DesktopLayout :is-sidebar-collapsed="isSidebarCollapsed" :is-composer-expanded="isComposerExpanded" @close-sidebar="setSidebarCollapsed(true)">
     <template #sidebar>
       <section class="sidebar-root">
         <div
@@ -103,6 +103,7 @@
         class="content-root"
         :class="{
           'is-virtual-keyboard-open': isVirtualKeyboardOpen,
+          'is-composer-expanded': isComposerExpanded,
         }"
         :style="contentStyle"
       >
@@ -192,7 +193,7 @@
 
               <div class="composer-container" :class="{ 'is-disabled': !newThreadCwd.trim() }"
                 :inert="!newThreadCwd.trim()" :aria-disabled="!newThreadCwd.trim()">
-                <ThreadComposer ref="homeThreadComposerRef" :active-thread-id="composerThreadContextId"
+                <ThreadComposer @update:expanded="isComposerExpanded=$event" ref="homeThreadComposerRef" :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
                   :selected-queue-mode="composerSendMode.queue.value"
                   @update:selected-queue-mode="composerSendMode.queue.value=$event"
@@ -253,6 +254,7 @@
                 </p>
                 <p v-if="modelSelectionNotice" class="composer-model-notice" role="status">{{ (modelSelectionNotice) }}</p>
                 <ThreadComposer
+                  @update:expanded="isComposerExpanded=$event"
                   v-show="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
                   :has-pending-request="!!selectedThreadPendingRequest"
@@ -536,6 +538,7 @@ const {
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useMobile()
+const isComposerExpanded = ref(false)
 const homeThreadComposerRef = ref<ThreadComposerExposed | null>(null)
 const threadGoalPanelRef = ref<InstanceType<typeof ThreadGoalPanel> | null>(null)
 const threadComposerRef = ref<ThreadComposerExposed | null>(null)
@@ -1712,6 +1715,23 @@ async function onLogoutCodex(): Promise<void> {
 /* Keep footer notices and goal actions clear of the floating restore/Stop buttons. */
 .composer-container:has(> .thread-composer--collapsed):not(:has(> .thread-pending-request)) {
   padding-right: calc(7rem + env(safe-area-inset-right, 0px));
+}
+
+/* Preserve mounted conversation/editor state while exposing only the writing surface. */
+.content-root.is-composer-expanded > :not(.content-body),
+.content-root.is-composer-expanded .content-grid > :not(.composer-container),
+.content-root.is-composer-expanded .composer-container > :not(.thread-composer) {
+  display: none;
+}
+
+.content-root.is-composer-expanded .content-body,
+.content-root.is-composer-expanded .content-grid,
+.content-root.is-composer-expanded .composer-container {
+  @apply min-h-0 flex-1 gap-0 p-0;
+}
+
+.content-root.is-composer-expanded .content-grid-home {
+  overflow: visible;
 }
 
 .composer-container.is-disabled {

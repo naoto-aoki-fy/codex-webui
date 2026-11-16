@@ -207,8 +207,8 @@
   @apply border-zinc-700 bg-zinc-800;
 }
 
-:root.dark .thread-composer:has(.thread-composer-input-wrap--expanded) {
-  @apply bg-zinc-950/95;
+:root.dark .thread-composer--expanded {
+  @apply bg-zinc-950;
 }
 
 :root.dark .thread-composer-shell--drag-active {

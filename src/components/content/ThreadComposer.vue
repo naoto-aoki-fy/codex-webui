@@ -1,5 +1,5 @@
 <template>
-  <form class="thread-composer" :class="{ 'thread-composer--collapsed': isComposerCollapsed }" @submit.prevent="onSubmit()">
+  <form class="thread-composer" :class="{ 'thread-composer--collapsed': isComposerCollapsed, 'thread-composer--expanded': isComposerExpanded }" @submit.prevent="onSubmit()">
     <div v-if="appsPickerLoaded" v-show="isAppsPickerOpen" class="composer-apps-popover feature-panel" aria-label="Conversation Apps">
       <button type="button" @click="isAppsPickerOpen=false">Close Apps</button>
       <button type="button" @click="isAppsPickerOpen=false;emit('open-settings')">Manage connections in Settings</button>
@@ -178,7 +178,9 @@
             type="button"
             :aria-label="isComposerExpanded ? ('Exit full screen composer') : ('Expand composer')"
             :title="isComposerExpanded ? ('Exit full screen composer') : ('Expand composer')"
-            :disabled="isInteractionDisabled"
+            :disabled="isInteractionDisabled && !isComposerExpanded"
+            :aria-expanded="isComposerExpanded"
+            :aria-controls="editorId"
             @click="toggleComposerExpanded"
           >
             <IconTablerMinimize v-if="isComposerExpanded" class="thread-composer-expand-icon" />
@@ -415,6 +417,7 @@ const props = withDefaults(defineProps<ComposerProps>(), { selectedQueueMode: un
 export type { FileAttachment, ComposerDraftPayload } from '../../utils/composerDraftStorage'
 
 const emit = defineEmits<{
+  'update:expanded': [expanded: boolean]
   'update:selected-queue-mode': [queue: boolean]
   'open-settings': []
   'thread-action': [action: string]
@@ -479,6 +482,9 @@ const {
   getMentionBadgeClass,
   isMarkdownFile,
 } = input
+
+// Notify the layout for every exit path, including submit, pending requests and thread changes.
+watch(isComposerExpanded, expanded => emit('update:expanded', expanded), { flush: 'sync' })
 
 const attachments = createComposerAttachments({
   get isAttachMenuOpen() { return isAttachMenuOpen; },
@@ -636,6 +642,7 @@ defineExpose<ThreadComposerExposed>({
 })
 
 onBeforeUnmount(() => {
+  emit('update:expanded', false)
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('drop', attachments.onWindowDragCleanup)
   window.removeEventListener('dragend', attachments.onWindowDragCleanup)
@@ -692,16 +699,42 @@ export type { SubmitPayload, ThreadComposerExposed } from './composerContracts'
   @apply w-full max-w-[min(var(--chat-column-max,72rem),100%)] mx-auto;
 }
 
-.thread-composer:has(.thread-composer-input-wrap--expanded) {
-  @apply fixed inset-0 z-50 max-w-none bg-white/95 p-3 sm:p-6;
+.thread-composer--expanded {
+  @apply flex h-full min-h-0 max-w-none flex-col bg-white p-3 sm:p-6;
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+  padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
 }
 
 .thread-composer-shell {
   @apply relative rounded-2xl border border-zinc-300 bg-white p-2 sm:p-3 shadow-sm;
 }
 
-.thread-composer:has(.thread-composer-input-wrap--expanded) .thread-composer-shell {
-  @apply mx-auto flex h-full w-full max-w-[min(var(--chat-column-max,72rem),100%)] flex-col shadow-2xl;
+.thread-composer--expanded .thread-composer-shell {
+  @apply flex min-h-0 w-full flex-1 flex-col;
+}
+
+.thread-composer--expanded .thread-composer-attachments,
+.thread-composer--expanded .thread-composer-file-chips,
+.thread-composer--expanded .thread-composer-skill-chips {
+  @apply min-h-0 overflow-y-auto;
+  max-height: 20%;
+}
+
+.thread-composer--expanded .thread-composer-controls {
+  @apply shrink-0;
+}
+
+.thread-composer--expanded .composer-apps-popover {
+  top: 1rem;
+  bottom: auto;
+}
+
+.thread-composer--expanded .thread-composer-file-mentions {
+  top: 2.75rem;
+  bottom: auto;
+  max-height: min(50dvh, 13rem);
 }
 
 .thread-composer-floating-actions {
@@ -781,7 +814,7 @@ export type { SubmitPayload, ThreadComposerExposed } from './composerContracts'
 }
 
 .thread-composer-input-wrap--expanded {
-  @apply min-h-0 flex-1;
+  @apply flex min-h-12 flex-1 flex-col;
 }
 
 .thread-composer-input-wrap--drag-active {
@@ -853,7 +886,7 @@ export type { SubmitPayload, ThreadComposerExposed } from './composerContracts'
 }
 
 .thread-composer-input-wrap--expanded .thread-composer-input {
-  @apply h-full max-h-none pr-12 text-base leading-6;
+  @apply block min-h-0 flex-1 max-h-none pr-12 text-base leading-6;
 }
 
 .thread-composer-input:focus {

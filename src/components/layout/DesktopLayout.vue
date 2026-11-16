@@ -2,7 +2,7 @@
   <div class="desktop-layout" :class="{ 'is-mobile': isMobile }" :style="layoutStyle">
     <Teleport v-if="isMobile" to="body">
       <Transition name="drawer">
-        <div v-if="!isSidebarCollapsed" class="mobile-drawer-backdrop" @click="$emit('close-sidebar')">
+        <div v-if="!isSidebarCollapsed" v-show="!isComposerExpanded" class="mobile-drawer-backdrop" @click="$emit('close-sidebar')">
           <aside class="mobile-drawer" @click.stop>
             <slot name="sidebar" />
           </aside>
@@ -11,11 +11,12 @@
     </Teleport>
 
     <template v-if="!isMobile">
-      <aside v-if="!isSidebarCollapsed" class="desktop-sidebar">
+      <aside v-if="!isSidebarCollapsed" v-show="!isComposerExpanded" class="desktop-sidebar">
         <slot name="sidebar" />
       </aside>
       <button
         v-if="!isSidebarCollapsed"
+        v-show="!isComposerExpanded"
         class="desktop-resize-handle"
         type="button"
         aria-label="Resize sidebar"
@@ -36,9 +37,11 @@ import { useMobile } from '../../composables/useMobile'
 const props = withDefaults(
   defineProps<{
     isSidebarCollapsed?: boolean
+    isComposerExpanded?: boolean
   }>(),
   {
     isSidebarCollapsed: false,
+    isComposerExpanded: false,
   },
 )
 
@@ -68,7 +71,7 @@ function loadSidebarWidth(): number {
 const sidebarWidth = ref(loadSidebarWidth())
 
 const layoutStyle = computed(() => {
-  if (isMobile.value || props.isSidebarCollapsed) {
+  if (isMobile.value || props.isSidebarCollapsed || props.isComposerExpanded) {
     return {
       '--sidebar-width': '0px',
       '--layout-columns': 'minmax(0, 1fr)',
