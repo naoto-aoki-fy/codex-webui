@@ -1384,6 +1384,11 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 :root.dark .management-dialog-header p { color: #a1a1aa; }
 :root.dark .management-dialog-close:hover, :root.dark .settings-categories button:hover, :root.dark .settings-categories button[aria-current] { background: #27272a; color: #f4f4f5; }
 :root.dark .management-dialog .sidebar-settings-account-section { background: transparent; }
+:root.dark .about-settings-row { border-color: #3f3f46; }
+:root.dark .about-settings-row dt { color: #a1a1aa; }
+:root.dark .about-settings-row a { color: #60a5fa; }
+:root.dark .about-settings-row button { border-color: #52525b; }
+:root.dark .about-settings-row button:hover { background: #27272a; }
 @media (max-width: 640px) {
   .management-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); border-radius: 12px; }
   .management-dialog-header { padding: 16px; }

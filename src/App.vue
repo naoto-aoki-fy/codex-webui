@@ -365,6 +365,7 @@
         <section v-if="connectorsLoaded" v-show="settingsCategory==='Apps / Connectors'" aria-label="Apps / Connectors">
           <SkillsMcpHub :epoch="operationEpoch" @skills-changed="onSkillsChanged" />
         </section>
+        <AboutSettings v-if="settingsCategory==='About'" />
       </div>
     </div>
   </ManagementDialog>
@@ -395,6 +396,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useNewThreadCwdRoute } from './composables/useNewThreadCwdRoute'
 import DesktopLayout from './components/layout/DesktopLayout.vue'
 import GeneralPreferencesSettings from './components/sidebar/GeneralPreferencesSettings.vue'
+import AboutSettings from './components/sidebar/AboutSettings.vue'
 import ManagementDialog from './components/shared/ManagementDialog.vue'
 import ArchivedThreads from './components/sidebar/ArchivedThreads.vue'
 import AccountSettingsPanel from './components/sidebar/AccountSettingsPanel.vue'
@@ -619,7 +621,7 @@ let isRestoringSidebarScroll = false
 const homeDirectory = ref('')
 const isSettingsOpen = ref(false)
 const isArchiveOpen = ref(false)
-const settingsCategories = ['General', 'Codex account', 'Apps / Connectors']
+const settingsCategories = ['General', 'Codex account', 'Apps / Connectors', 'About']
 const settingsCategory = ref('Codex account')
 const settingsLoaded = ref(false)
 const connectorsLoaded = ref(false)

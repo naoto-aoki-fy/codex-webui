@@ -10,6 +10,7 @@ Return to the [manual test index](../../tests.md).
 | --- |
 | [Native background-process management](background-processes.md) |
 | [Dark theme Settings controls](dark-theme-settings-controls.md) |
+| [About settings build information](about-settings.md) |
 | [Revert PR 131 project recency and mobile move mode](revert-pr-131-project-recency-and-mobile-move-mode.md) |
 | [Feature: Dark theme for worktree runtime selector and Skills Hub](dark-theme-for-worktree-runtime-selector-and-skills-hub.md) |
 | [Feature: Dark theme states for runtime mode toggle](dark-theme-states-for-runtime-mode-toggle.md) |
