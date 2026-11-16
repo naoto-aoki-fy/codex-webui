@@ -13,13 +13,14 @@ Thread composer full-screen expand control for multi-line drafts.
 2. Confirm the expand button appears in the composer input area.
 3. Click the expand button.
 4. Confirm the composer fills the viewport, keeps the draft text, and leaves model/skill/thinking/send controls usable at the bottom.
-5. Click the collapse button.
+5. Click **Exit full screen composer**.
 6. Confirm the composer returns to its normal inline size with the draft still intact.
 7. Switch to dark theme and repeat steps 1-6.
 
 #### Expected Results
 - Short drafts do not show the expand control.
 - Long or overflowing drafts show an icon-only expand control.
+- **Collapse message input** is a separate inline action; see [collapsible composer](composer-collapse.md).
 - Full-screen mode uses the same draft state and submit controls as inline mode.
 - Full-screen and inline states are readable in light theme and dark theme.
 

@@ -1,0 +1,149 @@
+// Requires the current checkout on 127.0.0.1:4173; all protocol traffic is stubbed.
+const { chromium } = require('playwright')
+const { setup, assert } = require('./approved-fixture.cjs')
+const { mkdirSync, writeFileSync } = require('node:fs')
+const base = 'http://127.0.0.1:4173'
+const longDraft = 'Unsent composer collapse check\n' + 'Keep this editable draft and its attachments.\n'.repeat(25)
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOcQAAAAASUVORK5CYII=', 'base64')
+;(async () => {
+  mkdirSync('output/playwright', { recursive: true })
+  const browser = await chromium.launch({ headless: true })
+  const results = []
+  let activePage
+  try {
+    for (const viewport of [{ width:1280, height:900 }, { width:375, height:812 }, { width:768, height:1024 }]) {
+      for (const theme of ['light', 'dark']) {
+        const page = await browser.newPage({ viewport })
+        activePage = page
+        let turnActive = false
+        const requests = []
+        page.on('request', r => { if (r.url().includes('/codex-api/')) requests.push(r.url()) })
+        await page.route('**/codex-local-image?*', route => route.fulfill({ contentType:'image/png', body:png }))
+        const { calls, errors, emit } = await setup(page, (body, _page, url) => {
+          if (url.pathname.endsWith('/upload-file')) return { json:{ path:'/remote/uploads/collapse.txt' } }
+          if (url.pathname.endsWith('/server-requests/respond')) return { json:{ ok:true } }
+          if (body.method === 'turn/interrupt') turnActive = false
+          if (body.method === 'thread/resume' || body.method === 'thread/read') return { json:{ result:{
+            thread:{ id:'approved-fixture', name:'Composer collapse fixture', cwd:'/remote/project', status:{ type:turnActive ? 'active' : 'idle' }, turns:[{ id:'t', status:'completed', items:[
+              ...Array.from({ length:40 }, (_, i) => ({ type:i % 2 ? 'agentMessage' : 'userMessage', id:`history-${i}`, ...(i % 2 ? { text:`Reading position ${i}. ${'Conversation history with enough space to scroll. '.repeat(5)}` } : { content:[{ type:'text', text:`History question ${i}` }] }) })),
+              { type:'agentMessage', id:'a', text:'Fixture answer' },
+            ] }, ...(turnActive ? [{ id:'live', status:'inProgress', items:[] }] : [])] }, model:'fixture-model', modelProvider:'fixture',
+          } } }
+        }, false)
+        await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), theme === 'dark')
+        const input = page.locator('.thread-composer-input')
+        const collapse = page.getByRole('button', { name:'Collapse message input', exact:true })
+        const restore = page.getByRole('button', { name:'Show message input', exact:true })
+        const list = page.locator('.conversation-list')
+        await collapse.waitFor()
+        const normalHeight = await list.evaluate(el => el.clientHeight)
+        const readPosition = await list.evaluate(el => { el.scrollTop = Math.floor((el.scrollHeight - el.clientHeight) / 2); return el.scrollTop })
+        await page.waitForTimeout(200)
+        const beforeToggle = requests.length
+        await collapse.focus()
+        await page.keyboard.press('Enter')
+        await restore.waitFor()
+        assert.equal(await restore.getAttribute('aria-expanded'), 'false')
+        assert.equal(await restore.evaluate(el => el === document.activeElement), true)
+        assert.equal(await input.isVisible(), false)
+        assert.equal(await page.getByRole('button', { name:'Send message', exact:true }).isVisible(), false)
+        const compactHeight = await list.evaluate(el => el.clientHeight)
+        assert.ok(compactHeight - normalHeight >= 40, `${normalHeight} -> ${compactHeight}`)
+        assert.ok(Math.abs(await list.evaluate(el => el.scrollTop) - readPosition) <= 2, 'reading position on collapse')
+        await page.keyboard.press('Space')
+        await input.waitFor()
+        assert.equal(await input.evaluate(el => el === document.activeElement), true)
+        assert.equal(await input.inputValue(), '')
+        assert.ok(Math.abs(await list.evaluate(el => el.scrollTop) - readPosition) <= 2, 'reading position on restore')
+        assert.equal(requests.length, beforeToggle, 'empty collapse/restore must not issue API requests')
+        await input.fill(longDraft)
+        await page.locator('.thread-composer-hidden-input').setInputFiles([
+          { name:'collapse.png', mimeType:'image/png', buffer:png },
+          { name:'collapse.txt', mimeType:'text/plain', buffer:Buffer.from('preserved attachment') },
+        ])
+        await page.getByRole('button', { name:'Remove collapse.png', exact:true }).waitFor()
+        await page.getByRole('button', { name:'Remove collapse.txt', exact:true }).waitFor()
+        const stored = () => page.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([k]) => k.includes('thread-draft'))))
+        await input.evaluate(el => el.setSelectionRange(12, 19))
+        const draftSnapshot = await stored()
+        await page.getByRole('button', { name:'Expand composer', exact:true }).click()
+        assert.equal(await collapse.count(), 0)
+        const fullscreen = await page.locator('.thread-composer').boundingBox()
+        assert.ok(fullscreen.height >= viewport.height - 2)
+        await page.getByRole('button', { name:'Exit full screen composer', exact:true }).click()
+        await collapse.click()
+        assert.deepEqual(await stored(), draftSnapshot)
+        await restore.click()
+        assert.equal(await input.inputValue(), longDraft)
+        assert.deepEqual(await input.evaluate(el => [el.selectionStart, el.selectionEnd]), [12, 19])
+        assert.equal(await page.getByRole('button', { name:'Remove collapse.png', exact:true }).isVisible(), true)
+        assert.equal(await page.getByRole('button', { name:'Remove collapse.txt', exact:true }).isVisible(), true)
+        const networkBeforeCycles = requests.length
+        const toggleMs = []
+        for (let i = 0; i < 5; i++) {
+          const start = Date.now()
+          await collapse.click()
+          await restore.click()
+          toggleMs.push(Date.now() - start)
+        }
+        assert.equal(requests.length, networkBeforeCycles, 'toggles must not issue API requests')
+        turnActive = true
+        emit('turn/started', { threadId:'approved-fixture', turn:{ id:'live', status:'inProgress', items:[] } })
+        await page.getByRole('button', { name:'Steer', exact:true }).waitFor()
+        await collapse.click()
+        await page.getByRole('button', { name:'Stop', exact:true }).waitFor()
+        assert.equal(await page.getByRole('button', { name:'Stop', exact:true }).isEnabled(), true)
+        emit('item/agentMessage/delta', { threadId:'approved-fixture', turnId:'live', itemId:'stream', delta:'Streaming while the composer is collapsed.' })
+        await page.getByText('Streaming while the composer is collapsed.', { exact:false }).first().waitFor()
+        assert.equal(calls.filter(c => c.method === 'turn/interrupt' || c.method === 'turn/start').length, 0)
+        assert.deepEqual(await stored(), draftSnapshot)
+        await page.waitForTimeout(2200)
+        const screenshot = `output/playwright/composer-collapsed-${viewport.width}-${theme}.png`
+        await page.screenshot({ path:screenshot })
+        const colors = await page.locator('.thread-composer-collapsed-bar').evaluate(el => {
+          const r = el.getBoundingClientRect()
+          return { background:getComputedStyle(el).backgroundColor, left:r.left, right:r.right, height:r.height }
+        })
+        assert.ok(colors.left >= 0 && colors.right <= viewport.width)
+        assert.ok(colors.height <= 55)
+        assert.ok((theme === 'dark' ? ['rgb(39, 39, 42)', 'oklch(0.274 0.006 286.033)'] : ['rgb(255, 255, 255)']).includes(colors.background), colors.background)
+        // A pending request must replace the bar without destroying the draft owner.
+        emit('server/request', { id:99, method:'item/commandExecution/requestApproval', params:{ threadId:'approved-fixture', turnId:'live', command:'echo approved' } })
+        const panel = page.locator('.thread-pending-request')
+        await panel.waitFor()
+        assert.equal(await restore.isVisible(), false)
+        await panel.getByRole('button', { name:'Send', exact:true }).click()
+        await restore.waitFor()
+        assert.equal(calls.filter(c => c.path.endsWith('/server-requests/respond')).length, 1)
+        emit('server/request', { id:100, method:'item/tool/requestUserInput', params:{ threadId:'approved-fixture', turnId:'live', questions:[{ id:'q', header:'Choose', question:'Which option?', isOther:true, options:[{ label:'Continue', description:'Keep going' }] }] } })
+        await panel.waitFor()
+        await panel.getByPlaceholder('Other answer').fill('A usable free-text answer')
+        await panel.getByRole('button', { name:'Send', exact:true }).click()
+        await restore.waitFor()
+        assert.equal(calls.filter(c => c.path.endsWith('/server-requests/respond')).length, 2)
+        assert.deepEqual(await stored(), draftSnapshot)
+        await restore.click()
+        assert.equal(await input.inputValue(), longDraft)
+        assert.equal(await page.locator('.thread-composer-controls').evaluate(el => el.scrollWidth <= el.clientWidth), true)
+        await page.waitForTimeout(2200)
+        await page.screenshot({ path:`output/playwright/composer-restored-${viewport.width}-${theme}.png` })
+        // Only an explicit Stop click may interrupt the active response.
+        await collapse.click()
+        await page.getByRole('button', { name:'Stop', exact:true }).click()
+        await page.waitForFunction(() => !document.querySelector('.thread-composer-stop:not(:disabled)'))
+        assert.equal(calls.filter(c => c.method === 'turn/interrupt').length, 1)
+        assert.deepEqual(errors, [])
+        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, freedPixels:compactHeight-normalHeight, readingPosition:readPosition, zeroApiToggleCycles:5, toggleRoundTripMs:toggleMs, colors, screenshot, apiRequestsDuringEmptyToggle:0 })
+        console.log('PASS', viewport.width, theme, 'empty/long draft, attachments, focus, reading position, fullscreen, streaming, Stop, approval and user input')
+        await page.close()
+      }
+    }
+    writeFileSync('output/playwright/composer-collapse-results.json', JSON.stringify(results, null, 2))
+  } catch (error) {
+    if (activePage && !activePage.isClosed()) {
+      await activePage.screenshot({ path:'output/playwright/composer-collapse-failure.png' })
+      writeFileSync('output/playwright/composer-collapse-failure.txt', await activePage.locator('body').innerText())
+    }
+    throw error
+  } finally { await browser.close() }
+})().catch(error => { console.error(error); process.exitCode = 1 })

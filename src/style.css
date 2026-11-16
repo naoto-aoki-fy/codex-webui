@@ -223,6 +223,10 @@
   @apply bg-zinc-700 text-zinc-500;
 }
 
+:root.dark .thread-composer-visibility-toggle {
+  @apply text-zinc-300 hover:bg-zinc-700 hover:text-white;
+}
+
 :root.dark .thread-composer-expand {
   @apply bg-zinc-700 text-zinc-300 hover:bg-zinc-600 hover:text-white;
 }

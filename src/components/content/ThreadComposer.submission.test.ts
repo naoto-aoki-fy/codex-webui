@@ -312,3 +312,120 @@ it('allows Queue selection before thread creation while sending the initial mess
   expect(c.submitted).toHaveBeenCalledOnce()
   expect(c.submitted.mock.calls[0]![0].queue).toBeUndefined()
 })
+
+it('collapses empty and populated drafts independently of full-screen editing without losing selections', async () => {
+  const c = mount({ models: ['model'], selectedModel: 'model', selectedReasoningEffort: 'high' })
+  const button = (label: string) => c.nodes().find(n => n.props['aria-label'] === label)!
+  const restore = () => c.nodes().find(n => n.tag === 'button' && n.props['aria-expanded'] === false && n.props['aria-controls'])
+  const collapse = async () => { button('Collapse message input').props.onClick(); await vue.nextTick() }
+  expect(restore()).toBeUndefined()
+  expect(button('Expand composer')).toBeUndefined()
+  await collapse()
+  expect(restore()).toBeDefined()
+  expect(c.exposed.hasUnsavedDraft()).toBe(false)
+  restore()!.props.onClick()
+  await vue.nextTick()
+  const longPayload = { ...payload, text: 'long draft\n'.repeat(20), apps: [{ id: 'connector_demo', name: 'Demo' }] }
+  c.exposed.hydrateDraft(longPayload)
+  await vue.nextTick()
+  const textarea = c.nodes().find(n => n.tag === 'textarea')
+  button('Expand composer').props.onClick()
+  await vue.nextTick()
+  expect(button('Exit full screen composer')).toBeDefined()
+  expect(button('Collapse message input')).toBeUndefined()
+  button('Exit full screen composer').props.onClick()
+  await vue.nextTick()
+  await collapse()
+  expect(c.nodes().find(n => n.tag === 'textarea')).toBe(textarea)
+  expect(JSON.parse(c.storage.get('codex-web-local.thread-draft.v1.child')!)).toEqual(longPayload)
+  restore()!.props.onClick()
+  await vue.nextTick()
+  expect(c.model().props.modelValue).toBe('model')
+  expect(c.props.selectedReasoningEffort).toBe('high')
+  c.submit()
+  expect(c.submitted.mock.calls[0]![0]).toEqual({ ...longPayload, text: longPayload.text.trim() })
+})
+
+it('keeps Stop in the collapsed view with a draft and respects pending and disabled states', async () => {
+  const interrupt = vi.fn()
+  const c = mount({ isTurnInProgress: true, onInterrupt: interrupt })
+  c.exposed.hydrateDraft(payload)
+  await vue.nextTick()
+  c.nodes().find(n => n.props['aria-label'] === 'Collapse message input')!.props.onClick()
+  await vue.nextTick()
+  const bar = () => c.nodes().find(n => n.props.class === 'thread-composer-shell thread-composer-collapsed-bar')!
+  const stop = () => bar().children.find(n => n.props.class === 'thread-composer-stop')!
+  expect(stop().props.disabled).toBeFalsy()
+  expect(interrupt).not.toHaveBeenCalled()
+  expect(c.submitted).not.toHaveBeenCalled()
+  stop().props.onClick()
+  expect(interrupt).toHaveBeenCalledTimes(1)
+  c.props.isStopPending = true
+  await vue.nextTick()
+  expect(stop().props.disabled).toBe(true)
+  expect(stop().props['aria-label']).toBe('Saving thread before stop is available')
+  c.props.isStopPending = false
+  c.props.isInterruptingTurn = true
+  await vue.nextTick()
+  expect(stop().props.disabled).toBe(true)
+  c.props.isInterruptingTurn = false
+  c.props.disabled = true
+  await vue.nextTick()
+  expect(stop().props.disabled).toBe(true)
+  c.props.allowInterruptWhenDisabled = true
+  await vue.nextTick()
+  expect(stop().props.disabled).toBeFalsy()
+  c.props.isTurnInProgress = false
+  await vue.nextTick()
+  expect(stop()).toBeUndefined()
+  expect(c.exposed.hasUnsavedDraft()).toBe(true)
+})
+
+it('opens each thread inline and restores only that thread’s draft after collapsing', async () => {
+  const c = mount()
+  c.exposed.hydrateDraft(payload)
+  await vue.nextTick()
+  c.nodes().find(n => n.props['aria-label'] === 'Collapse message input')!.props.onClick()
+  await vue.nextTick()
+  c.props.activeThreadId = 'other'
+  await vue.nextTick()
+  expect(c.nodes().some(n => n.props['aria-expanded'] === false && n.props['aria-controls'])).toBe(false)
+  expect(c.exposed.hasUnsavedDraft()).toBe(false)
+  c.exposed.appendTextToDraft('other draft')
+  await vue.nextTick()
+  c.props.activeThreadId = 'child'
+  await vue.nextTick()
+  expect(JSON.parse(c.storage.get('codex-web-local.thread-draft.v1.other')!).text).toBe('other draft')
+  c.submit()
+  expect(c.submitted.mock.calls[0]![0]).toEqual(payload)
+})
+
+it('closes composer popovers for pending requests without losing skills or the collapsed state', async () => {
+  const c = mount({ skills: [{ name: 'skill', description: 'Selected skill', path: '/skill' }] })
+  const button = (label: string) => c.nodes().find(n => n.props['aria-label'] === label)!
+  c.exposed.hydrateDraft(payload)
+  await vue.nextTick()
+  button('Add attachments and settings').props.onClick()
+  await vue.nextTick()
+  button('Skills').props.onClick()
+  await vue.nextTick()
+  expect(c.nodes().some(n => n.tag === 'skill-dropdown')).toBe(true)
+  c.props.hasPendingRequest = true
+  await vue.nextTick()
+  expect(c.nodes().some(n => n.tag === 'skill-dropdown')).toBe(false)
+  expect(button('Exit full screen composer')).toBeUndefined()
+  c.props.hasPendingRequest = false
+  await vue.nextTick()
+  expect(c.nodes().find(n => n.tag === 'skill-dropdown')!.props.selectedValues).toEqual(['/skill'])
+  button('Collapse message input').props.onClick()
+  await vue.nextTick()
+  c.props.hasPendingRequest = true
+  await vue.nextTick()
+  c.props.hasPendingRequest = false
+  await vue.nextTick()
+  expect(c.nodes().some(n => n.props['aria-expanded'] === false && n.props['aria-controls'])).toBe(true)
+  c.nodes().find(n => n.props['aria-expanded'] === false && n.props['aria-controls'])!.props.onClick()
+  await vue.nextTick()
+  c.submit()
+  expect(c.submitted.mock.calls[0]![0]).toEqual(payload)
+})

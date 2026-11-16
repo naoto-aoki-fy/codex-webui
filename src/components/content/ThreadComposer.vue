@@ -1,5 +1,5 @@
 <template>
-  <form class="thread-composer" @submit.prevent="onSubmit()">
+  <form class="thread-composer" :class="{ 'thread-composer--collapsed': isComposerCollapsed }" @submit.prevent="onSubmit()">
     <div v-if="appsPickerLoaded" v-show="isAppsPickerOpen" class="composer-apps-popover feature-panel" aria-label="Conversation Apps">
       <button type="button" @click="isAppsPickerOpen=false">Close Apps</button>
       <button type="button" @click="isAppsPickerOpen=false;emit('open-settings')">Manage connections in Settings</button>
@@ -10,7 +10,34 @@
     </ManagementDialog>
     <p v-if="promptStorageNotice" role="status">{{ promptStorageNotice }}</p>
 
+    <div v-if="isComposerCollapsed" class="thread-composer-shell thread-composer-collapsed-bar">
+      <button
+        ref="showInputButtonRef"
+        class="thread-composer-visibility-toggle"
+        type="button"
+        :aria-controls="editorId"
+        :aria-expanded="false"
+        @click="setComposerCollapsed(false)"
+      >
+        <IconTablerChevronDown class="thread-composer-expand-icon thread-composer-restore-icon" aria-hidden="true" />
+        Show message input
+      </button>
+      <button
+        v-if="isTurnInProgress"
+        class="thread-composer-stop"
+        type="button"
+        :aria-label="isStopPending ? 'Saving thread before stop is available' : 'Stop'"
+        :title="isStopPending ? 'Saving thread before stop is available' : 'Stop'"
+        :disabled="isStopDisabled"
+        @click="onInterrupt"
+      >
+        <span v-if="isStopPending" class="thread-composer-stop-spinner" aria-hidden="true" />
+        <IconTablerPlayerStopFilled v-else class="thread-composer-stop-icon" />
+      </button>
+    </div>
     <div
+      v-show="!isComposerCollapsed"
+      :id="editorId"
       class="thread-composer-shell"
       :class="{
         'thread-composer-shell--drag-active': isDragActive,
@@ -269,7 +296,7 @@
         />
 
         <ComposerSearchDropdown
-          v-if="isSkillsSelectorVisible"
+          v-if="isSkillsSelectorVisible && !isComposerCollapsed && !hasPendingRequest"
           class="thread-composer-control"
           :options="skillDropdownOptions"
           :selected-values="selectedSkillPaths"
@@ -295,12 +322,26 @@
           class="thread-composer-actions"
         >
           <button
+            v-if="!isComposerExpanded"
+            ref="collapseInputButtonRef"
+            class="thread-composer-visibility-toggle thread-composer-collapse"
+            type="button"
+            aria-label="Collapse message input"
+            title="Collapse message input"
+            :aria-controls="editorId"
+            :aria-expanded="true"
+            @click="setComposerCollapsed(true)"
+          >
+            <IconTablerChevronDown class="thread-composer-expand-icon" aria-hidden="true" />
+            <span>Collapse</span>
+          </button>
+          <button
             v-if="isTurnInProgress && (!hasSubmitContent || (disabled && allowInterruptWhenDisabled))"
             class="thread-composer-stop"
             type="button"
             :aria-label="isStopPending ? ('Saving thread before stop is available') : ('Stop')"
             :title="isStopPending ? ('Saving thread before stop is available') : ('Stop')"
-            :disabled="(disabled && !allowInterruptWhenDisabled) || !activeThreadId || isInterruptingTurn || isStopPending"
+            :disabled="isStopDisabled"
             @click="onInterrupt"
           >
             <span v-if="isStopPending" class="thread-composer-stop-spinner" aria-hidden="true" />
@@ -349,11 +390,12 @@ import { loadPersistedDraftForThread, persistDraftForThread, type FileAttachment
 import { reasoningCatalog } from '../../api/codexGateway'
 import { parseModelSelection, defaultModelForProvider, modelSelectionKey } from '../../api/modelCapabilities'
 
-import { defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import type { CollaborationModeKind, ReasoningEffort, SpeedMode } from '../../types/codex'
 import { useMobile } from '../../composables/useMobile'
 
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
+import IconTablerChevronDown from '../icons/IconTablerChevronDown.vue'
 import IconTablerBolt from '../icons/IconTablerBolt.vue'
 import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerMaximize from '../icons/IconTablerMaximize.vue'
@@ -404,6 +446,7 @@ const {
   isFileMentionOpen,
   fileMentionHighlightedIndex,
   isComposerExpanded,
+  isComposerCollapsed,
   fileMentionDebounceTimer,
   canSubmit,
   hasUnsavedDraft,
@@ -490,6 +533,42 @@ const {
   onSkillDropdownToggle,
 } = settings
 
+const editorId = useId()
+const showInputButtonRef = ref<HTMLButtonElement | null>(null)
+const collapseInputButtonRef = ref<HTMLButtonElement | null>(null)
+const isStopDisabled = computed(() => (props.disabled && !props.allowInterruptWhenDisabled)
+  || !props.activeThreadId || props.isInterruptingTurn || props.isStopPending)
+
+function setComposerCollapsed(collapsed: boolean): void {
+  // Keep the editor mounted: drafts, attachments and control selections have one owner.
+  isComposerCollapsed.value = collapsed
+  isComposerExpanded.value = false
+  closeComposerPopovers()
+  void nextTick(() => {
+    if (collapsed) showInputButtonRef.value?.focus({ preventScroll: true })
+    else {
+      const target = isInteractionDisabled.value ? collapseInputButtonRef.value : inputRef.value
+      target?.focus({ preventScroll: true })
+      queueComposerOverflowMeasurement()
+    }
+  })
+}
+
+function closeComposerPopovers(): void {
+  isAttachMenuOpen.value = false
+  isAppsPickerOpen.value = false
+  promptLibraryOpen.value = false
+  slashQuery.value = null
+  closeFileMention()
+  attachments.onWindowDragCleanup()
+}
+
+watch(() => props.hasPendingRequest, pending => {
+  if (!pending) return
+  closeComposerPopovers()
+  isComposerExpanded.value = false
+})
+
 const attachMenuRootRef = ref<HTMLElement | null>(null)
 
 const { isMobile } = useMobile()
@@ -567,6 +646,7 @@ watch(
     if (lastActiveThreadId) {
       persistDraftForThread(lastActiveThreadId, input.getCurrentDraftPayload())
     }
+    isComposerCollapsed.value = false
     input.clearDraftState()
     const restored = loadPersistedDraftForThread(nextThreadId)
     if (restored) {
@@ -617,6 +697,26 @@ export type { SubmitPayload, ThreadComposerExposed } from './composerContracts'
 
 .thread-composer:has(.thread-composer-input-wrap--expanded) .thread-composer-shell {
   @apply mx-auto flex h-full w-full max-w-[min(var(--chat-column-max,72rem),100%)] flex-col shadow-2xl;
+}
+
+.thread-composer-collapsed-bar {
+  @apply flex items-center justify-between gap-2 py-1 sm:py-1;
+}
+
+.thread-composer-visibility-toggle {
+  @apply inline-flex min-h-9 items-center justify-center gap-1 rounded-lg border-0 bg-transparent px-2 text-xs font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500;
+}
+
+.thread-composer-restore-icon {
+  transform: rotate(180deg);
+}
+
+.thread-composer-collapse {
+  @apply shrink-0;
+}
+
+@media (max-width: 639px) {
+  .thread-composer-collapse span { display: none; }
 }
 
 .thread-composer-shell--drag-active {
