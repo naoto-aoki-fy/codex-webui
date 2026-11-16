@@ -94,3 +94,36 @@ Performance: one bounded (20 entries/90 KB) critical section per reservation or
 settlement, no lock held over network traffic, no polling or submission replay.
 All same-origin tabs running this version must use the same available locking
 facility; old versions cannot participate and should be reloaded before queue use.
+
+## Navigation, model choices and token usage after changes
+
+Removed runtime keys/loaders: `selected-thread-id.v1`, `model-usage-order.v1`,
+`thread-token-usage.v1`. Old stored values are inert and left intact; no broad
+cleanup runs. Each tab starts with empty selection and App initializes it from
+its own route. Home stays home. Token usage is memory-only, cleared on connection
+loss, new turn and revert. **Verified limitation:** the current history protocol
+adapter does not hydrate token usage after reload. Usage stays unavailable until a
+server usage event, rather than presenting an old snapshot as authoritative. No
+extra startup RPC or polling is added. Backend accepted-model usage remains the
+only ordering source; legacy browser usage is never migrated as accepted usage.
+
+Retained legacy model/collaboration/reasoning inputs are read for compatibility.
+New writes use one string entry per encoded context:
+`selected-model-by-context.v2.<context>`,
+`collaboration-mode-by-context.v2.<context>` (`plan`; empty means default), and
+`explicit-model-contexts.v2.<context>` (`1`; empty clears). All are profile-scoped.
+Writers compare their own previous snapshot and write only changed contexts;
+there is no shared read-modify-write map. Different contexts cannot overwrite
+each other. Same-context concurrent choices intentionally use last-writer wins.
+Empty-string tombstones override legacy inputs without deleting them. Storage
+events refresh shared preferences, never routes or drafts. Explicit membership
+is retained because observed server model metadata also populates the model map;
+that map alone cannot distinguish unsent user choices. The old global explicit
+array is read **only** in the legacy profile. Named profiles start independently.
+A partial/sidebar thread list no longer deletes persistent choices.
+
+Performance: context writes are constant-size instead of rewriting all threads.
+Startup/event hydration enumerates storage keys once per preference map; no new
+network requests, timers or unbounded async fanout. Legacy input remains read-only
+and may be retained indefinitely. Context tombstone compaction is deferred to
+avoid resurrecting old selections.

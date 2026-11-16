@@ -1484,7 +1484,7 @@ async function initialize(): Promise<void> {
   if (route.name === 'thread' && routeThreadId.value) {
     primeSelectedThread(routeThreadId.value)
   } else if (route.name === 'home' || route.name === 'skills') {
-    primeSelectedThread('', { persist: false })
+    primeSelectedThread('')
   }
 
   await refreshAll({

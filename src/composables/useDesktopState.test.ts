@@ -76,6 +76,7 @@ function installTestWindow(initialStorage: Record<string, string> = {}) {
   const store = new Map(Object.entries(initialStorage))
   vi.stubGlobal('window', {
     localStorage: {
+      get length() { return store.size }, key: (i: number) => [...store.keys()][i] ?? null,
       getItem: vi.fn((key: string) => store.get(key) ?? null),
       setItem: vi.fn((key: string, value: string) => {
         store.set(key, value)
@@ -142,16 +143,16 @@ describe('removeThreadFromGroups', () => {
 })
 
 describe('collaboration mode selection', () => {
-  it('can prime an empty selected thread without clearing persisted selection', () => {
+  it('ignores legacy selection and keeps navigation independent of browser storage', () => {
     installTestWindow({
       'codex-web-local.selected-thread-id.v1': 'thread-a',
     })
 
     const state = useDesktopState()
 
-    expect(state.selectedThreadId.value).toBe('thread-a')
-
-    state.primeSelectedThread('', { persist: false })
+    expect(state.selectedThreadId.value).toBe('')
+    state.primeSelectedThread('thread-b')
+    state.primeSelectedThread('')
 
     expect(state.selectedThreadId.value).toBe('')
     expect(window.localStorage.getItem('codex-web-local.selected-thread-id.v1')).toBe('thread-a')
@@ -1247,4 +1248,13 @@ describe('diagnostic event ownership', () => {
     expect(state.diagnosticWarnings.value).toEqual([])
     state.stopPolling()
   })
+})
+
+
+it('does not restore stale durable token usage or write navigation/usage caches', () => {
+  installTestWindow({ 'codex-web-local.thread-token-usage.v1': JSON.stringify({ t: { total: {}, last: {}, modelContextWindow: 100 } }) })
+  const state = useDesktopState()
+  state.primeSelectedThread('t')
+  expect(state.selectedThreadTokenUsage.value).toBeNull()
+  expect(window.localStorage.setItem).not.toHaveBeenCalled()
 })

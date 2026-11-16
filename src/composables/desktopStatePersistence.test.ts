@@ -4,6 +4,7 @@ import * as persistence from './desktopStatePersistence'
 function storage(values: Record<string, string> = {}) {
   const data = new Map(Object.entries(values))
   const mock = {
+    get length() { return data.size }, key: (i: number) => [...data.keys()][i] ?? null,
     getItem: vi.fn((key: string) => data.get(key) ?? null),
     setItem: vi.fn((key: string, value: string) => { data.set(key, value) }),
     removeItem: vi.fn((key: string) => { data.delete(key) }),
@@ -18,10 +19,7 @@ describe('desktop persistence compatibility', () => {
   it('keeps every storage key and context derivation', () => {
     const keys = Object.entries(persistence).filter(([name]) => name.endsWith('_STORAGE_KEY'))
     expect(Object.fromEntries(keys)).toEqual({
-      THREAD_TOKEN_USAGE_STORAGE_KEY: 'codex-web-local.thread-token-usage.v1',
-      SELECTED_THREAD_STORAGE_KEY: 'codex-web-local.selected-thread-id.v1',
       SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY: 'codex-web-local.selected-model-by-context.v1',
-      MODEL_USAGE_STORAGE_KEY: 'codex-web-local.model-usage-order.v1',
       REASONING_BY_MODEL_STORAGE_KEY: 'codex-web-local.reasoning-by-provider-model.v1',
       LEGACY_SELECTED_MODEL_STORAGE_KEY: 'codex-web-local.selected-model-id.v1',
       COLLABORATION_MODE_STORAGE_KEY: 'codex-web-local.collaboration-mode-by-context.v1',
@@ -47,10 +45,10 @@ describe('desktop persistence compatibility', () => {
     expect(state.__proto__).toBe('safe')
     expect(persistence.readSelectedModel(state, ' t ')).toBe('m')
     persistence.saveSelectedModelMap(state)
-    expect(mock.setItem).toHaveBeenLastCalledWith(persistence.SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY, '{"t":"m","__proto__":"safe"}')
-    expect(mock.removeItem).toHaveBeenCalledWith(persistence.LEGACY_SELECTED_MODEL_STORAGE_KEY)
-    persistence.saveSelectedModelMap({})
-    expect(mock.removeItem).toHaveBeenCalledWith(persistence.SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY)
+    expect(persistence.loadSelectedModelMap()).toEqual(state)
+    expect(mock.removeItem).not.toHaveBeenCalledWith(persistence.LEGACY_SELECTED_MODEL_STORAGE_KEY)
+    persistence.saveSelectedModelMap({}, state)
+    expect(persistence.loadSelectedModelMap()).toEqual({})
   })
 
   it('keeps context-specific collaboration and untrimmed reasoning preferences', () => {
@@ -67,8 +65,8 @@ describe('desktop persistence compatibility', () => {
     const next = persistence.writeSelectedCollaborationModeForContext(state, 't', 'default')
     expect(next).not.toBe(state)
     expect(next.t).toBeUndefined()
-    persistence.saveSelectedCollaborationModeMap(next)
-    expect(mock.removeItem).toHaveBeenCalledWith(persistence.LEGACY_COLLABORATION_MODE_STORAGE_KEY)
+    persistence.saveSelectedCollaborationModeMap(next, state)
+    expect(mock.removeItem).not.toHaveBeenCalledWith(persistence.LEGACY_COLLABORATION_MODE_STORAGE_KEY)
     const reasoning = persistence.loadReasoningPreferences()
     expect(Object.getPrototypeOf(reasoning)).toBeNull()
     expect(reasoning['codex::m']).toBe(' high ')
@@ -89,28 +87,9 @@ describe('desktop persistence compatibility', () => {
     expect(usage).toEqual({ total: { totalTokens: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 }, last: { totalTokens: 25, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 }, modelContextWindow: 100, currentContextTokens: 25, remainingContextTokens: 75, remainingContextPercent: 75 })
     expect(persistence.normalizeThreadTokenUsage({ total: {}, last: { totalTokens: 200 }, modelContextWindow: 100 })?.remainingContextPercent).toBe(0)
     expect(persistence.normalizeThreadTokenUsage({ total: {}, last: {} })?.remainingContextPercent).toBeNull()
-    const mock = storage({ [persistence.THREAD_TOKEN_USAGE_STORAGE_KEY]: JSON.stringify({ t: usage, invalid: {}, '': usage }) })
-    expect(persistence.loadThreadTokenUsageMap()).toEqual({ t: usage })
-    persistence.saveThreadTokenUsageMap({ t: usage })
-    expect(mock.setItem).toHaveBeenLastCalledWith(persistence.THREAD_TOKEN_USAGE_STORAGE_KEY, JSON.stringify({ t: usage }))
   })
 
-  it('keeps ordering, deduplication, raw selected IDs, and serialization', () => {
-    const mock = storage({
-      [persistence.MODEL_USAGE_STORAGE_KEY]: '[" b ","a","b",4,""]',
-      ['codex-web-local.project-order.v1']: '[" /b ","/a","/b",4,""]',
-      ['codex-web-local.project-display-name.v1']: '{" /a ":" Name ","x":4}',
-      [persistence.SELECTED_THREAD_STORAGE_KEY]: ' t ',
-    })
-    expect(persistence.loadModelUsageOrder()).toEqual(['b', 'a'])
-    expect(persistence.loadSelectedThreadId()).toBe(' t ')
-    persistence.saveSelectedThreadId(' t ')
-    expect(mock.setItem).toHaveBeenLastCalledWith(persistence.SELECTED_THREAD_STORAGE_KEY, ' t ')
-    persistence.saveSelectedThreadId('')
-    expect(mock.removeItem).toHaveBeenCalledWith(persistence.SELECTED_THREAD_STORAGE_KEY)
-  })
-
-  const forgivingLoaders = [persistence.loadModelUsageOrder, persistence.loadReasoningPreferences, persistence.loadSelectedCollaborationModeMap, persistence.loadThreadTokenUsageMap]
+  const forgivingLoaders = [persistence.loadReasoningPreferences, persistence.loadSelectedCollaborationModeMap]
   it('keeps malformed and unsupported values harmless for forgiving loaders', () => {
     for (const raw of ['{', 'null', '42', 'true', '"text"']) {
       const mock = storage()
@@ -124,11 +103,9 @@ describe('desktop persistence compatibility', () => {
     mock.getItem.mockImplementation(() => { throw new Error('read') })
     for (const load of forgivingLoaders) expect(() => load()).not.toThrow()
     expect(persistence.loadSelectedModelMap()).toEqual({})
-    expect(persistence.loadSelectedThreadId).toThrow('read')
     mock.setItem.mockImplementation(() => { throw new Error('write') })
     expect(() => persistence.saveSelectedModelMap({ t: 'm' })).not.toThrow()
     expect(() => persistence.saveSelectedCollaborationModeMap({ t: 'plan' })).not.toThrow()
-    for (const save of [() => persistence.saveThreadTokenUsageMap({}), () => persistence.saveSelectedThreadId('t')]) expect(save).toThrow('write')
     mock.getItem.mockReturnValue(null)
   })
 
@@ -156,7 +133,6 @@ describe('desktop persistence compatibility', () => {
     vi.stubGlobal('window', { get localStorage() { throw new Error('unavailable') } })
     for (const load of forgivingLoaders) expect(() => load()).not.toThrow()
     expect(persistence.loadSelectedModelMap()).toEqual({})
-    expect(persistence.loadSelectedThreadId).toThrow('unavailable')
     expect(() => persistence.saveSelectedModelMap({ t: 'm' })).not.toThrow()
     expect(() => persistence.saveSelectedCollaborationModeMap({ t: 'plan' })).not.toThrow()
   })
@@ -164,9 +140,6 @@ describe('desktop persistence compatibility', () => {
   it('handles missing window without storage side effects', () => {
     vi.stubGlobal('window', undefined)
     for (const load of [...forgivingLoaders, persistence.loadSelectedModelMap]) expect(Object.keys(load())).toEqual([])
-    expect(persistence.loadSelectedThreadId()).toBe('')
-    persistence.saveThreadTokenUsageMap({})
-    persistence.saveSelectedThreadId('t')
     persistence.saveSelectedModelMap({})
     persistence.saveSelectedCollaborationModeMap({})
   })
