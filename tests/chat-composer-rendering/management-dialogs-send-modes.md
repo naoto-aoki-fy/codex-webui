@@ -66,6 +66,21 @@ use a disposable native conversation and a supported independently managed serve
    per-thread or browser send-mode preference storage exists. Opening/closing
    management UI alone must retain the current selection.
 
+## Queue mode typography
+
+Setup: use the fixture or disposable conversation described above with Model and
+Reasoning Effort controls visible. Select **+ → Send mode → Queue mode**.
+
+1. In both light and dark themes, compare the Queue mode indicator with Model and
+   Reasoning Effort. Computed font family, size, weight, line height and letter
+   spacing must match; size and line height use the existing `text-sm` and
+   `leading-tight` tokens.
+2. Confirm the existing padding, spacing and layout rules remain unchanged. Click
+   the Queue mode indicator: the send-mode menu still opens with Queue selected.
+   Select Immediate mode: the indicator disappears without submitting a message.
+
+Cleanup: restore Immediate mode and the original theme. No messages need sending.
+
 Cleanup: close fixture pages. In a manual disposable thread, explicitly inspect
 and remove pending prompts using the existing confirmed queue actions, restore
 archives if desired, and clear fixture presets. Do not activate/authenticate real
