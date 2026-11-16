@@ -1280,20 +1280,20 @@ export async function markNativeThreadRead(threadId: string, expectedRevision: s
   return result.readState
 }
 
-export async function prepareConversationTransfer(threadId: string, turnIndex?: number, turnId?: string): Promise<{ id: string; warnings: string[]; messageCount: number; sourceModelProvider?: string }> {
-  return callRpc('conversation-transfer/prepare', { threadId, turnIndex, turnId })
+export async function prepareConversationTransfer(threadId: string, turnIndex?: number, turnId?: string, revertTarget?: import('../types/codex').PortableRevertTarget): Promise<{ id: string; warnings: string[]; messageCount: number; sourceModelProvider?: string }> {
+  return callRpc('conversation-transfer/prepare', { threadId, turnIndex, turnId, ...(revertTarget ? { revertTarget } : {}) })
 }
 export async function cancelConversationTransfer(id: string): Promise<void> {
   await callRpc('conversation-transfer/cancel', { id })
 }
-export async function createConversationTransfer(id: string, modelId: string): Promise<StartedThread & { warnings: string[] }> {
+export async function createConversationTransfer(id: string, modelId: string): Promise<StartedThread & { warnings: string[]; draftText?: string }> {
   const { model, provider } = parseModelSelection(modelId)
   if (!model || !provider) throw new Error('Select a configured provider and model.')
   try {
     return await callRpc('conversation-transfer/create', { id, model, modelProvider: provider })
   } catch (cause) {
     // Read the durable receipt only. Appending history is never retried.
-    let receipt: (StartedThread & { stage: string; warnings: string[] }) | undefined
+    let receipt: (StartedThread & { stage: string; warnings: string[]; draftText?: string }) | undefined
     try { receipt = await callRpc('conversation-transfer/status', { id }) } catch { /* preserve the original error */ }
     if (receipt?.stage === 'ready' && receipt.threadId && receipt.model === model && receipt.modelProvider === provider) return receipt
     throw new Error(`Transfer ${id}: destination ${receipt?.threadId || 'not acknowledged'}, stage ${receipt?.stage || 'unknown'}. ${cause instanceof Error ? cause.message : String(cause)} Do not replay injection.`)

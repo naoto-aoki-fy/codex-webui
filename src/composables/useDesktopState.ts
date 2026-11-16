@@ -1,3 +1,4 @@
+import { persistDraftForThread } from '../utils/composerDraftStorage'
 import { profileStorageKey } from '../utils/browserConnectionProfile'
 import { readPreferenceRecord, readPreferenceRecords, savePreferenceRecords } from '../utils/browserPreferenceRecords'
 import { createBackendModelPreferences } from './backendModelPreferences'
@@ -2748,6 +2749,10 @@ export function useDesktopState() {
       const source = flattenThreads(sourceGroups.value).find(row => row.id === threadId)
       insertOptimisticThread(result.threadId, source?.cwd || '', toForkedThreadTitle(source?.title || 'Imported conversation'), result.projectId)
       setThreadModelId(result.threadId, result.model, result.modelProvider)
+      // Save before publishing the destination so composer hydration sees an ordinary draft.
+      if (result.draftText !== undefined) persistDraftForThread(result.threadId, {
+        text: result.draftText, imageUrls: [], fileAttachments: [], skills: [],
+      })
       // This is a new, configured thread, never a native fresh fork.
       setSelectedThreadId(result.threadId)
       await loadThreads()

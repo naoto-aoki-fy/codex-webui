@@ -20,6 +20,81 @@ function server() {
 }
 beforeEach(() => { disk.state = {} })
 describe('portable conversation transfer', () => {
+  // CAP-001 + CAP-002: user cutoffs are exclusive; response cutoffs remain inclusive.
+  it('snapshots all preceding history and the exact user draft independently of the UI page', async () => {
+    const rpc = server(), transfers = createConversationTransfers(rpc)
+    const source = { id: 'source', cwd: '/workspace', projectId: 'project', turns: Array.from({ length: 25 }, (_, i) => turn(i)) }
+    source.turns[20]!.items[0]!.content = [{ type: 'text', text: '  Revise **this**\n```ts\nx()\n```  ' }]
+    const before = structuredClone(source)
+    rpc.mockResolvedValueOnce({ thread: source })
+    const prepared = await transfers.prepare('source', undefined, undefined, { turnId: 'turn-20', messageId: 'u-20' })
+    expect(prepared.messageCount).toBe(40)
+    // Later source changes cannot alter either part of the prepared snapshot.
+    source.turns[20]!.items[0]!.content[0]!.text = 'changed later'
+    const result = await transfers.create(prepared.id, 'different-model', 'different-provider')
+    expect(result.draftText).toBe(normalizeThreadMessagesV2({ thread: before as any }).find(message => message.id === 'u-20')!.text)
+    expect(result.projectId).toBe('project')
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(['thread/read', 'thread/start', 'thread/inject_items'])
+    const items = rpc.mock.calls[2]![1].items
+    expect(items).toHaveLength(40)
+    expect(items[0].content[0].text).toBe('question 0')
+    expect(items.at(-1).content[0].text).toBe('answer 19')
+    expect(JSON.stringify(items)).not.toContain('Revise')
+    const reopened = createConversationTransfers(rpc)
+    expect(await reopened.status(prepared.id)).toMatchObject({ stage: 'ready', draftText: result.draftText })
+    expect((await reopened.decorate({ thread: { id: 'destination', turns: [] } })).importedTranscript).toHaveLength(40)
+    await expect(reopened.create(prepared.id, 'different-model', 'different-provider')).rejects.toThrow('consumed')
+    expect(rpc.mock.calls).toHaveLength(3)
+    // Only the deliberate test mutation changed the source object.
+    source.turns[20]!.items[0]!.content[0]!.text = before.turns[20]!.items[0]!.content![0]!.text
+    expect(source).toEqual(before)
+  })
+  it('creates a draft-only destination at the first user turn without injecting or generating', async () => {
+    const rpc = server(), transfers = createConversationTransfers(rpc)
+    const prepared = await transfers.prepare('source', undefined, undefined, { turnId: 'turn-0', messageId: 'u-0' })
+    expect(prepared.messageCount).toBe(0)
+    await expect(transfers.create(prepared.id, 'model', 'provider')).resolves.toMatchObject({ draftText: 'question 0' })
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(['thread/read', 'thread/start'])
+  })
+  it('preserves an existing imported prefix exactly once before a native user cutoff', async () => {
+    const rpc = server(), transfers = createConversationTransfers(rpc)
+    const first = await transfers.prepare('source', 0)
+    await transfers.create(first.id, 'model', 'provider')
+    const prepared = await transfers.prepare('destination', undefined, undefined, { turnId: 'turn-1', messageId: 'u-1' })
+    expect(prepared.messageCount).toBe(4)
+    expect((await transfers.status(prepared.id)).draftText).toBe('question 1')
+  })
+  it.each([
+    { turnId: 'stale', messageId: 'u-1' },
+    { turnId: 'turn-1', messageId: 'u-2' },
+    { turnId: 'turn-1', messageId: 'a-1' },
+  ])('rejects a stale or non-user revert target before creation: %j', async target => {
+    const rpc = server()
+    await expect(createConversationTransfers(rpc).prepare('source', undefined, undefined, target)).rejects.toThrow('no longer available')
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(['thread/read'])
+    expect(disk.state).toEqual({})
+  })
+  it('cancels a revert snapshot without creating a destination or retaining a draft', async () => {
+    const rpc = server(), transfers = createConversationTransfers(rpc)
+    const prepared = await transfers.prepare('source', undefined, undefined, { turnId: 'turn-1', messageId: 'u-1' })
+    await transfers.cancel(prepared.id)
+    await expect(transfers.status(prepared.id)).rejects.toThrow('not found')
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(['thread/read'])
+  })
+  it.each(['thread/start', 'thread/inject_items'])('fences ambiguous Portable Fork and Revert %s outcomes across reopening', async failedMethod => {
+    const rpc = server(), transfers = createConversationTransfers(rpc)
+    const prepared = await transfers.prepare('source', undefined, undefined, { turnId: 'turn-1', messageId: 'u-1' })
+    rpc.mockImplementation(async (method, params) => {
+      if (method === failedMethod) throw new Error('timeout: acknowledgement lost')
+      if (method === 'thread/start') return { thread: { id: 'destination' }, model: params.model, modelProvider: params.modelProvider }
+      throw new Error('Unexpected operation')
+    })
+    await expect(transfers.create(prepared.id, 'model', 'provider')).rejects.toThrow('Incomplete destination')
+    await expect(createConversationTransfers(rpc).create(prepared.id, 'model', 'provider')).rejects.toThrow('consumed')
+    expect(rpc.mock.calls.filter(call => call[0] === failedMethod)).toHaveLength(1)
+    expect(rpc.mock.calls.every(call => ['thread/read', 'thread/start', 'thread/inject_items'].includes(call[0]))).toBe(true)
+  })
+
   it('returns the source provider from the existing history read for destination preselection', async () => {
     const rpc = server()
     rpc.mockImplementationOnce(async () => ({ thread: { cwd: '/workspace', modelProvider: 'source-provider', turns: [turn(0)] } }))
@@ -175,6 +250,16 @@ describe('portable conversation transfer', () => {
     await expect(reopened.assertReady('destination')).rejects.toThrow('Incomplete')
     await expect(reopened.create(prepared.id, 'model', 'provider')).rejects.toThrow('consumed')
     expect(rpc.mock.calls.filter(c => c[0] === 'thread/inject_items')).toHaveLength(1)
+  })
+  it('never injects into or decorates the source if start returns its identity', async () => {
+    const rpc = server(), transfers = createConversationTransfers(rpc)
+    const prepared = await transfers.prepare('source', undefined, undefined, { turnId: 'turn-1', messageId: 'u-1' })
+    rpc.mockResolvedValueOnce({ thread: { id: 'source' }, model: 'model', modelProvider: 'provider' })
+    await expect(transfers.create(prepared.id, 'model', 'provider')).rejects.toThrow('separate destination')
+    await transfers.assertReady('source')
+    const payload = { thread: { id: 'source', turns: [] } }
+    expect(await transfers.decorate(payload)).toBe(payload)
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(['thread/read', 'thread/start'])
   })
   it('rejects a default provider/model before injection', async () => {
     const rpc = server(); const transfers = createConversationTransfers(rpc)

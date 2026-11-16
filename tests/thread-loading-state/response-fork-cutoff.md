@@ -197,3 +197,53 @@ attachments. Include adjacent user messages and items containing no text.
 
 Cleanup: archive disposable destinations. Existing completed transfers are not
 rewritten or automatically reinjected. No workspace rollback is performed.
+
+## Portable Fork and Revert (CAP-001 + CAP-002)
+
+Prerequisites: use a stopped, persisted source with at least 25 turns and two
+configured providers. Include multiline Markdown/code in a historical user message,
+plus tools/images in earlier turns. Keep an unsent source composer draft with a
+skill or attachment. Leave the oldest history unloaded. For mocked browser coverage,
+run `PLAYWRIGHT_BROWSERS_PATH=<installed-browser-path> FORK_TEST_CASES=16,17 node scripts/test-fork-methods.cjs`
+against the current worktree on port 4173. Server and desktop unit tests separately
+cover full history, failure fencing, and draft writes.
+
+1. Open the selected user message's Revert arrow. Expect separate Revert,
+   Fork and Revert (Native), and Portable Fork and Revert options. Opening the
+   menu must not prepare history or create anything. The main button must still
+   run Native Fork and Revert. Repeat menu/dialog checks in light and dark themes.
+2. Choose Portable Fork and Revert. Expect the existing provider picker with
+   that title and only the destination provider control. Cancel, including while
+   history is loading. Expect no destination, generation, source history/draft
+   changes, or settings writes.
+3. Open again, choose the other provider, and double-click Create conversation.
+   Expect exactly one destination start and one history injection. Verify all
+   eligible text before the selected user turn, including unloaded oldest turns,
+   in order. Expect no selected prompt, its response, later history, tool output,
+   reasoning or attachment placeholders in imported history. A source turn added
+   after snapshot capture must not enter the destination.
+4. Expect the selected prompt in the editable destination composer, matching its
+   displayed multiline text/Markdown. There must be zero `turn/start` calls.
+   Edit the draft, navigate to the source and back, then reload. Expect the edited
+   draft to persist without resubmission, reset, or reinjection. Verify the entire
+   source conversation and its original unsent draft/attachments/skills survive.
+5. Explicitly submit the edited draft. Expect one new turn on the chosen provider
+   and its default model. Model changes within that provider remain available.
+6. Repeat on the first user message. Expect an empty imported transcript and the
+   prompt as draft, one start, no injection and no generation. Repeat on a native
+   user turn following an imported prefix; expect that prefix exactly once.
+7. Simulate preparation failure, start acknowledgment loss, unsupported injection
+   and injection acknowledgment loss. Expect an error, no native fallback or
+   automatic retry, no source modification, and no restored draft in the source.
+   Known incomplete destinations remain blocked from sending. A lost browser
+   acknowledgment after a confirmed import may read the ready receipt and restore
+   the destination draft without repeating creation/injection.
+8. Remove/replace the selected turn or user item before snapshot capture. Expect
+   a stale-target error before creation. Active turns remain ineligible. Check
+   ordinary Portable Fork response cutoffs are still inclusive and both native
+   Revert actions retain their existing behavior.
+
+Cleanup: archive disposable complete/incomplete destinations explicitly; clear
+only disposable destination drafts. Do not repeat ambiguous mutations. No files
+are reverted. Record real app-server version/provider results separately from
+mocked browser and fixture results.

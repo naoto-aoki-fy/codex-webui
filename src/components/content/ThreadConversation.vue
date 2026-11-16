@@ -700,7 +700,7 @@
                 </button>
                 <ComposerDropdown :key="activeThreadId" model-value="" icon-only
                   placeholder="Revert options" :disabled="isRevertDisabled" menu-align="end"
-                  :options="[{ value: 'revert', label: 'Revert' }, { value: 'fork-and-revert', label: 'Fork and Revert' }]"
+                  :options="[{ value: 'revert', label: 'Revert' }, { value: 'fork-and-revert', label: 'Fork and Revert (Native)' }, { value: 'portable-fork-and-revert', label: 'Portable Fork and Revert' }]"
                   @update:model-value="editMessage(message.id, $event)" />
                 </span>
                 <button
@@ -1099,7 +1099,7 @@ const props = defineProps<ConversationProps>()
 
 const emit = defineEmits<{
   forkThread: [payload: { threadId: string; turnIndex: number; method: ForkMethod }]
-  rollback: [payload: { threadId: string; turnId: string; operation: 'revert' | 'fork-and-revert' }]
+  rollback: [payload: { threadId: string; turnId: string; operation: import('../../types/codex').RevertOperation; messageId?: string }]
   implementPlan: [payload: { turnId: string }]
 }>()
 

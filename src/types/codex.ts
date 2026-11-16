@@ -1,4 +1,6 @@
 export type ForkMethod = 'native' | 'portable'
+export type RevertOperation = 'revert' | 'fork-and-revert' | 'portable-fork-and-revert'
+export type PortableRevertTarget = { turnId: string; messageId: string }
 
 export type RpcEnvelope<T> = {
   result: T
