@@ -66,7 +66,7 @@ use a disposable native conversation and a supported independently managed serve
    per-thread or browser send-mode preference storage exists. Opening/closing
    management UI alone must retain the current selection.
 
-## Queue mode typography
+## Queue mode typography and color
 
 Setup: use the fixture or disposable conversation described above with Model and
 Reasoning Effort controls visible. Select **+ → Send mode → Queue mode**.
@@ -74,7 +74,8 @@ Reasoning Effort controls visible. Select **+ → Send mode → Queue mode**.
 1. In both light and dark themes, compare the Queue mode indicator with Model and
    Reasoning Effort. Computed font family, size, weight, line height and letter
    spacing must match; size and line height use the existing `text-sm` and
-   `leading-tight` tokens.
+   `leading-tight` tokens. Computed text color must also match, using
+   `text-zinc-500` in light theme and `text-zinc-400` in dark theme.
 2. Confirm the existing padding, spacing and layout rules remain unchanged. Click
    the Queue mode indicator: the send-mode menu still opens with Queue selected.
    Select Immediate mode: the indicator disappears without submitting a message.

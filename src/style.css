@@ -263,7 +263,8 @@
   @apply border-rose-800/70 bg-rose-950/70 text-rose-100 shadow-none;
 }
 
-:root.dark .composer-dropdown-trigger {
+:root.dark .composer-dropdown-trigger,
+:root.dark .thread-composer-queue-mode {
   @apply text-zinc-400;
 }
 
@@ -1294,7 +1295,7 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .feature-panel p { margin: 8px 0; }
 .feature-panel pre { font-size: 12px; text-align: left; }
 .execution-details { width: 100%; min-width: 0; text-align: left; }
-.thread-composer-queue-mode { @apply text-sm leading-tight; white-space: nowrap; padding: 3px; }
+.thread-composer-queue-mode { @apply text-sm leading-tight text-zinc-500; white-space: nowrap; padding: 3px; }
 .feature-panel button { border: 1px solid #d4d4d8; border-radius: 6px; padding: 4px 8px; margin: 4px 0; background: #fff; }
 .feature-panel button:disabled { opacity: .55; cursor: default; }
 .feature-panel ul { list-style: none; padding: 0; max-height: 280px; overflow: auto; }
