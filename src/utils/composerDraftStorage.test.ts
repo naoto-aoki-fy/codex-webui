@@ -13,7 +13,7 @@ it('preserves attachment and skill drafts within their connection profile', asyn
   const draft = { text: 'Draft', imageUrls: ['data:image/png;base64,abc'], fileAttachments: [{ label: 'a', path: '/a', fsPath: '/a' }], skills: [{ name: 'skill', path: '/skill/SKILL.md' }] }
   persistDraftForThread('thread', draft)
   expect(loadPersistedDraftForThread('thread')).toEqual(draft)
-  expect(storage.has('codex-profile.remote-A.codex-web-local.thread-draft.v1.thread')).toBe(true)
+  expect([...storage.keys()].some(key => key.startsWith('codex-profile.remote-A.codex-web-local.thread-draft.v2.thread.'))).toBe(true)
   storage.set('codex-web-local.thread-draft.v1.other', JSON.stringify(draft))
   expect(loadPersistedDraftForThread('other')).toBeNull()
 })

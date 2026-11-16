@@ -1,3 +1,4 @@
+import { browserTabIdentity } from './browserTabIdentity'
 import { profileStorageKey } from './browserConnectionProfile'
 
 export type FileAttachment = { label: string; path: string; fsPath: string }
@@ -10,10 +11,25 @@ export type ComposerDraftPayload = {
   skills: Array<{ name: string; path: string }>
 }
 
-const DRAFT_STORAGE_PREFIX = 'codex-web-local.thread-draft.v1.'
-
+const DRAFT_STORAGE_PREFIX = 'codex-web-local.thread-draft.v2.'
+const memories = new WeakMap<object, Map<string, string>>()
+function memory() {
+  let value = memories.get(window)
+  if (!value) { value = new Map(); memories.set(window, value) }
+  return value
+}
+export let draftStorageError = ''
+function prefix(threadId: string): string {
+  return profileStorageKey(`${DRAFT_STORAGE_PREFIX}${encodeURIComponent(threadId)}.`)
+}
 function getDraftStorageKey(threadId: string): string {
-  return profileStorageKey(`${DRAFT_STORAGE_PREFIX}${threadId}`)
+  const { tabId, writerId } = browserTabIdentity()
+  return `${prefix(threadId)}${tabId}.${writerId}`
+}
+function pointerKey(threadId: string) { return `${prefix(threadId)}resume` }
+function legacyKeys(threadId: string) {
+  return [profileStorageKey(`codex-web-local.thread-draft.v1.${threadId}`),
+    profileStorageKey(`codex-web-local.thread-fork-recovery.v1.${threadId}`)]
 }
 
 export function loadPersistedDraftForThread(threadId: string): ComposerDraftPayload | null {
@@ -21,10 +37,25 @@ export function loadPersistedDraftForThread(threadId: string): ComposerDraftPayl
   const normalizedThreadId = threadId.trim()
   if (!normalizedThreadId) return null
   try {
-    const raw = window.localStorage.getItem(getDraftStorageKey(normalizedThreadId))
-      || window.localStorage.getItem(profileStorageKey(`codex-web-local.thread-fork-recovery.v1.${normalizedThreadId}`))
+    const owned = getDraftStorageKey(normalizedThreadId)
+    let previous: string | null = null
+    try { previous = window.sessionStorage.getItem(pointerKey(normalizedThreadId)) } catch { /* Recovery picker remains available. */ }
+    // Only follow pointers inside this profile/thread namespace. Empty payloads
+    // are tombstones, so clearing a draft does not resurrect legacy content.
+    const raw = memory().get(owned) ?? window.localStorage.getItem(owned)
+      ?? (previous?.startsWith(prefix(normalizedThreadId)) ? window.localStorage.getItem(previous) : null)
+      ?? legacyKeys(normalizedThreadId).map(key => window.localStorage.getItem(key)).find(value => value !== null)
     if (!raw) return null
+    return parseDraft(raw)
+  } catch {
+    return null
+  }
+}
+
+function parseDraft(raw: string): ComposerDraftPayload | null {
+  try {
     const parsed = JSON.parse(raw) as Partial<ComposerDraftPayload> | string
+    if (!parsed || (typeof parsed !== 'object' && typeof parsed !== 'string')) return null
     if (typeof parsed === 'string') {
       return {
         text: parsed,
@@ -64,18 +95,34 @@ export function persistDraftForThread(threadId: string, payload: ComposerDraftPa
   if (typeof window === 'undefined') return
   const normalizedThreadId = threadId.trim()
   if (!normalizedThreadId) return
+  const key = getDraftStorageKey(normalizedThreadId)
+  const raw = JSON.stringify(payload)
+  memory().set(key, raw)
   try {
-    const hasContent = !!payload.apps?.length || payload.text.trim().length > 0
-      || payload.imageUrls.length > 0
-      || payload.fileAttachments.length > 0
-      || payload.skills.length > 0
-    if (hasContent) {
-      window.localStorage.setItem(getDraftStorageKey(normalizedThreadId), JSON.stringify(payload))
-      return
-    }
-    window.localStorage.removeItem(getDraftStorageKey(normalizedThreadId))
+    window.localStorage.setItem(key, raw)
+    try { window.sessionStorage.setItem(pointerKey(normalizedThreadId), key) } catch { /* Manual recovery still works. */ }
+    draftStorageError = ''
   } catch {
-    // Ignore localStorage failures (quota/private mode).
+    draftStorageError = 'Draft is available in this tab only. Browser storage could not save it; copy it before closing.'
   }
 }
 
+/** Recovery is an explicit copy. Never claim or delete another document's data. */
+export function recoverableDrafts(threadId: string): Array<{ key: string; draft: ComposerDraftPayload }> {
+  const result: Array<{ key: string; draft: ComposerDraftPayload }> = []
+  if (!threadId.trim() || typeof window === 'undefined') return result
+  try {
+    const storage = window.localStorage
+    const keys = new Set(legacyKeys(threadId))
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i)
+      if (key?.startsWith(prefix(threadId)) && key !== getDraftStorageKey(threadId)) keys.add(key)
+    }
+    for (const key of keys) {
+      const raw = storage.getItem(key)
+      const draft = raw ? parseDraft(raw) : null
+      if (draft && (draft.text.trim() || draft.imageUrls.length || draft.fileAttachments.length || draft.skills.length || draft.apps?.length)) result.push({ key, draft })
+    }
+  } catch { /* Storage restrictions cannot destroy the live draft. */ }
+  return result
+}
