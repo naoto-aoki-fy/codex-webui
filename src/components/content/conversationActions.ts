@@ -1,7 +1,7 @@
 import type { ComputedRef } from 'vue';
 import { computed, ref } from 'vue';
 import type { ForkMethod, RevertOperation, UiMessage } from '../../types/codex';
-import { copyTextToClipboard, copyTextWithSelectionFallback } from '../../utils/clipboard';
+import { copyTextToClipboard } from '../../utils/clipboard';
 import { isCopyableAssistantMessage, type TurnFileChangeSummary } from '../../utils/conversationFileChanges';
 import type { ConversationPlan } from '../../utils/conversationPlan';
 import { isPlanMessage } from '../../utils/conversationPlan';
@@ -225,20 +225,13 @@ export function createConversationActions(deps: {
         const content = copyableResponseContentByAnchorId.value[anchorMessageId] ?? '';
         if (!content)
             return;
-        let copied = false;
         try {
             await copyTextToClipboard(content);
-            copied = true;
         }
         catch {
-            copied = false;
+            return;
         }
         if (!deps.isCurrentThreadGeneration(generation))
-            return;
-        if (!copied) {
-            copied = copyTextWithSelectionFallback(content);
-        }
-        if (!copied)
             return;
         copiedResponseAnchorId.value = anchorMessageId;
         if (copiedMessageResetTimer) {

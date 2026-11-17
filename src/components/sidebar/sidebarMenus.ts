@@ -4,6 +4,7 @@ import type { Router, RouteLocationRaw } from 'vue-router';
 import type { ForkMethod } from '../../types/codex';
 import type { MenuDirection, SidebarProps } from "./sidebarContracts";
 import { createSidebarThreads } from './sidebarThreads';
+import { copyTextToClipboard } from '../../utils/clipboard';
 /** Owns menu/dialog refs, action handlers, placement maps and listener callbacks. The component scopes menu-open watchers and invokes both listener disposers on unmount; tree measurement remains in the component. */
 export function createSidebarMenus(deps: {
     threads: ReturnType<typeof createSidebarThreads>;
@@ -69,10 +70,10 @@ export function createSidebarMenus(deps: {
     async function onCopyThreadPath(threadId: string): Promise<void> {
         const path = deps.threads.threadById.value.get(threadId)?.cwd?.trim() ?? '';
         closeThreadMenu();
-        if (!path || typeof navigator === 'undefined' || !navigator.clipboard)
+        if (!path)
             return;
         try {
-            await navigator.clipboard.writeText(path);
+            await copyTextToClipboard(path);
         }
         catch {
             // Clipboard writes can be blocked by browser permissions; the menu action is best-effort.
