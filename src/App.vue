@@ -62,6 +62,7 @@
           <p v-if="threadSearchError" role="alert">{{ threadSearchError }}</p>
           <SidebarThreadTree :groups="sidebarSearchGroups" :project-display-name-by-id="projectDisplayNameById"
             :removable-project-ids="removableProjectIds"
+            :resolve-new-thread-cwd="resolveProjectNewThreadCwd"
             :active-project-name="activeProjectName"
             v-if="!isSidebarCollapsed"
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
@@ -1020,14 +1021,16 @@ function resolvePreferredLocalCwd(projectId: string, fallbackCwd = ''): string {
   return resolveWorkspaceRootCwd(projectId) || fallbackCwd.trim()
 }
 
+function resolveProjectNewThreadCwd(projectName: string): string {
+  const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
+  const projectCwd = resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
+  return projectCwd || (workspaceRootOptionsState.value.nativeProjects ? '' : newThreadCwd.value)
+}
+
 function onStartNewThread(projectName: string): void {
   restoreNewConversationPreferences()
   composerSendMode.reset()
-  const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
-  const projectCwd = resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
-  if (projectCwd || workspaceRootOptionsState.value.nativeProjects) {
-    newThreadCwd.value = projectCwd
-  }
+  newThreadCwd.value = resolveProjectNewThreadCwd(projectName)
   if (isMobile.value) setSidebarCollapsed(true)
   void router.push({ name: 'home', query: { ...(newThreadCwd.value ? { cwd: newThreadCwd.value } : {}), projectId: projectName } })
 }

@@ -171,7 +171,7 @@
             </span>
             <template #right>
               <div class="project-hover-controls">
-                <div v-if="canRemoveProject(group.projectName)" :ref="(el) => setProjectMenuWrapRef(group.projectName, el)" class="project-menu-wrap">
+                <div :ref="(el) => setProjectMenuWrapRef(group.projectName, el)" class="project-menu-wrap">
                   <button
                     class="project-menu-trigger"
                     type="button"
@@ -187,7 +187,11 @@
                     :data-open-direction="projectMenuDirectionById[group.projectName] ?? 'down'"
                     @click.stop
                   >
+                    <button class="project-menu-item" type="button" @click="onOpenProjectInNewTab(group.projectName)">
+                      Open in new tab
+                    </button>
                     <button
+                      v-if="canRemoveProject(group.projectName)"
                       class="project-menu-item project-menu-item-danger"
                       type="button"
                       @click="onRemoveProject(group.projectName)"
@@ -452,6 +456,7 @@ const {
   onForkThread,
   getNewThreadButtonAriaLabel,
   onStartNewThread,
+  onOpenProjectInNewTab,
   onCopyThreadPath,
   onThreadRowLeave,
   isThreadMenuOpen,
