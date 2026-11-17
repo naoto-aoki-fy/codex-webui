@@ -37,6 +37,7 @@ type PendingTurnRequest = {
 };
 /** Owns submission indicators, pending turn requests and uncertain outcomes. The desktop lifecycle invalidates publication through lifecycleGeneration; accepted operations retain the existing no-replay behavior. */
 export function createDesktopTurns(deps: {
+    resetSubmittedPlanMode: (threadId: string) => void;
     selectedCollaborationMode: Ref<CollaborationModeKind>;
     selectedSpeedMode: Ref<SpeedMode>;
     approvals: ReturnType<typeof createDesktopApprovals>;
@@ -146,6 +147,8 @@ export function createDesktopTurns(deps: {
         const submittedMode = collaborationModeOverride ?? deps.selectedCollaborationMode.value;
         if (apps?.length && deps.approvals.getThreadPendingRequests(threadId).some(request => request.method === 'item/tool/requestUserInput')) throw new Error('App references cannot be included in a pending tool answer.')
         if (await maybeReplyToPendingUserInputRequest(threadId, nextText, imageUrls, skills, fileAttachments)) {
+            if (generation === deps.lifecycleGeneration && submittedMode === 'plan')
+                deps.resetSubmittedPlanMode(threadId);
             return;
         }
         if (generation !== deps.lifecycleGeneration) {
@@ -350,6 +353,8 @@ export function createDesktopTurns(deps: {
             submissionAccepted = true;
             if (!ownsAttempt())
                 return;
+            if (collaborationMode === 'plan')
+                deps.resetSubmittedPlanMode(threadId);
             if (startedTurnId) {
                 if (optimisticMessageId) {
                     const messages = deps.history.persistedMessagesByThreadId.value[threadId] ?? [];

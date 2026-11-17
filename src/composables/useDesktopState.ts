@@ -282,8 +282,10 @@ export function useDesktopState() {
       if (!selectedThreadId.value) selectedModelId.value = readModelIdForThread('')
     }
     if (defaults && !newThreadModeEdited) {
-      selectedCollaborationModeByContext.value['__new-thread__'] = defaults.collaborationMode
-      if (!selectedThreadId.value) selectedCollaborationMode.value = defaults.collaborationMode
+      // Last-used mode describes the accepted turn, not the next composer.
+      const mode = state.preferred?.collaborationMode ?? 'default'
+      selectedCollaborationModeByContext.value['__new-thread__'] = mode
+      if (!selectedThreadId.value) selectedCollaborationMode.value = mode
     }
   }
 
@@ -432,6 +434,7 @@ export function useDesktopState() {
   const recoveryByThreadId = ref<Record<string, string>>({})
   const recoveryDismissTimerByThreadId = new Map<string, ReturnType<typeof setTimeout>>()
   const turns = createDesktopTurns({
+    resetSubmittedPlanMode,
     get selectedCollaborationMode() { return selectedCollaborationMode; },
     get selectedSpeedMode() { return selectedSpeedMode; },
     get approvals() { return approvals; },
@@ -846,6 +849,16 @@ export function useDesktopState() {
   function readCollaborationModeForThread(threadId: string): CollaborationModeKind {
     const saved = readSelectedCollaborationMode(selectedCollaborationModeByContext.value, threadId)
     return availableCollaborationModes.value.some(mode => mode.value === saved) ? saved : 'default'
+  }
+
+  function resetSubmittedPlanMode(threadId: string): void {
+    setSelectedCollaborationModeForThread(threadId, 'default')
+    // Clear the saved composer choice too; accepted usage remains Plan.
+    selectedCollaborationModeByContext.value['__new-thread__'] = 'default'
+    newThreadModeEdited = true
+    if (!selectedThreadId.value) selectedCollaborationMode.value = 'default'
+    const preferred = backendPreferences.state.value.preferred || backendPreferences.state.value.lastUsed
+    if (preferred) void backendPreferences.update({ preferred: { ...preferred, collaborationMode: 'default' } })
   }
 
   function setSelectedCollaborationMode(mode: CollaborationModeKind): void {
@@ -3042,6 +3055,7 @@ export function useDesktopState() {
     readModelIdForThread,
     readCollaborationModeForThread,
     setSelectedCollaborationModeForThread,
+    resetSubmittedPlanMode,
     readReasoningEffortForThread,
     readReasoningOptionsForThread,
     setSelectedModelIdForThread,
