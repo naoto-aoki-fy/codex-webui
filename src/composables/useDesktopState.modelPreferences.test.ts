@@ -110,7 +110,7 @@ it('synchronizes two live sessions through revisioned notifications with no poll
   expect(a.readModelIdForThread('')).toBe(key('openai', 'B')) // Keep the unsent draft.
   a.restoreNewConversationPreferences()
   expect(a.readModelIdForThread('')).toBe(key('openai', 'A'))
-  expect(b.readCollaborationModeForThread('')).toBe('plan')
+  expect(b.readCollaborationModeForThread('')).toBe('default')
   expect(vi.mocked(rpcCall).mock.calls.filter(([m]) => m.endsWith('/read'))).toHaveLength(2)
 })
 
@@ -191,7 +191,7 @@ it('uses restored accepted settings when creating a new conversation', async () 
   await state.sendMessageToNewThread('hello', '/workspace')
   await vi.waitFor(() => expect(turn).toHaveBeenCalled())
   expect(start).toHaveBeenCalledWith('/workspace', 'B', 'openai')
-  expect(turn.mock.calls[0]?.slice(0, 9)).toEqual(['new', 'hello', [], key('openai', 'B'), 'high', undefined, [], 'plan', 'standard'])
+  expect(turn.mock.calls[0]?.slice(0, 9)).toEqual(['new', 'hello', [], key('openai', 'B'), 'high', undefined, [], 'default', 'standard'])
 })
 
 it('does not reorder usage or write browser state on rejected submissions', async () => {
@@ -222,4 +222,22 @@ it('isolates remembered reasoning for duplicate model IDs across providers', asy
   expect(reopened.readReasoningEffortForThread('')).toBe('medium')
   reopened.setSelectedModelIdForThread('', key('cloud', 'same'))
   expect(reopened.readReasoningEffortForThread('')).toBe('high')
+})
+
+it('keeps accepted Plan usage historical while restoring Default for subsequent composers', async () => {
+  backend = { ...backend, initialized: true, revision: 4, lastUsed: settings(), preferred: settings('A') }
+  const state = create()
+  await state.refreshAll(options)
+  state.setSelectedCollaborationModeForThread('existing', 'plan')
+  state.resetSubmittedPlanMode('existing')
+  await state.settleModelPreferenceWrites()
+  expect(backend.lastUsed?.collaborationMode).toBe('plan')
+  expect(backend.preferred).toEqual({ ...settings('A'), collaborationMode: 'default' })
+  const reopened = create()
+  await reopened.refreshAll(options)
+  expect(reopened.readCollaborationModeForThread('')).toBe('default')
+  expect(reopened.readModelIdForThread('')).toBe(key('openai', 'B'))
+  expect(reopened.readReasoningEffortForThread('')).toBe('high')
+  reopened.restoreNewConversationPreferences()
+  expect(reopened.readCollaborationModeForThread('')).toBe('default')
 })

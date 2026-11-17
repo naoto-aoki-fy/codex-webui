@@ -2642,3 +2642,55 @@ it('does not repopulate invalidated quota from account notifications while verif
  expect(state.codexQuota.value).toBeNull();expect(state.accountRateLimitSnapshots.value).toEqual([])
  expect(gateway.getAccountRateLimits.mock.calls).toHaveLength(reads)
 })
+
+describe('one-shot Plan mode', () => {
+  it.each(['existing', 'new', 'steer'])('resets only after server acceptance for %s submissions and sends the next turn in Default', async (kind) => {
+    gateway.getAvailableCollaborationModes.mockResolvedValue([{ value: 'default', label: 'Default' }, { value: 'plan', label: 'Plan' }])
+    const state = await loadState()
+    state.selectedSpeedMode.value = 'fast'
+    state.setSelectedCollaborationModeForThread(thread.id, 'plan')
+    state.setSelectedCollaborationModeForThread('__new-thread__', 'plan')
+    if (kind === 'steer') turnStarted()
+    const started = deferred<string>()
+    gateway.startThreadTurn.mockReturnValueOnce(started.promise)
+    const sending = kind === 'new'
+      ? state.sendMessageToNewThread('plan this', '/tmp/project')
+      : state.sendMessageToSelectedThread('plan this')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gateway.startThreadTurn.mock.calls[0]?.[7]).toBe('plan')
+    expect(state.readCollaborationModeForThread(thread.id)).toBe('plan')
+    const model = state.readModelIdForThread(thread.id)
+    const effort = state.selectedReasoningEffort.value
+    const speed = state.selectedSpeedMode.value
+    started.resolve('turn-plan')
+    await sending
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.selectedCollaborationMode.value).toBe('default')
+    expect(state.readCollaborationModeForThread(thread.id)).toBe('default')
+    expect(state.readCollaborationModeForThread('')).toBe('default')
+    expect(state.readModelIdForThread(thread.id)).toBe(model)
+    expect(state.selectedReasoningEffort.value).toBe(effort)
+    expect(state.selectedSpeedMode.value).toBe(speed)
+    const reopened = createState()
+    expect(reopened.readCollaborationModeForThread(thread.id)).toBe('default')
+    await state.sendMessageToSelectedThread('implement this')
+    expect(gateway.startThreadTurn.mock.calls[1]?.[7]).toBe('default')
+    expect(gateway.startThreadTurn.mock.calls[0]?.[7]).toBe('plan')
+  })
+
+  it.each(['existing', 'new', 'steer'])('preserves Plan on rejected %s submissions', async (kind) => {
+    gateway.getAvailableCollaborationModes.mockResolvedValue([{ value: 'default', label: 'Default' }, { value: 'plan', label: 'Plan' }])
+    const state = await loadState()
+    state.selectedSpeedMode.value = 'fast'
+    state.setSelectedCollaborationModeForThread(thread.id, 'plan')
+    state.setSelectedCollaborationModeForThread('__new-thread__', 'plan')
+    if (kind === 'steer') turnStarted()
+    gateway.startThreadTurn.mockRejectedValueOnce(new Error('send rejected'))
+    if (kind === 'new') await state.sendMessageToNewThread('plan this', '/tmp/project')
+    else if (kind === 'steer') await state.sendMessageToSelectedThread('plan this')
+    else await expect(state.sendMessageToSelectedThread('plan this')).rejects.toThrow('send rejected')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.readCollaborationModeForThread(thread.id)).toBe('plan')
+    expect(state.readCollaborationModeForThread('')).toBe('plan')
+  })
+})
