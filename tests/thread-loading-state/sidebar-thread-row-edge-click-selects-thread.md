@@ -49,3 +49,25 @@ Thread rows now select when clicking anywhere on the highlighted row area (inclu
 
 #### Rollback/Cleanup
 - Restore original titles, pin state, ordering mode, and theme. Remove any disposable test threads.
+
+### Feature: Full thread title on hover
+
+#### Prerequisites
+- Have a short-titled thread and a thread whose title is truncated by the sidebar width.
+- Pin one thread and leave another unpinned; enable both light and dark themes for verification.
+
+#### Steps
+1. Hover each thread row in the pinned section and project groups, including the title and empty row area.
+2. Confirm the native tooltip text equals the full displayed thread title, for both short and truncated titles.
+3. Use the sidebar's organize menu to switch to chronological view and repeat with the unpinned threads.
+4. Rename a thread through its menu, then hover the row again without reloading.
+5. Repeat in the other theme.
+
+#### Expected Results
+- All three sidebar locations provide the full current title through the shared row's native `title` attribute.
+- Long titles remain visually truncated and show their complete text on hover; short titles also have tooltips.
+- Rename updates both the row text and tooltip immediately.
+- Existing action-specific tooltips (delete and menu buttons) remain available; row appearance stays consistent in both themes.
+
+#### Rollback/Cleanup
+- Restore any renamed titles, original pin state, view mode, and theme. No new threads are required.

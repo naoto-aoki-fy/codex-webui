@@ -1,6 +1,7 @@
 <template>
   <SidebarMenuRow
     class="thread-row"
+    :title="thread.title"
     :data-active="active"
     :data-pinned="pinned"
     :data-menu-open="menuOpen ? 'true' : 'false'"
