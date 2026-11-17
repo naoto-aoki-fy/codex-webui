@@ -1,6 +1,6 @@
 import type { ComponentPublicInstance } from 'vue';
 import { computed, nextTick, ref } from 'vue';
-import type { Router } from 'vue-router';
+import type { Router, RouteLocationRaw } from 'vue-router';
 import type { ForkMethod } from '../../types/codex';
 import type { MenuDirection, SidebarProps } from "./sidebarContracts";
 import { createSidebarThreads } from './sidebarThreads';
@@ -114,9 +114,17 @@ export function createSidebarMenus(deps: {
         inlineDeleteConfirmThreadId.value = '';
         openThreadMenuId.value = threadId;
     }
-    function onOpenThreadInNewTab(threadId: string): void {
-        const { href } = deps.router.resolve({ name: 'thread', params: { threadId } });
+    function openRouteInNewTab(location: RouteLocationRaw): void {
+        const { href } = deps.router.resolve(location);
         window.open(href, '_blank', 'noopener,noreferrer');
+    }
+    function onOpenProjectInNewTab(projectName: string): void {
+        const cwd = deps.props.resolveNewThreadCwd?.(projectName) ?? '';
+        openRouteInNewTab({ name: 'home', query: { projectId: projectName, ...(cwd ? { cwd } : {}) } });
+        closeProjectMenu();
+    }
+    function onOpenThreadInNewTab(threadId: string): void {
+        openRouteInNewTab({ name: 'thread', params: { threadId } });
         closeThreadMenu();
     }
     function openRenameThreadDialog(threadId: string, currentTitle: string): void {
@@ -187,7 +195,7 @@ export function createSidebarMenus(deps: {
         return removableProjectIdSet.value.has(projectName);
     }
     function isProjectMenuOpen(projectName: string): boolean {
-        return canRemoveProject(projectName) && openProjectMenuId.value === projectName;
+        return openProjectMenuId.value === projectName;
     }
     function closeProjectMenu(): void {
         openProjectMenuId.value = '';
@@ -210,8 +218,6 @@ export function createSidebarMenus(deps: {
         });
     }
     function toggleProjectMenu(projectName: string): void {
-        if (!canRemoveProject(projectName))
-            return;
         if (openProjectMenuId.value === projectName) {
             closeProjectMenu();
             return;
@@ -222,8 +228,6 @@ export function createSidebarMenus(deps: {
         scheduleProjectMenuDirection(projectName);
     }
     function openProjectContextMenu(projectName: string): void {
-        if (!canRemoveProject(projectName))
-            return;
         closeThreadMenu();
         isOrganizeMenuOpen.value = false;
         openProjectMenuId.value = projectName;
@@ -454,6 +458,7 @@ onCopyThreadChat,
 onForkThread,
 getNewThreadButtonAriaLabel,
 onStartNewThread,
+onOpenProjectInNewTab,
 onCopyThreadPath,
 onThreadRowLeave,
 isThreadMenuOpen,

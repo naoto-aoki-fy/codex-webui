@@ -4,6 +4,7 @@ export type SidebarProps = {
     isExporting?: boolean;
     groups: UiProjectGroup[];
     removableProjectIds?: string[];
+    resolveNewThreadCwd?: (projectName: string) => string;
     projectDisplayNameById: Record<string, string>;
     selectedThreadId: string;
     activeProjectName: string | null;
