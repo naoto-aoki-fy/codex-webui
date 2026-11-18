@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest'
 import { normalizeThreadGroupsV2 } from '../../api/normalizers/v2'
 import type { Thread } from '../../api/appServerDtos'
-import { filterGroupsByWorkspaceRoots } from '../../utils/desktopProjectGroups'
-import { folderGroupKey, groupThreadsByFolder, parseThreadViewMode } from './sidebarGroups'
+import { filterGroupsByWorkspaceRoots, UNASSIGNED_PROJECT } from '../../utils/desktopProjectGroups'
+import { folderGroupKey, groupThreadsByFolder, parseThreadViewMode, toSidebarProjectGroups } from './sidebarGroups'
 
 it('groups actual working directories across native assignments without changing any threads', () => {
   const data = [
@@ -10,7 +10,7 @@ it('groups actual working directories across native assignments without changing
     { id: 'b', cwd: '/workspace//app/', projectId: 'p2' },
     { id: 'ios', cwd: '/workspace/app', projectId: null },
     { id: 'unknown-project', cwd: '/workspace/app/', projectId: 'deleted' },
-    { id: 'same-name', cwd: '/other/app', projectId: 'p1' },
+    { id: 'same-name', cwd: '/other/app', projectId: null },
     { id: 'worktree', cwd: '/workspace/app/.codex/worktrees/branch', projectId: 'p1' },
     { id: 'missing', projectId: 'p1' },
     { id: 'blank', cwd: '  ' },
@@ -21,6 +21,8 @@ it('groups actual working directories across native assignments without changing
       createdAt: 1, updatedAt: 1, recencyAt: null,
     })),
   })
+  expect(toSidebarProjectGroups(native).filter(group => group.kind === 'project' && group.projectId === UNASSIGNED_PROJECT)
+    .map(group => group.threads.map(thread => thread.id))).toEqual([['ios', 'same-name', 'blank']])
   const original = structuredClone(native)
   const folders = groupThreadsByFolder(native)
   const byCwd = Object.fromEntries(folders.map(folder => [folder.key, folder.threads.map(thread => thread.id).sort()]))

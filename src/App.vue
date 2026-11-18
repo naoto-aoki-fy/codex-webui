@@ -109,7 +109,7 @@
         :style="contentStyle"
       >
         <span v-if="isVirtualKeyboardOpen" class="content-keyboard-spacer" aria-hidden="true" />
-        <ContentHeader :title="contentTitle" :project-name="contentProjectName" :accent="isSkillsRoute">
+        <ContentHeader :title="contentTitle" :project-name="contentContextLabel" :accent="isSkillsRoute">
           <template #leading>
             <SidebarThreadControls
               v-if="isSidebarCollapsed || isMobile"
@@ -168,12 +168,13 @@
               <div class="new-thread-empty">
                 <p class="new-thread-hero">{{ ("Let's build") }}</p>
                 <ComposerDropdown class="new-thread-folder-dropdown" :model-value="newThreadProjectId"
-                  :options="newThreadFolderOptions" :placeholder="!newThreadProjectId && newThreadCwd ? newThreadCwd : 'Choose folder'"
+                  :options="newThreadFolderOptions" :placeholder="newThreadFolderName || 'Choose folder'"
+                  :trigger-title="newThreadCwd || undefined"
                   :enable-search="true"
                   :search-placeholder="('Quick search project')"
                   :disabled="false" @update:model-value="onSelectNewThreadFolder" />
                 <p v-if="newThreadCwd" class="new-thread-folder-selected" :title="newThreadCwd">
-                  {{ ('Selected folder') }}: {{ newThreadCwd }}
+                  {{ ('Selected folder') }}: {{ newThreadFolderName || 'No working directory' }}
                 </p>
                 <div class="new-thread-folder-actions">
                   <button class="new-thread-folder-action new-thread-folder-action-primary" type="button" @click="onOpenExistingFolder">
@@ -434,6 +435,7 @@ import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply,
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import { getCodexAuthenticationStatus } from './api/codexGateway'
 import { getPathParent, normalizePathForUi } from './pathUtils.js'
+import { formatChatPageTitle, getChatFolderName, getThreadContextLabel } from './utils/chatFolderLabels'
 import { copyTextToClipboard } from './utils/clipboard'
 
 const ConversationTools = defineAsyncComponent(() => import('./components/content/ConversationTools.vue'))
@@ -597,6 +599,7 @@ const {
 
 const hasInitialized = ref(false)
 const newThreadCwd = ref('')
+const newThreadFolderName = computed(() => getChatFolderName(newThreadCwd.value))
 const newThreadProjectId = computed(() => typeof route.query.projectId === 'string' ? route.query.projectId : '')
 useNewThreadCwdRoute(router, newThreadCwd)
 const workspaceRootOptionsState = ref<import('./api/codexGateway').WorkspaceRootsState>({
@@ -699,16 +702,11 @@ const contentTitle = computed(() => {
   if (isHomeRoute.value) return ('Start new thread')
   return selectedThread.value?.title ?? ('Choose a thread')
 })
-const contentProjectName = computed(() => {
+const contentContextLabel = computed(() => {
   if (isHomeRoute.value || isSkillsRoute.value) return ''
-  const projectName = selectedThread.value?.projectName?.trim() ?? ''
-  return projectName ? (projectDisplayNameById.value[projectName] ?? projectName) : ''
+  return getThreadContextLabel(selectedThread.value, projectDisplayNameById.value)
 })
-const pageTitle = computed(() => {
-  const threadTitle = selectedThread.value?.title?.trim() ?? ''
-  if (!threadTitle) return 'Codex WebUI'
-  return contentProjectName.value ? `${contentProjectName.value} - ${threadTitle}` : threadTitle
-})
+const pageTitle = computed(() => formatChatPageTitle(selectedThread.value?.title, contentContextLabel.value))
 const filteredMessages = computed(() =>
   messages.value.filter((message) => {
     const type = normalizeMessageType(message.messageType, message.role)

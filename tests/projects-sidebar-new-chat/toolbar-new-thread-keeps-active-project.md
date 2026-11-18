@@ -54,8 +54,8 @@ The global Start new thread action opens the new-thread composer with the active
 
 ### Actions and Expected Results
 1. Select a folder in Start new thread. The home URL contains `cwd` with the full path encoded by Vue Router. Modify the folder repeatedly; each change replaces the current history entry.
-2. Reload and wait for the candidate list to load. The dropdown and Selected folder text retain the full path.
-3. Open a home URL with an unregistered `cwd`. It displays as a completed selection without registering or creating that folder. Reload; it remains selected after candidates arrive.
+2. Reload and wait for the candidate list to load. The dropdown shows the project name. Selected folder shows the folder basename. The full path remains in the URL and in both controls’ tooltips.
+3. Open a home URL with an unregistered `cwd`. Both controls show the folder basename and retain the full path in their tooltips. Reload and confirm the selection remains after candidates arrive. No folder is registered or created.
 4. Navigate between home URLs with different `cwd` values, then use Back and Forward. The selected folder follows each URL. An absent or empty `cwd` clears selection.
 5. From a project thread, use toolbar Start new thread and project-specific new creation. Both push a home entry carrying the resolved project path. Chats new-chat pushes home without `cwd`.
 6. Add an existing folder, create a project, and clone a repository. Each successful selection updates home `cwd`. A successful `openProjectPath` startup takes precedence over an existing home `cwd`.
@@ -63,3 +63,19 @@ The global Start new thread action opens the new-thread composer with the active
 
 ### Rollback/Cleanup
 - Restore theme preferences and remove only projects created for this check. Leave the shared verification server running.
+
+## Folder labels in the chat header and browser title
+
+### Prerequisites/Setup
+- Use a native Project with a name different from its folder name, two projectless threads with the same folder basename at distinct paths, and a projectless thread with no cwd.
+- Include a POSIX path and a Windows path with trailing separators. Repeat in light and dark themes at desktop, 375×812, and 768×1024.
+
+### Actions and Expected Results
+1. In **By project**, open each projectless thread with a cwd. The header and browser tab title use the folder basename. Both threads remain under **Unassigned**.
+2. Open the projectless thread without a cwd. Its header and tab title show **No working directory**.
+3. Open the registered Project’s thread. Its header and tab title show the registered Project name.
+4. From a projectless thread with a cwd, click **Start new thread**. The dropdown and **Selected folder** show the basename. Their tooltips and the home URL retain the full cwd. Refresh and confirm these values persist.
+5. Switch to **By Folder**. Verify the same-named folders remain distinct and display their full paths.
+
+### Rollback/Cleanup
+- Restore the previous grouping and theme preferences and remove only disposable fixture data.
