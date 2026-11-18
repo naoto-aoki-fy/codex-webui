@@ -64,6 +64,7 @@
             :removable-project-ids="removableProjectIds"
             :resolve-new-thread-cwd="resolveProjectNewThreadCwd"
             :active-project-name="activeProjectName"
+            :new-thread-cwd="isHomeRoute ? newThreadCwd : undefined"
             v-if="!isSidebarCollapsed"
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
             :is-fork-disabled="isForkOperationPending || isRollingBack"
@@ -166,8 +167,8 @@
             <div class="content-grid content-grid-home">
               <div class="new-thread-empty">
                 <p class="new-thread-hero">{{ ("Let's build") }}</p>
-                <ComposerDropdown class="new-thread-folder-dropdown" :model-value="newThreadProjectId || newThreadCwd"
-                  :options="newThreadFolderOptions" :placeholder="('Choose folder')"
+                <ComposerDropdown class="new-thread-folder-dropdown" :model-value="newThreadProjectId"
+                  :options="newThreadFolderOptions" :placeholder="!newThreadProjectId && newThreadCwd ? newThreadCwd : 'Choose folder'"
                   :enable-search="true"
                   :search-placeholder="('Quick search project')"
                   :disabled="false" @update:model-value="onSelectNewThreadFolder" />
@@ -410,6 +411,7 @@ import ManagementDialog from './components/shared/ManagementDialog.vue'
 import ArchivedThreads from './components/sidebar/ArchivedThreads.vue'
 import AccountSettingsPanel from './components/sidebar/AccountSettingsPanel.vue'
 import SidebarThreadTree from './components/sidebar/SidebarThreadTree.vue'
+import type { NewThreadTarget } from './components/sidebar/sidebarContracts'
 import ContentHeader from './components/content/ContentHeader.vue'
 import FolderPickerModal from './components/content/FolderPickerModal.vue'
 import ThreadGoalPanel from './components/content/ThreadGoalPanel.vue'
@@ -1028,12 +1030,11 @@ function resolveProjectNewThreadCwd(projectName: string): string {
   return projectCwd || (workspaceRootOptionsState.value.nativeProjects ? '' : newThreadCwd.value)
 }
 
-function onStartNewThread(projectName: string): void {
+function onStartNewThread({ cwd, projectId }: NewThreadTarget): void {
   restoreNewConversationPreferences()
   composerSendMode.reset()
-  newThreadCwd.value = resolveProjectNewThreadCwd(projectName)
   if (isMobile.value) setSidebarCollapsed(true)
-  void router.push({ name: 'home', query: { ...(newThreadCwd.value ? { cwd: newThreadCwd.value } : {}), projectId: projectName } })
+  void router.push({ name: 'home', query: { ...(cwd ? { cwd } : {}), ...(projectId ? { projectId } : {}) } })
 }
 
 function resolveSelectedThreadProjectCwd(): string {
@@ -1201,13 +1202,10 @@ function scheduleMobileConversationJumpToLatest(): void {
   })
 }
 
-function onSelectNewThreadFolder(value: string): void {
-  const project = workspaceRootOptionsState.value.nativeProjects?.find(p => p.id === value)
-  newThreadCwd.value = project ? project.roots[0]?.path || '' : value.trim()
-  const query: Record<string, any> = { ...route.query, cwd: newThreadCwd.value }
-  if (project) query.projectId = project.id
-  else delete query.projectId
-  void router.replace({ name: 'home', query })
+function onSelectNewThreadFolder(projectId: string): void {
+  const project = workspaceRootOptionsState.value.nativeProjects?.find(p => p.id === projectId)
+  if (!project) return
+  void router.replace({ name: 'home', query: { ...route.query, cwd: project.roots[0]?.path || '', projectId } })
 }
 
 async function onConfirmExistingFolder(path = resolvedExistingFolderPath.value): Promise<void> {

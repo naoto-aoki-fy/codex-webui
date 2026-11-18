@@ -1,8 +1,9 @@
 import { readUiPreference } from '../../utils/browserUiStorage'
 import { computed, ref } from 'vue';
 import { getPinnedThreadState, getThreadSummary, setThreadPinned, subscribeCodexNotifications, } from '../../api/codexGateway';
-import type { UiProjectGroup, UiThread } from '../../types/codex';
+import type { UiThread } from '../../types/codex';
 import type { SidebarProps } from "./sidebarContracts";
+import { folderGroupKey, groupThreadsByFolder, parseThreadViewMode, projectGroupKey, toSidebarProjectGroups, type SidebarGroup, type ThreadViewMode } from './sidebarGroups';
 import { compareThreads, sortThreadGroups, type ThreadSortMode } from './threadSorting';
 import { collectChronologicalThreads, filterSidebarGroups } from './threadVisibility';
 /** Owns native pin hydration, search/sort projections and expanded-page state. Creates the existing single section notification subscription; the component registers its disposer and scoped watchers, preserving setup order. */
@@ -11,22 +12,21 @@ export function createSidebarThreads(deps: {
     props: Readonly<SidebarProps>;
     THREAD_VIEW_MODE_STORAGE_KEY: string;
     isPinned: (threadId: string) => boolean;
-    isCollapsed: (projectName: string) => boolean;
+    isCollapsed: (groupKey: string) => boolean;
 }) {
-    const expandedProjects = ref<Record<string, boolean>>({});
+    const expandedGroups = ref<Record<string, boolean>>({});
     let hasLoadedPinnedThreadState = false;
     const pinnedThreadIds = ref<string[]>([]);
     const hydratedPinnedThreadById = ref<Record<string, UiThread>>({});
     const optimisticallyArchivedThreadIds = ref<string[]>([]);
     const chatSortMode = ref<ThreadSortMode>(typeof window !== 'undefined' && readUiPreference(deps.CHAT_SORT_MODE_STORAGE_KEY) === 'created' ? 'created' : 'updated');
-    const sortedGroups = computed(() => sortThreadGroups(deps.props.groups, chatSortMode.value));
-    const threadViewMode = ref<'project' | 'chronological'>(loadThreadViewMode());
-    function loadThreadViewMode(): 'project' | 'chronological' {
-        if (typeof window === 'undefined')
-            return 'project';
-        const raw = readUiPreference(deps.THREAD_VIEW_MODE_STORAGE_KEY);
-        return raw === 'chronological' ? 'chronological' : 'project';
+    const threadViewMode = ref<ThreadViewMode>(loadThreadViewMode());
+    function loadThreadViewMode(): ThreadViewMode {
+        return parseThreadViewMode(readUiPreference(deps.THREAD_VIEW_MODE_STORAGE_KEY));
     }
+    const isFolderView = computed(() => threadViewMode.value === 'folder');
+    const sidebarGroups = computed(() => isFolderView.value ? groupThreadsByFolder(deps.props.groups) : toSidebarProjectGroups(deps.props.groups));
+    const sortedGroups = computed(() => sortThreadGroups(sidebarGroups.value, chatSortMode.value));
     const normalizedSearchQuery = computed(() => deps.props.searchQuery.trim().toLowerCase());
     const isSearchActive = computed(() => normalizedSearchQuery.value.length > 0);
     const matchedThreadIdSet = computed(() => {
@@ -47,7 +47,18 @@ export function createSidebarThreads(deps: {
         const q = normalizedSearchQuery.value;
         return thread.title.toLowerCase().includes(q) || thread.preview.toLowerCase().includes(q);
     }
-    const filteredGroups = computed(() => filterSidebarGroups(sortedGroups.value, threadMatchesSearch, isSearchActive.value, deps.props.activeProjectName));
+    const activeGroupKey = computed(() => {
+        if (!isFolderView.value) {
+            return deps.props.activeProjectName === null ? null : projectGroupKey(deps.props.activeProjectName);
+        }
+        if (deps.props.newThreadCwd !== undefined) {
+            return deps.props.newThreadCwd.trim() ? folderGroupKey(deps.props.newThreadCwd) : null;
+        }
+        const id = deps.props.selectedThreadId;
+        const thread = threadById.value.get(id) ?? hydratedPinnedThreadById.value[id];
+        return thread ? folderGroupKey(thread.cwd) : null;
+    });
+    const filteredGroups = computed(() => filterSidebarGroups(sortedGroups.value, threadMatchesSearch, isSearchActive.value, activeGroupKey.value));
     const isChronologicalView = computed(() => threadViewMode.value === 'chronological');
     const globalThreads = computed(() => collectChronologicalThreads(deps.props.groups, threadMatchesSearch, pinnedThreadIdSet.value).sort(compareThreads(chatSortMode.value)));
     const threadById = computed(() => {
@@ -104,20 +115,20 @@ export function createSidebarThreads(deps: {
             void refreshPinnedThreadState();
         }
     });
-    const threadProjectNameById = computed(() => {
+    const threadGroupKeyById = computed(() => {
         const map = new Map<string, string>();
-        for (const group of deps.props.groups) {
+        for (const group of sidebarGroups.value) {
             for (const thread of group.threads) {
-                map.set(thread.id, group.projectName);
+                map.set(thread.id, group.key);
             }
         }
         return map;
     });
-    const unpinnedThreadsByProjectName = computed(() => {
+    const unpinnedThreadsByGroupKey = computed(() => {
         const map = new Map<string, UiThread[]>();
         for (const group of filteredGroups.value) {
             const rows = group.threads.filter((thread) => !pinnedThreadIdSet.value.has(thread.id) && !optimisticallyArchivedThreadIdSet.value.has(thread.id));
-            map.set(group.projectName, rows);
+            map.set(group.key, rows);
         }
         return map;
     });
@@ -150,33 +161,33 @@ export function createSidebarThreads(deps: {
             console.error('Unable to change native thread section', error);
         }
     }
-    function isExpanded(projectName: string): boolean {
-        return expandedProjects.value[projectName] === true;
+    function isExpanded(groupKey: string): boolean {
+        return expandedGroups.value[groupKey] === true;
     }
-    function toggleProjectExpansion(projectName: string): void {
-        expandedProjects.value = {
-            ...expandedProjects.value,
-            [projectName]: !isExpanded(projectName),
+    function toggleGroupExpansion(groupKey: string): void {
+        expandedGroups.value = {
+            ...expandedGroups.value,
+            [groupKey]: !isExpanded(groupKey),
         };
     }
-    function projectThreads(group: UiProjectGroup): UiThread[] {
-        return unpinnedThreadsByProjectName.value.get(group.projectName) ?? [];
+    function groupThreads(group: SidebarGroup): UiThread[] {
+        return unpinnedThreadsByGroupKey.value.get(group.key) ?? [];
     }
-    function visibleThreads(group: UiProjectGroup): UiThread[] {
+    function visibleThreads(group: SidebarGroup): UiThread[] {
         if (isSearchActive.value)
-            return projectThreads(group);
-        if (deps.isCollapsed(group.projectName))
+            return groupThreads(group);
+        if (deps.isCollapsed(group.key))
             return [];
-        const rows = projectThreads(group);
-        return isExpanded(group.projectName) ? rows : rows.slice(0, 10);
+        const rows = groupThreads(group);
+        return isExpanded(group.key) ? rows : rows.slice(0, 10);
     }
-    function hasHiddenThreads(group: UiProjectGroup): boolean {
+    function hasHiddenThreads(group: SidebarGroup): boolean {
         if (isSearchActive.value)
             return false;
-        return !deps.isCollapsed(group.projectName) && projectThreads(group).length > 10;
+        return !deps.isCollapsed(group.key) && groupThreads(group).length > 10;
     }
-    function hasThreads(group: UiProjectGroup): boolean {
-        return projectThreads(group).length > 0;
+    function hasThreads(group: SidebarGroup): boolean {
+        return groupThreads(group).length > 0;
     }
     return {
 get hasLoadedPinnedThreadState() { return hasLoadedPinnedThreadState; },
@@ -184,8 +195,12 @@ set hasLoadedPinnedThreadState(value) { hasLoadedPinnedThreadState = value; },
 pinnedThreadIds,
 optimisticallyArchivedThreadIds,
 chatSortMode,
+sidebarGroups,
 sortedGroups,
 threadViewMode,
+loadThreadViewMode,
+isFolderView,
+activeGroupKey,
 isSearchActive,
 pinnedThreadIdSet,
 optimisticallyArchivedThreadIdSet,
@@ -197,13 +212,13 @@ hydrateMissingPinnedThreads,
 pinStateError,
 refreshPinnedThreadState,
 unsubscribeSections,
-threadProjectNameById,
-unpinnedThreadsByProjectName,
+threadGroupKeyById,
+unpinnedThreadsByGroupKey,
 threadTimestampById,
 pinnedThreads,
 togglePin,
 isExpanded,
-toggleProjectExpansion,
+toggleGroupExpansion,
 visibleThreads,
 hasHiddenThreads,
 hasThreads

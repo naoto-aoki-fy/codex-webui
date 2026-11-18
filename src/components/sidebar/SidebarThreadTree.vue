@@ -43,7 +43,7 @@
 
     <section class="projects-section">
       <SidebarMenuRow class="thread-tree-header-row">
-        <span class="thread-tree-header" role="heading" aria-level="2">{{ isChronologicalView ? 'Threads' : 'Projects' }}</span>
+        <span class="thread-tree-header" role="heading" aria-level="2">{{ isChronologicalView ? 'Threads' : isFolderView ? 'Folders' : 'Projects' }}</span>
         <template #right>
           <div ref="organizeMenuWrapRef" class="organize-menu-wrap">
             <button
@@ -67,6 +67,15 @@
               >
                 <span>{{ ('By project') }}</span>
                 <span v-if="threadViewMode === 'project'">✓</span>
+              </button>
+              <button
+                class="organize-menu-item"
+                :data-active="isFolderView"
+                type="button"
+                @click="setThreadViewMode('folder')"
+              >
+                <span>By Folder</span>
+                <span v-if="isFolderView">✓</span>
               </button>
               <button
                 class="organize-menu-item"
@@ -120,32 +129,33 @@
     <div v-else ref="groupsContainerRef" class="thread-tree-groups" :style="groupsContainerStyle">
       <article
         v-for="group in filteredGroups"
-        :key="group.projectName"
-        :ref="(el) => setProjectGroupRef(group.projectName, el)"
+        :key="group.key"
+        :ref="(el) => setProjectGroupRef(group.key, el)"
         class="project-group"
-        :data-project-name="group.projectName"
-        :data-expanded="!isCollapsed(group.projectName)"
-        :style="projectGroupStyle(group.projectName)"
+        :data-project-name="group.kind === 'project' ? group.projectId : undefined"
+        :data-folder-path="group.kind === 'folder' ? group.cwd : undefined"
+        :data-expanded="!isCollapsed(group.key)"
+        :style="projectGroupStyle(group.key)"
       >
           <SidebarMenuRow
             as="div"
             class="project-header-row"
-            :data-active="group.projectName === activeProjectName"
+            :data-active="group.key === activeGroupKey"
             role="button"
             tabindex="0"
-            @click="toggleProjectCollapse(group.projectName)"
-            @contextmenu.prevent="openProjectContextMenu(group.projectName)"
-            @keydown.enter.prevent="toggleProjectCollapse(group.projectName)"
-            @keydown.space.prevent="toggleProjectCollapse(group.projectName)"
+            @click="toggleGroupCollapse(group)"
+            @contextmenu="onGroupContextMenu($event, group)"
+            @keydown.enter.prevent="toggleGroupCollapse(group)"
+            @keydown.space.prevent="toggleGroupCollapse(group)"
           >
             <template #left>
               <span class="project-icon-stack">
                 <span class="project-icon-folder">
-                  <IconTablerFolder v-if="isCollapsed(group.projectName)" class="thread-icon" />
+                  <IconTablerFolder v-if="isCollapsed(group.key)" class="thread-icon" />
                   <IconTablerFolderOpen v-else class="thread-icon" />
                 </span>
                 <span class="project-icon-chevron">
-                  <IconTablerChevronRight v-if="isCollapsed(group.projectName)" class="thread-icon" />
+                  <IconTablerChevronRight v-if="isCollapsed(group.key)" class="thread-icon" />
                   <IconTablerChevronDown v-else class="thread-icon" />
                 </span>
               </span>
@@ -153,36 +163,40 @@
             <span
               class="project-main-button"
             >
-              <span class="project-title" :title="getProjectTooltipTitle(group.projectName)">
-                {{ getProjectVisibleName(group) }}
+              <span
+                class="project-title"
+                :class="{ 'folder-title-disambiguated': group.kind === 'folder' && ambiguousFolderNames.has(group.name) }"
+                :title="getGroupTooltip(group)"
+              >
+                {{ getGroupTitle(group) }}
               </span>
             </span>
             <template #right>
-              <div class="project-hover-controls">
-                <div :ref="(el) => setProjectMenuWrapRef(group.projectName, el)" class="project-menu-wrap">
+              <div v-if="group.kind === 'project' || group.cwd" class="project-hover-controls">
+                <div :ref="(el) => setProjectMenuWrapRef(group.key, el)" class="project-menu-wrap">
                   <button
                     class="project-menu-trigger"
                     type="button"
-                    title="project_menu"
-                    @click.stop="toggleProjectMenu(group.projectName)"
+                    :title="group.kind === 'project' ? 'project_menu' : 'Folder actions'"
+                    @click.stop="toggleProjectMenu(group.key)"
                   >
                     <IconTablerDots class="thread-icon" />
                   </button>
 
                   <div
-                    v-if="isProjectMenuOpen(group.projectName)"
+                    v-if="isProjectMenuOpen(group.key)"
                     class="project-menu-panel"
-                    :data-open-direction="projectMenuDirectionById[group.projectName] ?? 'down'"
+                    :data-open-direction="projectMenuDirectionById[group.key] ?? 'down'"
                     @click.stop
                   >
-                    <button class="project-menu-item" type="button" @click="onOpenProjectInNewTab(group.projectName)">
+                    <button class="project-menu-item" type="button" @click="onOpenGroupInNewTab(group)">
                       Open in new tab
                     </button>
                     <button
-                      v-if="canRemoveProject(group.projectName)"
+                      v-if="canRemoveProject(group)"
                       class="project-menu-item project-menu-item-danger"
                       type="button"
-                      @click="onRemoveProject(group.projectName)"
+                      @click="onRemoveProject(group)"
                     >
                       Remove
                     </button>
@@ -192,9 +206,9 @@
                 <button
                   class="thread-start-button"
                   type="button"
-                  :aria-label="getNewThreadButtonAriaLabel(group.projectName)"
-                  :title="getNewThreadButtonAriaLabel(group.projectName)"
-                  @click.stop="onStartNewThread(group.projectName)"
+                  :aria-label="getNewThreadButtonAriaLabel(group)"
+                  :title="getNewThreadButtonAriaLabel(group)"
+                  @click.stop="onStartNewThread(group)"
                 >
                   <IconTablerFilePencil class="thread-icon" />
                 </button>
@@ -237,8 +251,8 @@
             <template #left>
               <span class="thread-show-more-spacer" />
             </template>
-            <button class="thread-show-more-button" type="button" @click="toggleProjectExpansion(group.projectName)">
-              {{ isExpanded(group.projectName) ? 'Show less' : 'Show more' }}
+            <button class="thread-show-more-button" type="button" @click="toggleGroupExpansion(group.key)">
+              {{ isExpanded(group.key) ? 'Show less' : 'Show more' }}
             </button>
           </SidebarMenuRow>
       </article>
@@ -334,9 +348,10 @@
 <script setup lang="ts">
 import { readPreferenceRecord, readPreferenceRecords, savePreferenceRecords } from '../../utils/browserPreferenceRecords'
 import { readUiPreference, writeUiPreference } from '../../utils/browserUiStorage'
-import type { SidebarProps } from "./sidebarContracts"
+import type { NewThreadTarget, SidebarProps } from "./sidebarContracts"
 import { createSidebarMenus } from './sidebarMenus'
 import { createSidebarThreads } from './sidebarThreads'
+import { projectGroupKey, type SidebarGroup } from './sidebarGroups'
 
 import ForkSplitButton from '../content/ForkSplitButton.vue'
 import type { ForkMethod } from '../../types/codex'
@@ -344,7 +359,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch
 import type { ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
-import type { UiProjectGroup, UiThread } from '../../types/codex'
+import type { UiThread } from '../../types/codex'
 import IconTablerChevronDown from '../icons/IconTablerChevronDown.vue'
 import IconTablerChevronRight from '../icons/IconTablerChevronRight.vue'
 import IconTablerDots from '../icons/IconTablerDots.vue'
@@ -362,7 +377,7 @@ const props = defineProps<SidebarProps>()
 const emit = defineEmits<{
   select: [threadId: string]
   archive: [threadId: string]
-  'start-new-thread': [projectName: string]
+  'start-new-thread': [target: NewThreadTarget]
   'rename-thread': [payload: { threadId: string; title: string }]
   'remove-project': [projectName: string]
   'copy-thread-chat': [threadId: string]
@@ -390,6 +405,8 @@ const {
   chatSortMode,
   sortedGroups,
   threadViewMode,
+  isFolderView,
+  activeGroupKey,
   isSearchActive,
   pinnedThreadIdSet,
   optimisticallyArchivedThreadIdSet,
@@ -401,26 +418,24 @@ const {
   pinStateError,
   refreshPinnedThreadState,
   unsubscribeSections,
-  threadProjectNameById,
-  unpinnedThreadsByProjectName,
+  threadGroupKeyById,
+  unpinnedThreadsByGroupKey,
   threadTimestampById,
   pinnedThreads,
   togglePin,
   isExpanded,
-  toggleProjectExpansion,
+  toggleGroupExpansion,
   visibleThreads,
   hasHiddenThreads,
   hasThreads,
 } = threads
 
-const collapsedProjects = ref<Record<string, boolean>>({})
 const isPinnedSectionExpanded = ref(loadPinnedSectionExpansion())
 
 const menus = createSidebarMenus({
   get threads() { return threads; },
   get emit() { return emit; },
   get props() { return props; },
-  get getProjectDisplayName() { return getProjectDisplayName; },
   get router() { return router; }
 })
 const {
@@ -442,9 +457,8 @@ const {
   onSelect,
   onCopyThreadChat,
   onForkThread,
-  getNewThreadButtonAriaLabel,
   onStartNewThread,
-  onOpenProjectInNewTab,
+  onOpenGroupInNewTab,
   onCopyThreadPath,
   onThreadRowLeave,
   isThreadMenuOpen,
@@ -514,13 +528,20 @@ function loadCollapsedState(): Record<string, boolean> {
   }
 }
 
-const collapseBase = 'codex-web-local.collapsed-projects.v2'
-function readCollapsedRecords() {
+const projectCollapseBase = 'codex-web-local.collapsed-projects.v2'
+const folderCollapseBase = 'codex-web-local.collapsed-folders.v2'
+
+function loadCollapsedGroups(): Record<string, boolean> {
   const legacy = Object.fromEntries(Object.entries(loadCollapsedState()).map(([key, value]) => [key, value ? '1' : '0']))
-  return readPreferenceRecords(collapseBase, legacy)
+  const projects = readPreferenceRecords(projectCollapseBase, legacy)
+  const folders = readPreferenceRecords(folderCollapseBase, {})
+  return Object.fromEntries([
+    ...Object.entries(projects).map(([id, value]) => [projectGroupKey(id), value === '1']),
+    ...Object.entries(folders).filter(([key]) => key.startsWith('folder:')).map(([key, value]) => [key, value === '1']),
+  ])
 }
-let savedCollapsed = readCollapsedRecords()
-collapsedProjects.value = Object.fromEntries(Object.entries(savedCollapsed).map(([key, value]) => [key, value === '1']))
+
+const collapsedGroups = ref(loadCollapsedGroups())
 
 function loadPinnedSectionExpansion(): boolean {
   const saved = readPreferenceRecord(SECTION_EXPANSION_BASE, 'pinned')
@@ -534,27 +555,15 @@ function loadPinnedSectionExpansion(): boolean {
 }
 
 function onSidebarStorage(event: StorageEvent): void {
-  if (event.key?.startsWith(`${collapseBase}.`)) {
-    savedCollapsed = readCollapsedRecords()
-    collapsedProjects.value = Object.fromEntries(Object.entries(savedCollapsed).map(([key, value]) => [key, value === '1']))
+  if (event.key?.startsWith(`${projectCollapseBase}.`) || event.key?.startsWith(`${folderCollapseBase}.`)) {
+    collapsedGroups.value = loadCollapsedGroups()
   }
   if (event.key === PINNED_EXPANSION_STORAGE_KEY) isPinnedSectionExpanded.value = loadPinnedSectionExpansion()
   if (event.key === CHAT_SORT_MODE_STORAGE_KEY) threads.chatSortMode.value = readUiPreference(CHAT_SORT_MODE_STORAGE_KEY) === 'created' ? 'created' : 'updated'
-  if (event.key === THREAD_VIEW_MODE_STORAGE_KEY) threads.threadViewMode.value = readUiPreference(THREAD_VIEW_MODE_STORAGE_KEY) === 'chronological' ? 'chronological' : 'project'
+  if (event.key === THREAD_VIEW_MODE_STORAGE_KEY) threads.threadViewMode.value = threads.loadThreadViewMode()
 }
 onMounted(() => typeof window !== 'undefined' && window.addEventListener('storage', onSidebarStorage))
 onUnmounted(() => typeof window !== 'undefined' && window.removeEventListener('storage', onSidebarStorage))
-
-watch(
-  collapsedProjects,
-  (value) => {
-    if (typeof window === 'undefined') return
-    const next = Object.fromEntries(Object.entries(value).map(([key, collapsed]) => [key, collapsed ? '1' : '0']))
-    savePreferenceRecords(collapseBase, next, savedCollapsed)
-    savedCollapsed = next
-  },
-  { deep: true },
-)
 
 watch(threads.threadViewMode, (value) => {
   if (typeof window === 'undefined') return
@@ -574,7 +583,7 @@ function togglePinnedSection(): void {
   writeUiPreference(PINNED_EXPANSION_STORAGE_KEY, JSON.stringify(isPinnedSectionExpanded.value ? '1' : '0'))
 }
 
-const layoutProjectOrder = computed(() => threads.filteredGroups.value.map(group => group.projectName))
+const layoutProjectOrder = computed(() => threads.filteredGroups.value.map(group => group.key))
 
 const layoutTopByProject = computed<Record<string, number>>(() => {
   const topByProject: Record<string, number> = {}
@@ -631,24 +640,46 @@ function getProjectDisplayName(projectName: string): string {
   return props.projectDisplayNameById[projectName] ?? projectName
 }
 
-function getProjectTooltipTitle(projectId: string): string {
-  return getProjectDisplayName(projectId)
-}
-
-function getProjectVisibleName(group: UiProjectGroup): string {
-  return getProjectDisplayName(group.projectName)
-}
-
-function isCollapsed(projectName: string): boolean {
-  return collapsedProjects.value[projectName] === true
-}
-
-function toggleProjectCollapse(projectName: string): void {
-
-  collapsedProjects.value = {
-    ...collapsedProjects.value,
-    [projectName]: !isCollapsed(projectName),
+const ambiguousFolderNames = computed(() => {
+  const seen = new Set<string>()
+  const duplicates = new Set<string>()
+  for (const group of threads.sidebarGroups.value) {
+    if (group.kind !== 'folder') continue
+    if (seen.has(group.name)) duplicates.add(group.name)
+    seen.add(group.name)
   }
+  return duplicates
+})
+
+function getGroupTitle(group: SidebarGroup): string {
+  if (group.kind === 'project') return getProjectDisplayName(group.projectId)
+  return ambiguousFolderNames.value.has(group.name) && group.cwd ? group.cwd : group.name
+}
+
+function getGroupTooltip(group: SidebarGroup): string {
+  return group.kind === 'folder' ? group.cwd || group.name : getProjectDisplayName(group.projectId)
+}
+
+function getNewThreadButtonAriaLabel(group: SidebarGroup): string {
+  return `start new thread ${getGroupTitle(group)}`
+}
+
+function onGroupContextMenu(event: MouseEvent, group: SidebarGroup): void {
+  if (group.kind === 'folder' && !group.cwd) return
+  event.preventDefault()
+  openProjectContextMenu(group.key)
+}
+
+function isCollapsed(groupKey: string): boolean {
+  return collapsedGroups.value[groupKey] === true
+}
+
+function toggleGroupCollapse(group: SidebarGroup): void {
+  const collapsed = !isCollapsed(group.key)
+  const base = group.kind === 'project' ? projectCollapseBase : folderCollapseBase
+  const id = group.kind === 'project' ? group.projectId : group.key
+  collapsedGroups.value = { ...collapsedGroups.value, [group.key]: collapsed }
+  savePreferenceRecords(base, { [id]: collapsed ? '1' : '0' }, { [id]: collapsed ? '0' : '1' })
 }
 
 function getProjectOuterHeight(projectName: string): number {
@@ -704,7 +735,7 @@ function setProjectGroupRef(projectName: string, element: Element | ComponentPub
 function projectGroupStyle(projectName: string): Record<string, string> | undefined {
   const targetTop = layoutTopByProject.value[projectName] ?? 0
   const openThreadMenuProjectName = menus.openThreadMenuId.value
-    ? (threads.threadProjectNameById.value.get(menus.openThreadMenuId.value) ?? '')
+    ? (threads.threadGroupKeyById.value.get(menus.openThreadMenuId.value) ?? '')
     : ''
   const shouldElevateForMenu =
     menus.openProjectMenuId.value === projectName || openThreadMenuProjectName === projectName
@@ -722,7 +753,7 @@ function projectGroupStyle(projectName: string): Record<string, string> | undefi
 }
 
 watch(
-  () => props.groups.map((group) => group.projectName),
+  () => threads.sidebarGroups.value.map(group => group.key),
   (projectNames) => {
 
     const projectNameSet = new Set(projectNames)
@@ -869,6 +900,11 @@ onBeforeUnmount(() => {
 
 .project-title {
   @apply min-w-0 flex-1 text-sm font-normal text-zinc-700 truncate select-none;
+}
+
+.folder-title-disambiguated {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .project-menu-wrap {

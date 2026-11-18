@@ -1,4 +1,5 @@
-import type { UiProjectGroup, UiThread } from '../../types/codex'
+import type { UiThread } from '../../types/codex'
+import type { SidebarGroup } from './sidebarGroups'
 
 export type ThreadSortMode = 'created' | 'updated'
 
@@ -16,15 +17,17 @@ export function compareThreads(mode: ThreadSortMode): (a: UiThread, b: UiThread)
 }
 
 // Sort copies: source groups are shared with selection, search, and pinned threads.
-export function sortThreadGroups(groups: UiProjectGroup[], mode: ThreadSortMode): UiProjectGroup[] {
+export function sortThreadGroups(groups: SidebarGroup[], mode: ThreadSortMode): SidebarGroup[] {
   const compare = compareThreads(mode)
   return groups.map(group => ({ ...group, threads: [...group.threads].sort(compare) }))
     .sort((a, b) => {
+      const aName = a.kind === 'project' ? a.projectId : a.key
+      const bName = b.kind === 'project' ? b.projectId : b.key
       if (!a.threads.length || !b.threads.length) {
-        return Number(!a.threads.length) - Number(!b.threads.length) || a.projectName.localeCompare(b.projectName)
+        return Number(!a.threads.length) - Number(!b.threads.length) || aName.localeCompare(bName)
       }
       const first = timestamp(a.threads[0]!, mode)
       const second = timestamp(b.threads[0]!, mode)
-      return (first === second ? 0 : first > second ? -1 : 1) || a.projectName.localeCompare(b.projectName)
+      return (first === second ? 0 : first > second ? -1 : 1) || aName.localeCompare(bName)
     })
 }
