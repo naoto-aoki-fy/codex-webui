@@ -1,5 +1,7 @@
 # Focused browser persistence acceptance
 
+This report is historical. The prompt library and its tests have since been removed. Existing browser records are left in place. See [current browser persistence](browser-persistence.md).
+
 This review confirms the final [IndexedDB-record architecture](browser-persistence.md)
 and adds failure-boundary evidence. It does not migrate storage again, add replay,
 delete drafts, or change queue protocol/reconciliation semantics.

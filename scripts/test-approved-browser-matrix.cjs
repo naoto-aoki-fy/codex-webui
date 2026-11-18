@@ -1,7 +1,7 @@
 const {spawnSync}=require('node:child_process')
 const {writeFileSync,mkdirSync}=require('node:fs')
 const {resolve}=require('node:path')
-const scripts=['execution','panels','compaction','review','processes','prompts','apps','memory','mcp','plugins','remote','stale','uncertain','testchat']
+const scripts=['execution','compaction','review','processes','apps','memory','mcp','plugins','remote','stale','uncertain','testchat']
 const results=[];mkdirSync('output/playwright',{recursive:true})
 for(const name of scripts){
  const script=`scripts/test-approved-${name}.cjs`,result=spawnSync(process.execPath,[script],{encoding:'utf8',env:process.env,timeout:180_000})

@@ -239,21 +239,21 @@ it('renders native Fast availability and updates it on provider/model switching'
   expect(c.nodes().some(n => n.text === 'Fast mode availability is unknown')).toBe(true)
   expect(c.props.selectedSpeedMode).toBe('standard')
 })
-it('keeps unknown slash text as a normal submission with automatic history disabled by default', async()=>{
- const c=mount();c.exposed.appendTextToDraft('/unknown-command');await vue.nextTick();c.submit()
- expect(c.submitted.mock.calls[0]![0].text).toBe('/unknown-command')
- expect(c.storage.has('codex-web-local.prompt-library.v1')).toBe(false)
- c.submitted.mock.calls[0]![1](true)
- await vue.nextTick()
- expect(c.storage.has('codex-web-local.prompt-library.v1')).toBe(false)
-})
-it('opens command discovery without submitting or losing attachments',async()=>{
- const c=mount();c.exposed.hydrateDraft({...payload,text:'/prompts'});await vue.nextTick();c.submit()
- expect(c.submitted).not.toHaveBeenCalled();expect(c.nodes().some(n=>n.props['aria-label']==='Remove image')).toBe(false)
- c.exposed.appendTextToDraft('after command');await vue.nextTick();c.submit()
- expect(c.submitted.mock.calls[0]![0].fileAttachments).toEqual(payload.fileAttachments)
- expect(c.submitted.mock.calls[0]![0].skills).toEqual(payload.skills)
-})
+it.each(['/prompts', '/presets', '/history', '/help', '/review', '/compact', '/diff', '/processes', '/goal', '/plan', '/goal an objective'])(
+  'submits %s as ordinary text with the existing attachments and skills',
+  async text => {
+    const c = mount({ sendWithEnter: true })
+    c.exposed.hydrateDraft({ ...payload, text })
+    await vue.nextTick()
+    const input = c.nodes().find(n => n.tag === 'textarea')!
+    input.props.onInput()
+    await vue.nextTick()
+    expect(c.nodes().some(n => n.props.class?.includes('thread-composer-file-mention-row'))).toBe(false)
+    input.props.onKeydown({ key: 'Enter', preventDefault() {} })
+    expect(c.submitted.mock.calls[0]?.[0]).toEqual({ ...payload, text })
+  },
+)
+
 it('preserves structured App references in drafts and submission and clears them on connection change',async()=>{
  const c=mount({connectionEpoch:0});const apps=[{id:'connector_demo',name:'Demo App'}]
  c.exposed.hydrateDraft({...payload,apps});await vue.nextTick();c.submit()
@@ -273,8 +273,7 @@ it('can preserve explicit model interruption while standalone execution blocks s
 })
 
 it('selects send modes in the + menu without opening tools or changing submitted snapshots', async () => {
-  const actions = vi.fn()
-  const c = mount({ queueReady: true, isTurnInProgress: true, onThreadAction: actions })
+  const c = mount({ queueReady: true, isTurnInProgress: true })
   const choose = async (label: string) => {
     c.nodes().find(n => n.props['aria-label'] === 'Add attachments and settings')!.props.onClick()
     await vue.nextTick()
@@ -285,7 +284,6 @@ it('selects send modes in the + menu without opening tools or changing submitted
   }
   expect(c.nodes().some(n => n.props['aria-label'] === 'Send mode: Queue mode')).toBe(false)
   await choose('Queue mode')
-  expect(actions).not.toHaveBeenCalled()
   expect(c.nodes().some(n => n.props['aria-label'] === 'Send mode: Queue mode')).toBe(true)
   c.exposed.appendTextToDraft('queued while active')
   await vue.nextTick()
@@ -299,7 +297,6 @@ it('selects send modes in the + menu without opening tools or changing submitted
   await vue.nextTick()
   c.submit()
   expect(c.submitted.mock.calls[1]![0].queue).toBeUndefined()
-  expect(actions).not.toHaveBeenCalled()
 })
 
 it('allows Queue selection before thread creation while sending the initial message normally', async () => {

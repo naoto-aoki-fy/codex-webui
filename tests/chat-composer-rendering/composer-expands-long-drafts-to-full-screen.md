@@ -18,7 +18,7 @@ Thread composer full-screen expand control for multi-line drafts.
 5. Attach an image and a file. Open the model, thinking, Skills and **+** menus;
    select a skill and a thinking setting. Check slash suggestions and file mentions
    stay inside the viewport. Drag and drop an additional file into the input.
-6. Open **+ → Apps / Connectors** and **+ → Prompts & commands**; verify both remain
+6. Open **+ → Apps / Connectors** and **+ → installed-skill completion**; verify both remain
    accessible. Close them without replacing the draft. During an active response,
    clear the draft and verify Stop is accessible without stopping automatically.
 7. Restore the long draft. Click **Exit full screen composer**. Confirm the normal

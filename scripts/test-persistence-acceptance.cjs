@@ -109,60 +109,10 @@ async function queueBoundaries(browser) {
   await context.close()
 }
 
-async function promptOperations(browser) {
-  const context = await browser.newContext(), a = await context.newPage(), b = await context.newPage()
-  await context.route('**/persistence-acceptance', route => route.fulfill({ contentType: 'text/html', body: '<title>Prompt acceptance</title>' }))
-  await Promise.all([a.goto(`${base}/persistence-acceptance`), b.goto(`${base}/persistence-acceptance`)])
-  const call = (page, method, ...args) => page.evaluate(async ({ method, args }) => (await import('/src/utils/promptLibrary.ts'))[method](...args), { method, args })
-  const original = { presets: [{ id: 'p', name: 'P', text: 'original' }, { id: 'q', name: 'Q', text: 'other' }], history: [] }
-  await call(a, 'savePromptLibrary', original, { presets: [], history: [] })
-  await Promise.all([
-    call(a, 'savePromptLibrary', { ...original, presets: original.presets.map(p => p.id === 'p' ? { ...p, text: 'P edited' } : p) }, original),
-    call(b, 'savePromptLibrary', { ...original, presets: original.presets.map(p => p.id === 'q' ? { ...p, text: 'Q edited' } : p) }, original),
-  ])
-  const distinct = await call(a, 'loadPromptLibrary')
-  assert.equal(distinct.presets.find(p => p.id === 'p').text, 'P edited')
-  assert.equal(distinct.presets.find(p => p.id === 'q').text, 'Q edited')
-  for (const deleteFirst of [true, false]) {
-    await call(a, 'savePromptLibrary', original, await call(a, 'loadPromptLibrary'))
-    const stale = await call(b, 'loadPromptLibrary')
-    const edited = { ...stale, presets: stale.presets.map(p => p.id === 'p' ? { ...p, text: 'edited' } : p) }
-    const deleted = { ...stale, presets: stale.presets.filter(p => p.id !== 'p') }
-    if (deleteFirst) { await call(a, 'savePromptLibrary', deleted, stale); await call(b, 'savePromptLibrary', edited, stale) }
-    else { await call(b, 'savePromptLibrary', edited, stale); await call(a, 'savePromptLibrary', deleted, stale) }
-    const current = await call(a, 'loadPromptLibrary')
-    assert.equal(current.presets.find(p => p.id === 'p')?.text, deleteFirst ? 'edited' : undefined)
-    assert.equal(current.presets.find(p => p.id === 'q')?.text, 'other')
-  }
-  await call(a, 'savePromptLibrary', original, await call(a, 'loadPromptLibrary'))
-  const stale = await call(a, 'loadPromptLibrary')
-  const first = { ...stale, presets: stale.presets.map(p => p.id === 'p' ? { ...p, text: 'first edit' } : p) }
-  const last = { ...stale, presets: stale.presets.map(p => p.id === 'p' ? { ...p, text: 'last edit' } : p) }
-  await call(a, 'savePromptLibrary', first, stale); await call(b, 'savePromptLibrary', last, stale)
-  assert.equal((await call(a, 'loadPromptLibrary')).presets.find(p => p.id === 'p').text, 'last edit')
-  await Promise.all([call(a, 'savePromptLibrary', { ...stale, presets: stale.presets.filter(p => p.id !== 'p') }, stale), call(b, 'savePromptLibrary', first, stale)])
-  const raced = await call(a, 'loadPromptLibrary')
-  assert([undefined, 'first edit'].includes(raced.presets.find(p => p.id === 'p')?.text))
-  assert.equal(raced.presets.find(p => p.id === 'q').text, 'other')
-  await call(a, 'setPromptHistoryEnabled', true)
-  await b.waitForFunction(() => localStorage.getItem('codex-web-local.prompt-history-enabled.v1') === '1')
-  await call(a, 'recordSubmittedPrompt', 'old')
-  await call(a, 'clearPromptHistory'); await call(b, 'recordSubmittedPrompt', 'after clear')
-  assert.deepEqual((await call(a, 'loadPromptLibrary')).history, ['after clear'])
-  await call(a, 'recordSubmittedPrompt', 'before clear'); await call(b, 'clearPromptHistory')
-  assert.deepEqual((await call(a, 'loadPromptLibrary')).history, [])
-  await Promise.all([call(a, 'recordSubmittedPrompt', 'concurrent'), call(b, 'clearPromptHistory')])
-  const final = await call(a, 'loadPromptLibrary')
-  assert([JSON.stringify([]), JSON.stringify(['concurrent'])].includes(JSON.stringify(final.history)))
-  assert.equal(final.presets.find(p => p.id === 'q').text, 'other')
-  await context.close()
-}
-
 ;(async () => {
   const browser = await chromium.launch({ headless: true })
   try {
     console.log(`ENGINE ${browser.browserType().name()} ${browser.version()}`)
     await check('queue reservation waits for transaction commit; abort, quota, request error, delayed wrong client and clear failure preserve boundaries', () => queueBoundaries(browser))
-    await check('prompt operations use current transactional records; delete/edit and history clear/record follow transaction order', () => promptOperations(browser))
   } finally { await browser.close() }
 })().catch(error => { console.error(error); process.exitCode = 1 })

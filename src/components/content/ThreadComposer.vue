@@ -5,11 +5,7 @@
       <button type="button" @click="isAppsPickerOpen=false;emit('open-settings')">Manage connections in Settings</button>
       <AppsPicker :thread-id="activeThreadId" :epoch="connectionEpoch ?? 0" :selected="selectedApps" :disabled="isInteractionDisabled" @change="selectedApps=$event" @unavailable="input.appsUnavailable.value=$event" />
     </div>
-    <ManagementDialog :open="promptLibraryOpen" title="Prompts & commands" @close="promptLibraryOpen=false">
-      <PromptLibrary v-if="promptLibraryLoaded" :open="promptLibraryOpen" @close="promptLibraryOpen=false" @choose="populatePrompt" />
-    </ManagementDialog>
     <p v-if="draftSaveWarning" role="alert">{{ draftSaveWarning }}</p>
-    <p v-if="promptStorageNotice" role="status">{{ promptStorageNotice }}</p>
 
     <Teleport to="body">
       <div v-if="isComposerCollapsed && !hasPendingRequest" class="thread-composer-floating-actions">
@@ -137,17 +133,15 @@
           </template>
           <div v-else class="thread-composer-file-mention-empty">{{ ('No matching files') }}</div>
         </div>
-        <div v-if="slashQuery !== null" class="thread-composer-file-mentions thread-composer-slash-mentions">
-          <button v-for="(item, index) in slashSuggestions" :key="item.skill?.path ?? item.name"
-            class="thread-composer-file-mention-row" :class="{ 'is-active': index === slashIndex }"
-            type="button" @mousedown.prevent="applySlashSuggestion(item)">
+        <div v-if="skillQuery !== null && skillSuggestions.length > 0" class="thread-composer-file-mentions thread-composer-slash-mentions">
+          <button v-for="(item, index) in skillSuggestions" :key="item.skill.path"
+            class="thread-composer-file-mention-row" :class="{ 'is-active': index === skillIndex }"
+            type="button" @mousedown.prevent="applySkillSuggestion(item)">
             <span>/{{ item.name }}</span><small>{{ item.description }}</small>
           </button>
-          <div v-if="!slashSuggestions.length">{{ ('No matching skills or commands') }}</div>
         </div>
-        <div v-if="draft.trimStart().startsWith('/goal ') || isPlanModeSelected" class="thread-composer-active-mode">
-          <button v-if="draft.trimStart().startsWith('/goal ')" type="button" :aria-label="('Disable goal mode')" @click="draft = draft.trimStart().slice(6)">{{ ('Goal') }} ×</button>
-          <button v-if="isPlanModeSelected" type="button" @click="emit('update:selected-collaboration-mode', 'default')">{{ ('Plan') }} ×</button>
+        <div v-if="isPlanModeSelected" class="thread-composer-active-mode">
+          <button type="button" @click="emit('update:selected-collaboration-mode', 'default')">{{ ('Plan') }} ×</button>
         </div>
         <textarea
           ref="inputRef"
@@ -215,7 +209,6 @@
               {{ ('Add photos & files') }}
             </button>
 
-            <button class="thread-composer-attach-item" type="button" @click="isAttachMenuOpen=false;promptLibraryOpen=true">Prompts & commands</button>
             <button v-if="!isNewThread" class="thread-composer-attach-item" type="button" @click="isAttachMenuOpen=false;isAppsPickerOpen=!isAppsPickerOpen">Apps / Connectors<span v-if="selectedApps.length"> ({{ selectedApps.length }})</span></button>
             <fieldset class="composer-send-modes" role="radiogroup" aria-label="Send mode" @keydown="onSendModeKeydown">
               <legend>Send mode</legend>
@@ -395,8 +388,6 @@ function recoverDraft(payload: ComposerDraftPayload): boolean {
   input.hydrateDraft(payload)
   return true
 }
-const promptLibraryLoaded = ref(false)
-const PromptLibrary = defineAsyncComponent(() => import('./PromptLibrary.vue'))
 import type { ComposerProps, SubmitPayload, ThreadComposerExposed } from "./composerContracts"
 import { createComposerInput } from './composerInput'
 import { createComposerSettings } from './composerSettings'
@@ -418,7 +409,6 @@ import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerMaximize from '../icons/IconTablerMaximize.vue'
 import IconTablerMinimize from '../icons/IconTablerMinimize.vue'
 import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
-import ManagementDialog from '../shared/ManagementDialog.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
 import ComposerSearchDropdown from './ComposerSearchDropdown.vue'
 
@@ -430,7 +420,6 @@ const emit = defineEmits<{
   'update:expanded': [expanded: boolean]
   'update:selected-queue-mode': [queue: boolean]
   'open-settings': []
-  'thread-action': [action: string]
   submit: [payload: SubmitPayload, settle: (accepted: boolean) => void]
   interrupt: []
   'edit-goal': []
@@ -448,17 +437,16 @@ const input = createComposerInput({
   get isAttachMenuOpen() { return isAttachMenuOpen; },
   get isMobile() { return isMobile; }
 })
-watch(() => input.promptLibraryOpen.value, open => { if (open) promptLibraryLoaded.value = true })
-watch(() => props.activeThreadId, () => { isAppsPickerOpen.value = false; input.promptLibraryOpen.value = false }, { flush: 'sync' })
+watch(() => props.activeThreadId, () => { isAppsPickerOpen.value = false }, { flush: 'sync' })
 watch(() => props.connectionEpoch, () => { input.selectedApps.value = []; input.appsUnavailable.value = false })
 
 const {
-  selectedApps, promptLibraryOpen, promptStorageNotice, populatePrompt,
+  selectedApps,
   draft,
-  slashQuery,
-  slashIndex,
-  slashSuggestions,
-  applySlashSuggestion,
+  skillQuery,
+  skillIndex,
+  skillSuggestions,
+  applySkillSuggestion,
   inputRef,
   fileMentionSuggestions,
   isFileMentionOpen,
@@ -578,8 +566,7 @@ function setComposerCollapsed(collapsed: boolean): void {
 function closeComposerPopovers(): void {
   isAttachMenuOpen.value = false
   isAppsPickerOpen.value = false
-  promptLibraryOpen.value = false
-  slashQuery.value = null
+  skillQuery.value = null
   closeFileMention()
   attachments.onWindowDragCleanup()
 }

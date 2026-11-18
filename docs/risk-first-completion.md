@@ -1,5 +1,7 @@
 # Risk-first approved features: completion report
 
+This report is historical. The WebUI worktree creation workflow (13) and Markdown conversation downloads have since been removed. Existing worktree directories can still be opened.
+
 Implementation starts at clean `main` / `42a9790`. The supported runtime floor is
 unchanged: independently managed Codex App Server **0.169.0**. Official contracts
 were inspected at release commit

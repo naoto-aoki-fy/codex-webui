@@ -31,11 +31,8 @@ use a disposable native conversation and a supported independently managed serve
    The conversation title remains in the page header and sidebar. Change
    conversation via routing while either dialog is open: it closes before controls
    retarget. Pending operations remain owned by the existing App/state controllers.
-5. Open **+ → Prompts & commands** or use `/prompts`. Start an unsaved preset edit,
-   close/reopen: edit remains during the same composer lifetime. Choosing a preset
-   explicitly replaces draft text without sending. **+ → Apps / Connectors** opens
-   the compact thread-reference picker; its **Manage connections in Settings**
-   link opens global management. Selecting references never authenticates.
+5. Open **+ → Apps / Connectors** and verify the picker opens. Its **Manage
+   connections in Settings** link opens global management.
 6. For each dialog, initial focus is inside it. Tab and Shift+Tab loop through
    visible enabled controls. Escape and the visible close button dismiss it and
    restore focus to its entry point. Header/close remain visible as content scrolls.
@@ -84,6 +81,6 @@ Cleanup: restore Immediate mode and the original theme. No messages need sending
 
 Cleanup: close fixture pages. In a manual disposable thread, explicitly inspect
 and remove pending prompts using the existing confirmed queue actions, restore
-archives if desired, and clear fixture presets. Do not activate/authenticate real
+archives if desired. Do not activate/authenticate real
 services as part of presentation verification. Screenshot artifacts and fixture
 results land under `output/playwright/ui-*` and are not committed.

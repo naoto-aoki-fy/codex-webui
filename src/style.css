@@ -1307,20 +1307,16 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 :root.dark .feature-panel { color: #d4d4d8; background: #18181b; }
 :root.dark .feature-panel button { color: #e4e4e7; border-color: #52525b; background: #27272a; }
 :root.dark .feature-panel [role="alert"] { color: #fda4af; }
-:is(.permanent-deletion, .create-worktree, .config-inspection, .native-shell) input:not([type="checkbox"]) { display: block; width: 100%; max-width: 100%; min-height: 32px; margin: 4px 0; padding: 5px 8px; border: 1px solid #a1a1aa; border-radius: 6px; background: #fff; color: #18181b; }
-:is(.permanent-deletion, .create-worktree) label { display: block; margin: 6px 0; }
-:is(.permanent-deletion, .create-worktree, .config-inspection, .native-shell) input:not([type="checkbox"]):focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
-:root.dark :is(.permanent-deletion, .create-worktree, .config-inspection, .native-shell) input:not([type="checkbox"]) { border-color: #71717a; background: #27272a; color: #f4f4f5; }
+:is(.permanent-deletion, .config-inspection, .native-shell) input:not([type="checkbox"]) { display: block; width: 100%; max-width: 100%; min-height: 32px; margin: 4px 0; padding: 5px 8px; border: 1px solid #a1a1aa; border-radius: 6px; background: #fff; color: #18181b; }
+.permanent-deletion label { display: block; margin: 6px 0; }
+:is(.permanent-deletion, .config-inspection, .native-shell) input:not([type="checkbox"]):focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+:root.dark :is(.permanent-deletion, .config-inspection, .native-shell) input:not([type="checkbox"]) { border-color: #71717a; background: #27272a; color: #f4f4f5; }
 
 .diagnostic-report { white-space: pre-wrap; max-height: 200px; overflow: auto; font-size: 11px; }
 
 .execution-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
 .execution-details summary { cursor: pointer; overflow-wrap: anywhere; }
 
-.working-tree-panel { max-height: 45vh; overflow: auto; }
-.working-tree-panel p, .working-tree-panel li { overflow-wrap: anywhere; }
-.working-tree-panel button { margin: .2rem; text-align: left; }
-.working-tree-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20rem; overflow: auto; }
 
 .native-thread-actions { max-height: 40vh; overflow: auto; overflow-wrap: anywhere; }
 .native-thread-actions textarea { width: 100%; min-height: 4rem; color: inherit; background: transparent; border: 1px solid currentColor; }
@@ -1328,9 +1324,6 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .background-terminals { max-height: 40vh; overflow: auto; overflow-wrap: anywhere; }
 .background-terminals pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
 
-.prompt-library { max-height: 42vh; overflow: auto; overflow-wrap: anywhere; }
-.prompt-library input, .prompt-library textarea { width: 100%; color: inherit; background: transparent; border: 1px solid #a1a1aa; padding: .3rem; }
-.prompt-library-trigger { align-self: flex-start; font-size: .75rem; padding: .2rem .6rem; }
 
 .memory-status { max-height: 35vh; overflow: auto; overflow-wrap: anywhere; }
 .memory-status pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 15rem; overflow: auto; }
@@ -1412,9 +1405,6 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .conversation-header-menu-body button:hover, .conversation-header-menu > summary:hover { background: #f4f4f5; }
 .composer-apps-popover { position: absolute; bottom: 100%; left: 0; width: min(420px, 100%); max-height: 55dvh; overflow: auto; background: #fff; border: 1px solid #e4e4e7; border-radius: 12px; z-index: 30; box-shadow: 0 8px 24px #0002; }
 .thread-composer { position: relative; }
-.management-dialog .prompt-library { max-height: none; }
-.management-dialog .prompt-library textarea { min-height: 140px; border-radius: 8px; }
-.management-dialog .prompt-library input { border-radius: 8px; }
 .skills-management-entry { padding: 12px 24px; }
 :root.dark .conversation-header-menu-body, :root.dark .composer-apps-popover { background: #18181b; color: #d4d4d8; border-color: #3f3f46; }
 :root.dark .conversation-header-menu-body button:hover, :root.dark .conversation-header-menu > summary:hover { background: #27272a; }

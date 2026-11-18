@@ -68,7 +68,6 @@
             v-if="!isSidebarCollapsed"
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
             :is-fork-disabled="isForkOperationPending || isRollingBack"
-            :is-exporting="isExporting"
             :is-thread-list-fully-loaded="isThreadListFullyLoaded"
             :search-query="sidebarSearchQuery"
             :search-matched-thread-ids="serverMatchedThreadIds"
@@ -77,8 +76,7 @@
             @rename-thread="onRenameThread"
             @fork-thread="onForkThread"
             @remove-project="onRemoveProject"
-            @copy-thread-chat="onCopyThreadChat" @export-thread="onExportThread" />
-          <p v-if="exportStatus" class="feature-panel" role="status">{{ exportStatus }}</p>
+            @copy-thread-chat="onCopyThreadChat" />
         </div>
 
         <div
@@ -130,7 +128,6 @@
                 <button type="button" @click="openConversationTools">Conversation tools…</button>
                 <button type="button" @click="openContext">Context</button>
                 <button type="button" @click="closeConversationMenu();onCopyThreadChat(selectedThreadId)">Copy conversation</button>
-                <button type="button" :disabled="isExporting" @click="closeConversationMenu();onExportThread(selectedThreadId)">Export conversation as Markdown</button>
                 <button type="button" @click="closeConversationMenu();onArchiveThread(selectedThreadId)">Archive conversation</button>
               </div>
             </details>
@@ -238,7 +235,6 @@
                   :live-overlay="liveOverlay"
                   :is-revert-disabled="isForkOperationPending || isRollingBack || isSelectedThreadInProgress || compaction.selectedBusy.value || review.selectedBusy.value"
                   :is-fork-disabled="isForkOperationPending || isRollingBack"
-            :is-exporting="isExporting"
                   :pending-requests="selectedThreadServerRequests"
                   :has-more-persisted-above="hasMoreOlderMessages"
                   :is-loading-persisted-above="isLoadingOlderMessages"
@@ -262,7 +258,7 @@
                 />
                 <p v-if="composerSendMode.queue.value && (nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value)" class="composer-runtime-error" role="alert">
                   {{ nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value }}
-                  <button type="button" @click="onOpenThreadAction('queue')">Inspect native prompt queue</button>
+                  <button type="button" @click="openNativeQueue">Inspect native prompt queue</button>
                 </p>
                 <p v-if="modelSelectionNotice" class="composer-model-notice" role="status">{{ (modelSelectionNotice) }}</p>
                 <ThreadComposer
@@ -296,7 +292,6 @@
                   @submit="onSubmitThreadMessage" @update:selected-model="onSelectModel"
                   @update:selected-reasoning-effort="onSelectReasoningEffort"
                   @update:selected-speed-mode="onSelectSpeedMode"
-                  @thread-action="onOpenThreadAction"
                   @edit-goal="threadGoalPanelRef?.edit()"
                   @interrupt="onInterruptTurn" />
               </div>
@@ -312,7 +307,6 @@
                     :denied-actions="deniedActions.rows.value"
                     :queue="nativeQueue"
                     :permission-changes="permissionChanges"
-                    :open-created-worktree="openCreatedWorktree"
                     :deletion="nativeDeletion" :ensure-deletion="ensureNativeDeletion" :has-draft="()=>threadComposerRef?.hasUnsavedDraft()??false"
                     :shell="nativeShell" :ensure-shell="ensureNativeShell"
                     :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
@@ -426,7 +420,6 @@ import IconTablerSearch from './components/icons/IconTablerSearch.vue'
 import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerDots from './components/icons/IconTablerDots.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
-import { createConversationExport } from './composables/conversationExport'
 import { useDesktopState } from './composables/useDesktopState'
 import { useFolderPicker } from './composables/useFolderPicker'
 import { useMobile } from './composables/useMobile'
@@ -975,12 +968,6 @@ function onSelectThread(threadId: string): void {
   if (isMobile.value) setSidebarCollapsed(true)
 }
 
-const { busy: isExporting, status: exportStatus, run: exportConversation } = createConversationExport({ epoch: () => operationEpoch.value })
-function onExportThread(threadId: string) {
-  if (threadId !== selectedThreadId.value || !selectedThread.value) return
-  void exportConversation(threadId, selectedThread.value.title)
-}
-
 async function onCopyThreadChat(threadId: string): Promise<void> {
   if (!threadId) return
   if (selectedThreadId.value !== threadId) return
@@ -1145,17 +1132,16 @@ function scheduleWorkspaceRootsResume(): void {
   }, 100)
 }
 
-async function onOpenThreadAction(action: string) {
+async function openNativeQueue() {
   const ownerThread=selectedThreadId.value,ownerEpoch=operationEpoch.value
   openConversationTools()
   await import('./components/content/ConversationTools.vue')
   await nextTick()
   await new Promise<void>(resolve=>window.requestAnimationFrame(()=>resolve()))
   if(selectedThreadId.value!==ownerThread||operationEpoch.value!==ownerEpoch)return
-  const id = action === 'queue' ? 'native-prompt-queue' : action === 'diff' ? 'current-working-tree' : action === 'processes' ? 'native-background-processes' : 'native-conversation-actions'
-  const panel = document.getElementById(id) as HTMLDetailsElement | null
+  const panel = document.getElementById('native-prompt-queue') as HTMLDetailsElement | null
   if (panel) { panel.open = true; panel.scrollIntoView({ block: 'nearest' }) }
-  if(action==='queue')await nativeQueue.refresh()
+  await nativeQueue.refresh()
 }
 
 function onSubmitThreadMessage(
@@ -1231,18 +1217,6 @@ async function onConfirmExistingFolder(path = resolvedExistingFolderPath.value):
     isOpeningExistingFolder.value = false
   }
 }
-async function openCreatedWorktree(path:string):Promise<void>{
-  const epoch=operationEpoch.value,isCurrent=()=>operationEpoch.value===epoch
-  const selection=await openProjectRootSelection(path,isCurrent)
-  if(!isCurrent())throw new Error('Connection changed; project registration outcome must be inspected on the original App Server')
-  if(selection.path!==path)throw new Error('Registered project path differs from the verified worktree')
-  newThreadCwd.value=selection.path
-  await router.push({name:'home',query:{cwd:selection.path,...(selection.projectId?{projectId:selection.projectId}:{})}})
-  if(!isCurrent())return
-  await loadWorkspaceRootOptionsState()
-  if(isCurrent())await refreshAll({includeSelectedThreadMessages:false,forceThreadRefresh:true})
-}
-
 async function applyLaunchProjectPathFromUrl(): Promise<boolean> {
   if (typeof window === 'undefined') return false
   const launchProjectPath = new URLSearchParams(window.location.search).get('openProjectPath')?.trim() ?? ''

@@ -10,9 +10,9 @@
 | MCP connection/authentication/configuration and curated plugins | Sidebar → Settings → Apps / Connectors; also linked from Skills and the conversation App picker |
 | Current conversation context usage | Conversation header … → Context; the dialog identifies the title and native ID |
 | Conversation inspection and detailed operations | Conversation header … → Conversation tools…; the dialog identifies the title and native ID |
-| Copy, Markdown export, archive | Conversation header …; existing sidebar actions also remain |
+| Copy conversation, archive | Conversation header …; the sidebar offers Copy chat |
 | Conversation App references | Composer + → Apps / Connectors, in a compact picker |
-| Presets, recent prompts and command help | Composer + → Prompts & commands, or existing slash commands |
+| Native goals and plan mode | Composer + → Goal… or Plan mode |
 | Send-mode selection | Composer + → Send mode |
 
 The shared `ManagementDialog` teleports to `body`, uses a native modal dialog,
@@ -28,10 +28,9 @@ viewport and composer controls wrap rather than overlap.
 
 Archive state is owned by its existing archive controller. Account, authentication,
 queue, permission, review, compaction, shell and deletion controllers keep their
-existing owners in App/desktop state. Tools, Settings categories and prompt content
+existing owners in App/desktop state. Tools and Settings categories
 mount lazily on first use and remain mounted when closed; reopening does not create
-new subscriptions or restart operations. Prompt storage is reread on opening so
-newly accepted history appears without discarding unsaved editor fields.
+new subscriptions or restart operations.
 
 Context is read-only information from the selected thread’s existing token-usage
 state. Its dialog displays the existing usage, remaining/window counts, cumulative
@@ -70,7 +69,9 @@ store or persistence redesign is introduced. Selecting Queue performs the existi
 guarded read-only readiness check without opening tools; unavailable/uncertain
 queue state blocks sends and links to inspection, without falling back to Immediate.
 
-## Verification
+## Historical verification
+
+These results describe the management layout before the WebUI feature removal.
 
 - `pnpm run test:unit`: 1,492 passed, 2 skipped (138 files passed, 2 skipped).
 - `pnpm run typecheck`: frontend and server passed. No lint script is configured.
@@ -99,7 +100,7 @@ queue state blocks sends and links to inspection, without falling back to Immedi
 - Updated existing fixture suites cover MCP execution, prompt CRUD/history, App
   references/reload, MCP versioned settings, curated plugins, Remote Control,
   native queue and queue management, stale response rejection, native review,
-  worktree creation, shell lifecycle, permission/configuration confirmations,
+  shell lifecycle, permission/configuration confirmations,
   uncertain mutations, deletion restrictions and TestChat rendering.
 
 Screenshots and JSON results are local artifacts under `output/playwright/`, not

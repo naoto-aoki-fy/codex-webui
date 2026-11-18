@@ -44,7 +44,6 @@ async function concurrency(browser, fallback) {
   const a = await open(context, 'a'), b = await open(context, 'b')
   await a.evaluate(() => {
     localStorage.setItem('codex-web-local.queue-submissions.v1', JSON.stringify({ legacy: 'old-client' }))
-    localStorage.setItem('codex-web-local.prompt-library.v1', JSON.stringify({ presets: [{ id: 'legacy', name: 'Legacy', text: 'Existing user preset' }], history: ['Existing history'] }))
   })
   assert.deepEqual(await moduleCall(a, 'queueSubmissionReceipts', 'readQueueSubmissionReceipts'), { legacy: 'old-client' })
   await moduleCall(a, 'queueSubmissionReceipts', 'writeQueueSubmissionReceipt', ['legacy', null, 'old-client'])
@@ -110,31 +109,6 @@ async function concurrency(browser, fallback) {
   await a.evaluate(() => localStorage.setItem('codex-web-local.dark-mode.v1', 'dark'))
   await b.waitForFunction(() => document.documentElement.classList.contains('dark'))
   assert.equal(b.url(), url)
-  await b.getByRole('button', { name: 'Add attachments and settings', exact: true }).click()
-  await b.getByRole('button', { name: 'Prompts & commands', exact: true }).click()
-  await a.getByRole('button', { name: 'Add attachments and settings', exact: true }).click()
-  await a.getByRole('button', { name: 'Prompts & commands', exact: true }).click()
-  for (const [page, name] of [[a, 'A'], [b, 'B']]) {
-    await page.getByRole('textbox', { name: 'Preset name', exact: true }).fill(name)
-    await page.getByRole('textbox', { name: 'Preset text', exact: true }).fill(`${name} text`)
-  }
-  await Promise.all([a.getByRole('button', { name: 'Save text preset', exact: true }).click(), b.getByRole('button', { name: 'Save text preset', exact: true }).click()])
-  await b.getByRole('button', { name: 'Use preset A', exact: true }).waitFor()
-  await b.getByRole('button', { name: 'Use preset B', exact: true }).waitFor()
-  assert.equal((await moduleCall(a, 'promptLibrary', 'loadPromptLibrary')).presets.length, 3)
-  assert.equal(await moduleCall(a, 'promptLibrary', 'promptHistoryEnabled'), false)
-  await moduleCall(a, 'promptLibrary', 'recordSubmittedPrompt', ['off by default'])
-  assert.deepEqual((await moduleCall(a, 'promptLibrary', 'loadPromptLibrary')).history, ['Existing history'])
-  await b.getByRole('button', { name: 'Enable recent prompt history', exact: true }).click()
-  await b.getByRole('button', { name: 'Close prompts', exact: true }).click()
-  await moduleCall(a, 'promptLibrary', 'recordSubmittedPrompt', ['opted-in text'])
-  await b.getByRole('button', { name: 'Add attachments and settings', exact: true }).click()
-  await b.getByRole('button', { name: 'Prompts & commands', exact: true }).click()
-  await b.getByRole('button', { name: 'opted-in text', exact: true }).waitFor()
-  await b.getByRole('button', { name: 'Clear recent prompt history', exact: true }).click()
-  await b.getByRole('button', { name: 'opted-in text', exact: true }).waitFor({ state: 'detached' })
-  assert.equal((await moduleCall(a, 'promptLibrary', 'loadPromptLibrary')).presets.length, 3)
-  assert.equal(await a.evaluate(() => localStorage.getItem('codex-web-local.prompt-library.v1')), null)
   assert.equal(observed.calls.filter(c => c.method === 'thread/queue/add' || c.method === 'turn/start').length, 0)
 
   if (!fallback && process.env.PERSISTENCE_SCREENSHOTS !== '0') {
@@ -146,7 +120,7 @@ async function concurrency(browser, fallback) {
         await b.waitForTimeout(2200)
         const screenshot = `output/playwright/browser-persistence-${viewport.width}-${theme}.png`
         await b.screenshot({ path: screenshot, fullPage: true })
-        console.log(JSON.stringify({ url: b.url(), viewport, theme, screenshot, result: 'prompt presets, opt-in and cross-tab settings visible' }))
+        console.log(JSON.stringify({ url: b.url(), viewport, theme, screenshot, result: 'draft recovery and cross-tab settings visible' }))
       }
     }
   }
@@ -156,18 +130,16 @@ async function concurrency(browser, fallback) {
   assert.deepEqual(observed.errors, [])
   const named = await open(context, 'a', 'named')
   assert.deepEqual(await moduleCall(named, 'queueSubmissionReceipts', 'readQueueSubmissionReceipts'), {})
-  assert.deepEqual(await moduleCall(named, 'promptLibrary', 'loadPromptLibrary'), { presets: [], history: [] })
   assert.equal(await moduleCall(named, 'composerDraftStorage', 'loadPersistedDraftForThread', ['structured']), null)
   await moduleCall(named, 'queueSubmissionReceipts', 'writeQueueSubmissionReceipt', ['named-only', 'named-client'])
   assert.equal((await moduleCall(b, 'queueSubmissionReceipts', 'readQueueSubmissionReceipts'))['named-only'], undefined)
   await named.close()
   const before = await moduleCall(b, 'queueSubmissionReceipts', 'readQueueSubmissionReceipts')
   await b.evaluate(() => Object.defineProperty(window, 'indexedDB', { value: undefined }))
-  const denied = await Promise.allSettled([moduleCall(b, 'queueSubmissionReceipts', 'writeQueueSubmissionReceipt', ['unsafe', 'never-sent']), moduleCall(b, 'promptLibrary', 'clearPromptHistory')])
-  assert(denied.every(result => result.status === 'rejected'))
+  await assert.rejects(moduleCall(b, 'queueSubmissionReceipts', 'writeQueueSubmissionReceipt', ['unsafe', 'never-sent']))
   assert.deepEqual(await moduleCall(a, 'queueSubmissionReceipts', 'readQueueSubmissionReceipts'), before)
   await context.close()
-  console.log(`PASS real-tab navigation, drafts, duplicate identity, structured reload, receipts, presets and storage events (IndexedDB transactions; Web Locks ${fallback ? 'disabled' : 'available'})`)
+  console.log(`PASS real-tab navigation, drafts, duplicate identity, structured reload, receipts and storage events (IndexedDB transactions; Web Locks ${fallback ? 'disabled' : 'available'})`)
 }
 async function focusedUI(browser) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
@@ -215,35 +187,10 @@ async function focusedUI(browser) {
   const savedAfterReadFailure = await b.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.includes('thread-draft.'))))
   for (const [key, value] of Object.entries(savedBeforeReadFailure)) assert.equal(savedAfterReadFailure[key], value)
   await a.evaluate(() => { Storage.prototype.getItem = window.restoreAcceptanceRead })
-  const library = { presets: [{ id: 'editable', name: 'Editable', text: 'original text' }], history: [] }
-  await moduleCall(a, 'promptLibrary', 'savePromptLibrary', [library, { presets: [], history: [] }])
-  const showPrompts = async page => {
-    await page.getByRole('button', { name: 'Add attachments and settings', exact: true }).click()
-    await page.getByRole('button', { name: 'Prompts & commands', exact: true }).click()
-  }
-  await showPrompts(a); await showPrompts(b)
-  await b.getByRole('button', { name: 'Edit preset Editable', exact: true }).click()
-  await b.getByRole('textbox', { name: 'Preset text', exact: true }).fill('retained edit after remote deletion')
-  await a.getByRole('button', { name: 'Delete preset Editable', exact: true }).click()
-  await b.getByRole('button', { name: 'Use preset Editable', exact: true }).waitFor({ state: 'detached' })
-  assert.equal(await b.getByRole('textbox', { name: 'Preset text', exact: true }).inputValue(), 'retained edit after remote deletion')
-  await b.getByRole('button', { name: 'Save preset changes', exact: true }).click()
-  await b.getByRole('button', { name: 'Use preset Editable', exact: true }).waitFor()
-  assert.equal((await moduleCall(b, 'promptLibrary', 'loadPromptLibrary')).presets[0].text, 'retained edit after remote deletion')
-  await b.reload(); await showPrompts(b)
-  await b.getByRole('button', { name: 'Use preset Editable', exact: true }).waitFor()
-  for (const theme of ['light', 'dark']) {
-    await b.evaluate(theme => { localStorage.setItem('codex-web-local.dark-mode.v1', theme); document.documentElement.classList.toggle('dark', theme === 'dark') }, theme)
-    await b.waitForTimeout(2200)
-    const screenshot = `output/playwright/acceptance-preset-conflict-${theme}.png`
-    await b.screenshot({ path: screenshot, fullPage: true })
-    console.log(JSON.stringify({ url: b.url(), viewport: '1440x1000', theme, screenshot, result: 'explicit edit after deletion recreates only edited preset and survives reload' }))
-  }
   assert.deepEqual(observed.errors, [])
   assert.equal(observed.calls.filter(call => ['turn/start', 'thread/queue/add'].includes(call.method)).length, 0)
   await context.close()
   console.log('PASS draft read, quota and recovery failures stay visible without deleting saved data')
-  console.log('PASS saving an editor after remote deletion preserves the edit and survives reload')
 }
 ;(async () => {
   fs.mkdirSync('output/playwright', { recursive: true })
