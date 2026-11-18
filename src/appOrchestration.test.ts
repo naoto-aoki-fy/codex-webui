@@ -155,7 +155,7 @@ it('does not let a cancelled preparation replace a newer dialog provider (CAP-00
   expect(controller.transferProvider.value).toBe('B')
   expect(cancelConversationTransfer).toHaveBeenCalledExactlyOnceWith('old-snapshot')
 })
-function routing() {
+function routing(projectId = 'native-project') {
   const route = reactive({ name: 'thread' })
   const target = ref('A'), selected = ref('')
   const selectThread = vi.fn(async (id: string) => { selected.value = id; return 'ok' as const })
@@ -163,7 +163,7 @@ function routing() {
   const controller = createAppRouteCoordinator({ route, routeThreadId: computed(() => target.value),
     selectedThreadId: selected, selectThread, ensureThreadMessagesLoaded: vi.fn(async () => {}),
     newThreadCwd: ref('/fixture'), desktopError: ref(''), sendMessageToNewThread: send,
-    newThreadProjectId: computed(() => 'native-project'), router: { replace }, scheduleMobileConversationJumpToLatest: vi.fn(),
+    newThreadProjectId: computed(() => projectId), router: { replace }, scheduleMobileConversationJumpToLatest: vi.fn(),
   })
   return { controller, route, target, selected, selectThread, send, replace }
 }
@@ -186,4 +186,12 @@ it('does not navigate or replay a failed first submission', async () => {
   expect(await f.controller.submitFirstMessageForNewThread('prompt')).toBe(false)
   expect(f.send).toHaveBeenCalledTimes(1)
   expect(f.replace).not.toHaveBeenCalled()
+})
+it.each([
+  { projectId: '', expected: undefined },
+  { projectId: 'native-project', expected: 'native-project' },
+])('passes the working directory and only an explicit Project ID on first submission ($projectId)', async ({ projectId, expected }) => {
+  const f = routing(projectId)
+  expect(await f.controller.submitFirstMessageForNewThread('prompt')).toBe(true)
+  expect(f.send).toHaveBeenCalledExactlyOnceWith('prompt', '/fixture', [], [], [], expected)
 })

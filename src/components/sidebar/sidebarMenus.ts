@@ -2,13 +2,14 @@ import type { ComponentPublicInstance } from 'vue';
 import { computed, nextTick, ref } from 'vue';
 import type { Router, RouteLocationRaw } from 'vue-router';
 import type { ForkMethod } from '../../types/codex';
-import type { MenuDirection, SidebarProps } from "./sidebarContracts";
+import type { MenuDirection, NewThreadTarget, SidebarProps } from "./sidebarContracts";
+import type { SidebarGroup, ThreadViewMode } from './sidebarGroups';
 import { createSidebarThreads } from './sidebarThreads';
 import { copyTextToClipboard } from '../../utils/clipboard';
 /** Owns menu/dialog refs, action handlers, placement maps and listener callbacks. The component scopes menu-open watchers and invokes both listener disposers on unmount; tree measurement remains in the component. */
 export function createSidebarMenus(deps: {
     threads: ReturnType<typeof createSidebarThreads>;
-    emit: ((evt: "select", threadId: string) => void) & ((evt: "archive", threadId: string) => void) & ((evt: "start-new-thread", projectName: string) => void) & ((evt: "rename-thread", payload: {
+    emit: ((evt: "select", threadId: string) => void) & ((evt: "archive", threadId: string) => void) & ((evt: "start-new-thread", target: NewThreadTarget) => void) & ((evt: "rename-thread", payload: {
         threadId: string;
         title: string;
     }) => void) & ((evt: "remove-project", projectName: string) => void) & ((evt: "copy-thread-chat", threadId: string) => void) & ((evt: "fork-thread", payload: {
@@ -16,7 +17,6 @@ export function createSidebarMenus(deps: {
         method: ForkMethod;
     }) => void);
     props: Readonly<SidebarProps>;
-    getProjectDisplayName: (projectName: string) => string;
     router: Router;
 }) {
     const inlineDeleteConfirmThreadId = ref('');
@@ -61,11 +61,12 @@ export function createSidebarMenus(deps: {
         deps.emit('fork-thread', { threadId, method });
         closeThreadMenu();
     }
-    function getNewThreadButtonAriaLabel(projectName: string): string {
-        return `start new thread ${deps.getProjectDisplayName(projectName)}`;
+    function getNewThreadTarget(group: SidebarGroup): NewThreadTarget {
+        if (group.kind === 'folder') return { cwd: group.cwd };
+        return { projectId: group.projectId, cwd: deps.props.resolveNewThreadCwd?.(group.projectId) ?? '' };
     }
-    function onStartNewThread(projectName: string): void {
-        deps.emit('start-new-thread', projectName);
+    function onStartNewThread(group: SidebarGroup): void {
+        deps.emit('start-new-thread', getNewThreadTarget(group));
     }
     async function onCopyThreadPath(threadId: string): Promise<void> {
         const path = deps.threads.threadById.value.get(threadId)?.cwd?.trim() ?? '';
@@ -119,9 +120,9 @@ export function createSidebarMenus(deps: {
         const { href } = deps.router.resolve(location);
         window.open(href, '_blank', 'noopener,noreferrer');
     }
-    function onOpenProjectInNewTab(projectName: string): void {
-        const cwd = deps.props.resolveNewThreadCwd?.(projectName) ?? '';
-        openRouteInNewTab({ name: 'home', query: { projectId: projectName, ...(cwd ? { cwd } : {}) } });
+    function onOpenGroupInNewTab(group: SidebarGroup): void {
+        const { cwd, projectId } = getNewThreadTarget(group);
+        openRouteInNewTab({ name: 'home', query: { ...(projectId ? { projectId } : {}), ...(cwd ? { cwd } : {}) } });
         closeProjectMenu();
     }
     function onOpenThreadInNewTab(threadId: string): void {
@@ -192,8 +193,8 @@ export function createSidebarMenus(deps: {
         deps.emit('archive', threadId);
     }
     const removableProjectIdSet = computed(() => new Set(deps.props.removableProjectIds ?? []));
-    function canRemoveProject(projectName: string): boolean {
-        return removableProjectIdSet.value.has(projectName);
+    function canRemoveProject(group: SidebarGroup): boolean {
+        return group.kind === 'project' && removableProjectIdSet.value.has(group.projectId);
     }
     function isProjectMenuOpen(projectName: string): boolean {
         return openProjectMenuId.value === projectName;
@@ -209,7 +210,7 @@ export function createSidebarMenus(deps: {
         }
         isOrganizeMenuOpen.value = nextValue;
     }
-    function setThreadViewMode(mode: 'project' | 'chronological'): void {
+    function setThreadViewMode(mode: ThreadViewMode): void {
         deps.threads.threadViewMode.value = mode;
         isOrganizeMenuOpen.value = false;
     }
@@ -234,10 +235,10 @@ export function createSidebarMenus(deps: {
         openProjectMenuId.value = projectName;
         scheduleProjectMenuDirection(projectName);
     }
-    function onRemoveProject(projectName: string): void {
-        if (!canRemoveProject(projectName))
+    function onRemoveProject(group: SidebarGroup): void {
+        if (group.kind !== 'project' || !canRemoveProject(group))
             return;
-        deps.emit('remove-project', projectName);
+        deps.emit('remove-project', group.projectId);
         closeProjectMenu();
     }
     function setProjectMenuWrapRef(projectName: string, element: Element | ComponentPublicInstance | null): void {
@@ -457,9 +458,8 @@ onTogglePinFromMenu,
 onSelect,
 onCopyThreadChat,
 onForkThread,
-getNewThreadButtonAriaLabel,
 onStartNewThread,
-onOpenProjectInNewTab,
+onOpenGroupInNewTab,
 onCopyThreadPath,
 onThreadRowLeave,
 isThreadMenuOpen,

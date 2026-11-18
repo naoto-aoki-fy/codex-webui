@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { ref } from 'vue'
+import { folderGroupKey, projectGroupKey, type FolderGroup, type SidebarGroup } from './sidebarGroups'
 import { createSidebarMenus } from './sidebarMenus'
 
 function setup(cwd = '  /work/Project with spaces/日本語  ') {
@@ -13,11 +14,11 @@ function setup(cwd = '  /work/Project with spaces/日本語  ') {
   const emit = vi.fn()
   const resolveNewThreadCwd = vi.fn(() => '/work/Empty project')
   const menus = createSidebarMenus({
-    router, emit, getProjectDisplayName: name => name,
+    router, emit,
     props: { groups: [{ projectName: 'empty project', threads: [] }],
       projectDisplayNameById: {}, selectedThreadId: 'selected', activeProjectName: 'other',
       isLoading: false, isThreadListFullyLoaded: true, searchQuery: '', searchMatchedThreadIds: null,
-      removableProjectIds: ['removable'], resolveNewThreadCwd },
+      removableProjectIds: ['removable', '/work/Project with spaces/日本語'], resolveNewThreadCwd },
     threads: { threadById: ref(new Map([['selected', { cwd }]])) } as Parameters<typeof createSidebarMenus>[0]['threads'],
   })
   return { menus, open, emit, resolveNewThreadCwd, router }
@@ -64,31 +65,57 @@ describe('copy thread path', () => {
   })
 })
 
+const project = (projectId: string): SidebarGroup => ({ kind: 'project', key: projectGroupKey(projectId), projectId, threads: [] })
+
 describe('project tab menus', () => {
   for (const entry of ['toggleProjectMenu', 'openProjectContextMenu'] as const) {
     it(`opens an empty non-removable project via ${entry} without changing the current route`, async () => {
       const { menus, open, emit, resolveNewThreadCwd, router } = setup()
       await router.push('/thread/selected')
-      menus[entry]('empty project')
-      expect(menus.isProjectMenuOpen('empty project')).toBe(true)
-      expect(menus.canRemoveProject('empty project')).toBe(false)
-      menus.onOpenProjectInNewTab('empty project')
+      menus[entry](projectGroupKey('empty project'))
+      expect(menus.isProjectMenuOpen(projectGroupKey('empty project'))).toBe(true)
+      expect(menus.canRemoveProject(project('empty project'))).toBe(false)
+      menus.onOpenGroupInNewTab(project('empty project'))
       expect(resolveNewThreadCwd).toHaveBeenCalledExactlyOnceWith('empty project')
       expect(open).toHaveBeenCalledExactlyOnceWith('/ui/?projectId=empty+project&cwd=/work/Empty+project', '_blank', 'noopener,noreferrer')
       expect(router.currentRoute.value.fullPath).toBe('/thread/selected')
-      expect(menus.isProjectMenuOpen('empty project')).toBe(false)
+      expect(menus.isProjectMenuOpen(projectGroupKey('empty project'))).toBe(false)
       expect(emit).not.toHaveBeenCalled()
     })
   }
   it('retains removal eligibility and uses the same tab behavior for threads', () => {
     const { menus, open, emit } = setup()
-    menus.onRemoveProject('empty project')
+    menus.onRemoveProject(project('empty project'))
     expect(emit).not.toHaveBeenCalled()
-    menus.toggleProjectMenu('removable')
-    menus.onRemoveProject('removable')
+    menus.toggleProjectMenu(projectGroupKey('removable'))
+    menus.onRemoveProject(project('removable'))
     expect(emit).toHaveBeenCalledExactlyOnceWith('remove-project', 'removable')
-    expect(menus.isProjectMenuOpen('removable')).toBe(false)
+    expect(menus.isProjectMenuOpen(projectGroupKey('removable'))).toBe(false)
     menus.onOpenThreadInNewTab('selected')
     expect(open).toHaveBeenCalledExactlyOnceWith('/ui/thread/selected', '_blank', 'noopener,noreferrer')
   })
+})
+
+it('starts a folder composer in either tab using only its cwd, even when a Project ID matches', async () => {
+  const { menus, open, emit, resolveNewThreadCwd, router } = setup()
+  const cwd = '/work/Project with spaces/日本語'
+  const folder: FolderGroup = { kind: 'folder', key: folderGroupKey(cwd), cwd, name: '日本語', threads: [] }
+  expect(menus.canRemoveProject(project(cwd))).toBe(true)
+  expect(menus.canRemoveProject(folder)).toBe(false)
+  menus.onRemoveProject(folder)
+  expect(emit).not.toHaveBeenCalled()
+
+  await router.push('/?cwd=/other&projectId=removable')
+  menus.onStartNewThread(folder)
+  expect(emit).toHaveBeenLastCalledWith('start-new-thread', { cwd })
+  menus.toggleProjectMenu(folder.key)
+  menus.onOpenGroupInNewTab(folder)
+  const href = open.mock.calls[0]![0] as string
+  expect(router.resolve(href.slice('/ui'.length)).query).toEqual({ cwd })
+  expect(menus.isProjectMenuOpen(folder.key)).toBe(false)
+  expect(router.currentRoute.value.query.projectId).toBe('removable')
+  expect(resolveNewThreadCwd).not.toHaveBeenCalled()
+
+  menus.onStartNewThread(project('removable'))
+  expect(emit).toHaveBeenLastCalledWith('start-new-thread', { cwd: '/work/Empty project', projectId: 'removable' })
 })

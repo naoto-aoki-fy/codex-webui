@@ -3,9 +3,10 @@ import { createRenderer, createSSRApp, getCurrentInstance, h, nextTick, reactive
 import type { Component } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import type { Thread } from '../../api/appServerDtos'
-import type { UiProjectGroup, UiThread } from '../../types/codex'
+import type { UiThread } from '../../types/codex'
 import { normalizeThreadGroupsV2 } from '../../api/normalizers/v2'
 import { filterGroupsByWorkspaceRoots } from '../../utils/desktopProjectGroups'
+import { folderGroupKey, projectGroupKey, type SidebarGroup, type ThreadViewMode } from './sidebarGroups'
 import SidebarThreadTree from './SidebarThreadTree.vue'
 import { getPinnedThreadState, getThreadSummary, setThreadPinned } from '../../api/codexGateway'
 
@@ -26,21 +27,28 @@ const renderer = createRenderer<object, object>({
 })
 
 type SidebarState = {
-  sortedGroups: UiProjectGroup[]
-  filteredGroups: UiProjectGroup[]
+  sortedGroups: SidebarGroup[]
+  filteredGroups: SidebarGroup[]
   chatSortMode: 'updated' | 'created'
   globalThreads: UiThread[]
   isChronologicalView: boolean
   isPinnedSectionExpanded: boolean
   isCollapsed(projectName: string): boolean
-  setThreadViewMode(mode: 'project' | 'chronological'): void
+  threadViewMode: ThreadViewMode
+  activeGroupKey: string | null
+  setThreadViewMode(mode: ThreadViewMode): void
   togglePinnedSection(): void
-  toggleProjectCollapse(projectName: string): void
+  toggleGroupCollapse(group: SidebarGroup): void
+  toggleGroupExpansion(groupKey: string): void
+  isExpanded(groupKey: string): boolean
+  hasHiddenThreads(group: SidebarGroup): boolean
+  visibleThreads(group: SidebarGroup): UiThread[]
+  onInlineDeleteClick(threadId: string): void
   pinStateError: string
   togglePin(threadId: string): Promise<void>
   refreshPinnedThreadState(): Promise<void>
   pinnedThreads: UiThread[]
-  unpinnedThreadsByProjectName: Map<string, UiThread[]>
+  unpinnedThreadsByGroupKey: Map<string, UiThread[]>
 }
 const cleanups: (() => void)[] = []
 afterEach(() => {
@@ -54,8 +62,8 @@ afterEach(() => {
   }
 })
 
-const row = (id: string, projectId: string, createdAt: number, updatedAt: number) =>
-  ({ id, projectId, cwd: '/shared', createdAt, updatedAt, preview: id }) as Thread
+const row = (id: string, projectId: string | null, createdAt: number, updatedAt: number, cwd = '/shared') =>
+  ({ id, projectId, cwd, createdAt, updatedAt, preview: id }) as Thread
 
 async function mountNativeSidebar() {
   vi.clearAllMocks()
@@ -69,7 +77,8 @@ async function mountNativeSidebar() {
   ] }), { projectMode: 'native', order: [], nativeProjects })
   const props = reactive({ groups, projectDisplayNameById: {}, selectedThreadId: '',
     activeProjectName: null, isLoading: false, isThreadListFullyLoaded: false,
-    searchQuery: '', searchMatchedThreadIds: null,
+    newThreadCwd: undefined as string | undefined,
+    searchQuery: '', searchMatchedThreadIds: null as string[] | null,
     // Reproduce the native parent's pre-fix input. After removal this is an inert
     // attribute; restoring the old conditional prop must fail these tests.
     nativeProjectOrder: true,
@@ -92,7 +101,8 @@ async function mountNativeSidebar() {
   return { props, state, nativeProjects }
 }
 
-const names = (groups: UiProjectGroup[]) => groups.map(group => group.projectName)
+const names = (groups: SidebarGroup[]) => groups.map(group => group.kind === 'project' ? group.projectId : group.cwd)
+const byKey = (state: SidebarState, key: string) => state.filteredGroups.find(group => group.key === key)!
 const ids = (threads: UiThread[]) => threads.map(thread => thread.id)
 
 it('keeps Projects and Threads visible with stored section collapse preferences', async () => {
@@ -130,8 +140,8 @@ it('keeps Projects and Threads visible with stored section collapse preferences'
   expect(state.isChronologicalView).toBe(false)
   expect(state.isPinnedSectionExpanded).toBe(false)
   state.togglePinnedSection()
-  state.toggleProjectCollapse('Alpha')
-  expect(state.isCollapsed('Alpha')).toBe(true)
+  state.toggleGroupCollapse(byKey(state, projectGroupKey('Alpha')))
+  expect(state.isCollapsed(projectGroupKey('Alpha'))).toBe(true)
   await nextTick()
   expect(storage.get(`${expansionKey}.pinned`)).toBe(JSON.stringify('1'))
 
@@ -144,9 +154,9 @@ it('keeps Projects and Threads visible with stored section collapse preferences'
   const { state: reloaded } = await mountNativeSidebar()
   expect(reloaded.isChronologicalView).toBe(true)
   expect(reloaded.isPinnedSectionExpanded).toBe(true)
-  expect(reloaded.isCollapsed('Alpha')).toBe(true)
-  reloaded.toggleProjectCollapse('Alpha')
-  expect(reloaded.isCollapsed('Alpha')).toBe(false)
+  expect(reloaded.isCollapsed(projectGroupKey('Alpha'))).toBe(true)
+  reloaded.toggleGroupCollapse(byKey(reloaded, projectGroupKey('Alpha')))
+  expect(reloaded.isCollapsed(projectGroupKey('Alpha'))).toBe(false)
   reloaded.setThreadViewMode('project')
   expect(reloaded.isChronologicalView).toBe(false)
   await nextTick()
@@ -159,11 +169,11 @@ it('keeps Projects and Threads visible with stored section collapse preferences'
 describe('SidebarThreadTree native project timestamp sorting', () => {
   it('sorts saved native order by member timestamps and switches modes, including pinned members', async () => {
     const { props, state, nativeProjects } = await mountNativeSidebar()
-    expect(names(props.groups)).toEqual(['Alpha', 'Empty', 'Zulu'])
+    expect(props.groups.map(group => group.projectName)).toEqual(['Alpha', 'Empty', 'Zulu'])
     expect(names(state.filteredGroups)).toEqual(['Zulu', 'Alpha', 'Empty'])
     expect(ids(state.sortedGroups[0]!.threads)).toEqual(['z-new', 'z-old'])
     expect(ids(state.pinnedThreads)).toEqual(['z-new'])
-    expect(ids(state.unpinnedThreadsByProjectName.get('Zulu')!)).toEqual(['z-old'])
+    expect(ids(state.unpinnedThreadsByGroupKey.get(projectGroupKey('Zulu'))!)).toEqual(['z-old'])
 
     state.chatSortMode = 'created'
     await nextTick()
@@ -174,7 +184,7 @@ describe('SidebarThreadTree native project timestamp sorting', () => {
     await nextTick()
     expect(names(state.filteredGroups)).toEqual(['Zulu', 'Alpha', 'Empty'])
     expect(ids(state.pinnedThreads)).toEqual(['z-new'])
-    expect(names(props.groups)).toEqual(['Alpha', 'Empty', 'Zulu'])
+    expect(props.groups.map(group => group.projectName)).toEqual(['Alpha', 'Empty', 'Zulu'])
     expect(props.groups.map(group => ids(group.threads))).toEqual([['a-new', 'a-old'], [], ['z-new', 'z-old']])
     expect(nativeProjects.map(project => project.position)).toEqual([0, 1, 2])
     expect(getPinnedThreadState).toHaveBeenCalledTimes(1)
@@ -220,4 +230,140 @@ it('keeps native conversations accessible and existing pins intact when pin load
   expect(setThreadPinned).not.toHaveBeenCalled()
   await state.refreshPinnedThreadState()
   expect(state.pinStateError).toBe('')
+})
+
+it('persists folder mode and isolates collapse and Show more from a matching native Project ID', async () => {
+  const modeKey = 'codex-web-local.thread-view-mode.v1'
+  const cwd = '/shared'
+  const folderKey = folderGroupKey(cwd)
+  const projectKey = projectGroupKey(folderKey)
+  const storage = new Map([
+    [modeKey, 'project'],
+    ['codex-web-local.collapsed-projects.v1', JSON.stringify({ [folderKey]: true })],
+  ])
+  const listeners = new Set<(event: { key: string }) => void>()
+  vi.stubGlobal('window', {
+    addEventListener: (type: string, listener: (event: { key: string }) => void) => {
+      if (type === 'storage') listeners.add(listener)
+    },
+    removeEventListener: () => {},
+    localStorage: {
+      get length() { return storage.size },
+      key: (index: number) => [...storage.keys()][index] ?? null,
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+    },
+  })
+  vi.stubGlobal('ResizeObserver', class {})
+
+  const { props, state } = await mountNativeSidebar()
+  props.groups.push({ projectName: folderKey, threads: [] })
+  expect(state.threadViewMode).toBe('project')
+  expect(byKey(state, projectKey)).toBeDefined()
+  expect(state.isCollapsed(projectKey)).toBe(true)
+  state.setThreadViewMode('folder')
+  expect(state.isCollapsed(folderKey)).toBe(false)
+  state.toggleGroupExpansion(folderKey)
+  state.toggleGroupCollapse(byKey(state, folderKey))
+  await nextTick()
+  expect(storage.get(modeKey)).toBe('folder')
+
+  const { state: reloaded } = await mountNativeSidebar()
+  expect(reloaded.threadViewMode).toBe('folder')
+  expect(reloaded.isCollapsed(folderKey)).toBe(true)
+  expect(reloaded.isCollapsed(projectKey)).toBe(true)
+  reloaded.toggleGroupCollapse(byKey(reloaded, folderKey))
+  expect(reloaded.isCollapsed(projectKey)).toBe(true)
+
+  state.setThreadViewMode('chronological')
+  expect(ids(state.globalThreads)).toEqual(['z-old', 'a-new', 'a-old'])
+  state.setThreadViewMode('project')
+  expect(byKey(state, projectGroupKey('Empty'))).toBeDefined()
+  expect(state.isExpanded(projectKey)).toBe(false)
+  state.setThreadViewMode('folder')
+  expect(state.isExpanded(folderKey)).toBe(true)
+  props.groups.push(...normalizeThreadGroupsV2({ data: [
+    row('same-basename', null, 1, 1, '/other/shared'), row('empty-cwd', null, 1, 1, ''),
+  ] }))
+  props.newThreadCwd = '/other/shared/'
+  await nextTick()
+  const html = await renderToString(createSSRApp(SidebarThreadTree, props))
+  expect(html).toMatch(/aria-level="2"[^>]*>Folders<\/span>/)
+  expect(html).toMatch(/title="\/other\/shared"[^>]*>\/other\/shared<\/span>/)
+  expect(html).toMatch(/title="\/shared"[^>]*>\/shared<\/span>/)
+  expect(html).toMatch(/data-folder-path="\/other\/shared"[^>]*><div[^>]*data-active="true"/)
+  expect(html.match(/data-folder-path=""[\s\S]*?<\/article>/)?.[0]).toContain('No working directory')
+  expect(html.match(/data-folder-path=""[\s\S]*?<\/article>/)?.[0]).not.toContain('thread-start-button')
+
+  storage.set(modeKey, 'chronological')
+  for (const listener of listeners) listener({ key: modeKey })
+  expect(state.threadViewMode).toBe('chronological')
+  storage.set(modeKey, 'folder')
+  for (const listener of listeners) listener({ key: modeKey })
+  expect(state.threadViewMode).toBe('folder')
+})
+
+it('keeps folder rows current with selection, sort, search, pins, pagination and reconciliation', async () => {
+  const { props, state } = await mountNativeSidebar()
+  state.setThreadViewMode('folder')
+  const shared = folderGroupKey('/shared')
+  const other = folderGroupKey('/other/shared')
+  const sharedRows = () => ids(state.visibleThreads(byKey(state, shared)))
+  expect(names(state.filteredGroups)).toEqual(['/shared'])
+  expect(sharedRows()).toEqual(['z-old', 'a-new', 'a-old'])
+  expect(ids(state.pinnedThreads)).toEqual(['z-new'])
+  await state.togglePin('a-old')
+  expect(setThreadPinned).toHaveBeenCalledExactlyOnceWith('a-old', true, 'z-new')
+  expect(sharedRows()).toEqual(['z-old', 'a-new'])
+  expect(ids(state.pinnedThreads)).toEqual(['a-old', 'z-new'])
+  await state.togglePin('a-old')
+  expect(setThreadPinned).toHaveBeenLastCalledWith('a-old', false, 'a-old')
+  state.chatSortMode = 'created'
+  expect(sharedRows()).toEqual(['a-new', 'z-old', 'a-old'])
+
+  props.selectedThreadId = 'z-new'
+  await nextTick()
+  expect(state.activeGroupKey).toBe(shared)
+  props.newThreadCwd = '/other/shared/'
+  await nextTick()
+  expect(state.activeGroupKey).toBe(other)
+
+  // A server search can surface an unloaded row, even if its preview does not match.
+  const page = normalizeThreadGroupsV2({ data: [
+    row('server-hit', null, 100, 100, '/other/shared'),
+    ...Array.from({ length: 10 }, (_, index) => row(`page-${index}`, null, 5, 5)),
+  ] })
+  props.groups.push(...page)
+  expect(state.hasHiddenThreads(byKey(state, shared))).toBe(true)
+  expect(sharedRows()).toHaveLength(10)
+  state.toggleGroupExpansion(shared)
+  expect(sharedRows()).toHaveLength(13)
+
+  props.searchQuery = 'does not occur in previews'
+  props.searchMatchedThreadIds = ['server-hit', 'page-2']
+  await nextTick()
+  state.toggleGroupCollapse(byKey(state, shared))
+  expect(sharedRows()).toEqual(['page-2'])
+  expect(ids(state.visibleThreads(byKey(state, other)))).toEqual(['server-hit'])
+  expect(state.pinnedThreads).toEqual([])
+
+  props.searchMatchedThreadIds = null
+  props.searchQuery = ''
+  await nextTick()
+  state.toggleGroupCollapse(byKey(state, shared))
+  // The new-thread adapter publishes a cwd immediately, then replaces its summary.
+  const pending = normalizeThreadGroupsV2({ data: [row('new', null, 200, 200, '/shared/')] })
+  const unassigned = props.groups.find(group => group.projectName === pending[0]!.projectName)!
+  unassigned.threads.push(pending[0]!.threads[0]!)
+  expect(sharedRows()[0]).toBe('new')
+  unassigned.threads.pop()
+  props.groups.find(group => group.projectName === 'Zulu')!.threads.push(
+    normalizeThreadGroupsV2({ data: [row('new', 'Zulu', 200, 210, '/shared')] })[0]!.threads[0]!,
+  )
+  expect(sharedRows().filter(id => id === 'new')).toEqual(['new'])
+  state.onInlineDeleteClick('new')
+  state.onInlineDeleteClick('new')
+  expect(sharedRows()).not.toContain('new')
+  expect(getPinnedThreadState).toHaveBeenCalledTimes(1)
+  expect(getThreadSummary).not.toHaveBeenCalled()
 })

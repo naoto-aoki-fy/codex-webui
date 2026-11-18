@@ -1,14 +1,15 @@
 import type { UiProjectGroup, UiThread } from '../../types/codex'
+import type { SidebarGroup } from './sidebarGroups'
 
 export function filterSidebarGroups(
-  groups: UiProjectGroup[],
+  groups: SidebarGroup[],
   matches: (thread: UiThread) => boolean,
   searchActive: boolean,
-  activeProjectName: string | null,
-): UiProjectGroup[] {
+  activeGroupKey: string | null,
+): SidebarGroup[] {
   return groups.flatMap((group) => {
     const threads = group.threads.filter(matches)
-    if (threads.length > 0 || (searchActive && group.projectName === activeProjectName)
+    if (threads.length > 0 || (searchActive && group.key === activeGroupKey)
       || (!searchActive && group.threads.length === 0)) return [{ ...group, threads }]
     return []
   })
