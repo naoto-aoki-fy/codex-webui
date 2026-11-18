@@ -79,11 +79,6 @@ import CuratedPlugins from './CuratedPlugins.vue'
 import McpConfiguration from './McpConfiguration.vue'
 const props = defineProps<{ epoch?: number }>()
 
-
-const emit = defineEmits<{
-  'skills-changed': []
-}>()
-
 const methodSet = ref<Set<string>>(new Set())
 const methodsLoaded = ref(false)
 const mcpServers = ref<DirectoryMcpServerStatus[]>([])

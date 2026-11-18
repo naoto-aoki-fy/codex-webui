@@ -133,7 +133,7 @@
           </template>
           <div v-else class="thread-composer-file-mention-empty">{{ ('No matching files') }}</div>
         </div>
-        <div v-if="skillQuery !== null && skillSuggestions.length > 0" class="thread-composer-file-mentions thread-composer-slash-mentions">
+        <div v-if="skillQuery !== null && skillSuggestions.length > 0" class="thread-composer-file-mentions thread-composer-skill-mentions">
           <button v-for="(item, index) in skillSuggestions" :key="item.skill.path"
             class="thread-composer-file-mention-row" :class="{ 'is-active': index === skillIndex }"
             type="button" @mousedown.prevent="applySkillSuggestion(item)">
@@ -393,7 +393,7 @@ import { createComposerInput } from './composerInput'
 import { createComposerSettings } from './composerSettings'
 import { createComposerAttachments } from './composerAttachments'
 
-import { loadPersistedDraftForThread, persistDraftForThread, draftStorageError, archiveDraftBeforeRecovery, type FileAttachment, type ComposerDraftPayload } from '../../utils/composerDraftStorage'
+import { loadPersistedDraftForThread, persistDraftForThread, draftStorageError, archiveDraftBeforeRecovery, type ComposerDraftPayload } from '../../utils/composerDraftStorage'
 import { reasoningCatalog } from '../../api/codexGateway'
 import { parseModelSelection, defaultModelForProvider, modelSelectionKey } from '../../api/modelCapabilities'
 
@@ -453,27 +453,19 @@ const {
   fileMentionHighlightedIndex,
   isComposerExpanded,
   isComposerCollapsed,
-  fileMentionDebounceTimer,
   canSubmit,
-  hasUnsavedDraft,
   isInteractionDisabled,
   placeholderText,
   hasSubmitContent,
   hasExpandedComposerToggle,
   onSubmit,
-  replaceDraftState,
-  clearDraftState,
-  getCurrentDraftPayload,
   onInterrupt,
   queueComposerOverflowMeasurement,
   toggleComposerExpanded,
   onInputChange,
   onInputKeydown,
   closeFileMention,
-  queueFileMentionSearch,
   applyFileMention,
-  hydrateDraft,
-  appendTextToDraft,
   getMentionFileName,
   getMentionDirName,
   getMentionBadgeText,
@@ -492,21 +484,15 @@ const attachments = createComposerAttachments({
 const {
   selectedImages,
   fileAttachments,
-  pendingAttachmentCount,
-  attachmentBatchStats,
   isDragActive,
   photoLibraryInputRef,
-  attachmentSessionToken,
   removeImage,
   removeFileAttachment,
-  addFileAttachment,
-  attachIncomingFiles,
   onPhotoLibraryChange,
   onInputDragEnter,
   onInputDragOver,
   onInputDragLeave,
   onInputDrop,
-  onWindowDragCleanup,
   onInputPaste,
 } = attachments
 
@@ -524,7 +510,6 @@ const {
   modelOptions,
   displayedModel,
   isPlanModeSelected,
-  isPlanModeWaitingForModel,
   selectedSkillPaths,
   skillDropdownOptions,
   isComposerConfigDisabled,

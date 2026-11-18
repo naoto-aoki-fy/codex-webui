@@ -79,7 +79,7 @@ type CurrentModelConfig = {
   speedMode: SpeedMode
 }
 
-export type DirectoryMcpLoginResult = {
+type DirectoryMcpLoginResult = {
   authorizationUrl: string
 }
 
@@ -101,7 +101,7 @@ const DEFAULT_COLLABORATION_MODE_OPTIONS: CollaborationModeOption[] = [
 
 
 
-export type ThreadSearchResult = {
+type ThreadSearchResult = {
   threadIds: string[]
   groups: UiProjectGroup[]
 }
@@ -148,12 +148,12 @@ function normalizeSpeedMode(value: unknown): SpeedMode {
 const INITIAL_THREAD_LIST_LIMIT = 50
 const BACKGROUND_THREAD_LIST_LIMIT = 100
 
-export type ThreadGroupsPage = {
+type ThreadGroupsPage = {
   groups: UiProjectGroup[]
   nextCursor: string | null
 }
 
-export type ThreadTurnPage = {
+type ThreadTurnPage = {
   messages: UiMessage[]
   inProgress: boolean
   activeTurnId: string
@@ -461,14 +461,14 @@ export async function revertThreadHistory(threadId: string, beforeTurnId: string
   invalidateResumeThread(threadId)
 }
 
-export type StartedThread = {
+type StartedThread = {
   projectId?: string | null
   threadId: string
   model: string
   modelProvider: string
 }
 
-export type ForkedThread = {
+type ForkedThread = {
   projectId?: string | null
   threadId: string
   cwd: string
@@ -580,10 +580,10 @@ export async function forkThread(
     if (typeof cwd === 'string' && cwd.trim().length > 0) {
       params.cwd = cwd.trim()
     }
-    if (typeof model === 'string' && model.trim().length > 0) {
-      params.model = parseModelSelection(model.trim()).model
-      const provider = parseModelSelection(model.trim()).provider
-      if (provider) params.modelProvider = provider
+    if (typeof model === 'string' && model.trim()) {
+      const selection = parseModelSelection(model.trim())
+      params.model = selection.model
+      if (selection.provider) params.modelProvider = selection.provider
     }
     const payload = await callRpc<ThreadForkResponse>('thread/fork', params)
     const nextThreadId = normalizeThreadIdFromPayload(payload)
@@ -1160,7 +1160,7 @@ function getErrorMessageFromPayload(payload: unknown, fallback: string): string 
   return typeof error === 'string' && error.trim().length > 0 ? error : fallback
 }
 
-export type ThreadPinnedState = { threadIds: string[] }
+type ThreadPinnedState = { threadIds: string[] }
 
 export async function getPinnedThreadState(): Promise<ThreadPinnedState> {
   const response = await fetch('/codex-api/thread-pins')

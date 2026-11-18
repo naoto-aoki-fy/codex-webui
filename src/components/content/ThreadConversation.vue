@@ -843,8 +843,6 @@ import ForkSplitButton from './ForkSplitButton.vue'
 import type { ForkMethod } from '../../types/codex'
 import IconTablerX from '../icons/IconTablerX.vue'
 
-type HighlightJsModule = (typeof import('highlight.js/lib/common'))['default']
-
 const expandedCommandIds = ref<Set<string>>(new Set())
 const collapsedAutoCommandIds = ref<Set<string>>(new Set())
 const expandedCommandGroupIds = ref<Set<string>>(new Set())
@@ -1109,33 +1107,19 @@ const viewport = createConversationViewport({
 const {
   conversationListRef,
   bottomAnchorRef,
-  autoFollowOutput,
-  conversationScrollFrame,
-  bottomLockFrame,
-  conversationUnmounted,
-  threadGeneration,
-  isCurrentThreadGeneration,
-  RENDER_WINDOW_SIZE,
-  renderWindowStart,
   isLoadingMore,
   visibleMessages,
   hasMoreAbove,
   showJumpToLatestButton,
   resetMessageNavigation,
-  onMessageNavigationKeydown,
-  enforceBottomState,
-  scheduleBottomLock,
   jumpToLatest,
   loadMoreAbove,
-  bindPendingImageHandlers,
-  scheduleConversationScroll,
-  invalidateThreadWork,
   onConversationScroll,
 } = viewport
 
 const modalImageUrl = ref('')
 const actions = createConversationActions({
-  get threadGeneration() { return viewport.threadGeneration; }, set threadGeneration(value) { viewport.threadGeneration = value; },
+  get threadGeneration() { return viewport.threadGeneration; },
   get readPlan() { return readPlan; },
   get isCurrentThreadGeneration() { return viewport.isCurrentThreadGeneration; },
   get props() { return props; },
@@ -1147,9 +1131,6 @@ const {
   copiedResponseAnchorId,
   copiedUserMessageId,
   copiedPlanId,
-  copiedMessageResetTimer,
-  copiedUserMessageResetTimer,
-  copiedPlanResetTimer,
   copyPlan,
   forkableTurnIndexByAnchorId,
   showCopyResponseButton,
@@ -1165,70 +1146,17 @@ const markdown = createConversationMarkdown({
   get props() { return props; }
 })
 const {
-  CODE_LANGUAGE_ALIASES,
-  highlightJsModule,
   highlightCacheVersion,
   markdownImageFailureVersion,
-  messageBlockCache,
-  inlineSegmentCache,
-  markdownHtmlCache,
-  highlightHtmlCache,
-  ensureHighlightJsLoaded,
   headingTag,
   headingClass,
   getInlineSegments,
   toBrowseUrl,
-  parseMessageBlocks,
   getMessageBlocks,
   renderCachedHighlightedCodeAsHtml,
   renderListItemContentAsHtml,
   renderMarkdownBlocksAsHtml,
-  clearRenderCaches,
 } = markdown
-
-type InlineSegment =
-  | { kind: 'text'; value: string }
-  | { kind: 'bold'; value: string }
-  | { kind: 'italic'; value: string }
-  | { kind: 'strikethrough'; value: string }
-  | { kind: 'code'; value: string }
-  | { kind: 'url'; value: string; href: string }
-  | { kind: 'file'; value: string; path: string; displayPath: string; downloadName: string }
-type TaskListItem = {
-  text: string
-  checked: boolean
-}
-type TableAlignment = 'left' | 'center' | 'right' | null
-type ListItem = {
-  paragraphs: string[]
-  children?: MessageBlock[]
-}
-type MessageBlock =
-  | { kind: 'paragraph'; value: string }
-  | { kind: 'heading'; level: number; value: string }
-  | { kind: 'blockquote'; value: string }
-  | { kind: 'unorderedList'; items: ListItem[] }
-  | { kind: 'taskList'; items: TaskListItem[] }
-  | { kind: 'orderedList'; items: ListItem[]; start: number }
-  | { kind: 'table'; headers: string[]; rows: string[][]; alignments: TableAlignment[] }
-  | { kind: 'codeBlock'; language: string; value: string }
-  | { kind: 'thematicBreak' }
-  | { kind: 'image'; url: string; alt: string; markdown: string }
-
-// A generation also invalidates work across rapid A → B → A switches.
-
-type MessageBlockCacheEntry = {
-  text: string
-  cwd: string
-  blocks: MessageBlock[]
-}
-
-type MarkdownHtmlCacheEntry = {
-  text: string
-  cwd: string
-  highlightVersion: number
-  html: string
-}
 
 const conversationPlans = computed(() => indexConversationPlans(props.messages))
 
@@ -1281,7 +1209,7 @@ const activeDiffViewerChange = computed<UiFileChange | null>(() => {
 function inferDiffViewerLanguage(change: UiFileChange): string {
   const targetPath = change.movedToPath || change.path
   const extension = targetPath.split('.').pop()?.toLowerCase() ?? ''
-  return markdown.CODE_LANGUAGE_ALIASES[extension] ?? extension ?? ''
+  return markdown.CODE_LANGUAGE_ALIASES[extension] ?? extension
 }
 
 const fileLinkContextMenuStyle = computed(() => ({
@@ -1529,14 +1457,6 @@ onBeforeUnmount(() => {
     actions.copiedUserMessageResetTimer = null
   }
   markdown.clearRenderCaches()
-  if (viewport.conversationScrollFrame) {
-    cancelAnimationFrame(viewport.conversationScrollFrame)
-    viewport.conversationScrollFrame = 0
-  }
-  if (viewport.bottomLockFrame) {
-    cancelAnimationFrame(viewport.bottomLockFrame)
-    viewport.bottomLockFrame = 0
-  }
   if (actions.copiedMessageResetTimer) {
     clearTimeout(actions.copiedMessageResetTimer)
     actions.copiedMessageResetTimer = null
@@ -1585,10 +1505,6 @@ onBeforeUnmount(() => {
 
 .conversation-item {
   @apply m-0 w-full min-w-0 flex;
-}
-
-.conversation-item-request {
-  @apply justify-center;
 }
 
 .conversation-item-overlay {

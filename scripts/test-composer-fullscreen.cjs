@@ -82,7 +82,7 @@ async function withinViewport(locator, viewport) {
         await withinViewport(page.locator('.composer-apps-popover'), viewport)
         await page.getByRole('button', { name:'Close Apps', exact:true }).click()
         await input.fill(longDraft + '/fullscreen')
-        await withinViewport(page.locator('.thread-composer-slash-mentions'), viewport)
+        await withinViewport(page.locator('.thread-composer-skill-mentions'), viewport)
         await page.keyboard.press('Escape')
         await input.fill(longDraft)
         // Drag/drop handlers remain attached to the same writing surface.

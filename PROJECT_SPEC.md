@@ -56,7 +56,7 @@ and bundled method metadata do not guarantee UI support or live server capabilit
 | Removed | OpenRouter/Zen/custom provider proxies, local Codex process management and automatic authentication |
 | Removed | Automation management, deferred prompt queue, built-in tunnels, Open Terminal action, ZIP import/export, external skill catalog/install UI, Telegram integration |
 | Implemented | Idle-only native inline code review and manual context compaction, with observed lifecycle outcomes |
-| Implemented | Collapsed MCP/Web search execution details, remote working-tree snapshots and bounded lazy patches, native background-process list/exact termination |
+| Implemented | Collapsed MCP/Web search execution details, per-turn file-change diffs, native background-process list/exact termination |
 | Implemented | Native structured App references, thread goals, plan mode and installed-skill completion |
 | Removed | WebUI text presets and recent submitted prompts, Markdown conversation downloads, custom worktree creation, the standalone Git working-tree panel and WebUI slash-command aliases |
 | Partial | Native memory readiness/selected summary; base-user MCP enablement scalar editing; vertical-only curated plugin browser; Remote Control status/registered clients |

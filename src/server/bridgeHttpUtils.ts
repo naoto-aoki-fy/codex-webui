@@ -47,12 +47,6 @@ export function isThreadNotFoundError(error: unknown): boolean {
   return message.includes('thread not found') || message.includes('no rollout found for thread id')
 }
 
-export function getErrorCode(error: unknown): string | null {
-  return typeof error === 'object' && error !== null && 'code' in error
-    ? String((error as { code?: unknown }).code ?? '')
-    : null
-}
-
 export function setJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode
   res.setHeader('Content-Type', 'application/json; charset=utf-8')

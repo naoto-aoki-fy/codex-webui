@@ -1,4 +1,3 @@
-import {rpcCall} from './codexRpcClient'
 import {buildTurnInput} from './turnInput'
 import {nativeAppInputs} from './apps'
 import type {SubmitPayload} from '../components/content/composerContracts'
@@ -24,4 +23,3 @@ export function queuePage(value:unknown){const page=value as {data?:unknown[];ne
  return {rows,cursor:typeof page.nextCursor==='string'?page.nextCursor:null}
 }
 export function queuedInput(payload:SubmitPayload){const {input}=buildTurnInput(payload.text,payload.imageUrls,payload.skills,payload.fileAttachments);if(payload.apps?.length)input.push(...nativeAppInputs(payload.apps));return input}
-export async function readQueue(threadId:string,cursor?:string){return queuePage(await rpcCall('thread/queue/list',{threadId,limit:20,...(cursor?{cursor}:{})}))}

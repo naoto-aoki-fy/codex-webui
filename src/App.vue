@@ -363,7 +363,7 @@
               </div>
         </section>
         <section v-if="connectorsLoaded" v-show="settingsCategory==='Apps / Connectors'" aria-label="Apps / Connectors">
-          <SkillsMcpHub :epoch="operationEpoch" @skills-changed="onSkillsChanged" />
+          <SkillsMcpHub :epoch="operationEpoch" />
         </section>
         <ArchivedThreads v-show="settingsCategory==='Archived conversations'"
           :active="isSettingsOpen && settingsCategory==='Archived conversations'"
@@ -493,7 +493,6 @@ const {
   selectedThreadId,
   availableCollaborationModes,
   availableModelIds,
-  selectedModelId,
   selectedSpeedMode,
   installedSkills,
   accountRateLimitSnapshots,
@@ -584,12 +583,6 @@ const routing = createAppRouteCoordinator({
   get router() { return router; },
   get scheduleMobileConversationJumpToLatest() { return scheduleMobileConversationJumpToLatest; }
 })
-const {
-  isRouteSyncInProgress,
-  syncThreadSelectionWithRoute,
-  submitFirstMessageForNewThread,
-} = routing
-
 const hasInitialized = ref(false)
 const newThreadCwd = ref('')
 const newThreadFolderName = computed(() => getChatFolderName(newThreadCwd.value))
@@ -968,12 +961,6 @@ function onSelectThread(threadId: string): void {
   if (isMobile.value) setSidebarCollapsed(true)
 }
 
-async function onCopyThreadChat(threadId: string): Promise<void> {
-  if (!threadId) return
-  if (selectedThreadId.value !== threadId) return
-  await copySelectedThreadChat()
-}
-
 function onArchiveThread(threadId: string): void {
   void archiveThreadById(threadId)
 }
@@ -1136,8 +1123,7 @@ async function openNativeQueue() {
   const ownerThread=selectedThreadId.value,ownerEpoch=operationEpoch.value
   openConversationTools()
   await import('./components/content/ConversationTools.vue')
-  await nextTick()
-  await new Promise<void>(resolve=>window.requestAnimationFrame(()=>resolve()))
+  await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()))
   if(selectedThreadId.value!==ownerThread||operationEpoch.value!==ownerEpoch)return
   const panel = document.getElementById('native-prompt-queue') as HTMLDetailsElement | null
   if (panel) { panel.open = true; panel.scrollIntoView({ block: 'nearest' }) }
@@ -1310,17 +1296,17 @@ async function onRollback(payload: { threadId: string; turnId: string; operation
   }
 }
 
-function onImplementPlan(payload: { turnId: string }): void {
+function onImplementPlan(): void {
   if (isHomeRoute.value || !selectedThreadId.value) return
   setSelectedCollaborationMode('default')
   scheduleMobileConversationJumpToLatest()
   void sendMessageToSelectedThread('Implement', [], [], [], 'default')
 }
 
-async function copySelectedThreadChat(): Promise<void> {
-  if (isHomeRoute.value || isSkillsRoute.value) return
-  if (!selectedThread.value || filteredMessages.value.length === 0) return
-  const markdown = buildThreadMarkdown()
+async function onCopyThreadChat(threadId: string): Promise<void> {
+  const thread = selectedThread.value
+  if (isHomeRoute.value || isSkillsRoute.value || !thread || thread.id !== threadId || filteredMessages.value.length === 0) return
+  const markdown = buildThreadMarkdown(thread.title, thread.id)
   try {
     await copyTextToClipboard(markdown)
   } catch {
@@ -1328,13 +1314,13 @@ async function copySelectedThreadChat(): Promise<void> {
   }
 }
 
-function buildThreadMarkdown(): string {
+function buildThreadMarkdown(title: string, threadId: string): string {
   const lines: string[] = []
-  const threadTitle = selectedThread.value?.title?.trim() || 'Untitled thread'
+  const threadTitle = title.trim() || 'Untitled thread'
   lines.push(`# ${escapeMarkdownText(threadTitle)}`)
   lines.push('')
   lines.push(`- Exported: ${new Date().toISOString()}`)
-  lines.push(`- Thread ID: ${selectedThread.value?.id ?? ''}`)
+  lines.push(`- Thread ID: ${threadId}`)
   lines.push('')
   lines.push('---')
   lines.push('')
@@ -1650,34 +1636,6 @@ async function onLogoutCodex(): Promise<void> {
   @apply w-3.5 h-3.5;
 }
 
-.sidebar-skills-link {
-  @apply mx-2 flex items-center gap-3 rounded-2xl border border-transparent bg-transparent px-3 py-2.5 text-left text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 cursor-pointer;
-}
-
-.sidebar-skills-link.is-active {
-  @apply border-transparent bg-zinc-100 text-zinc-950;
-}
-
-.sidebar-skills-link-icon {
-  @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white;
-}
-
-.sidebar-skills-link-icon :deep(svg) {
-  @apply h-5 w-5;
-}
-
-.sidebar-skills-link-copy {
-  @apply flex min-w-0 flex-col;
-}
-
-.sidebar-skills-link-title {
-  @apply truncate text-sm font-semibold leading-5 tracking-[-0.01em];
-}
-
-.sidebar-skills-link-subtitle {
-  @apply truncate text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500;
-}
-
 .sidebar-thread-controls-header-host {
   @apply ml-1;
 }
@@ -1688,14 +1646,6 @@ async function onLogoutCodex(): Promise<void> {
 
 .skills-route-header-icon :deep(svg) {
   @apply h-4.5 w-4.5;
-}
-
-:global(:root.dark) .sidebar-skills-link-title {
-  @apply text-zinc-50;
-}
-
-:global(:root.dark) .sidebar-skills-link-subtitle {
-  @apply text-zinc-400;
 }
 
 .content-body {
@@ -1721,10 +1671,6 @@ async function onLogoutCodex(): Promise<void> {
 
 .content-root.is-virtual-keyboard-open .content-keyboard-spacer {
   display: none;
-}
-
-.content-error {
-  @apply m-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700;
 }
 
 .content-grid {
@@ -1826,45 +1772,6 @@ async function onLogoutCodex(): Promise<void> {
 
 .sidebar-settings-icon {
   @apply w-4.5 h-4.5;
-}
-
-.sidebar-settings-panel {
-  @apply mb-1 max-h-[min(70vh,36rem)] overflow-y-auto rounded-lg border border-zinc-200 bg-white;
-}
-
-.sidebar-settings-row {
-  @apply flex items-center justify-between w-full px-3 py-2.5 text-sm text-zinc-700 border-0 bg-transparent transition hover:bg-zinc-50 cursor-pointer;
-}
-
-.sidebar-settings-panel :deep(.sidebar-settings-row + .sidebar-settings-row) {
-  @apply border-t border-zinc-100;
-}
-
-.sidebar-settings-label {
-  @apply text-left;
-}
-
-.sidebar-settings-value {
-  @apply text-xs text-zinc-500 bg-zinc-100 rounded px-1.5 py-0.5;
-}
-
-.sidebar-settings-row--input {
-  @apply flex flex-col gap-1 py-1.5;
-}
-
-.sidebar-settings-error {
-  @apply text-xs text-red-600 bg-red-50 rounded px-2 py-1.5 break-words;
-}
-
-.settings-panel-enter-active,
-.settings-panel-leave-active {
-  transition: all 150ms ease;
-}
-
-.settings-panel-enter-from,
-.settings-panel-leave-to {
-  opacity: 0;
-  transform: translateY(8px);
 }
 
 .thread-context-summary {

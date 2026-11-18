@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { describe, expect, it, vi } from 'vitest'
-import { asRecord, getErrorCode, getErrorMessage, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError, isUnauthenticatedRateLimitError, readJsonBody, readRawBody, setJson } from './bridgeHttpUtils'
+import { asRecord, getErrorMessage, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError, isUnauthenticatedRateLimitError, readJsonBody, readRawBody, setJson } from './bridgeHttpUtils'
 
 const request = (chunks: Array<string | Buffer>) => Readable.from(chunks) as unknown as IncomingMessage
 
@@ -46,13 +46,10 @@ describe('bridge error extraction', () => {
   ])('preserves message precedence for %j', (payload, expected) => {
     expect(getErrorMessage(payload, 'fallback')).toBe(expected)
   })
-  it('preserves record and error-code normalization contracts', () => {
+  it('returns the same record and rejects arrays', () => {
     expect(asRecord([])).toBeNull()
     const value = { code: 42 }
     expect(asRecord(value)).toBe(value)
-    expect(getErrorCode(value)).toBe('42')
-    expect(getErrorCode({ code: null })).toBe('')
-    expect(getErrorCode({})).toBeNull()
   })
   it.each([
     [isUnauthenticatedRateLimitError, 'AUTHENTICATION REQUIRED to read RATE LIMITS', 'authentication required'],

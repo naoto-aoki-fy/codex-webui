@@ -392,30 +392,16 @@ const threads = createSidebarThreads({
   get isCollapsed() { return isCollapsed; }
 })
 const {
-  hasLoadedPinnedThreadState,
-  pinnedThreadIds,
-  optimisticallyArchivedThreadIds,
   chatSortMode,
-  sortedGroups,
   threadViewMode,
   isFolderView,
   activeGroupKey,
   isSearchActive,
-  pinnedThreadIdSet,
-  optimisticallyArchivedThreadIdSet,
   filteredGroups,
   isChronologicalView,
   globalThreads,
-  threadById,
-  hydrateMissingPinnedThreads,
   pinStateError,
-  refreshPinnedThreadState,
-  unsubscribeSections,
-  threadGroupKeyById,
-  unpinnedThreadsByGroupKey,
-  threadTimestampById,
   pinnedThreads,
-  togglePin,
   isExpanded,
   toggleGroupExpansion,
   visibleThreads,
@@ -432,8 +418,6 @@ const menus = createSidebarMenus({
   get router() { return router; }
 })
 const {
-  openProjectMenuId,
-  openThreadMenuId,
   projectMenuDirectionById,
   openThreadMenuStyle,
   renameThreadDialogVisible,
@@ -441,7 +425,6 @@ const {
   renameThreadInputRef,
   deleteThreadDialogVisible,
   deleteThreadTitle,
-  projectMenuWrapElementByName,
   organizeMenuWrapRef,
   openThreadMenuPanelRef,
   isOrganizeMenuOpen,
@@ -476,12 +459,6 @@ const {
   setProjectMenuWrapRef,
   setThreadMenuWrapRef,
   getThreadMenuDirection,
-  updateOpenThreadMenuPlacement,
-  bindThreadMenuPositionListeners,
-  unbindThreadMenuPositionListeners,
-  bindProjectMenuDismissListeners,
-  unbindProjectMenuDismissListeners,
-  hasOpenDismissableMenu,
 } = menus
 
 const groupsContainerRef = ref<HTMLElement | null>(null)
@@ -829,10 +806,6 @@ onBeforeUnmount(() => {
 
 .organize-menu-title {
   @apply px-2 py-1 text-xs text-zinc-500;
-}
-
-.organize-menu-separator {
-  @apply my-1 h-px bg-zinc-200;
 }
 
 .organize-menu-item {

@@ -12,7 +12,11 @@ queue, paid turn or real conversation mutation is required by automation.
 2. Select **+ → Send mode → Queue mode**. A read-only readiness check runs;
    detailed management stays closed. Inspect it through the header tools menu.
    Unsupported/error responses disable queue submission without falling back to
-   a chat send. The draft stays editable.
+   a chat send. The draft stays editable. In a fresh fixture page, make the queue
+   read fail, then click **Inspect native prompt queue** under the composer.
+   Conversation tools opens with the queue disclosure expanded and scrolled into
+   view. One read-only refresh is issued. Close the dialog and repeat with the
+   tools already loaded. Restore the fixture response before continuing.
 3. Submit a synthetic prompt. Check the native client message/queue IDs and
    acceptance. Native settings apply when the queued prompt executes. Verify
    attachments, Skills and Apps retain their normal structured input forms.

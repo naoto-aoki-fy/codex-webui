@@ -2,7 +2,7 @@ import type { ComputedRef, Ref } from 'vue';
 import { ref } from 'vue';
 import { uploadFile } from '../../api/codexGateway';
 import { type FileAttachment } from '../../utils/composerDraftStorage';
-import type { AttachmentBatchStats, SelectedImage } from "./composerContracts";
+import type { SelectedImage } from "./composerContracts";
 /** Owns upload sessions, pending counts, selected files/images and drag depth. Input coordinates full draft replacement via the exposed refs/session token; component hooks bind and remove the three drag-cleanup listeners. */
 export function createComposerAttachments(deps: {
     isAttachMenuOpen: Ref<boolean, boolean>;
@@ -12,7 +12,6 @@ export function createComposerAttachments(deps: {
     const selectedImages = ref<SelectedImage[]>([]);
     const fileAttachments = ref<FileAttachment[]>([]);
     const pendingAttachmentCount = ref(0);
-    const attachmentBatchStats = ref<AttachmentBatchStats | null>(null);
     const isDragActive = ref(false);
     const photoLibraryInputRef = ref<HTMLInputElement | null>(null);
     let dragDepth = 0;
@@ -52,30 +51,6 @@ export function createComposerAttachments(deps: {
             return;
         pendingAttachmentCount.value = Math.max(0, pendingAttachmentCount.value - 1);
     }
-    function beginAttachmentBatch(total: number): void {
-        if (total <= 0)
-            return;
-        const current = attachmentBatchStats.value;
-        const completed = current ? current.succeeded + current.failed : 0;
-        if (!current || completed >= current.total) {
-            attachmentBatchStats.value = { total, succeeded: 0, failed: 0 };
-            return;
-        }
-        attachmentBatchStats.value = {
-            ...current,
-            total: current.total + total,
-        };
-    }
-    function recordAttachmentBatchResult(result: 'success' | 'failure'): void {
-        const current = attachmentBatchStats.value;
-        if (!current)
-            return;
-        attachmentBatchStats.value = {
-            ...current,
-            succeeded: current.succeeded + (result === 'success' ? 1 : 0),
-            failed: current.failed + (result === 'failure' ? 1 : 0),
-        };
-    }
     function createAttachmentId(): string {
         return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     }
@@ -102,55 +77,31 @@ export function createComposerAttachments(deps: {
             lastModified: Date.now(),
         });
     }
-    async function attachImageFile(file: File, sessionToken: number): Promise<void> {
+    async function attachFile(file: File, sessionToken: number): Promise<void> {
         if (!beginAttachmentWork(sessionToken))
             return;
         try {
-            const normalizedFile = ensureFileName(file);
-            const serverPath = await uploadFile(normalizedFile);
-            if (sessionToken !== attachmentSessionToken)
+            const image = isImageFile(file);
+            const upload = image ? ensureFileName(file) : file;
+            const serverPath = await uploadFile(upload);
+            if (sessionToken !== attachmentSessionToken || !serverPath)
                 return;
-            if (!serverPath) {
-                recordAttachmentBatchResult('failure');
-                return;
+            if (image) {
+                selectedImages.value = [
+                    ...selectedImages.value,
+                    {
+                        id: createAttachmentId(),
+                        name: upload.name,
+                        url: `/codex-local-image?path=${encodeURIComponent(serverPath)}`,
+                    },
+                ];
             }
-            selectedImages.value = [
-                ...selectedImages.value,
-                {
-                    id: createAttachmentId(),
-                    name: normalizedFile.name,
-                    url: `/codex-local-image?path=${encodeURIComponent(serverPath)}`,
-                },
-            ];
-            recordAttachmentBatchResult('success');
+            else {
+                addFileAttachment(serverPath);
+            }
         }
         catch {
-            if (sessionToken === attachmentSessionToken) {
-                recordAttachmentBatchResult('failure');
-            }
-        }
-        finally {
-            finishAttachmentWork(sessionToken);
-        }
-    }
-    async function attachUploadedFile(file: File, sessionToken: number): Promise<void> {
-        if (!beginAttachmentWork(sessionToken))
-            return;
-        try {
-            const serverPath = await uploadFile(file);
-            if (sessionToken !== attachmentSessionToken)
-                return;
-            if (!serverPath) {
-                recordAttachmentBatchResult('failure');
-                return;
-            }
-            addFileAttachment(serverPath);
-            recordAttachmentBatchResult('success');
-        }
-        catch {
-            if (sessionToken === attachmentSessionToken) {
-                recordAttachmentBatchResult('failure');
-            }
+            // A failed upload never adds an attachment.
         }
         finally {
             finishAttachmentWork(sessionToken);
@@ -160,17 +111,11 @@ export function createComposerAttachments(deps: {
         const normalizedFiles = normalizeSelectedFiles(files);
         if (normalizedFiles.length === 0)
             return;
-        beginAttachmentBatch(normalizedFiles.length);
         deps.isAttachMenuOpen.value = false;
         deps.closeFileMention();
         const sessionToken = attachmentSessionToken;
         for (const file of normalizedFiles) {
-            if (isImageFile(file)) {
-                void attachImageFile(file, sessionToken);
-            }
-            else {
-                void attachUploadedFile(file, sessionToken);
-            }
+            void attachFile(file, sessionToken);
         }
     }
     function resetDragState(): void {
@@ -252,7 +197,6 @@ export function createComposerAttachments(deps: {
 selectedImages,
 fileAttachments,
 pendingAttachmentCount,
-attachmentBatchStats,
 isDragActive,
 photoLibraryInputRef,
 get attachmentSessionToken() { return attachmentSessionToken; },

@@ -7,7 +7,7 @@ import { SubscriptionRecovery } from './subscriptionRecovery.js'
 import { RolloutGenerationMetadata } from './rolloutGenerationMetadata.js'
 import { randomInt } from 'node:crypto'
 import { AppServerWebSocketClient, positiveEnv } from './appServerWebSocketClient.js'
-import { asRecord, getErrorMessage } from './bridgeHttpUtils.js'
+import { asRecord } from './bridgeHttpUtils.js'
 
 export interface AppServerClientDependencies {
   threadIndex: {

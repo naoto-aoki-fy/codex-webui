@@ -502,8 +502,7 @@ describe('Codex model selection', () => {
     const state = useDesktopState()
     await state.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
 
-    expect(state.selectedModelId.value).toBe('gpt-5.5')
-    expect(state.readModelIdForThread('').trim()).toBe('gpt-5.5')
+    expect(state.readModelIdForThread('')).toBe('gpt-5.5')
     expect(JSON.parse(window.localStorage.getItem('codex-web-local.selected-model-by-context.v1') ?? '{}')).toEqual({
       '__new-thread-provider__::openrouter-free': 'openrouter/free',
     })
@@ -537,8 +536,7 @@ describe('Codex model selection', () => {
       'gpt-5.4-mini',
     ])
     expect(state.availableModelIds.value).not.toContain('big-pickle')
-    expect(state.selectedModelId.value).toBe('gpt-5.5')
-    expect(state.readModelIdForThread('').trim()).toBe('gpt-5.5')
+    expect(state.readModelIdForThread('')).toBe('gpt-5.5')
     expect(JSON.parse(window.localStorage.getItem('codex-web-local.selected-model-by-context.v1') ?? '{}')).toEqual({
       '__new-thread-provider__::codex': 'big-pickle',
     })
@@ -628,11 +626,11 @@ describe('Codex model selection', () => {
     const discoveryCalls = gatewayMocks.getAvailableModelIds.mock.calls.length
     state.setSelectedModelId('gpt-5.5')
     expect(gatewayMocks.getAvailableModelIds).toHaveBeenCalledTimes(discoveryCalls)
-    expect(state.selectedModelId.value).toBe('provider-model:["openai","gpt-5.5"]')
+    expect(state.readModelIdForThread(state.selectedThreadId.value)).toBe('provider-model:["openai","gpt-5.5"]')
     await state.sendMessageToSelectedThread('second')
     expect(gatewayMocks.startThreadTurn.mock.calls.at(-1)?.[3]).toBe('provider-model:["openai","gpt-5.5"]')
     state.setSelectedModelId('gpt-5.4-mini')
-    expect(state.selectedModelId.value).toBe('provider-model:["openai","gpt-5.4-mini"]')
+    expect(state.readModelIdForThread(state.selectedThreadId.value)).toBe('provider-model:["openai","gpt-5.4-mini"]')
 
   })
 
@@ -659,7 +657,7 @@ describe('Codex model selection', () => {
 
     expect(state.selectedLiveOverlay.value?.errorText).toContain('thread not found')
     expect(state.availableModelIds.value).toEqual(['gpt-5.5', 'gpt-5.4-mini'])
-    expect(state.selectedModelId.value).toBe('gpt-5.5')
+    expect(state.readModelIdForThread(state.selectedThreadId.value)).toBe('gpt-5.5')
 
     await state.ensureThreadMessagesLoaded('missing-thread', { silent: true })
     await state.loadMessages('missing-thread')
@@ -1138,21 +1136,21 @@ describe('existing conversation model identity', () => {
     expect(gatewayMocks.startThreadTurn.mock.calls.at(-1)?.[3]).toBe(key('openai', 'b'))
     state.setSelectedModelId(key('local', 'b'))
     expect(state.error.value).toContain('Fork')
-    expect(state.selectedModelId.value).toBe(key('openai', 'b'))
+    expect(state.readModelIdForThread(state.selectedThreadId.value)).toBe(key('openai', 'b'))
     await state.selectThread('')
     await state.selectThread('existing')
-    expect(state.selectedModelId.value).toBe(key('openai', 'b'))
+    expect(state.readModelIdForThread(state.selectedThreadId.value)).toBe(key('openai', 'b'))
     const restored = useDesktopState()
     await restored.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
     await restored.selectThread('existing')
-    expect(restored.selectedModelId.value).toBe(key('openai', 'b'))
+    expect(restored.readModelIdForThread(restored.selectedThreadId.value)).toBe(key('openai', 'b'))
     gatewayMocks.getAvailableModelIds.mockResolvedValueOnce({ ids: [], models: [] })
     await restored.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
-    expect(restored.selectedModelId.value).toBe(key('openai', 'b'))
+    expect(restored.readModelIdForThread(restored.selectedThreadId.value)).toBe(key('openai', 'b'))
     await restored.sendMessageToSelectedThread('after reload')
     expect(gatewayMocks.startThreadTurn.mock.calls.at(-1)?.[3]).toBe(key('openai', 'b'))
     restored.setSelectedModelId(key('openai', 'a'))
-    expect(restored.selectedModelId.value).toBe(key('openai', 'a'))
+    expect(restored.readModelIdForThread(restored.selectedThreadId.value)).toBe(key('openai', 'a'))
   })
 
   it.each(['resume', 'read'])('keeps a choice made during pending thread/%s and submits its supported effort', async operation => {
@@ -1179,18 +1177,18 @@ describe('existing conversation model identity', () => {
   it('rejects ambiguous bare IDs and unknown providers without inferring a mismatch', async () => {
     const state = await setup([{ id: 'a', modelProvider: 'openai' }, { id: 'same', modelProvider: 'openai' }, { id: 'same', modelProvider: 'local' }], 'openai')
     state.setSelectedModelId('same')
-    expect(state.selectedModelId.value).toBe(key('openai', 'a'))
+    expect(state.readModelIdForThread(state.selectedThreadId.value)).toBe(key('openai', 'a'))
     expect(state.error.value).toContain('could not be confirmed')
     state.setSelectedModelId('unavailable')
-    expect(state.selectedModelId.value).toBe(key('openai', 'a'))
+    expect(state.readModelIdForThread(state.selectedThreadId.value)).toBe(key('openai', 'a'))
     state.setSelectedModelId(key('openai', 'same'))
-    expect(state.selectedModelId.value).toBe(key('openai', 'same'))
+    expect(state.readModelIdForThread(state.selectedThreadId.value)).toBe(key('openai', 'same'))
   })
 
   it('does not authorize a switch when neither thread nor catalog confirms a provider', async () => {
     const state = await setup([{ id: 'a' }, { id: 'b' }])
     state.setSelectedModelId('b')
-    expect(state.selectedModelId.value).toBe('a')
+    expect(state.readModelIdForThread(state.selectedThreadId.value)).toBe('a')
     expect(state.error.value).toContain('could not be confirmed')
   })
 })

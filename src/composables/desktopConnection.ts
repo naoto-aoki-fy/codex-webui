@@ -19,11 +19,6 @@ function omitKey<TValue>(record: Record<string, TValue>, key: string): Record<st
     delete next[key];
     return next;
 }
-type FileAttachment = {
-    label: string;
-    path: string;
-    fsPath: string;
-};
 /** Owns the single notification subscription, readiness identity, coalescing timer and refresh queues. startPolling is idempotent; the desktop stopPolling teardown closes the subscription and timer before dropping shared state. */
 export function createDesktopConnection(deps: {
     onBrowserConnectionState: (state: BrowserConnectionState) => void;

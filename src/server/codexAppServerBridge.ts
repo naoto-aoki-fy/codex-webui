@@ -9,10 +9,9 @@ import { WORKFLOW_CAPABILITIES, classifyCapabilityError } from './remoteCapabili
 import { stageRemoteUpload, inspectRemoteUploads } from './remoteUploads.js'
 import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
-import { normalizeStringArray } from './workspaceRootsStore.js'
 export type { WorkspaceRootsState } from './workspaceRootsStore.js'
 import { createThreadPresentationStore } from './threadPresentationStore.js'
-import { asRecord, getErrorMessage, getErrorCode, setJson, readJsonBody, isUnauthenticatedRateLimitError, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
+import { asRecord, getErrorMessage, setJson, readJsonBody, isUnauthenticatedRateLimitError, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
 export { isUnauthenticatedRateLimitError, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
 import { sanitizeThreadTurnsInlinePayloads, THREAD_METHODS_WITH_TURNS } from './threadInlinePayloads.js'
 export { sanitizeThreadTurnsInlinePayloads } from './threadInlinePayloads.js'
@@ -27,7 +26,6 @@ import { handleAccountRoutes } from './accountRoutes.js'
 import { CodexCredentialError, readPublicAuthStatus } from './codexCredentials.js'
 import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
-import { isAbsoluteLikePath } from '../pathUtils.js'
 
 type RpcProxyRequest = {
   method: string
@@ -126,12 +124,6 @@ function getChunkByteLength(chunk: unknown, encoding?: BufferEncoding): number {
     return chunk.byteLength
   }
   return 0
-}
-
-function asNonEmptyString(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
 }
 
 function trimThreadTurnsInRpcResult(method: string, result: unknown): unknown {
@@ -361,17 +353,6 @@ function getCodexHomeDir(): string {
 
 const { readPinnedThreadIds } = createThreadPresentationStore()
 
-function bufferIndexOf(buf: Buffer, needle: Buffer, start = 0): number {
-  for (let i = start; i <= buf.length - needle.length; i++) {
-    let match = true
-    for (let j = 0; j < needle.length; j++) {
-      if (buf[i + j] !== needle[j]) { match = false; break }
-    }
-    if (match) return i
-  }
-  return -1
-}
-
 function handleFileUpload(req: IncomingMessage, res: ServerResponse, appServer: AppServerClient): void {
   const chunks: Buffer[] = []
   let size = 0
@@ -403,7 +384,7 @@ function handleFileUpload(req: IncomingMessage, res: ServerResponse, appServer: 
       let fileData: Buffer | null = null
       const headerSep = Buffer.from('\r\n\r\n')
       for (const part of parts) {
-        const headerEnd = bufferIndexOf(part, headerSep)
+        const headerEnd = part.indexOf(headerSep)
         if (headerEnd < 0) continue
         const headers = part.subarray(0, headerEnd).toString('utf8')
         const fnMatch = headers.match(/filename="([^"]+)"/i)
@@ -433,11 +414,6 @@ export class AppServerClient extends AppServerClientCore {
   }
 }
 
-class MethodCatalog {
-  async listMethods(): Promise<string[]> { return appServerMethods.methods }
-  async listNotificationMethods(): Promise<string[]> { return appServerMethods.notifications }
-}
-
 type CodexBridgeMiddleware = ((req: IncomingMessage, res: ServerResponse, next: () => void) => Promise<void>) & {
   files: ProjectFileService
   projects: NativeProjects
@@ -451,7 +427,6 @@ type SharedBridgeState = {
   retired?: boolean
   version: string
   appServer: AppServerClient
-  methodCatalog: MethodCatalog
   files: ProjectFileService
   modelPreferences?: ModelPreferencesStore
   modelPreferenceUsage?: ReturnType<typeof createModelPreferenceUsage>
@@ -485,7 +460,6 @@ function getSharedBridgeState(): SharedBridgeState {
   const created: SharedBridgeState = {
     version: SHARED_BRIDGE_VERSION,
     appServer,
-    methodCatalog: new MethodCatalog(),
     files: new ProjectFileService(appServer),
   }
   globalScope[SHARED_BRIDGE_KEY] = created
@@ -497,7 +471,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   sharedState.owners = (sharedState.owners ?? 0) + 1
   let released = false
   const activeSse = new Set<() => void>()
-  const { appServer, methodCatalog } = sharedState
+  const { appServer } = sharedState
   const modelPreferences = sharedState.modelPreferences ??= new ModelPreferencesStore()
   const modelPreferenceUsage = sharedState.modelPreferenceUsage ??= createModelPreferenceUsage(modelPreferences)
   const preferenceListeners = sharedState.preferenceListeners ??= new Set()
@@ -800,14 +774,12 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       if (req.method === 'GET' && url.pathname === '/codex-api/meta/methods') {
-        const methods = await methodCatalog.listMethods()
-        setJson(res, 200, { data: methods })
+        setJson(res, 200, { data: appServerMethods.methods })
         return
       }
 
       if (req.method === 'GET' && url.pathname === '/codex-api/meta/notifications') {
-        const methods = await methodCatalog.listNotificationMethods()
-        setJson(res, 200, { data: methods })
+        setJson(res, 200, { data: appServerMethods.notifications })
         return
       }
 

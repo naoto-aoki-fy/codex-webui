@@ -49,11 +49,9 @@ export function findAdjacentThreadId(threads: UiThread[], threadId: string): str
   return threads[targetIndex + 1]?.id ?? threads[targetIndex - 1]?.id ?? ''
 }
 
-const EVENT_SYNC_DEBOUNCE_MS = 220
 const BACKGROUND_THREAD_PAGINATION_DELAY_MS = 10_000
 const RATE_LIMIT_REFRESH_DEBOUNCE_MS = 500
 const TURN_START_FOLLOW_UP_SYNC_DELAY_MS = 3000
-const RECENT_THREAD_MESSAGE_LOAD_REUSE_MS = 2000
 const RECENT_THREAD_LIST_LOAD_REUSE_MS = 2000
 const LOCAL_THREAD_CONFIRMATION_GRACE_MS = 120_000
 const LOCAL_THREAD_RECONCILIATION_INTERVAL_MS = 5000
@@ -207,14 +205,6 @@ export function useDesktopState() {
   const liveFileChangeMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const inProgressById = ref<Record<string, boolean>>({})
   type FileAttachment = { label: string; path: string; fsPath: string }
-  type PendingTurnRequest = {
-    text: string
-    imageUrls: string[]
-    skills: Array<{ name: string; path: string }>
-    fileAttachments: FileAttachment[]
-    effort: ReasoningEffort | ''
-    collaborationMode: CollaborationModeKind
-  }
   const availableModelIds = ref<string[]>([])
   const catalogModelIds = ref<string[] | null>(null)
   const modelUsageOrder = ref<string[]>([])
@@ -235,7 +225,6 @@ export function useDesktopState() {
   const selectedCollaborationMode = ref<CollaborationModeKind>(
     readSelectedCollaborationMode(selectedCollaborationModeByContext.value, selectedThreadId.value),
   )
-  const selectedModelId = ref(readSelectedModel(selectedModelIdByContext.value, selectedThreadId.value))
   const reasoningByModel = ref(createStringKeyedRecord<string>())
   // Automatic catalog fallbacks affect the display, never the saved user choice.
   const automaticModelByContext = ref(createStringKeyedRecord<string>())
@@ -279,7 +268,6 @@ export function useDesktopState() {
       selectedModelIdByContext.value[NEW_THREAD_MODEL_CONTEXT] = saved
       automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, NEW_THREAD_MODEL_CONTEXT)
       if (catalogModelIds.value?.length) automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = resolveModelPreference(catalogModelIds.value, saved, '')
-      if (!selectedThreadId.value) selectedModelId.value = readModelIdForThread('')
     }
     if (defaults && !newThreadModeEdited) {
       // Last-used mode describes the accepted turn, not the next composer.
@@ -535,8 +523,6 @@ export function useDesktopState() {
   let loadThreadsPromise: Promise<void> | null = null
   let threadListLoadGeneration = 0
 
-  type HistoryReadOwner = { olderPageBoundary?: string }
-
   const realtimeRevisionByThreadId = new Map<string, number>()
   let optimisticMessageSequence = 0
   const refreshSkillsPromiseByDirectory = new Map<string, Promise<void>>()
@@ -687,7 +673,6 @@ export function useDesktopState() {
     savedExplicitContexts = readPreferenceRecords(explicitModelStorageKey, legacyExplicit)
     explicitModelContexts.clear()
     for (const id of Object.keys(savedExplicitContexts)) explicitModelContexts.add(id)
-    selectedModelId.value = readAvailableSelectedModel(readModelIdForThread(selectedThreadId.value))
     selectedCollaborationMode.value = readSelectedCollaborationMode(selectedCollaborationModeByContext.value, selectedThreadId.value)
   }
   // A legacy catalog belongs to the server's configured provider. When older
@@ -736,13 +721,6 @@ export function useDesktopState() {
     }
   }
 
-  function readAvailableSelectedModel(modelId: string): string {
-    const normalizedModelId = modelId.trim()
-    if (availableModelIds.value.length === 0) return normalizedModelId
-    if (normalizedModelId && availableModelIds.value.includes(normalizedModelId)) return normalizedModelId
-    return availableModelIds.value[0] ?? ''
-  }
-
   function setSelectedThreadId(nextThreadId: string): void {
     if (selectedThreadId.value === nextThreadId) return
     selectionGeneration += 1
@@ -751,7 +729,6 @@ export function useDesktopState() {
       restoreNewConversationPreferences()
     }
     ensureAvailableModelIds(readModelIdForThread(nextThreadId))
-    selectedModelId.value = readAvailableSelectedModel(readModelIdForThread(nextThreadId))
     selectedCollaborationMode.value = readSelectedCollaborationMode(
       selectedCollaborationModeByContext.value,
       nextThreadId,
@@ -783,7 +760,6 @@ export function useDesktopState() {
     if (model) { next[context] = model; if (isNewThreadContextId(toThreadContextId(threadId))) next[NEW_THREAD_MODEL_CONTEXT] = model }
     else delete next[context]
     selectedModelIdByContext.value = next
-    if (threadId.trim() === selectedThreadId.value) selectedModelId.value = readModelIdForThread(threadId)
     ensureAvailableModelIds(model)
     saveThreadModelChoice(context, model)
     persistExplicitModelContexts()
@@ -821,9 +797,6 @@ export function useDesktopState() {
       selectedModelIdByContext.value = omitStringKeyedRecordKey(selectedModelIdByContext.value, normalizedThreadId)
     }
     ensureAvailableModelIds(normalizedModelId)
-    if (selectedThreadId.value === normalizedThreadId) {
-      selectedModelId.value = readModelIdForThread(selectedThreadId.value)
-    }
     saveThreadModelChoice(normalizedThreadId, normalizedModelId)
   }
 
@@ -1010,7 +983,6 @@ export function useDesktopState() {
         const savedDefault = normalizeStoredModelId(selectedModelIdByContext.value[NEW_THREAD_MODEL_CONTEXT])
         automaticModelByContext.value[NEW_THREAD_MODEL_CONTEXT] = resolveModelPreference(defaultIds, qualify(savedDefault), configured)
       }
-      selectedModelId.value = model
       publication.publish(catalog.models.map(entry => entry.modelProvider === defaultProvider && config.model
         ? { ...entry, providerDefaultModel: config.model } : entry))
       if (defaultProvider) {
@@ -2060,7 +2032,6 @@ export function useDesktopState() {
 
     const completedTurn = readTurnCompletedInfo(notification)
     const turnErrorMessage = readTurnErrorMessage(notification)
-    const completedThreadId = completedTurn?.threadId ?? extractThreadIdFromNotification(notification)
     if (completedTurn) {
       const startedTurnState = pendingTurnStartsById.get(completedTurn.turnId)
       if (startedTurnState) {
@@ -3002,7 +2973,6 @@ export function useDesktopState() {
     modelPreferencesError: backendPreferences.error,
     refreshBackendModelPreferences: backendPreferences.refresh,
     settleModelPreferenceWrites: backendPreferences.settled,
-    selectedModelId,
     selectedReasoningEffort,
     availableReasoningEfforts,
     selectedSpeedMode,

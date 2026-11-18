@@ -14,7 +14,6 @@ Return to the [manual test index](../../tests.md).
 | [Concurrent project state updates and stale responses](concurrent-project-state-updates.md) |
 | [Feature: Empty project new thread action](empty-project-new-thread-action.md) |
 | [Feature: Remove GitHub trending projects from the new-thread screen](remove-github-trending-projects-from-the-new-thread-screen.md) |
-| [Feature: Runtime selector uses a toggle-style control](runtime-selector-uses-a-toggle-style-control.md) |
 | [Feature: Frontend missing-entry 404 page auto-redirects to chat](frontend-missing-entry-404-page-auto-redirects-to-chat.md) |
 | [Editable current folder path in the folder picker](editable-current-folder-path-in-the-folder-picker.md) |
 | [Projects and Threads heading and Pinned expansion](expandable-projects-pinned-and-chats-sidebar-sections.md) |

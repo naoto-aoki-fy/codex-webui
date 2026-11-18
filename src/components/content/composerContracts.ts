@@ -63,11 +63,6 @@ export type SelectedImage = {
     name: string;
     url: string;
 };
-export type AttachmentBatchStats = {
-    total: number;
-    succeeded: number;
-    failed: number;
-};
 export type SkillSuggestion = {
     name: string;
     description: string;

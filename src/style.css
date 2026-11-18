@@ -114,10 +114,6 @@
   @apply border-zinc-600 bg-zinc-700 text-zinc-200 hover:bg-zinc-600;
 }
 
-:root.dark .sidebar-settings-account-login-link {
-  @apply text-sky-300 hover:text-sky-200;
-}
-
 :root.dark .sidebar-settings-account-empty {
   @apply text-zinc-400;
 }
@@ -297,10 +293,6 @@
   @apply text-zinc-100;
 }
 
-:root.dark .build-badge {
-  @apply border-zinc-700 bg-zinc-800/95 text-zinc-400;
-}
-
 :root.dark .rate-limit-card {
   @apply border-zinc-700 bg-zinc-800/95;
 }
@@ -381,10 +373,6 @@
   @apply bg-zinc-700 text-zinc-100;
 }
 
-:root.dark .organize-menu-separator {
-  @apply bg-zinc-700;
-}
-
 :root.dark .project-menu-panel {
   @apply border-zinc-600 bg-zinc-800;
 }
@@ -449,22 +437,6 @@
   @apply bg-rose-500 text-white hover:bg-rose-400;
 }
 
-:root.dark .message-bubble {
-  @apply bg-zinc-800 text-zinc-200;
-}
-
-:root.dark .message-bubble-user {
-  @apply bg-zinc-700;
-}
-
-:root.dark .composer-search-dropdown-menu {
-  @apply border-zinc-600 bg-zinc-800;
-}
-
-:root.dark .composer-search-dropdown-option {
-  @apply text-zinc-300 hover:bg-zinc-700;
-}
-
 :root.dark .message-text {
   @apply text-zinc-200;
 }
@@ -519,10 +491,6 @@
 
 :root.dark .message-copy-button[data-copied='true'] {
   @apply border-emerald-500/40 bg-emerald-500/10 text-emerald-200;
-}
-
-:root.dark .message-rollback-button {
-  @apply text-amber-400/70 hover:text-amber-300;
 }
 
 :root.dark .message-inline-code {
@@ -868,15 +836,8 @@
   @apply border-zinc-800;
 }
 
-:root.dark .search-dropdown-search,
-:root.dark .search-dropdown-create,
-:root.dark .search-dropdown-create-icon {
+:root.dark .search-dropdown-search {
   @apply border-zinc-700 bg-zinc-950 text-zinc-100 placeholder-zinc-500;
-}
-
-:root.dark .search-dropdown-create:hover,
-:root.dark .search-dropdown-create-icon:hover {
-  @apply bg-zinc-900;
 }
 
 :root.dark .search-dropdown-option {
@@ -894,14 +855,6 @@
 
 :root.dark .search-dropdown-option-desc {
   @apply text-zinc-400;
-}
-
-:root.dark .search-dropdown-option-remove {
-  @apply text-zinc-300;
-}
-
-:root.dark .search-dropdown-option-remove:hover {
-  @apply bg-zinc-700 text-zinc-100;
 }
 
 :root.dark .search-dropdown-empty {
@@ -970,10 +923,6 @@
   @apply min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 font-mono text-xs text-zinc-700 outline-none transition focus:border-zinc-400;
 }
 
-.new-thread-open-folder-create-input {
-  @apply w-full min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-400;
-}
-
 .new-thread-open-folder-error {
   @apply m-0 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700;
 }
@@ -996,8 +945,7 @@
 }
 
 :root.dark .new-thread-open-folder-path,
-:root.dark .new-thread-open-folder-filter,
-:root.dark .new-thread-open-folder-create-input {
+:root.dark .new-thread-open-folder-filter {
   @apply border-zinc-700 bg-zinc-900 text-zinc-100 focus:border-zinc-500;
 }
 
@@ -1125,10 +1073,6 @@
   @apply border-zinc-700;
 }
 
-:root.dark .sdm-btn-primary {
-  @apply bg-zinc-200 text-zinc-900 hover:bg-white;
-}
-
 :root.dark .sdm-btn-secondary {
   @apply bg-zinc-700 text-zinc-200 hover:bg-zinc-600;
 }
@@ -1138,8 +1082,7 @@
   .composer-dropdown-search-input,
   .search-dropdown-search,
   .sidebar-search-input,
-  .rename-thread-input,
-  .request-input {
+  .rename-thread-input {
     font-size: 16px !important;
   }
 }
@@ -1180,8 +1123,8 @@
 }
 .thread-goal-panel button:disabled { cursor: default; opacity: .5; }
 .thread-composer-active-mode { display: flex; gap: 8px; color: #2563eb; }
-.thread-composer-slash-mentions .thread-composer-file-mention-row { flex-direction: column; align-items: flex-start; }
-.thread-composer-slash-mentions small { opacity: .7; white-space: normal; text-align: left; }
+.thread-composer-skill-mentions .thread-composer-file-mention-row { flex-direction: column; align-items: flex-start; }
+.thread-composer-skill-mentions small { opacity: .7; white-space: normal; text-align: left; }
 :root.dark .thread-goal-panel { color: #e2e8f0; background: #1e293b; border-color: #475569; }
 :root.dark .thread-goal-summary:focus-visible { outline-color: #93c5fd; }
 :root.dark .thread-goal-editor textarea { background: #0f172a; border-color: #475569; }
@@ -1330,15 +1273,11 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 
 .remote-control-status { overflow-wrap: anywhere; max-height: 35vh; overflow: auto; }
 
-.apps-picker { max-height: 35vh; overflow: auto; overflow-wrap: anywhere; }
-
 .mcp-configuration { overflow-wrap: anywhere; max-height: 45vh; overflow: auto; }
 
 .curated-plugins { max-height: 50vh; overflow: auto; overflow-wrap: anywhere; }
 .curated-plugins input { background: transparent; color: inherit; border: 1px solid #a1a1aa; padding: .3rem; }
 .curated-plugins pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-
-.conversation-tools { max-height: 45vh; overflow: auto; }
 
 .native-shell textarea { display:block;width:100%;min-height:80px;padding:6px 8px;border:1px solid #a1a1aa;border-radius:6px;background:#fff;color:#18181b; }
 :root.dark .native-shell textarea { border-color:#71717a;background:#27272a;color:#f4f4f5; }

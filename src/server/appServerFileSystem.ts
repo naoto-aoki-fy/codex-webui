@@ -4,7 +4,6 @@ import type { FsReadDirectoryResponse } from './protocol/0.167.2/v2/FsReadDirect
 import type { FsGetMetadataResponse } from './protocol/0.167.2/v2/FsGetMetadataResponse.js'
 import type { FsReadFileResponse } from './protocol/0.167.2/v2/FsReadFileResponse.js'
 
-export const PROJECT_FILE_CODEX_VERSION = '0.167.2'
 
 // Choose lexical path rules from the remote path, never the Web host OS.
 export function projectPath(path: string) {

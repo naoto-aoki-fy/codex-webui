@@ -1,5 +1,5 @@
 import {rpcCall} from './codexRpcClient'
-export type McpSwitch={name:string;enabled:boolean|null}
+type McpSwitch={name:string;enabled:boolean|null}
 export type McpSwitches={filePath:string;version:string;servers:McpSwitch[]}
 const record=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{}
 export function mcpSwitches(value:unknown):McpSwitches {

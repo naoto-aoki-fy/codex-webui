@@ -20,7 +20,7 @@ The thread overflow menu includes a `Copy path` item that copies the selected th
 8. Try a thread with no working directory. Confirm the menu closes without a copy attempt.
 
 #### Expected Results
-- The menu order is `Open in new tab`, `Copy path`, `Copy chat`, `Create chat fork`, `Pin thread` or `Unpin thread`, `Rename thread`, `Delete thread`
+- The menu order is `Open in new tab`, `Copy path`, `Copy chat`, `Fork conversation`, `Pin thread` or `Unpin thread`, `Rename thread`, `Delete thread`
 - Clicking `Copy path` closes the menu
 - Clipboard contents equal the thread's `cwd` path with the existing outer-whitespace trimming preserved; internal spaces and Unicode remain intact
 - Native writes remain preferred; unavailable or rejected native writes reach the shared selection fallback

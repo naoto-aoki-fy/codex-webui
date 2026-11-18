@@ -5,7 +5,7 @@ const {setup,assert,openToolsDialog,openComposerEntry}=require('./approved-fixtu
  for(const width of [1280,375,768]){
   const page=await browser.newPage({viewport:{width,height:width===375?812:width===768?1024:900}})
   await page.addInitScript(()=>Object.defineProperty(Crypto.prototype,'randomUUID',{value:undefined,configurable:true}))
-  let pending=[],mode='ok',release
+  let pending=[],mode='unsupported',release
   const {calls,errors,emit}=await setup(page,async body=>{
    if(body.method==='thread/queue/list')return mode==='unsupported'?{status:502,json:{error:'Native queue unavailable'}}:{json:{result:{data:pending,nextCursor:null}}}
    if(body.method==='thread/queue/add'){
@@ -18,7 +18,21 @@ const {setup,assert,openToolsDialog,openComposerEntry}=require('./approved-fixtu
   emit('native-authentication/state',{phase:'ready',blocking:false,revision:1});
   assert.equal(calls.some(c=>c.method?.startsWith('thread/queue/')),false)
   const draft=page.locator('.thread-composer-input');await draft.fill('Queue fixture prompt')
-  await openComposerEntry(page,'Queue mode');await openToolsDialog(page);await page.getByText('Native deferred prompt queue',{exact:true}).click();await page.getByText('No pending prompts returned.',{exact:true}).waitFor();await page.keyboard.press('Escape');await page.getByRole('button',{name:'Queue prompt',exact:true}).click();await openToolsDialog(page)
+  await openComposerEntry(page,'Queue mode')
+  const queuePanel=page.locator('#native-prompt-queue')
+  const inspectQueue=page.getByRole('button',{name:'Inspect native prompt queue',exact:true})
+  await page.locator('.composer-runtime-error').getByText('Native queue unavailable',{exact:false}).waitFor()
+  for(const toolsAlreadyLoaded of [false,true]){
+   if(toolsAlreadyLoaded)mode='ok'
+   const reads=calls.filter(c=>c.method==='thread/queue/list').length
+   await inspectQueue.click()
+   const result=toolsAlreadyLoaded?/^No pending prompts returned\.$/:/Native queue unavailable$/
+   await queuePanel.getByText(result).waitFor()
+   assert.equal(await queuePanel.evaluate(el=>el.open),true)
+   assert.equal(calls.filter(c=>c.method==='thread/queue/list').length,reads+1)
+   await page.keyboard.press('Escape')
+  }
+  await page.getByRole('button',{name:'Queue prompt',exact:true}).click();await openToolsDialog(page)
   await page.getByText('queued-fixture · Client message:',{exact:false}).waitFor();assert.equal(await draft.inputValue(),'');assert.equal(calls.some(c=>c.method==='turn/start'||c.method==='turn/steer'),false)
   await page.getByText('Pending prompt preview (first 8,000 characters)',{exact:true}).click();await page.getByText('Queue fixture prompt',{exact:true}).waitFor()
   for(const theme of ['light','dark']){await page.evaluate(d=>document.documentElement.classList.toggle('dark',d),theme==='dark');await page.waitForTimeout(2200);await page.screenshot({path:`output/playwright/risk-07-${width}-${theme}.png`})}

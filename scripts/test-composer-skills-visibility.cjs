@@ -55,7 +55,7 @@ createApp({ render: () => h(ThreadComposer, {
     await page.getByRole('button', { name: 'Send message', exact:true }).click()
     assert.deepEqual(await page.evaluate(() => window.submissions[0].skills), [{ name:'review', path:'/skills/review' }])
     await page.locator('textarea').fill('/review')
-    await page.locator('.thread-composer-slash-mentions button').click()
+    await page.locator('.thread-composer-skill-mentions button').click()
     assert.equal(await chip.count(), 1)
     assert.equal(await selector.count(), 0)
     await chip.click()
