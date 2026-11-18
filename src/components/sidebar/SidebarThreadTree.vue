@@ -42,18 +42,8 @@
     </section>
 
     <section class="projects-section">
-      <SidebarMenuRow
-        as="button"
-        class="thread-tree-header-row section-toggle-row"
-        type="button"
-        :aria-expanded="isProjectsSectionExpanded"
-        @click="toggleProjectsSection"
-      >
-        <template #left>
-          <IconTablerChevronRight v-if="!isProjectsSectionExpanded" class="thread-icon" />
-          <IconTablerChevronDown v-else class="thread-icon" />
-        </template>
-        <span class="thread-tree-header">{{ ('Projects') }}</span>
+      <SidebarMenuRow class="thread-tree-header-row">
+        <span class="thread-tree-header pl-6" role="heading" aria-level="2">{{ isChronologicalView ? 'Threads' : 'Projects' }}</span>
         <template #right>
           <div ref="organizeMenuWrapRef" class="organize-menu-wrap">
             <button
@@ -98,8 +88,6 @@
           </div>
         </template>
       </SidebarMenuRow>
-
-      <template v-if="isProjectsSectionExpanded">
 
       <p v-if="isSearchActive && filteredGroups.length === 0" class="thread-tree-no-results">{{ ('No matching threads') }}</p>
 
@@ -255,7 +243,6 @@
           </SidebarMenuRow>
       </article>
     </div>
-      </template>
     </section>
 
     <Teleport to="body">
@@ -345,7 +332,7 @@
 </template>
 
 <script setup lang="ts">
-import { readPreferenceRecords, savePreferenceRecords } from '../../utils/browserPreferenceRecords'
+import { readPreferenceRecord, readPreferenceRecords, savePreferenceRecords } from '../../utils/browserPreferenceRecords'
 import { readUiPreference, writeUiPreference } from '../../utils/browserUiStorage'
 import type { SidebarProps } from "./sidebarContracts"
 import { createSidebarMenus } from './sidebarMenus'
@@ -384,7 +371,9 @@ const emit = defineEmits<{
 }>()
 
 const PROJECT_GROUP_EXPANDED_GAP_PX = 6
-const SECTION_EXPANSION_STORAGE_KEY = 'codex-web-local.sidebar-section-expansion.v1'
+const LEGACY_SECTION_EXPANSION_STORAGE_KEY = 'codex-web-local.sidebar-section-expansion.v1'
+const SECTION_EXPANSION_BASE = 'codex-web-local.sidebar-section-expansion.v2'
+const PINNED_EXPANSION_STORAGE_KEY = `${SECTION_EXPANSION_BASE}.pinned`
 const THREAD_VIEW_MODE_STORAGE_KEY = 'codex-web-local.thread-view-mode.v1'
 const CHAT_SORT_MODE_STORAGE_KEY = 'codex-web-local.chat-sort-mode.v1'
 const threads = createSidebarThreads({
@@ -425,8 +414,7 @@ const {
 } = threads
 
 const collapsedProjects = ref<Record<string, boolean>>({})
-const isPinnedSectionExpanded = ref(true)
-const isProjectsSectionExpanded = ref(true)
+const isPinnedSectionExpanded = ref(loadPinnedSectionExpansion())
 
 const menus = createSidebarMenus({
   get threads() { return threads; },
@@ -527,30 +515,22 @@ function loadCollapsedState(): Record<string, boolean> {
 }
 
 const collapseBase = 'codex-web-local.collapsed-projects.v2'
-const expansionBase = 'codex-web-local.sidebar-section-expansion.v2'
 function readCollapsedRecords() {
   const legacy = Object.fromEntries(Object.entries(loadCollapsedState()).map(([key, value]) => [key, value ? '1' : '0']))
   return readPreferenceRecords(collapseBase, legacy)
 }
 let savedCollapsed = readCollapsedRecords()
-let savedExpansion: Record<string, string> = {}
 collapsedProjects.value = Object.fromEntries(Object.entries(savedCollapsed).map(([key, value]) => [key, value === '1']))
 
-function loadSectionExpansionState(): void {
-  let legacy: Record<string, string> = {}
-  try {
-    const parsed = JSON.parse(readUiPreference(SECTION_EXPANSION_STORAGE_KEY) || '{}')
-    if (parsed && typeof parsed === 'object') legacy = Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === 'boolean').map(([key, value]) => [key, value ? '1' : '0']))
-  } catch { /* Defaults. */ }
-  savedExpansion = readPreferenceRecords(expansionBase, legacy)
-  isPinnedSectionExpanded.value = savedExpansion.pinned !== '0'
-  isProjectsSectionExpanded.value = savedExpansion.projects !== '0'
-}
+function loadPinnedSectionExpansion(): boolean {
+  const saved = readPreferenceRecord(SECTION_EXPANSION_BASE, 'pinned')
+  if (saved !== null) return saved !== '0'
 
-function persistSectionExpansionState(): void {
-  const next = { pinned: isPinnedSectionExpanded.value ? '1' : '0', projects: isProjectsSectionExpanded.value ? '1' : '0' }
-  savePreferenceRecords(expansionBase, next, savedExpansion)
-  savedExpansion = next
+  try {
+    return JSON.parse(readUiPreference(LEGACY_SECTION_EXPANSION_STORAGE_KEY) || '{}')?.pinned !== false
+  } catch {
+    return true
+  }
 }
 
 function onSidebarStorage(event: StorageEvent): void {
@@ -558,14 +538,12 @@ function onSidebarStorage(event: StorageEvent): void {
     savedCollapsed = readCollapsedRecords()
     collapsedProjects.value = Object.fromEntries(Object.entries(savedCollapsed).map(([key, value]) => [key, value === '1']))
   }
-  if (event.key?.startsWith(`${expansionBase}.`)) loadSectionExpansionState()
+  if (event.key === PINNED_EXPANSION_STORAGE_KEY) isPinnedSectionExpanded.value = loadPinnedSectionExpansion()
   if (event.key === CHAT_SORT_MODE_STORAGE_KEY) threads.chatSortMode.value = readUiPreference(CHAT_SORT_MODE_STORAGE_KEY) === 'created' ? 'created' : 'updated'
   if (event.key === THREAD_VIEW_MODE_STORAGE_KEY) threads.threadViewMode.value = readUiPreference(THREAD_VIEW_MODE_STORAGE_KEY) === 'chronological' ? 'chronological' : 'project'
 }
 onMounted(() => typeof window !== 'undefined' && window.addEventListener('storage', onSidebarStorage))
 onUnmounted(() => typeof window !== 'undefined' && window.removeEventListener('storage', onSidebarStorage))
-
-loadSectionExpansionState()
 
 watch(
   collapsedProjects,
@@ -583,8 +561,6 @@ watch(threads.threadViewMode, (value) => {
   writeUiPreference(THREAD_VIEW_MODE_STORAGE_KEY, value)
 })
 
-watch([isPinnedSectionExpanded, isProjectsSectionExpanded], persistSectionExpansionState)
-
 watch([threads.pinnedThreadIds, threads.threadById, () => props.isLoading], () => {
   if (!threads.hasLoadedPinnedThreadState) return
   void threads.hydrateMissingPinnedThreads()
@@ -595,10 +571,7 @@ onMounted(threads.refreshPinnedThreadState)
 
 function togglePinnedSection(): void {
   isPinnedSectionExpanded.value = !isPinnedSectionExpanded.value
-}
-
-function toggleProjectsSection(): void {
-  isProjectsSectionExpanded.value = !isProjectsSectionExpanded.value
+  writeUiPreference(PINNED_EXPANSION_STORAGE_KEY, JSON.stringify(isPinnedSectionExpanded.value ? '1' : '0'))
 }
 
 const layoutProjectOrder = computed(() => threads.filteredGroups.value.map(group => group.projectName))
@@ -808,10 +781,6 @@ onBeforeUnmount(() => {
 
 .projects-section {
   @apply order-2;
-}
-
-.thread-tree-header-row {
-  @apply cursor-pointer;
 }
 
 .section-toggle-row {

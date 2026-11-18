@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createRenderer, getCurrentInstance, h, nextTick, reactive, ssrContextKey } from 'vue'
+import { createRenderer, createSSRApp, getCurrentInstance, h, nextTick, reactive, ssrContextKey } from 'vue'
 import type { Component } from 'vue'
+import { renderToString } from 'vue/server-renderer'
 import type { Thread } from '../../api/appServerDtos'
 import type { UiProjectGroup, UiThread } from '../../types/codex'
 import { normalizeThreadGroupsV2 } from '../../api/normalizers/v2'
@@ -29,6 +30,12 @@ type SidebarState = {
   filteredGroups: UiProjectGroup[]
   chatSortMode: 'updated' | 'created'
   globalThreads: UiThread[]
+  isChronologicalView: boolean
+  isPinnedSectionExpanded: boolean
+  isCollapsed(projectName: string): boolean
+  setThreadViewMode(mode: 'project' | 'chronological'): void
+  togglePinnedSection(): void
+  toggleProjectCollapse(projectName: string): void
   pinStateError: string
   togglePin(threadId: string): Promise<void>
   refreshPinnedThreadState(): Promise<void>
@@ -87,6 +94,66 @@ async function mountNativeSidebar() {
 
 const names = (groups: UiProjectGroup[]) => groups.map(group => group.projectName)
 const ids = (threads: UiThread[]) => threads.map(thread => thread.id)
+
+it('keeps Projects and Threads visible with stored section collapse preferences', async () => {
+  const legacyKey = 'codex-web-local.sidebar-section-expansion.v1'
+  const expansionKey = 'codex-web-local.sidebar-section-expansion.v2'
+  const storage = new Map([
+    [legacyKey, JSON.stringify({ projects: false, pinned: false })],
+    [`${expansionKey}.projects`, JSON.stringify('0')],
+  ])
+  vi.stubGlobal('window', {
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    localStorage: {
+      get length() { return storage.size },
+      key: (index: number) => [...storage.keys()][index] ?? null,
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+    },
+  })
+  vi.stubGlobal('ResizeObserver', class {})
+
+  const { props, state } = await mountNativeSidebar()
+  const checkSection = async (label: string, content: string) => {
+    const html = await renderToString(createSSRApp(SidebarThreadTree, props))
+    const header = html.match(/<div[^>]*class="[^"]*thread-tree-header-row[^"]*"[^>]*>/)?.[0]
+    expect(header).toBeDefined()
+    expect(header).toContain('data-has-left="false"')
+    expect(header).not.toContain('aria-expanded')
+    expect(html).toMatch(new RegExp(`aria-level="2"[^>]*>${label}</span>`))
+    expect(html).toContain(content)
+  }
+
+  await checkSection('Projects', 'data-project-name="Alpha"')
+  expect(state.isChronologicalView).toBe(false)
+  expect(state.isPinnedSectionExpanded).toBe(false)
+  state.togglePinnedSection()
+  state.toggleProjectCollapse('Alpha')
+  expect(state.isCollapsed('Alpha')).toBe(true)
+  await nextTick()
+  expect(storage.get(`${expansionKey}.pinned`)).toBe(JSON.stringify('1'))
+
+  state.setThreadViewMode('chronological')
+  expect(state.isChronologicalView).toBe(true)
+  await nextTick()
+  await checkSection('Threads', 'thread-list thread-list-global')
+  expect(getPinnedThreadState).toHaveBeenCalledTimes(1)
+
+  const { state: reloaded } = await mountNativeSidebar()
+  expect(reloaded.isChronologicalView).toBe(true)
+  expect(reloaded.isPinnedSectionExpanded).toBe(true)
+  expect(reloaded.isCollapsed('Alpha')).toBe(true)
+  reloaded.toggleProjectCollapse('Alpha')
+  expect(reloaded.isCollapsed('Alpha')).toBe(false)
+  reloaded.setThreadViewMode('project')
+  expect(reloaded.isChronologicalView).toBe(false)
+  await nextTick()
+  await checkSection('Projects', 'data-project-name="Alpha"')
+  expect(storage.get(`${expansionKey}.projects`)).toBe(JSON.stringify('0'))
+  expect(getPinnedThreadState).toHaveBeenCalledTimes(1)
+  expect(getThreadSummary).not.toHaveBeenCalled()
+})
 
 describe('SidebarThreadTree native project timestamp sorting', () => {
   it('sorts saved native order by member timestamps and switches modes, including pinned members', async () => {
