@@ -43,7 +43,7 @@
 
     <section class="projects-section">
       <SidebarMenuRow class="thread-tree-header-row">
-        <span class="thread-tree-header pl-6" role="heading" aria-level="2">{{ isChronologicalView ? 'Threads' : 'Projects' }}</span>
+        <span class="thread-tree-header" role="heading" aria-level="2">{{ isChronologicalView ? 'Threads' : 'Projects' }}</span>
         <template #right>
           <div ref="organizeMenuWrapRef" class="organize-menu-wrap">
             <button

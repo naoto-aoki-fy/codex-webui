@@ -120,8 +120,9 @@ it('keeps Projects and Threads visible with stored section collapse preferences'
     const header = html.match(/<div[^>]*class="[^"]*thread-tree-header-row[^"]*"[^>]*>/)?.[0]
     expect(header).toBeDefined()
     expect(header).toContain('data-has-left="false"')
+    expect(header).toContain('data-has-right="true"')
     expect(header).not.toContain('aria-expanded')
-    expect(html).toMatch(new RegExp(`aria-level="2"[^>]*>${label}</span>`))
+    expect(html).toMatch(new RegExp(`<span class="thread-tree-header"[^>]*aria-level="2"[^>]*>${label}</span>`))
     expect(html).toContain(content)
   }
 
