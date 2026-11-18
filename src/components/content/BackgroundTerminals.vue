@@ -30,7 +30,7 @@ async function terminate(row:BackgroundTerminal){
 function output(row:BackgroundTerminal){const message=props.messages.find(message=>message.id===row.itemId&&message.commandExecution);return message?.commandExecution?(message.commandExecution.aggregatedOutput.slice(-6000)||'No output captured in loaded history.'):'Recent output unavailable in loaded history.'}
 </script>
 <template>
- <details id="native-background-processes" class="feature-panel background-terminals">
+ <details class="feature-panel background-terminals">
   <summary>Background processes</summary>
   <p>Native thread {{ threadId }}. Terminating a process does not interrupt the model turn.</p>
   <button type="button" :disabled="busy || disconnected" @click="refresh(false)">Refresh background processes</button>

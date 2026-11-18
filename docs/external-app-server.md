@@ -69,9 +69,8 @@ failures are returned from B. Upgrade B if its protocol lacks a required method.
   directories on A. Launch project arguments must be absolute remote paths.
 - Git repository detection (`GET /codex-api/git/repository-status`): `command/exec`, using argv and an
   explicit remote cwd, without sandbox or permission overrides. Git must exist
-  on B and server policy must permit the operation. Automatic worktree creation
-  is not a supported UI capability. Dedicated branch/worktree endpoints have been
-  retired; `/codex-api/worktree/branches` and `/codex-api/worktree/create` return 404.
+  on B and server policy must permit the operation. The UI accepts existing
+  worktree directories. Dedicated branch/worktree endpoints have been retired; `/codex-api/worktree/branches` and `/codex-api/worktree/create` return 404.
 - Composer search: `fuzzyFileSearch`, using the selected remote root.
 - Skills: `skills/list` and remote Markdown via `fs/readFile`; no local catalog
   supplementation. Native thread history is authoritative. Local session scans,

@@ -110,8 +110,7 @@ primitive in every context, regardless of Web Locks availability.
 Performance: one bounded (20 entries/90 KB) record transaction per reservation or
 settlement, no transaction held over network traffic, no polling/replay. Queue
 recovery adds one asynchronous IndexedDB read at controller startup, no server
-request. Readwrite transactions serialize prompt-library writes too; payloads
-are bounded. Old open application versions cannot cooperate with this protocol;
+request. Old open application versions cannot cooperate with this protocol;
 reload them before queue use. Downgrading to an older release cannot see new
 IndexedDB receipts and is not a safe recovery procedure.
 
@@ -191,35 +190,11 @@ network requests, timers or unbounded async fanout. Legacy input remains read-on
 and may be retained indefinitely. Context tombstone compaction is deferred to
 avoid resurrecting old selections.
 
-## Prompt and UI settings after changes
+## UI settings after changes
 
-Prompt presets/history now live in the same IndexedDB `records` store, under the
-profile-scoped `prompt-library.v1` primary key with the original object schema.
-Missing records read the legacy localStorage snapshot. The first successful edit
-imports all valid presets/history in its transaction. Migration does not opt users
-in or delete their presets. A separate localStorage scalar
-`prompt-history-enabled.v1` (`1`/`0`, absent = off) controls future recording.
-Existing history is not consent. Credential filtering and 20 preset / 30 history /
-8,000 character bounds remain. Preset changes apply only changed IDs against the
-transaction's latest object. Same-preset edits/deletions follow transaction order: an edit committed after a
-delete recreates that preset; a delete committed last removes it. The editor keeps
-its entered text through remote deletion and an explicit Save applies that upsert.
-Distinct IDs and concurrent history writes survive. Clearing history removes all
-entries committed before the clear; later recordings remain. Existing presets
-are preserved in either order. Over-capacity saves reject rather than
-silently dropping presets. Clear history and clear all are separate actions.
-After a successful explicit clear, the obsolete localStorage snapshot is removed
-so cleared history is not retained there; the IndexedDB record preserves presets.
-If that cleanup is denied, the canonical history is cleared but the legacy backup
-may remain. Clear all can explicitly replace malformed data; ordinary saves never
-do so. Oversized/unreadable migration data requires backup/repair or explicit clear.
-
-A profile-scoped `prompt-library.v1.revision` scalar (timestamp/random notification
-token, no prompt data) signals committed edits through storage events. It is not a
-second data copy or authority. Reopening the dialog always reads IndexedDB even if
-notification storage fails. Queue receipts do not write notification keys. With
-unavailable IndexedDB, prompt editing shows an error and accepted submission still
-works without recording history.
+Existing prompt presets and submitted-prompt history remain in legacy browser
+storage. The WebUI no longer reads, updates, migrates or clears the retired
+prompt-library records, consent keys or invalidation keys.
 
 Harmless UI preference reads/writes now tolerate storage denial. Scalar UI keys
 retain their schema and intentionally use last-writer wins; theme, width, send
@@ -249,9 +224,9 @@ prefix collisions in recovery enumeration.
 - HttpOnly `portal_session` cookie: server-issued shared WebUI authentication,
   retained unchanged and independent of connection-profile data.
 - sessionStorage: tab identity and per-profile/thread resume pointers.
-- localStorage: UI preferences/context choices, history opt-in, prompt invalidation
-  token, tab/document-owned drafts and retained migration inputs.
-- IndexedDB: atomic queue recovery receipts and prompt-library records. No draft
+- localStorage: UI preferences/context choices, tab/document-owned drafts and
+  retained migration inputs.
+- IndexedDB: atomic queue recovery receipts. No draft
   migration to IndexedDB is needed for ownership safety; unique writer keys avoid
   shared draft mutations. Draft blob/quota handling remains a separate improvement.
 - App Server: conversation/imported history, response metadata, authoritative
@@ -277,15 +252,15 @@ above, unless explicitly marked global.
 | Migrated drafts | `thread-draft.v1.<thread>`, `thread-fork-recovery.v1.<thread>` | Read-only in `utils/composerDraftStorage.ts` | Profile/thread; legacy recovery preserved |
 | New owned drafts | `thread-draft.v2.<encoded thread>.<tab>.<writer>`: full draft payload; archive writer starts `archive-` | `composerDraftStorage.ts`; called by `ThreadComposer.vue`, `composerInput.ts`, existing App restoration path | Profile/thread/tab/document; empty payload tombstones; never auto-pruned |
 | New session metadata | Global `tab-id.v1`: random string; profile/thread `thread-draft.v2.<encoded thread>.resume`: owned localStorage key | `utils/browserTabIdentity.ts`, `composerDraftStorage.ts` | sessionStorage; reload lineage only, not shared navigation; collision-safe writer IDs |
-| Migrated critical records | localStorage `queue-submissions.v1`, `prompt-library.v1`: old schemas | Read-only fallback in `queueSubmissionReceipts.ts`, `promptLibrary.ts`; only prompt snapshot removed after explicit clear | Profile; retained migration backup, not runtime write authority |
-| New atomic records | IndexedDB `codex-web-local.persistence.v1` / `records`, primary keys = scoped `queue-submissions.v1`, `prompt-library.v1`; values = original bounded objects | `utils/browserTransactionalRecords.ts`, validators/mutations in receipt/library utilities; async callers `nativeQueue.ts`, `PromptLibrary.vue`, `composerInput.ts` | Profile; transactionally authoritative browser recovery/preset data |
-| New history consent | `prompt-history-enabled.v1`: raw `1`/`0` | `promptLibrary.ts`, `PromptLibrary.vue` | Profile; shared opt-in, default off; history is not server-reconstructible |
-| New invalidation signal | `prompt-library.v1.revision`: timestamp/random string | Written after committed edits by `browserTransactionalRecords.ts`; read as storage event by `PromptLibrary.vue` | Profile; no prompt content; reopen always reads IndexedDB |
+| Migrated critical records | localStorage `queue-submissions.v1`: old schema | Read-only fallback in `queueSubmissionReceipts.ts` | Profile; retained migration backup, not runtime write authority |
+| New atomic records | IndexedDB `codex-web-local.persistence.v1` / `records`, primary key = scoped `queue-submissions.v1`; value = bounded receipt map | `utils/browserTransactionalRecords.ts`, `utils/queueSubmissionReceipts.ts`, `composables/nativeQueue.ts` | Profile; transactionally authoritative queue recovery data |
 | New sidebar records | Global `collapsed-projects.v2.<encoded project>`, `sidebar-section-expansion.v2.<pinned|projects>`: JSON `1`/`0` strings | `browserPreferenceRecords.ts`, `SidebarThreadTree.vue` | Shared UI preference per entry; v1 composite keys retained read-only |
 | Retained scalar UI preferences | Global `send-with-enter.v1`, `dark-mode.v1`, `chat-width.v1`, `sidebar-collapsed.v1`, `sidebar-width.v1`, `chat-sort-mode.v1`, `thread-view-mode.v1`: schemas in original inventory | `utils/browserUiStorage.ts`, App/layout/sidebar callers in original inventory | Shared settings, best-effort storage, last-writer wins with storage-event visibility |
 | Retained connection and retirement behavior | `connection-profile.v1`, obsolete auth latch cleanup, retired service-worker caches | Original owners unchanged | No unknown data reset; active profile fixed for document |
 
-## Verification and performance evidence
+## Historical verification and performance evidence
+
+These results describe the persistence change before the prompt library was retired.
 
 Verified with the current checkout and Chromium on `http://127.0.0.1:4173`:
 
@@ -345,12 +320,10 @@ Additional screenshots: `connection-profiles-{light,dark}.png`,
 ## Modified files
 
 - [docs/browser-persistence.md](../docs/browser-persistence.md)
-- [scripts/test-approved-prompts.cjs](../scripts/test-approved-prompts.cjs)
 - [scripts/test-browser-persistence.cjs](../scripts/test-browser-persistence.cjs)
 - [scripts/test-connection-profiles.cjs](../scripts/test-connection-profiles.cjs)
 - [scripts/test-risk-queue.cjs](../scripts/test-risk-queue.cjs)
 - [src/App.vue](../src/App.vue)
-- [src/components/content/PromptLibrary.vue](../src/components/content/PromptLibrary.vue)
 - [src/components/content/ThreadComposer.submission.test.ts](../src/components/content/ThreadComposer.submission.test.ts)
 - [src/components/content/ThreadComposer.vue](../src/components/content/ThreadComposer.vue)
 - [src/components/content/composerInput.ts](../src/components/content/composerInput.ts)
@@ -374,14 +347,11 @@ Additional screenshots: `connection-profiles-{light,dark}.png`,
 - [src/utils/browserUiStorage.ts](../src/utils/browserUiStorage.ts)
 - [src/utils/composerDraftStorage.test.ts](../src/utils/composerDraftStorage.test.ts)
 - [src/utils/composerDraftStorage.ts](../src/utils/composerDraftStorage.ts)
-- [src/utils/promptLibrary.test.ts](../src/utils/promptLibrary.test.ts)
-- [src/utils/promptLibrary.ts](../src/utils/promptLibrary.ts)
 - [src/utils/queueSubmissionReceipts.test.ts](../src/utils/queueSubmissionReceipts.test.ts)
 - [src/utils/queueSubmissionReceipts.ts](../src/utils/queueSubmissionReceipts.ts)
 - [tests/chat-composer-rendering/composer-expands-long-drafts-to-full-screen.md](../tests/chat-composer-rendering/composer-expands-long-drafts-to-full-screen.md)
 - [tests/chat-composer-rendering/native-prompt-queue.md](../tests/chat-composer-rendering/native-prompt-queue.md)
 - [tests/chat-composer-rendering/persistent-model-reasoning-preferences.md](../tests/chat-composer-rendering/persistent-model-reasoning-preferences.md)
-- [tests/chat-composer-rendering/prompt-library.md](../tests/chat-composer-rendering/prompt-library.md)
 - [tests/theme-layout-terminal/dark-theme-settings-controls.md](../tests/theme-layout-terminal/dark-theme-settings-controls.md)
 
 ## Implementation commits

@@ -2,7 +2,6 @@
 import ComposerDropdown from './ComposerDropdown.vue'
 import MemoryStatus from './MemoryStatus.vue'
 import BackgroundTerminals from './BackgroundTerminals.vue'
-import WorkingTreePanel from './WorkingTreePanel.vue'
 import SubagentsPanel from './SubagentsPanel.vue'
 import HooksInspection from './HooksInspection.vue'
 import ConfigInspection from './ConfigInspection.vue'
@@ -10,7 +9,6 @@ import ImportPreview from './ImportPreview.vue'
 import PermissionsInspection from './PermissionsInspection.vue'
 import DeniedActions from './DeniedActions.vue'
 import NativeQueuePanel from './NativeQueuePanel.vue'
-import CreateWorktree from './CreateWorktree.vue'
 import DaybreakStatus from './DaybreakStatus.vue'
 import PermanentDeletion from './PermanentDeletion.vue'
 import NativeShellPanel from './NativeShell.vue'
@@ -29,7 +27,6 @@ defineProps<{
   deniedActions:DeniedAction[];
   queue:ReturnType<typeof createNativeQueue>;
   permissionChanges:ReturnType<typeof createThreadPermissions>;
-  openCreatedWorktree:(path:string)=>Promise<void>;
   deletion:ThreadDeletion|null; ensureDeletion:()=>Promise<ThreadDeletion|null>; hasDraft:()=>boolean;
   shell:NativeShell|null; ensureShell:()=>Promise<NativeShell|null>;
   inProgress:boolean; sending:boolean; incomplete:boolean; disconnected:boolean; interrupting:boolean;
@@ -43,7 +40,7 @@ const reviewTargetOptions = [
 <template>
                 <fieldset :disabled="deletion?.selectedBlocking.value" style="border:0;padding:0;margin:0;min-width:0">
                 <fieldset :disabled="shell?.selectedBlocking.value" style="border:0;padding:0;margin:0;min-width:0">
-                <details id="native-conversation-actions" class="feature-panel native-thread-actions">
+                <details class="feature-panel native-thread-actions">
                   <summary>Conversation actions</summary>
                   <button type="button" :disabled="compaction.busy.value || review.busy.value || inProgress || sending || incomplete || disconnected" @click="compaction.run">Compact conversation</button>
                   <ComposerDropdown v-model="review.kind.value" :options="reviewTargetOptions" placeholder="Review target" />
@@ -65,8 +62,6 @@ const reviewTargetOptions = [
                 <DeniedActions :thread-id="threadId" :rows="deniedActions" />
                 <NativeQueuePanel :thread-id="threadId" :epoch="epoch" :disconnected="disconnected" :queue="queue" :in-progress="inProgress" :blocked="sending||incomplete||compaction.busy.value||review.busy.value" />
                 <BackgroundTerminals :thread-id="threadId" :epoch="epoch" :messages="messages" :disconnected="disconnected" />
-                <WorkingTreePanel :cwd="cwd" :epoch="epoch" />
-                <CreateWorktree :cwd="cwd" :epoch="epoch" :blocked="disconnected||inProgress||sending||incomplete||compaction.busy.value||review.busy.value" :open-project="openCreatedWorktree" />
                 </fieldset>
                 <NativeShellPanel :thread-id="threadId" :epoch="epoch" :shell="shell" :ensure-shell="ensureShell" :blocked="disconnected||inProgress||sending||incomplete||compaction.busy.value||review.busy.value||queue.writing.value" />
                 </fieldset>

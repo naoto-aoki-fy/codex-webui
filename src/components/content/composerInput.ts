@@ -1,17 +1,17 @@
-import { recordSubmittedPrompt } from '../../utils/promptLibrary'
 import type { Ref } from 'vue';
 import { computed, nextTick, ref } from 'vue';
 import { searchComposerFiles, type ComposerFileSuggestion } from '../../api/codexGateway';
-import type { CollaborationModeKind, SpeedMode } from '../../types/codex';
 import { persistDraftForThread, type ComposerDraftPayload } from '../../utils/composerDraftStorage';
 import { createComposerAttachments } from './composerAttachments';
-import type { ComposerProps, SlashSuggestion, SubmitPayload } from "./composerContracts";
+import type { ComposerProps, SkillSuggestion, SubmitPayload } from "./composerContracts";
 import { createComposerSettings } from './composerSettings';
 /** Single owner of live text, suggestions, keyboard/IME, submit settlement and draft generation. Attachment and settings controllers supply their owned selections. Component hooks persist thread changes and clear the mention debounce timer on unmount. */
 export function createComposerInput(deps: {
     props: Readonly<ComposerProps>;
     settings: ReturnType<typeof createComposerSettings>;
-    emit: ((evt: "update:selected-queue-mode", queue: boolean) => void) & ((evt: "submit", payload: SubmitPayload, settle: (accepted: boolean) => void) => void) & ((evt: "thread-action", action: string) => void) & ((evt: "interrupt") => void) & ((evt: "edit-goal") => void) & ((evt: "update:selected-collaboration-mode", mode: CollaborationModeKind) => void) & ((evt: "update:selected-model", modelId: string) => void) & ((evt: "update:selected-reasoning-effort", effort: string) => void) & ((evt: "update:selected-speed-mode", mode: SpeedMode) => void);
+    emit: ((evt: 'update:selected-queue-mode', queue: boolean) => void)
+        & ((evt: 'submit', payload: SubmitPayload, settle: (accepted: boolean) => void) => void)
+        & ((evt: 'interrupt') => void);
     attachments: ReturnType<typeof createComposerAttachments>;
     isAttachMenuOpen: Ref<boolean, boolean>;
     isMobile: Ref<boolean, boolean>;
@@ -24,57 +24,33 @@ export function createComposerInput(deps: {
     });
     const selectedApps = ref<import('../../api/apps').AppReference[]>([]);
     const draft = ref('');
-    const promptLibraryOpen = ref(false);
-    const promptStorageNotice = ref('');
-    const slashQuery = ref<string | null>(null);
-    const slashStart = ref(0);
-    const slashCursor = ref(0);
-    const slashIndex = ref(0);
-    const slashSuggestions = computed<SlashSuggestion[]>(() => {
-        const query = (slashQuery.value ?? '').toLowerCase();
-        const commands: SlashSuggestion[] = [
-            { name: 'goal', description: 'Set or manage the goal for this thread' },
-            { name: 'plan', description: 'Toggle plan mode for this thread' },
-            { name: 'prompts', description: 'Open editable text presets and recent prompts' },
-            { name: 'history', description: 'Open recent submitted prompts (editable, never auto-send)' },
-            { name: 'presets', description: 'Manage text presets' },
-            { name: 'help', description: 'Discover supported commands' },
-            ...(deps.props.activeThreadId === '__new-thread__' ? [] : ['review','compact','diff','processes'].map(name => ({name,description:`Open ${name} controls; does not execute automatically`}))),
-        ].filter(item => item.name.includes(query));
+    const skillQuery = ref<string | null>(null);
+    const skillStart = ref(0);
+    const skillCursor = ref(0);
+    const skillIndex = ref(0);
+    const skillSuggestions = computed<SkillSuggestion[]>(() => {
+        const query = (skillQuery.value ?? '').toLowerCase();
         const skills = (deps.props.skills ?? []).filter(skill => skill.enabled !== false && skill.name.trim() && skill.path.trim())
             .map(skill => ({ name: skill.displayName || skill.name, description: skill.description, skill }))
             .filter(item => `${item.name} ${item.skill.name} ${item.description} ${item.skill.path}`.toLowerCase().includes(query))
             .sort((a, b) => Number(!a.name.toLowerCase().startsWith(query)) - Number(!b.name.toLowerCase().startsWith(query)) || a.name.localeCompare(b.name));
-        return [...skills, ...commands].slice(0, 20);
+        return skills.slice(0, 20);
     });
-    function updateSlashSuggestions() {
+    function updateSkillSuggestions() {
         const cursor = inputRef.value?.selectionStart ?? draft.value.length;
         const match = /(?:^|\s)\/([^\s/]*)$/.exec(draft.value.slice(0, cursor));
-        slashQuery.value = match?.[1] ?? null;
-        slashCursor.value = cursor;
-        slashStart.value = match ? cursor - match[1]!.length - 1 : cursor;
-        slashIndex.value = 0;
+        skillQuery.value = match?.[1] ?? null;
+        skillCursor.value = cursor;
+        skillStart.value = match ? cursor - match[1]!.length - 1 : cursor;
+        skillIndex.value = 0;
     }
-    function applySlashSuggestion(item: SlashSuggestion) {
-        const before = draft.value.slice(0, slashStart.value);
-        const after = draft.value.slice(slashCursor.value);
-        if (item.skill) {
-            if (!deps.settings.selectedSkills.value.some(skill => skill.path === item.skill!.path))
-                deps.settings.selectedSkills.value.push(item.skill);
-            draft.value = before + after;
-        }
-        else if (['prompts','history','presets','help','review','compact','diff','processes'].includes(item.name)) {
-            openCommand(item.name);
-            draft.value = before + after;
-        }
-        else if (item.name === 'plan') {
-            deps.emit('update:selected-collaboration-mode', deps.settings.isPlanModeSelected.value ? 'default' : 'plan');
-            draft.value = before + after;
-        }
-        else {
-            draft.value = before + '/goal ' + after;
-        }
-        slashQuery.value = null;
+    function applySkillSuggestion(item: SkillSuggestion) {
+        const before = draft.value.slice(0, skillStart.value);
+        const after = draft.value.slice(skillCursor.value);
+        if (!deps.settings.selectedSkills.value.some(skill => skill.path === item.skill.path))
+            deps.settings.selectedSkills.value.push(item.skill);
+        draft.value = before + after;
+        skillQuery.value = null;
         nextTick(() => inputRef.value?.focus());
     }
     const inputRef = ref<HTMLTextAreaElement | null>(null);
@@ -122,31 +98,10 @@ export function createComposerInput(deps: {
     const hasSubmitContent = computed(() => draft.value.trim().length > 0 || deps.attachments.selectedImages.value.length > 0 || deps.attachments.fileAttachments.value.length > 0);
     const draftLineCount = computed(() => draft.value.split('\n').length);
     const hasExpandedComposerToggle = computed(() => isComposerExpanded.value || draftLineCount.value >= 6 || isDraftOverflowing.value);
-    function openCommand(name: string) {
-        if (['prompts','history','presets','help'].includes(name)) promptLibraryOpen.value = true;
-        else deps.emit('thread-action', name);
-    }
-    function populatePrompt(text: string) { draft.value = text; slashQuery.value = null; promptLibraryOpen.value = false; nextTick(() => inputRef.value?.focus()); }
     function onSubmit(): void {
         const text = draft.value.trim();
         if (!canSubmit.value)
             return;
-        if (/^\/(prompts|presets|history|help|review|compact|diff|processes)$/.test(text) &&
-            (!['/review','/compact','/diff','/processes'].includes(text) || deps.props.activeThreadId !== '__new-thread__')) {
-            openCommand(text.slice(1)); draft.value = ''; slashQuery.value = null; return;
-        }
-        if (text === '/goal' && deps.props.activeThreadId !== '__new-thread__') {
-            deps.emit('edit-goal');
-            clearPersistedDraftForThread(deps.props.activeThreadId);
-            clearDraftState();
-            return;
-        }
-        if (text === '/plan') {
-            deps.emit('update:selected-collaboration-mode', deps.settings.isPlanModeSelected.value ? 'default' : 'plan');
-            clearPersistedDraftForThread(deps.props.activeThreadId);
-            clearDraftState();
-            return;
-        }
         const threadId = deps.props.activeThreadId;
         const payload = getCurrentDraftPayload();
         const snapshot = JSON.stringify(payload);
@@ -159,7 +114,6 @@ export function createComposerInput(deps: {
             isSubmitting.value = false;
             if (!accepted)
                 return;
-            void recordSubmittedPrompt(text).then(notice => { promptStorageNotice.value = notice; });
             // Acceptance may arrive after a thread switch or after the user edits again.
             if (deps.props.activeThreadId !== threadId || JSON.stringify(getCurrentDraftPayload()) !== snapshot)
                 return;
@@ -193,7 +147,7 @@ export function createComposerInput(deps: {
         deps.attachments.attachmentSessionToken += 1;
     }
     function clearDraftState(): void {
-        slashQuery.value = null;
+        skillQuery.value = null;
         replaceDraftState({
             text: '',
             imageUrls: [],
@@ -248,30 +202,30 @@ export function createComposerInput(deps: {
     }
     function onInputChange(): void {
         queueComposerOverflowMeasurement();
-        updateSlashSuggestions();
+        updateSkillSuggestions();
         updateFileMentionState();
     }
     function onInputKeydown(event: KeyboardEvent): void {
         if (event.isComposing)
             return;
-        if (slashQuery.value !== null) {
+        if (skillQuery.value !== null && skillSuggestions.value.length > 0) {
             if (event.key === 'Escape') {
                 event.preventDefault();
-                slashQuery.value = null;
+                skillQuery.value = null;
                 return;
             }
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault();
-                const size = slashSuggestions.value.length;
+                const size = skillSuggestions.value.length;
                 if (size)
-                    slashIndex.value = (slashIndex.value + (event.key === 'ArrowDown' ? 1 : size - 1)) % size;
+                    skillIndex.value = (skillIndex.value + (event.key === 'ArrowDown' ? 1 : size - 1)) % size;
                 return;
             }
             if (event.key === 'Enter' || event.key === 'Tab') {
-                const item = slashSuggestions.value[slashIndex.value];
+                const item = skillSuggestions.value[skillIndex.value];
                 if (item) {
                     event.preventDefault();
-                    applySlashSuggestion(item);
+                    applySkillSuggestion(item);
                     return;
                 }
             }
@@ -452,12 +406,12 @@ export function createComposerInput(deps: {
         return ext === 'md' || ext === 'mdx';
     }
     return {
-queueMode, appsUnavailable, selectedApps, promptLibraryOpen, promptStorageNotice, populatePrompt,
+queueMode, appsUnavailable, selectedApps,
 draft,
-slashQuery,
-slashIndex,
-slashSuggestions,
-applySlashSuggestion,
+skillQuery,
+skillIndex,
+skillSuggestions,
+applySkillSuggestion,
 inputRef,
 fileMentionSuggestions,
 isFileMentionOpen,

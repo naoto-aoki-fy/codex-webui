@@ -3,7 +3,6 @@ const {setup,assert,openComposerEntry}=require('./approved-fixture.cjs')
 ;(async()=>{
  const browser=await chromium.launch({headless:true})
  const cases=[
-  {id:'12',summary:'Current Git working tree',button:'Refresh working tree',method:'command/exec',result:{exitCode:0,stdout:'?? STALE_PATH\0',stderr:''},panel:'.working-tree-panel',absent:'STALE_PATH'},
   {id:'08',summary:'Background processes',button:'Refresh background processes',method:'thread/backgroundTerminals/list',result:{data:[{processId:'42',itemId:'stale',command:'STALE_PROCESS',cwd:'/remote'}],nextCursor:null},panel:'.background-terminals',absent:'STALE_PROCESS'},
   {id:'20',summary:'Memory status',button:'Read memory status',method:'thread/memory/read',result:{summary:'STALE_MEMORY'},panel:'.memory-status',absent:'STALE_MEMORY'},
   {id:'18',summary:'Apps / Connectors',button:'Refresh available Apps',method:'app/list',result:{data:[{id:'stale',name:'STALE_APP',isAccessible:true,isEnabled:true}],nextCursor:null},panel:'.composer-apps-popover',absent:'STALE_APP'},
@@ -27,5 +26,5 @@ const {setup,assert,openComposerEntry}=require('./approved-fixture.cjs')
   assert.ok(!(await page.locator(c.panel).innerText()).includes(c.absent),c.id+' stale response must be discarded')
   assert.deepEqual(errors,[]);await page.close()
  }
- await browser.close();console.log('PASS stale-connection result rejection: 12, 08, 20, 18, 31, 16, 17')
+ await browser.close();console.log('PASS stale-connection result rejection: 08, 20, 18, 31, 16, 17')
 })().catch(e=>{console.error(e);process.exit(1)})

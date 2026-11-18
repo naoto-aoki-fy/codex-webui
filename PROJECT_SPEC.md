@@ -51,18 +51,19 @@ and bundled method metadata do not guarantee UI support or live server capabilit
 | Implemented | Official Codex model catalog, per-context model/reasoning choices and collaboration modes; effort choices follow model capabilities |
 | Implemented | Existing project/worktree folder selection, file attachments/search, installed skills, MCP status/authentication |
 | Implemented | External account status/quotas, optional web password, responsive light/dark UI |
-| Implemented | On-demand archived conversation browser/restore, complete available Markdown export, account usage reads, bounded warnings and sanitized diagnostic report copying |
+| Implemented | On-demand archived conversation browser/restore, account usage reads, bounded warnings and sanitized diagnostic report copying |
 | Limited | Web-search mode control is not exposed: scoped effective-setting evidence is not validated; see [conversation tools](docs/conversation-tools.md) |
 | Removed | OpenRouter/Zen/custom provider proxies, local Codex process management and automatic authentication |
 | Removed | Automation management, deferred prompt queue, built-in tunnels, Open Terminal action, ZIP import/export, external skill catalog/install UI, Telegram integration |
 | Implemented | Idle-only native inline code review and manual context compaction, with observed lifecycle outcomes |
 | Implemented | Collapsed MCP/Web search execution details, remote working-tree snapshots and bounded lazy patches, native background-process list/exact termination |
-| Implemented | Profile-scoped text presets/recent accepted prompts, supported command discovery/aliases, native structured App references |
+| Implemented | Native structured App references, thread goals, plan mode and installed-skill completion |
+| Removed | WebUI text presets and recent submitted prompts, Markdown conversation downloads, custom worktree creation, the standalone Git working-tree panel and WebUI slash-command aliases |
 | Partial | Native memory readiness/selected summary; base-user MCP enablement scalar editing; vertical-only curated plugin browser; Remote Control status/registered clients |
 | Blocked in approved scope | Isolated side chat; additional skill roots/installation/removal without safe native ownership |
 | Implemented | Split-host project filesystem, Git, uploads and previews through App Server APIs; no shared filesystem required |
 
-The optional conversation tools, Apps picker, prompt library and Remote Control view
+The optional conversation tools, Apps picker and Remote Control view
 load through existing async-component boundaries when opened. Reads remain manual;
 no new startup RPCs or polling are added. Review/compaction use the existing desktop
 notification owner; unknown mutation outcomes are never automatically replayed.

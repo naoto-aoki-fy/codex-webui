@@ -25,10 +25,10 @@ export async function readBrowserRecord<T>(name: string, legacy: () => T): Promi
   })
 }
 
-export async function updateBrowserRecord<T>(name: string, legacy: () => T, change: (current: T) => T, notify = false): Promise<T> {
+export async function updateBrowserRecord<T>(name: string, legacy: () => T, change: (current: T) => T): Promise<T> {
   if (typeof window === 'undefined') return change(legacy())
   const db = await database()
-  const result = await new Promise<T>((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     const tx = db.transaction('records', 'readwrite', { durability: 'strict' })
     let next: T
     tx.oncomplete = () => { db.close(); resolve(next) }
@@ -39,10 +39,4 @@ export async function updateBrowserRecord<T>(name: string, legacy: () => T, chan
       catch (error) { tx.abort(); reject(error) }
     }
   })
-  // Invalidation only, never a second copy of the user data. Failure does not
-  // invalidate a successfully committed recovery record.
-  if (notify) {
-    try { window.localStorage.setItem(`${name}.revision`, `${Date.now()}-${Math.random()}`) } catch { /* Reopen reads IndexedDB directly. */ }
-  }
-  return result
 }

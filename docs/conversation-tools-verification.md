@@ -1,5 +1,7 @@
 # Focused conversation-tools acceptance verification
 
+This report describes the original verification revisions. Markdown downloads and their tests have since been removed. Current archive, clipboard and account tools are described in [conversation tools](conversation-tools.md).
+
 ## Revisions, boundaries and result
 
 The starting branch was `main`, HEAD was verified as `8c64343`, and the working

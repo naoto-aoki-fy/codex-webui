@@ -68,8 +68,8 @@ export type AttachmentBatchStats = {
     succeeded: number;
     failed: number;
 };
-export type SlashSuggestion = {
+export type SkillSuggestion = {
     name: string;
     description: string;
-    skill?: SkillItem;
+    skill: SkillItem;
 };
