@@ -1,13 +1,14 @@
-# Expandable Projects and Pinned sections
+# Projects and Threads heading and Pinned expansion
 
-Setup: Open the app with an existing project and a pinned thread.
+Setup: Open the app in a test browser profile with a project containing an unpinned thread and a separate pinned thread. Set `codex-web-local.sidebar-section-expansion.v1` to `{"projects":false,"pinned":true}` and `codex-web-local.sidebar-section-expansion.v2.projects` to the JSON string `"0"` in local storage to simulate saved collapse preferences.
 
-1. Expand and collapse Projects and Pinned independently. Expect their rows to hide and return.
-2. Refresh. Expect both expansion choices to persist.
-3. Switch project and chronological layouts in the organize menu. Expect project thread navigation to work and no Chats controls.
-4. Repeat in light and dark themes at desktop and mobile widths.
+1. Select By project in Organize and reload. Expect the **Projects** heading and the project folders to be visible. Click the heading and verify that it has no chevron and the folders stay visible.
+2. Collapse and expand the individual project folder. Expect its thread rows to hide and return.
+3. Select Chronological list in Organize. Expect the heading to change immediately to **Threads** and the unpinned thread to appear in the list. Click the heading and reload. Expect **Threads** and the list to remain visible.
+4. Switch back to By project without reloading. Expect **Projects** immediately. Collapse Pinned and reload. Expect Pinned to remain collapsed and project folders to be visible. Expand Pinned and verify its thread returns.
+5. Collapse and reopen the whole sidebar. Search for the unpinned thread and select it. Expect the sidebar controls, search results, and navigation to work. Repeat in light and dark themes at desktop and mobile widths.
 
-Cleanup: Restore the original expansion choices. For legacy history and folder checks, see [explicit folders](remove-projectless-chats.md).
+Cleanup: Discard the test profile or restore the original storage values, view mode, and folder and Pinned expansion choices. For legacy history and folder checks, see [explicit folders](remove-projectless-chats.md).
 
 ## Project and chronological timestamp sorting
 

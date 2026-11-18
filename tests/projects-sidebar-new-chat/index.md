@@ -17,7 +17,7 @@ Return to the [manual test index](../../tests.md).
 | [Feature: Runtime selector uses a toggle-style control](runtime-selector-uses-a-toggle-style-control.md) |
 | [Feature: Frontend missing-entry 404 page auto-redirects to chat](frontend-missing-entry-404-page-auto-redirects-to-chat.md) |
 | [Editable current folder path in the folder picker](editable-current-folder-path-in-the-folder-picker.md) |
-| [Expandable Projects, Pinned, and Chats sidebar sections](expandable-projects-pinned-and-chats-sidebar-sections.md) |
+| [Projects and Threads heading and Pinned expansion](expandable-projects-pinned-and-chats-sidebar-sections.md) |
 | [Sidebar sessions survive symlinked workspace roots](sidebar-sessions-survive-symlinked-workspace-roots.md) |
 | [Sidebar scroll position survives collapse](sidebar-scroll-position-survives-collapse.md) |
 | [Toolbar new thread keeps active project](toolbar-new-thread-keeps-active-project.md) |
