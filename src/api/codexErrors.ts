@@ -4,7 +4,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null
 }
 
-export type CodexErrorCode =
+type CodexErrorCode =
   | 'http_error'
   | 'rpc_error'
   | 'network_error'

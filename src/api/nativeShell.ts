@@ -3,8 +3,8 @@ import {executionText} from './normalizers/executionDetails'
 import {permissionChoices} from './threadPermissions'
 export type ShellRequest=(method:string,params:unknown)=>Promise<unknown>
 export const shellRequest:ShellRequest=(method,params)=>rpcCall(method,params,{commandErrors:true})
-export const SHELL_TIMEOUT_MS=30_000
-export const SHELL_OUTPUT_BYTES=65_536
+const SHELL_TIMEOUT_MS=30_000
+const SHELL_OUTPUT_BYTES=65_536
 export type ShellAccess='readOnly'|'dangerFullAccess'
 export type ShellContext={threadId:string;cwd:string;shell:string;path:string;checkedAt:string;allowFullAccess:boolean}
 export async function inspectShell(threadId:string,request:ShellRequest=shellRequest):Promise<ShellContext>{

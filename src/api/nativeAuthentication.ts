@@ -4,7 +4,7 @@ export type AuthRequest=(method:string,params:unknown)=>Promise<unknown>
 export type NativeAccount=ReturnType<typeof accountInspection>
 export type AuthPreparation={account:NativeAccount;methods:string[];loadedCount:number;checkedAt:string}
 export type LoginMethod='chatgpt'|'chatgptDeviceCode'
-export type NativeLogin={id:string;url:string;code:string|null}
+type NativeLogin={id:string;url:string;code:string|null}
 export async function readAuthenticationAccount(request:AuthRequest=rpcCall){return accountInspection(await request('account/read',{refreshToken:false}))}
 export async function prepareAuthentication(request:AuthRequest=rpcCall):Promise<AuthPreparation>{
  const [account,rawPolicy]=await Promise.all([readAuthenticationAccount(request),request('configRequirements/read',{})])

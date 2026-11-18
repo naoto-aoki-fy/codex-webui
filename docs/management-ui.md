@@ -72,6 +72,7 @@ queue state blocks sends and links to inspection, without falling back to Immedi
 ## Historical verification
 
 These results describe the management layout before the WebUI feature removal.
+Prompt CRUD/history and the prompts screenshots below describe retired behavior.
 
 - `pnpm run test:unit`: 1,492 passed, 2 skipped (138 files passed, 2 skipped).
 - `pnpm run typecheck`: frontend and server passed. No lint script is configured.

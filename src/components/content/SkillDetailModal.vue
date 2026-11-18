@@ -229,10 +229,6 @@ function onToggleEnabled(): void {
   @apply rounded-lg px-3 py-1.5 text-sm font-medium transition border-0 disabled:opacity-50 disabled:cursor-not-allowed;
 }
 
-.sdm-btn-primary {
-  @apply bg-zinc-900 text-white hover:bg-black;
-}
-
 .sdm-btn-secondary {
   @apply bg-zinc-100 text-zinc-700 hover:bg-zinc-200;
 }

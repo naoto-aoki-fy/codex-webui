@@ -12,8 +12,7 @@ Return to the [manual test index](../../tests.md).
 | [Dark theme Settings controls](dark-theme-settings-controls.md) |
 | [About settings build information](about-settings.md) |
 | [Revert PR 131 project recency and mobile move mode](revert-pr-131-project-recency-and-mobile-move-mode.md) |
-| [Feature: Dark theme for worktree runtime selector and Skills Hub](dark-theme-for-worktree-runtime-selector-and-skills-hub.md) |
-| [Feature: Dark theme states for runtime mode toggle](dark-theme-states-for-runtime-mode-toggle.md) |
+| [Dark theme for Skills Hub](dark-theme-for-skills-hub.md) |
 | [Feature: Revert PR #16 mobile viewport and chat scroll behavior changes](revert-pr-16-mobile-viewport-and-chat-scroll-behavior-changes.md) |
 | [Feature: Revert Renat scrolling/input-layout behavior (without Fast mode changes)](revert-renat-scrolling-input-layout-behavior-without-fast-mode-changes.md) |
 | [Feature: Dark theme command rows in chat remain readable](dark-theme-command-rows-in-chat-remain-readable.md) |

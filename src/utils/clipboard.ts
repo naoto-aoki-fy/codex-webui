@@ -1,4 +1,4 @@
-export function copyTextWithSelectionFallback(text: string): boolean {
+function copyTextWithSelectionFallback(text: string): boolean {
   if (typeof document === 'undefined') return false
 
   const textarea = document.createElement('textarea')

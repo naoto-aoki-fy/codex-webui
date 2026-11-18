@@ -2280,7 +2280,7 @@ describe('conversation model and fresh fork provider selection', () => {
       pending.resolve({ ...oldDetail, model: 'A', modelProvider: 'P' })
       await loading
       await fresh.sendMessageToSelectedThread('pending resume')
-      expect(fresh.selectedModelId.value).toBe(key('P', 'B'))
+      expect(fresh.readModelIdForThread(fresh.selectedThreadId.value)).toBe(key('P', 'B'))
     } else {
       gateway.getThreadDetail.mockReturnValueOnce(pending.promise)
       const loading = state.loadMessages(thread.id, { force: true })
@@ -2288,7 +2288,7 @@ describe('conversation model and fresh fork provider selection', () => {
       pending.resolve({ ...oldDetail, model: 'A', modelProvider: 'P' })
       await loading
       await state.sendMessageToSelectedThread('pending history')
-      expect(state.selectedModelId.value).toBe(key('P', 'B'))
+      expect(state.readModelIdForThread(state.selectedThreadId.value)).toBe(key('P', 'B'))
     }
     expect(gateway.startThreadTurn.mock.calls[gateway.startThreadTurn.mock.calls.length - 1]?.[3]).toBe(key('P', 'B'))
   })

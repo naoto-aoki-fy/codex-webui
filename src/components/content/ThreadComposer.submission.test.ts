@@ -48,7 +48,6 @@ function mount(initial: Record<string, unknown> = {}) {
     if (path.endsWith('ComposerDropdown.vue')) return { default: vue.defineComponent({ props: ['options', 'modelValue', 'placeholder'], emits: ['update:modelValue'], setup: (props, { emit }) => () => vue.h('dropdown', { options: props.options, modelValue: props.modelValue, placeholder: props.placeholder, 'onUpdate:modelValue': (value: string) => emit('update:modelValue', value) }) }) }
     if (path.endsWith('.vue')) return { default: { render: () => null } }
     if (path.includes('useMobile')) return { useMobile: () => ({ isMobile: vue.ref(false) }) }
-    if (path.includes('useUiLanguage')) return { useUiLanguage: () => ({ t: (s: string) => s }) }
     if (path.includes('codexGateway')) return gateway
     return imports[path]
   })

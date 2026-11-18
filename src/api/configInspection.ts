@@ -6,7 +6,7 @@ const restrictions=['model_provider','allowed_approval_policies','allowed_approv
 function record(v:unknown):Record<string,unknown>{return v&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,unknown>:{}}
 function hasOwn(value:object,key:PropertyKey){return Object.prototype.hasOwnProperty.call(value,key)}
 function projection(value:unknown,keys:readonly string[]){const row=record(value);return Object.fromEntries(keys.filter(k=>hasOwn(row,k)).map(k=>[k,executionText(row[k])]))}
-export function layerIdentity(value:unknown){const row=record(value);return executionText(Object.fromEntries(['type','file','profile','dotCodexFolder','domain','key','id','name'].filter(k=>hasOwn(row,k)).map(k=>[k,row[k]])))}
+function layerIdentity(value:unknown){const row=record(value);return executionText(Object.fromEntries(['type','file','profile','dotCodexFolder','domain','key','id','name'].filter(k=>hasOwn(row,k)).map(k=>[k,row[k]])))}
 export function configInspection(value:unknown){
  const result=record(value)
  if(!result.config||typeof result.config!=='object'||Array.isArray(result.config))throw new Error('Effective configuration unavailable')

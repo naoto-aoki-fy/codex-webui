@@ -6,7 +6,9 @@ The active profile is fixed for the document; switching profiles reloads it.
 No unknown keys are reset. This inventory covers production browser code, not test
 fixtures or server-side files. Source paths are relative to `src/`.
 
-## Inventory before changes
+## Historical inventory before the persistence changes
+
+For retired prompt records, see [UI settings after changes](#ui-settings-after-changes).
 
 | Key / schema | Read / write owner | Scope | Authority, necessity and risks |
 | --- | --- | --- | --- |

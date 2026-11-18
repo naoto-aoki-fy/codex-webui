@@ -21,13 +21,11 @@ it('does not publish an upload into a replacement draft session or replay the up
   // The input owner advances this token when replacing its complete draft.
   attachments.attachmentSessionToken += 1
   attachments.pendingAttachmentCount.value = 0
-  attachments.attachmentBatchStats.value = null
   pending.resolve('/fixture/notes.txt')
   await vi.waitFor(() => expect(uploadFile).toHaveBeenCalledTimes(1))
   await Promise.resolve()
   expect(attachments.fileAttachments.value).toEqual([])
   expect(attachments.pendingAttachmentCount.value).toBe(0)
-  expect(attachments.attachmentBatchStats.value).toBeNull()
 })
 it('keeps plain clipboard text available while attaching its image exactly once', async () => {
   vi.mocked(uploadFile).mockResolvedValueOnce('/fixture/paste.png')

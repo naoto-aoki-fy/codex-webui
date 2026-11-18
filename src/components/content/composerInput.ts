@@ -63,11 +63,11 @@ export function createComposerInput(deps: {
     const isComposerCollapsed = ref(false);
     const isDraftOverflowing = ref(false);
     let composerOverflowMeasurementQueued = false;
-    const draftGeneration = ref(0);
     let fileMentionSearchToken = 0;
     let fileMentionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
     const isSubmitting = ref(false);
+    const hasSubmitContent = computed(() => draft.value.trim().length > 0 || deps.attachments.selectedImages.value.length > 0 || deps.attachments.fileAttachments.value.length > 0);
     const canSubmit = computed(() => {
         if(queueMode.value&&deps.props.activeThreadId!=='__new-thread__'&&!deps.props.queueReady)return false;
         if (appsUnavailable.value) return false;
@@ -83,7 +83,7 @@ export function createComposerInput(deps: {
             return false;
         if (deps.attachments.pendingAttachmentCount.value > 0)
             return false;
-        return draft.value.trim().length > 0 || deps.attachments.selectedImages.value.length > 0 || deps.attachments.fileAttachments.value.length > 0;
+        return hasSubmitContent.value;
     });
     const hasUnsavedDraft = computed(() => selectedApps.value.length > 0 || draft.value.trim().length > 0
         || deps.attachments.selectedImages.value.length > 0
@@ -95,7 +95,6 @@ export function createComposerInput(deps: {
         : deps.settings.isPlanModeWaitingForModel.value
             ? ('Loading models for plan mode...')
             : ('Type a message... (@ for files)'));
-    const hasSubmitContent = computed(() => draft.value.trim().length > 0 || deps.attachments.selectedImages.value.length > 0 || deps.attachments.fileAttachments.value.length > 0);
     const draftLineCount = computed(() => draft.value.split('\n').length);
     const hasExpandedComposerToggle = computed(() => isComposerExpanded.value || draftLineCount.value >= 6 || isDraftOverflowing.value);
     function onSubmit(): void {
@@ -129,7 +128,6 @@ export function createComposerInput(deps: {
         });
     }
     function replaceDraftState(payload: ComposerDraftPayload): void {
-        draftGeneration.value += 1;
         selectedApps.value = payload.apps?.map(app=>({...app})) ?? [];
         draft.value = payload.text;
         deps.attachments.selectedImages.value = payload.imageUrls.map((url, index) => ({
@@ -140,7 +138,6 @@ export function createComposerInput(deps: {
         deps.settings.selectedSkills.value = payload.skills.map((skill) => ((deps.props.skills ?? []).find((item) => item.path === skill.path)
             ?? { name: skill.name, displayName: undefined, description: '', path: skill.path }));
         deps.attachments.fileAttachments.value = payload.fileAttachments.map((attachment) => ({ ...attachment }));
-        deps.attachments.attachmentBatchStats.value = null;
         deps.attachments.pendingAttachmentCount.value = 0;
         deps.isAttachMenuOpen.value = false;
         closeFileMention();
@@ -419,7 +416,6 @@ fileMentionHighlightedIndex,
 isComposerExpanded,
 isComposerCollapsed,
 get fileMentionDebounceTimer() { return fileMentionDebounceTimer; },
-set fileMentionDebounceTimer(value) { fileMentionDebounceTimer = value; },
 canSubmit,
 hasUnsavedDraft,
 isInteractionDisabled,

@@ -1,6 +1,6 @@
 /** Diagnostic reports intentionally exclude all free-form strings, URLs and paths. */
 export type DiagnosticWarning = { atIso: string; message: string }
-export const WARNING_LIMIT = 20
+const WARNING_LIMIT = 20
 export function redactDiagnosticText(value: string): string {
   return value.slice(0, 6000)
     .replace(/\b(?:https?|wss?):\/\/[^\s<>"']+/gi, '[URL omitted]')

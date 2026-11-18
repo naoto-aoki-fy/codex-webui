@@ -55,7 +55,7 @@ type MessageBlock = {
 };
 /** Owns message-action feedback and timers, copy content and native/Portable fork/edit boundaries. Uses viewport generation checks after async copy. The component clears feedback timers on thread changes and unmount. */
 export function createConversationActions(deps: {
-    threadGeneration: number;
+    readonly threadGeneration: number;
     readPlan: (message: UiMessage) => ConversationPlan;
     isCurrentThreadGeneration: (generation: number) => boolean;
     props: Readonly<ConversationProps>;

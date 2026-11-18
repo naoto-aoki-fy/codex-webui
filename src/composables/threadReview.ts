@@ -1,7 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { rpcCall, type RpcNotification } from '../api/codexRpcClient'
 
-export type ReviewKind = 'uncommittedChanges' | 'baseBranch' | 'commit' | 'custom'
+type ReviewKind = 'uncommittedChanges' | 'baseBranch' | 'commit' | 'custom'
 export function reviewTarget(kind: ReviewKind, value: string) {
   const text = value.trim()
   if (kind === 'uncommittedChanges') return { type: kind }

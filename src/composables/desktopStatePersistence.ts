@@ -11,7 +11,7 @@ export const NEW_THREAD_COLLABORATION_MODE_CONTEXT = '__new-thread__'
 // Retain the context key for migration; values may encode a provider/model pair.
 export const NEW_THREAD_MODEL_CONTEXT = '__new-thread-provider__::codex'
 
-export function normalizeCollaborationMode(value: unknown): CollaborationModeKind {
+function normalizeCollaborationMode(value: unknown): CollaborationModeKind {
   return value === 'plan' ? 'plan' : 'default'
 }
 

@@ -18,13 +18,13 @@ export function extractLocalImagePathFromUrl(value: string): string {
   }
 }
 
-export function normalizePlanStepStatus(value: unknown): UiPlanStep['status'] {
+function normalizePlanStepStatus(value: unknown): UiPlanStep['status'] {
   if (value === 'completed') return 'completed'
   if (value === 'inProgress' || value === 'in_progress') return 'inProgress'
   return 'pending'
 }
 
-export function buildPlanMessageText(plan: UiPlanData): string {
+function buildPlanMessageText(plan: UiPlanData): string {
   const lines: string[] = []
   if (plan.explanation?.trim()) {
     lines.push(plan.explanation.trim())
@@ -256,7 +256,7 @@ export function normalizePendingServerRequestMethod(
   return normalized
 }
 
-export function looksLikeExecApprovalRequest(params: Record<string, unknown> | null): boolean {
+function looksLikeExecApprovalRequest(params: Record<string, unknown> | null): boolean {
   if (!params) return false
   const command = params.command
   if (Array.isArray(command) && command.some((part) => typeof part === 'string' && part.trim().length > 0)) {
@@ -268,7 +268,7 @@ export function looksLikeExecApprovalRequest(params: Record<string, unknown> | n
   return Array.isArray(params.commandActions)
 }
 
-export function looksLikePatchApprovalRequest(params: Record<string, unknown> | null): boolean {
+function looksLikePatchApprovalRequest(params: Record<string, unknown> | null): boolean {
   if (!params) return false
   if (typeof params.grantRoot === 'string' && params.grantRoot.trim().length > 0) return true
   if (typeof params.grant_root === 'string' && params.grant_root.trim().length > 0) return true
@@ -276,11 +276,11 @@ export function looksLikePatchApprovalRequest(params: Record<string, unknown> | 
   return asRecord(params.changes) !== null
 }
 
-export function looksLikeToolUserInputRequest(params: Record<string, unknown> | null): boolean {
+function looksLikeToolUserInputRequest(params: Record<string, unknown> | null): boolean {
   return Boolean(params && Array.isArray(params.questions))
 }
 
-export function looksLikeToolCallRequest(params: Record<string, unknown> | null): boolean {
+function looksLikeToolCallRequest(params: Record<string, unknown> | null): boolean {
   if (!params) return false
   return (
     typeof params.toolName === 'string' ||
@@ -290,7 +290,7 @@ export function looksLikeToolCallRequest(params: Record<string, unknown> | null)
   )
 }
 
-export function looksLikeMcpServerElicitationRequest(params: Record<string, unknown> | null): boolean {
+function looksLikeMcpServerElicitationRequest(params: Record<string, unknown> | null): boolean {
   if (!params) return false
   const mode = readString(params.mode)
   return (
@@ -301,7 +301,7 @@ export function looksLikeMcpServerElicitationRequest(params: Record<string, unkn
   )
 }
 
-export function looksLikePermissionsApprovalRequest(params: Record<string, unknown> | null): boolean {
+function looksLikePermissionsApprovalRequest(params: Record<string, unknown> | null): boolean {
   if (!params) return false
   return (
     typeof params.threadId === 'string' &&

@@ -8,6 +8,7 @@ import { normalizeThreadGroupsV2 } from '../../api/normalizers/v2'
 import { filterGroupsByWorkspaceRoots } from '../../utils/desktopProjectGroups'
 import { folderGroupKey, projectGroupKey, type SidebarGroup, type ThreadViewMode } from './sidebarGroups'
 import SidebarThreadTree from './SidebarThreadTree.vue'
+import type { createSidebarThreads } from './sidebarThreads'
 import { getPinnedThreadState, getThreadSummary, setThreadPinned } from '../../api/codexGateway'
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ resolve: vi.fn() }) }))
@@ -27,7 +28,7 @@ const renderer = createRenderer<object, object>({
 })
 
 type SidebarState = {
-  sortedGroups: SidebarGroup[]
+  threads: ReturnType<typeof createSidebarThreads>
   filteredGroups: SidebarGroup[]
   chatSortMode: 'updated' | 'created'
   globalThreads: UiThread[]
@@ -45,10 +46,7 @@ type SidebarState = {
   visibleThreads(group: SidebarGroup): UiThread[]
   onInlineDeleteClick(threadId: string): void
   pinStateError: string
-  togglePin(threadId: string): Promise<void>
-  refreshPinnedThreadState(): Promise<void>
   pinnedThreads: UiThread[]
-  unpinnedThreadsByGroupKey: Map<string, UiThread[]>
 }
 const cleanups: (() => void)[] = []
 afterEach(() => {
@@ -171,14 +169,14 @@ describe('SidebarThreadTree native project timestamp sorting', () => {
     const { props, state, nativeProjects } = await mountNativeSidebar()
     expect(props.groups.map(group => group.projectName)).toEqual(['Alpha', 'Empty', 'Zulu'])
     expect(names(state.filteredGroups)).toEqual(['Zulu', 'Alpha', 'Empty'])
-    expect(ids(state.sortedGroups[0]!.threads)).toEqual(['z-new', 'z-old'])
+    expect(ids(state.threads.sortedGroups.value[0]!.threads)).toEqual(['z-new', 'z-old'])
     expect(ids(state.pinnedThreads)).toEqual(['z-new'])
-    expect(ids(state.unpinnedThreadsByGroupKey.get(projectGroupKey('Zulu'))!)).toEqual(['z-old'])
+    expect(ids(state.threads.unpinnedThreadsByGroupKey.value.get(projectGroupKey('Zulu'))!)).toEqual(['z-old'])
 
     state.chatSortMode = 'created'
     await nextTick()
     expect(names(state.filteredGroups)).toEqual(['Alpha', 'Zulu', 'Empty'])
-    expect(ids(state.sortedGroups[0]!.threads)).toEqual(['a-new', 'a-old'])
+    expect(ids(state.threads.sortedGroups.value[0]!.threads)).toEqual(['a-new', 'a-old'])
     expect(ids(state.globalThreads)).toEqual(['a-new', 'z-old', 'a-old'])
     state.chatSortMode = 'updated'
     await nextTick()
@@ -197,7 +195,7 @@ describe('SidebarThreadTree native project timestamp sorting', () => {
     props.groups.find(group => group.projectName === 'Alpha')!.threads.find(thread => thread.id === 'a-old')!.updatedAtIso = new Date(70000).toISOString()
     await nextTick()
     expect(names(state.filteredGroups)).toEqual(['Alpha', 'Zulu', 'Empty'])
-    expect(ids(state.sortedGroups[0]!.threads)).toEqual(['a-old', 'a-new'])
+    expect(ids(state.threads.sortedGroups.value[0]!.threads)).toEqual(['a-old', 'a-new'])
 
     const page = normalizeThreadGroupsV2({ data: [
       row('z-page-b', 'Zulu', 80, 90), row('z-page-a', 'Zulu', 80, 90),
@@ -206,7 +204,7 @@ describe('SidebarThreadTree native project timestamp sorting', () => {
       ? { ...group, threads: [...group.threads, ...page[0]!.threads] } : group)
     await nextTick()
     expect(names(state.filteredGroups)).toEqual(['Zulu', 'Alpha', 'Empty'])
-    expect(ids(state.sortedGroups[0]!.threads)).toEqual(['z-page-a', 'z-page-b', 'z-new', 'z-old'])
+    expect(ids(state.threads.sortedGroups.value[0]!.threads)).toEqual(['z-page-a', 'z-page-b', 'z-new', 'z-old'])
 
     props.groups.find(group => group.projectName === 'Alpha')!.threads.find(thread => thread.id === 'a-old')!.updatedAtIso = new Date(90000).toISOString()
     props.groups.unshift({ projectName: 'Empty A', threads: [] })
@@ -222,13 +220,13 @@ it('keeps native conversations accessible and existing pins intact when pin load
   const { state } = await mountNativeSidebar()
   const before = ids(state.globalThreads)
   vi.mocked(getPinnedThreadState).mockRejectedValueOnce(new Error('Legacy pin migration is incomplete'))
-  await state.refreshPinnedThreadState()
+  await state.threads.refreshPinnedThreadState()
   expect(state.pinStateError).toContain('Legacy pin migration')
   expect(ids(state.globalThreads)).toEqual(before)
   expect(ids(state.pinnedThreads)).toEqual(['z-new'])
-  await state.togglePin('a-new')
+  await state.threads.togglePin('a-new')
   expect(setThreadPinned).not.toHaveBeenCalled()
-  await state.refreshPinnedThreadState()
+  await state.threads.refreshPinnedThreadState()
   expect(state.pinStateError).toBe('')
 })
 
@@ -312,11 +310,11 @@ it('keeps folder rows current with selection, sort, search, pins, pagination and
   expect(names(state.filteredGroups)).toEqual(['/shared'])
   expect(sharedRows()).toEqual(['z-old', 'a-new', 'a-old'])
   expect(ids(state.pinnedThreads)).toEqual(['z-new'])
-  await state.togglePin('a-old')
+  await state.threads.togglePin('a-old')
   expect(setThreadPinned).toHaveBeenCalledExactlyOnceWith('a-old', true, 'z-new')
   expect(sharedRows()).toEqual(['z-old', 'a-new'])
   expect(ids(state.pinnedThreads)).toEqual(['a-old', 'z-new'])
-  await state.togglePin('a-old')
+  await state.threads.togglePin('a-old')
   expect(setThreadPinned).toHaveBeenLastCalledWith('a-old', false, 'a-old')
   state.chatSortMode = 'created'
   expect(sharedRows()).toEqual(['a-new', 'z-old', 'a-old'])
