@@ -3,7 +3,7 @@
     <button
       class="composer-dropdown-trigger"
       type="button"
-      :title="triggerAccessibleLabel"
+      :title="triggerTitle || triggerAccessibleLabel"
       :aria-label="triggerAccessibleLabel"
       :disabled="disabled"
       @click="onToggle"
@@ -73,6 +73,7 @@ const props = defineProps<{
   modelValue: string
   options: DropdownOption[]
   placeholder?: string
+  triggerTitle?: string
   disabled?: boolean
   selectedPrefixIcon?: Component | null
   iconOnly?: boolean
