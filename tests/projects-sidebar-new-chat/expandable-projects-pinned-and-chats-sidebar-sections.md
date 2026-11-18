@@ -2,9 +2,9 @@
 
 Setup: Open the app in a test browser profile with a project containing an unpinned thread and a separate pinned thread. Set `codex-web-local.sidebar-section-expansion.v1` to `{"projects":false,"pinned":true}` and `codex-web-local.sidebar-section-expansion.v2.projects` to the JSON string `"0"` in local storage to simulate saved collapse preferences.
 
-1. Select By project in Organize and reload. Expect the **Projects** heading and the project folders to be visible. Click the heading and verify that it has no chevron and the folders stay visible.
+1. Select By project in Organize and reload. Expect the **Projects** heading and the project folders to be visible. Check that the heading starts at the row's left padding and Organize sits at the right edge. Click the heading and verify that it has no chevron and the folders stay visible.
 2. Collapse and expand the individual project folder. Expect its thread rows to hide and return.
-3. Select Chronological list in Organize. Expect the heading to change immediately to **Threads** and the unpinned thread to appear in the list. Click the heading and reload. Expect **Threads** and the list to remain visible.
+3. Select Chronological list in Organize. Expect the heading to change immediately to **Threads** at the same left alignment, Organize to stay right-aligned, and the unpinned thread to appear in the list. Click the heading and reload. Expect **Threads** and the list to remain visible.
 4. Switch back to By project without reloading. Expect **Projects** immediately. Collapse Pinned and reload. Expect Pinned to remain collapsed and project folders to be visible. Expand Pinned and verify its thread returns.
 5. Collapse and reopen the whole sidebar. Search for the unpinned thread and select it. Expect the sidebar controls, search results, and navigation to work. Repeat in light and dark themes at desktop and mobile widths.
 
