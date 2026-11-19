@@ -1,7 +1,7 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { tmpdir, userInfo } from 'node:os'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
 import { expect, it, vi } from 'vitest'
@@ -25,7 +25,7 @@ it.skipIf(process.env.CODEX_PROJECT_FILES_LIVE !== '1' || process.platform === '
   await new Promise<void>(resolve => reservation.close(() => resolve()))
   const url = `ws://127.0.0.1:${port}`
   const child = spawn('node_modules/.bin/codex', ['app-server', '--listen', url], {
-    env: { ...process.env, CODEX_HOME: codexHome }, stdio: ['ignore', 'ignore', 'pipe'],
+    env: { ...process.env, HOME: directory, CODEX_HOME: codexHome }, stdio: ['ignore', 'ignore', 'pipe'],
   })
   let logs = ''
   child.stderr.on('data', data => { logs += data })
@@ -47,6 +47,7 @@ it.skipIf(process.env.CODEX_PROJECT_FILES_LIVE !== '1' || process.platform === '
     expect((await files.getMetadata(file)).isFile).toBe(true)
     expect((await files.readDirectory(join(directory, 'project'))).entries[0]!.fileName).toBe('日本 語.txt')
     expect(client.getInitializationMetadata()).toMatchObject({ codexHome, platformFamily: 'unix' })
+    expect(await client.resolveUploadUserHome(codexHome, client.getConnectionGeneration())).toBe(userInfo().homedir)
     vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', uploadRoot)
     const attachment = await stageRemoteUpload(client, 'live.txt', Buffer.from('live upload'))
     expect(attachment.startsWith(join(uploadRoot, 'codexapp-uploads'))).toBe(true)

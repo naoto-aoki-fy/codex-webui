@@ -40,16 +40,24 @@ ID of `legacy`.
 
 ## Uploads on the App Server
 
-Set `CODEXUI_REMOTE_UPLOAD_DIR` in the WebUI backend environment to a dedicated
-absolute path **on the App Server host**, outside its Codex home. The App Server
-must be able to create and write to that directory. Uploaded bytes are stored in
-`<CODEXUI_REMOTE_UPLOAD_DIR>/codexapp-uploads/<sha256(ID)>/` via App Server RPC.
-The backend needs only the ledger and journal. It resolves Codex home from the
-connected App Server and checks both paths via remote metadata before creating
-directories or writing files. If the home or the paths cannot be verified,
-uploads fail with a configuration error. Use absolute paths with no symbolic
-links in either path. Place the dedicated storage outside Codex home on the
-App Server, and keep paths stable during uploads. The protocol does not expose
+By default, the upload root is `.codex-webui-uploads` under the home directory
+of the OS account running the connected App Server. This is
+`~/.codex-webui-uploads` on Linux and macOS and
+`%USERPROFILE%\.codex-webui-uploads` on Windows, using the App Server account's
+profile directory. An unset or empty `CODEXUI_REMOTE_UPLOAD_DIR` uses this
+default. The WebUI uses one App Server `process/spawn` lookup per connection
+when an upload first needs the account's home. Custom `CODEX_HOME` locations
+are supported.
+
+To override the default, set `CODEXUI_REMOTE_UPLOAD_DIR` in the WebUI backend
+environment to a dedicated absolute path on the App Server host. The App Server
+must be able to create and write to that directory. Uploaded bytes are stored
+under `codexapp-uploads/<sha256(ID)>/` within the selected root via App Server RPC.
+The backend resolves the App Server's Codex home and verifies both paths via
+remote metadata before creating directories or writing files. If the OS home
+lookup is unavailable or the default root cannot be verified, set the override
+to an absolute path outside Codex home. Use paths with no symbolic links and
+keep them stable during uploads. The protocol does not expose
 directory identity or atomic path-checked writes, so avoid bind mounts, mapped
 drives, or share aliases that expose Codex home through another path.
 

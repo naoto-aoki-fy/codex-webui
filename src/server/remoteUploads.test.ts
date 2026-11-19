@@ -16,6 +16,7 @@ function remoteClient(home = '/server/core', request = (method: string, _params:
   return {
     uploadRpc: vi.fn(async (method: string, params: { path: string, dataBase64?: string }, _generation?: number) => request(method, params)),
     resolveCodexHome: vi.fn(async () => home),
+    resolveUploadUserHome: vi.fn(async () => '/remote/account'),
     getConnectionGeneration: () => 17,
   }
 }
@@ -40,6 +41,7 @@ it.each([
   expect(a.startsWith(prefix + profileDirectoryName('unit-test'))).toBe(true)
   expect(remote.get(a)).toEqual(bytes)
   expect(remote.get(b)?.toString()).toBe('B')
+  expect(client.resolveUploadUserHome).not.toHaveBeenCalled()
   const lines = (await readFile(ledger(storageNames.journal), 'utf8')).trim().split('\n')
   expect(lines.map(line => JSON.parse(line).path)).toEqual([a, b])
   expect(client.uploadRpc.mock.calls.some(([method]) => method === 'fs/remove')).toBe(false)
@@ -108,7 +110,7 @@ it('serializes capacity reservations and retains an ambiguous write reservation'
 })
 
 it.each([
-  ['', '/custom'], ['relative', '/custom'], ['/dedicated/../custom', '/custom'],
+  ['relative', '/custom'], ['/dedicated/../custom', '/custom'],
   ['/home/user/.codex/staging', '/custom'], ['/custom', '/custom'], ['/custom/nested', '/custom'],
   ['/CUSTOM/nested', '/custom'], ['C:relative', 'C:\\custom'], ['C:\\custom.\\nested', 'C:\\custom'],
   ['c:/Custom/ATTACHMENTS', 'C:\\custom'], ['\\\\?\\C:\\custom', 'C:\\custom'],
@@ -158,4 +160,25 @@ it('permits creating a missing upload root after checking its existing parents',
   const checks = client.uploadRpc.mock.calls.filter(([method]) => method === 'fs/getMetadata')
   expect(checks.map(([, params]) => params.path).sort()).toEqual(['/', '/dedicated', '/server', '/server/core'])
   expect(client.uploadRpc.mock.calls.slice(-2).map(([method]) => method)).toEqual(['fs/createDirectory', 'fs/writeFile'])
+})
+
+it.each(['/remote/account', '/remote/account/.codex-webui-uploads'])(
+  'rejects a default upload root inside Codex home %s', async home => {
+    vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', undefined)
+    const client = remoteClient(home)
+    await expect(stageRemoteUpload(client, 'x', Buffer.from('x'))).rejects.toThrow('outside the App Server Codex home')
+    expect(client.uploadRpc).not.toHaveBeenCalled()
+  },
+)
+
+it.each([false, true])('requires the default OS home to exist and be free of symlinks (symlink=%s)', async symlink => {
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '')
+  const client = remoteClient('/server/core', (_method, { path }) => {
+    if (path !== '/remote/account') return directoryMetadata
+    if (symlink) return { ...directoryMetadata, isSymlink: true }
+    throw Object.assign(new Error('No such file or directory (os error 2)'), { code: -32603 })
+  })
+  await expect(stageRemoteUpload(client, 'x', Buffer.from('x'))).rejects.toThrow('Cannot safely verify CODEXUI_REMOTE_UPLOAD_DIR')
+  expect(client.uploadRpc.mock.calls.every(([method]) => method === 'fs/getMetadata')).toBe(true)
+  await expect(readFile(ledger(storageNames.journal))).rejects.toMatchObject({ code: 'ENOENT' })
 })

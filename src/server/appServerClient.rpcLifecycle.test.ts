@@ -23,6 +23,7 @@ vi.mock('ws', async () => {
       callback?.()
     }
     reply(id: number, result: unknown) { this.emit('message', Buffer.from(JSON.stringify({ id, result })), false) }
+    notify(method: string, params: unknown) { this.emit('message', Buffer.from(JSON.stringify({ method, params })), false) }
     terminate() { this.readyState = 3; this.emit('close') }
   }
   return { default: Socket }
@@ -319,7 +320,110 @@ it('waits for the handshake on the first upload and makes zero discovery config 
     expect(await upload).toMatch(/^\/server\/attachments\/codexapp-uploads\/[0-9a-f]{64}\//)
     expect(socket.frames.filter((f: any) => f.method === 'config/read')).toHaveLength(0)
     expect(socket.frames.filter((f: any) => f.method === 'initialize')).toHaveLength(1)
+    expect(socket.frames.some((f: any) => f.method === 'process/spawn')).toBe(false)
   } finally { client.dispose(); vi.unstubAllEnvs() }
+})
+
+it.each([
+  { setting: undefined, platformOs: 'linux', codexHome: '/srv/codex-state', home: '/home/remote-user', tool: 'getent', sep: '/' },
+  { setting: '', platformOs: 'macos', codexHome: '/private/data/codex', home: '/Users/Remote User', tool: 'dscacheutil', sep: '/' },
+  { setting: '  ', platformOs: 'windows', codexHome: 'D:\\codex-state', home: 'C:\\Users\\Remote User', tool: 'GetFolderPath', sep: '\\' },
+])('stages default uploads on a $platformOs App Server and shares one home lookup', async ({ setting, platformOs, codexHome, home, tool, sep }) => {
+  const { stageRemoteUpload } = await import('./remoteUploads')
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', setting)
+  vi.stubEnv('HOME', '/backend-user')
+  vi.stubEnv('USERPROFILE', 'Z:\\backend-user')
+  vi.stubEnv('CODEX_HOME', '/backend-state')
+  wire.metadata = { codexHome, platformOs }
+  wire.autoFs = true
+  const client = new AppServerClient()
+  try {
+    const uploads = [stageRemoteUpload(client, 'one.txt', Buffer.from('one')), stageRemoteUpload(client, 'two.txt', Buffer.from('two'))]
+    const root = [home, '.codex-webui-uploads', 'codexapp-uploads', ''].join(sep)
+    const results = Promise.all(uploads)
+    await flush()
+    const socket = wire.sockets[0]
+    const probes = socket.frames.filter((f: any) => f.method === 'process/spawn')
+    expect(probes).toHaveLength(1)
+    const { id, params } = probes[0]
+    expect(params.command.join(' ')).toContain(tool)
+    expect(params.timeoutMs).toBe(5_000)
+    expect(params.outputBytesCap).toBe(8_192)
+    expect(socket.frames.some((f: any) => f.method.startsWith('fs/'))).toBe(false)
+    socket.reply(id, {})
+    socket.notify('process/exited', { processHandle: 'unrelated', exitCode: 0, stdout: '/wrong\n', stdoutCapReached: false })
+    socket.notify('process/exited', { processHandle: params.processHandle, exitCode: 0, stdout: home + (sep === '/' ? '\n' : '\r\n'), stdoutCapReached: false })
+    expect((await results).every(path => path.startsWith(root) && /^[0-9a-f]{64}$/u.test(path.slice(root.length).split(sep)[0]!))).toBe(true)
+    expect(await stageRemoteUpload(client, 'three.txt', Buffer.from('three'))).toContain(root)
+    expect(socket.frames.filter((f: any) => f.method === 'process/spawn')).toHaveLength(1)
+    expect(socket.frames.filter((f: any) => f.method === 'config/read')).toHaveLength(0)
+  } finally { client.dispose() }
+})
+
+it.each([
+  { stdout: '' }, { stdout: 'relative' }, { stdout: 'D:\\different-platform' }, { stdout: '/first\n/second\n' },
+  { stdoutCapReached: true }, { outputDrainTimedOut: true }, { exitCode: 1 },
+])('rejects an unusable remote home result without staging anything %j', async output => {
+  const { stageRemoteUpload } = await import('./remoteUploads')
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', undefined)
+  wire.metadata = { codexHome: '/remote/admin/.codex', platformOs: 'linux' }
+  const client = new AppServerClient()
+  try {
+    const rejected = expect(stageRemoteUpload(client, 'one.txt', Buffer.from('one'))).rejects.toThrow(
+      /Cannot determine the App Server OS user's home directory.*CODEXUI_REMOTE_UPLOAD_DIR/u,
+    )
+    await flush()
+    const socket = wire.sockets[0]
+    const probe = socket.frames.find((f: any) => f.method === 'process/spawn')
+    socket.reply(probe.id, {})
+    socket.notify('process/exited', {
+      processHandle: probe.params.processHandle, exitCode: 0, stdout: '/remote/admin\n', stdoutCapReached: false, ...output,
+    })
+    await rejected
+    expect(socket.frames.some((f: any) => f.method.startsWith('fs/'))).toBe(false)
+  } finally { client.dispose() }
+})
+
+it('reports unavailable home discovery and still accepts an explicit remote root', async () => {
+  const { stageRemoteUpload } = await import('./remoteUploads')
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '')
+  wire.metadata = { codexHome: '/server/core' }
+  wire.autoFs = true
+  const client = new AppServerClient()
+  try {
+    await expect(stageRemoteUpload(client, 'one.txt', Buffer.from('one'))).rejects.toThrow(
+      /Cannot determine the App Server OS user's home directory.*CODEXUI_REMOTE_UPLOAD_DIR/u,
+    )
+    const socket = wire.sockets[0]
+    expect(socket.frames.map((f: any) => f.method)).toEqual(['initialize', 'initialized'])
+    vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '/server/override')
+    expect(await stageRemoteUpload(client, 'two.txt', Buffer.from('two'))).toContain('/server/override/codexapp-uploads/')
+    expect(socket.frames.some((f: any) => f.method === 'process/spawn')).toBe(false)
+  } finally { client.dispose() }
+})
+
+it('discards a pending upload home lookup on reconnect', async () => {
+  wire.metadata = { codexHome: '/server/core', platformOs: 'linux' }
+  const client = new AppServerClient()
+  try {
+    const home = await client.resolveCodexHome()
+    const generation = client.getConnectionGeneration()
+    const rejected = expect(client.resolveUploadUserHome(home, generation)).rejects.toThrow('Cannot determine')
+    await flush()
+    const old = wire.sockets[0]
+    const probe = old.frames.find((f: any) => f.method === 'process/spawn')
+    old.reply(probe.id, {})
+    await client.reconnect()
+    await rejected
+    const discovered = client.resolveUploadUserHome(home, client.getConnectionGeneration())
+    await flush()
+    const current = wire.sockets[1]
+    const currentProbe = current.frames.find((f: any) => f.method === 'process/spawn')
+    old.notify('process/exited', { processHandle: probe.params.processHandle, exitCode: 0, stdout: '/stale-home\n', stdoutCapReached: false })
+    current.reply(currentProbe.id, {})
+    current.notify('process/exited', { processHandle: currentProbe.params.processHandle, exitCode: 0, stdout: '/current-home\n', stdoutCapReached: false })
+    expect(await discovered).toBe('/current-home')
+  } finally { client.dispose() }
 })
 
 it.each([

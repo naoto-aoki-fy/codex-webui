@@ -36,8 +36,23 @@ preferences, and upload inventory. Use the same endpoint for all test IDs.
    `uploads/journal.jsonl`. Return to ID `one`, remove its disposable inventory
    only, and retry. Its journal restores the three-byte reservation with status
    `unknown`. Simulate a lost write response and verify its bytes stay reserved.
-6. Repeat with a missing or Codex-owned upload root. Expect a clear
+6. Repeat with a relative or Codex-owned upload root. Expect a clear
    `CODEXUI_REMOTE_UPLOAD_DIR` error and no writes under Codex home.
+7. Use a disposable OS account on the App Server host and set its
+   `CODEX_HOME` to a separate absolute directory. Use a different home on the
+   WebUI backend, preferably on a separate host. Use a fresh profile ID and
+   unset `CODEXUI_UPLOAD_CAPACITY_BYTES` and `CODEXUI_REMOTE_UPLOAD_DIR`.
+   Restart the backend and upload a file.
+   Verify the bytes are under
+   `<App Server account home>/.codex-webui-uploads/codexapp-uploads/<sha256(ID)>/`
+   with the App Server's native separators, and that Codex home stays untouched.
+   Repeat with an empty override. On Windows, also try a custom Codex home on
+   a different drive from the account's profile directory.
+8. Use a fixture that rejects the OS home lookup or returns a relative path.
+   Leave the override empty and upload. Expect an error naming
+   `CODEXUI_REMOTE_UPLOAD_DIR` and no remote writes or new accounting records.
+   Restart with the explicit absolute root from step 4 and verify the upload
+   succeeds without a home lookup.
 
 Credential-free API entry-point coverage runs with
 `pnpm run test:integration:fixture`, and with `CODEXAPP_FIXTURE_TRANSPORT=unix`

@@ -3,9 +3,26 @@ import { CodexHomeResolver } from './codexHomeResolver.js'
 import { getConnectionProfileId } from './connectionProfile.js'
 import { SubscriptionRecovery } from './subscriptionRecovery.js'
 import { RolloutGenerationMetadata } from './rolloutGenerationMetadata.js'
-import { randomInt } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 import { AppServerWebSocketClient, positiveEnv } from './appServerWebSocketClient.js'
 import { asRecord } from './bridgeHttpUtils.js'
+import { isAbsoluteUploadPath, projectPath } from './webuiStorage.mjs'
+
+const uploadConnectionChanged = 'App Server connection changed during upload. Retry to validate the upload destination on the new connection.'
+
+function userHomeCommand(platform: string | undefined): string[] | undefined {
+  switch (platform) {
+    case 'linux':
+      return ['/bin/sh', '-c', `uid=$(/usr/bin/id -u) || exit 1
+/usr/bin/getent passwd "$uid" | /usr/bin/awk -F: 'NF == 7 {print $6}'`]
+    case 'macos':
+      return ['/bin/sh', '-c', `uid=$(/usr/bin/id -u) || exit 1
+/usr/bin/dscacheutil -q user -a uid "$uid" | /usr/bin/awk '/^dir: / {print substr($0, 6)}'`]
+    case 'windows':
+      return ['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
+        "$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); [Console]::WriteLine([Environment]::GetFolderPath('UserProfile'))"]
+  }
+}
 
 function readNonEmptyString(value: unknown): string {
   return typeof value === 'string' && value.trim().length > 0 ? value : ''
@@ -71,6 +88,57 @@ export class AppServerClient {
     return discover ? this.codexHome.resolve() : this.codexHome.observedHome()
   }
 
+  private uploadUserHome: Promise<string> | undefined
+
+  async resolveUploadUserHome(codexHome: string, generation: number): Promise<string> {
+    if (generation !== this.connectionGeneration) throw new Error(uploadConnectionChanged)
+    return this.uploadUserHome ??= this.discoverUploadUserHome(codexHome, generation).catch(cause => {
+      if (generation === this.connectionGeneration) this.uploadUserHome = undefined
+      throw Object.assign(new Error("Cannot determine the App Server OS user's home directory. Set CODEXUI_REMOTE_UPLOAD_DIR to an absolute path on the App Server outside Codex home."), { cause })
+    })
+  }
+
+  private async discoverUploadUserHome(codexHome: string, generation: number): Promise<string> {
+    const command = userHomeCommand(this.getInitializationMetadata()?.platformOs)
+    if (!command) throw new Error('App Server did not report a supported operating system')
+
+    // Use the App Server host process API so a sandbox account or Codex shell
+    // environment overrides cannot change which OS user's home is reported.
+    const processHandle = randomUUID()
+    const deadlineMs = 10_000
+    let unsubscribe: (() => void) | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const exited = new Promise<Record<string, unknown>>((resolve, reject) => {
+      unsubscribe = this.onNotification(({ method, params }) => {
+        if (method === 'app-server/disconnected') reject(new Error('App Server disconnected during home discovery'))
+        if (method !== 'process/exited') return
+        const result = asRecord(params)
+        if (result?.processHandle === processHandle) resolve(result)
+      })
+      timer = setTimeout(() => reject(new Error('App Server home discovery timed out')), deadlineMs)
+      timer.unref()
+    })
+
+    try {
+      const rules = projectPath(codexHome)
+      const [, result] = await Promise.all([
+        this.callObserved('process/spawn', {
+          processHandle, command, cwd: rules.parse(codexHome).root, timeoutMs: 5_000, outputBytesCap: 8_192,
+        }, deadlineMs, generation),
+        exited,
+      ])
+      const home = typeof result.stdout === 'string' ? result.stdout.replace(/\r?\n$/u, '') : ''
+      if (generation !== this.connectionGeneration || result.exitCode !== 0 || result.stdoutCapReached !== false ||
+          result.outputDrainTimedOut === true || home.includes('\uFFFD') || !isAbsoluteUploadPath(home) || projectPath(home) !== rules) {
+        throw new Error('App Server home lookup did not return a valid absolute directory')
+      }
+      return home
+    } finally {
+      clearTimeout(timer)
+      unsubscribe?.()
+    }
+  }
+
   private readonly rolloutMetadata = new RolloutGenerationMetadata({
     rpc: (method, params) => this.call(method, params),
     generation: () => this.getConnectionGeneration(),
@@ -119,6 +187,7 @@ export class AppServerClient {
     this.authentication.disconnect()
     this.connectionGeneration++
     this.codexHome.reset()
+    this.uploadUserHome = undefined
     this.recovery.cancel()
     for (const request of this.pending.values()) request.reject(new Error('App-server disconnected. Retry to reconnect; inspect the thread before resending a turn.'))
     this.pending.clear()
@@ -348,7 +417,7 @@ export class AppServerClient {
   private async callObserved(method: string, params: unknown, deadlineMs?: number, expectedGeneration?: number): Promise<unknown> {
     await this.ensureInitialized()
     if (expectedGeneration !== undefined && expectedGeneration !== this.connectionGeneration) {
-      throw new Error('App Server connection changed during upload. Retry to validate the upload destination on the new connection.')
+      throw new Error(uploadConnectionChanged)
     }
     // No await between this guard and the wire write: initialization may yield
     // while another browser starts login or an account notification arrives.

@@ -29,8 +29,9 @@ on Linux/macOS. See the [connection guide](docs/external-app-server.md).
 The App Server ID defaults to the WebUI backend's short hostname. When connecting
 to multiple App Servers from the same backend host, choose a unique ID for each
 with `--connection-profile <id>` and reuse it when reconnecting.
-For attachments, set `CODEXUI_REMOTE_UPLOAD_DIR` to a dedicated absolute path on
-the App Server host. See [storage and upload configuration](docs/connection-profiles-uploads.md).
+Attachments default to `~/.codex-webui-uploads` under the OS user's home on the
+App Server host. Set `CODEXUI_REMOTE_UPLOAD_DIR` to override that root with a
+dedicated absolute path on that host. See [storage and upload configuration](docs/connection-profiles-uploads.md).
 
 Password protection is disabled by default. Use `--password <pass>` to enable it,
 and configure a private network or external reverse proxy for remote access.

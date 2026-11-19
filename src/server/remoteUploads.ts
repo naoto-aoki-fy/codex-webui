@@ -44,7 +44,7 @@ async function withInventory<T>(stateDirectory: string, operation: (records: Upl
   }, join(stateDirectory, storageNames.inventory))
 }
 
-type UploadClient = Pick<AppServerClient, 'uploadRpc' | 'resolveCodexHome' | 'getConnectionGeneration'>
+type UploadClient = Pick<AppServerClient, 'uploadRpc' | 'resolveCodexHome' | 'resolveUploadUserHome' | 'getConnectionGeneration'>
 const homeError = 'Cannot verify the App Server Codex home. Ensure the App Server reports its absolute Codex home in initialization or config/read before using CODEXUI_REMOTE_UPLOAD_DIR.'
 
 function inside(rules: PlatformPath, parent: string, child: string): boolean {
@@ -56,11 +56,8 @@ function inside(rules: PlatformPath, parent: string, child: string): boolean {
 
 async function validateUploadDirectory(
   client: UploadClient, generation: number, rules: PlatformPath, root: string, directory: string,
+  home: string, userHome: string,
 ): Promise<void> {
-  const home = await client.resolveCodexHome().catch(cause => {
-    throw Object.assign(new Error(homeError), { cause })
-  })
-  if (!isAbsoluteUploadPath(home)) throw new Error(homeError)
   if (projectPath(home) !== rules) {
     throw new Error('CODEXUI_REMOTE_UPLOAD_DIR must use the same absolute path syntax as the App Server Codex home')
   }
@@ -103,7 +100,11 @@ async function validateUploadDirectory(
   }
 
   try {
-    await Promise.all([checkAncestors(home, false), checkAncestors(directory, true)])
+    await Promise.all([
+      checkAncestors(home, false),
+      checkAncestors(directory, true),
+      userHome && checkAncestors(userHome, false),
+    ])
   } catch (cause) {
     throw Object.assign(new Error('Cannot safely verify CODEXUI_REMOTE_UPLOAD_DIR. Use a dedicated path on the App Server outside Codex home, with no symbolic links in either path, and ensure fs/getMetadata can inspect them.'), { cause })
   }
@@ -117,11 +118,18 @@ export async function stageRemoteUpload(
 ): Promise<string> {
   if (bytes.length > MAX_UPLOAD_BYTES) throw new Error('Upload exceeds 20 MiB file limit')
   const id = getConnectionProfileId()
-  const root = process.env.CODEXUI_REMOTE_UPLOAD_DIR?.trim() ?? ''
-  const directory = remoteUploadsDirectory(root, id)
-  const rules = projectPath(directory)
+  const configuredRoot = process.env.CODEXUI_REMOTE_UPLOAD_DIR?.trim() ?? ''
+  const configuredDirectory = configuredRoot && remoteUploadsDirectory(configuredRoot, id)
   const generation = client.getConnectionGeneration()
-  await validateUploadDirectory(client, generation, rules, root, directory)
+  const home = await client.resolveCodexHome().catch(cause => {
+    throw Object.assign(new Error(homeError), { cause })
+  })
+  if (!isAbsoluteUploadPath(home)) throw new Error(homeError)
+  const userHome = configuredRoot ? '' : await client.resolveUploadUserHome(home, generation)
+  const root = configuredRoot || projectPath(userHome).join(userHome, '.codex-webui-uploads')
+  const directory = configuredDirectory || remoteUploadsDirectory(root, id)
+  const rules = projectPath(directory)
+  await validateUploadDirectory(client, generation, rules, root, directory, home, userHome)
 
   const stateDirectory = join(profileStorageDirectory('data', id), storageNames.uploads)
   const path = rules.join(directory, `${randomUUID()}-${name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120)}`)

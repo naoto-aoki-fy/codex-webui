@@ -32,9 +32,11 @@ that origin can be discarded.
 
 Only remove uploads after reviewing references as described in the
 [upload audit procedure](connection-profiles-uploads.md#conservative-cleanup).
-Run the command on the App Server host. The upload root must be the same path
-configured for the WebUI attachment workflow. Select exact filenames within the
-ID's managed directory. Other uploads, leases and native Codex data are preserved.
+Run the command on the App Server host. Pass the absolute upload root used by
+the WebUI attachment workflow. For the default, use the path to
+`.codex-webui-uploads` in the App Server account's OS home. Select exact filenames
+within the ID's managed directory. Other uploads, leases and native Codex data
+are preserved.
 
 ```sh
 node scripts/reset-webui.mjs --remote --profile workstation-b \
