@@ -8,17 +8,12 @@ function hasMigrationInput(state) {
     state[key] !== undefined && (!Array.isArray(state[key]) || state[key].length > 0))
 }
 
-export function resetGlobalState(raw, path) {
+export function selectGlobalStateKeys(raw, path, select) {
   let state
   try { state = JSON.parse(raw) } catch { throw new Error(`Invalid global JSON. Preserving ${path}`) }
   if (!state || typeof state !== 'object' || Array.isArray(state)) {
     throw new Error(`Invalid global JSON object. Preserving ${path}`)
   }
-
-  const removed = new Set([transferKey])
-  const receipts = state[migrationKey]
-  if (!hasMigrationInput(state) && receipts && typeof receipts === 'object' && !Array.isArray(receipts)
-    && Object.values(receipts).every(receipt => receipt?.completed === true)) removed.add(migrationKey)
 
   // Keep retained members byte-for-byte, including large numbers, key spelling,
   // and whitespace within values. JSON.parse alone can round native numbers.
@@ -48,6 +43,7 @@ export function resetGlobalState(raw, path) {
       if (depth === 0) end = token.index
     }
   }
+  const removed = select(state)
   const keys = members.filter(member => removed.has(member.key)).map(member => member.key)
   const preserved = members.filter(member => !removed.has(member.key))
   return {
@@ -55,4 +51,14 @@ export function resetGlobalState(raw, path) {
     preserved: preserved.map(member => member.key),
     replacement: raw.slice(0, raw.indexOf('{') + 1) + preserved.map(member => member.raw).join(',') + raw.slice(end),
   }
+}
+
+export function resetGlobalState(raw, path) {
+  return selectGlobalStateKeys(raw, path, state => {
+    const removed = new Set([transferKey])
+    const receipts = state[migrationKey]
+    if (!hasMigrationInput(state) && receipts && typeof receipts === 'object' && !Array.isArray(receipts)
+      && Object.values(receipts).every(receipt => receipt?.completed === true)) removed.add(migrationKey)
+    return removed
+  })
 }

@@ -264,6 +264,7 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
     const checkout = join(root, 'checkout')
     mkdirSync(checkout)
     for (const path of ['scripts/reset-webui.mjs', 'scripts/reset-webui-files.mjs', 'scripts/reset-webui-global-state.mjs',
+      'scripts/reset-webui-legacy.mjs', 'scripts/reset-webui-legacy-registry.mjs',
       'src/server/webuiMaintenance.mjs']) {
       mkdirSync(dirname(join(checkout, path)), { recursive: true })
       cpSync(join(repository, path), join(checkout, path))
@@ -286,5 +287,225 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
     expect(result.code, result.output).toBe(0)
     for (const path of generated) expect(existsSync(join(checkout, path))).toBe(false)
     for (const path of ['output/unrelated', 'src/source.txt']) expect(existsSync(join(checkout, path))).toBe(true)
+  })
+})
+
+const marker = '.cloudflared-install-prompted'
+const tip = 'first-launch-plugins-card-dismissed'
+const telegram = 'telegram-bridge'
+const metadataDir = 'codexapp-turn-metadata'
+const oldUploadDir = 'codex-web-uploads'
+const oldPatchDir = 'codexui-review-patches'
+const targets = (...ids: string[]) => ['--include-legacy', ...ids.flatMap(id => ['--legacy-target', id])]
+const acknowledge = (...ids: string[]) => ids.flatMap(id => ['--acknowledge-legacy-data-loss', id])
+const hash = (id: string) => createHash('sha256').update(id).digest('hex')
+const metadataRow = JSON.stringify({ turnId: 'turn-one', metadata: { model: 'legacy-model', modelSource: 'execution', effort: null, effortSource: 'submitted' } }) + '\n'
+const markerContents = '1774425600000\n'
+
+describe('legacy reset discovery and validation', () => {
+  it('lists target scopes and protection without trying to resolve the state directory', () => {
+    const result = run(['--list-legacy-targets'], { CODEX_HOME: '/' })
+    expect(result.code, result.output).toBe(0)
+    expect(result.output).toContain('cloudflared-prompt-marker [shared; safe]')
+    expect(result.output).toContain('turn-metadata [profile; conditional')
+    expect(result.output).toContain('native-project-and-pin-state [profile; blocked]')
+    expect(result.output).toContain('retired-browser-storage [browser; manual]')
+    expect(result.output).not.toContain('Would delete')
+  })
+
+  it('requires explicit valid targets and access to their scope', () => {
+    expect(run(['--legacy-target', 'turn-metadata']).output).toContain('requires --include-legacy')
+    expect(run(['--include-legacy']).output).toContain('at least one')
+    expect(run(targets('../config.toml')).output).toContain('Unknown legacy target')
+    expect(run(targets('generated-webui-password')).output).toContain('requires --shared')
+    expect(run([...targets('first-launch-plugin-tip'), '--profile', 'named']).output).toContain('predates named profiles')
+    expect(run([...targets('portable-fork-records'), ...acknowledge('portable-fork-records')]).output).toContain('blocked')
+    expect(run(targets('retired-browser-storage')).output).toContain('manual')
+    expect(run([...targets('turn-metadata'), ...acknowledge('provider-state')]).output).toContain('does not match')
+  })
+})
+
+describe.skipIf(process.platform !== 'linux')('legacy reset execution and preservation', () => {
+  it('keeps historical artifacts in normal reset mode', () => {
+    write(join(home, marker), markerContents)
+    write(join(home, metadataDir, hash('thread') + '.jsonl'), metadataRow)
+    json(join(home, stateFile), { [tip]: true, [telegram]: { botToken: 'old-token' } })
+    write(join(home, preferences))
+    const standard = run(['--all-profiles', '--shared', ...execute])
+    expect(standard.code, standard.output).toBe(0)
+    expect(existsSync(join(home, preferences))).toBe(false)
+    for (const path of [marker, metadataDir]) expect(existsSync(join(home, path))).toBe(true)
+    expect(JSON.parse(readFileSync(join(home, stateFile), 'utf8'))).toHaveProperty(tip, true)
+  })
+
+  it('selects safe artifacts across legacy versions and respects the selected scope', () => {
+    write(join(home, marker), markerContents)
+    write(join(home, 'codexui-password'), 'abc-123-def\n')
+    write(join(home, metadataDir, hash('thread') + '.jsonl'), metadataRow)
+    json(join(home, stateFile), { [tip]: false, [telegram]: { botToken: 'old-token' } })
+    const profileOnly = run(['--all-legacy'])
+    expect(profileOnly.code, profileOnly.output).toBe(0)
+    expect(profileOnly.output).toContain(tip)
+    expect(profileOnly.output).not.toContain(marker)
+    const scoped = run(['--all-legacy', '--all-profiles', '--shared', ...execute])
+    expect(scoped.code, scoped.output).toBe(0)
+    expect(scoped.output).toContain('2 filesystem actions')
+    expect(existsSync(join(home, marker))).toBe(false)
+    expect(existsSync(join(home, 'codexui-password'))).toBe(true)
+    expect(existsSync(join(home, metadataDir))).toBe(true)
+    expect(JSON.parse(readFileSync(join(home, stateFile), 'utf8'))).toEqual({ [telegram]: { botToken: 'old-token' } })
+  })
+
+  it('plans selected shared files and two mixed keys with one rewrite and preserves active recovery', () => {
+    const native = '"official": { "counter":90071992547409931234, "label":"keep" }'
+    const state = `{${native},"electron-saved-workspace-roots":["/official"],"pinned-thread-ids":["old-pin"],"${migration}":{"connection":{"completed":false}},"${transfer}":{"x":{"stage":"prepared"}},"${tip}":true,"${telegram}":{"botToken":"old-token"},"thread-titles":{"titles":{},"order":[]}}`
+    write(join(home, stateFile), state)
+    write(join(home, marker), markerContents)
+    write(join(home, 'codexui-password'), 'abc-123-def\n')
+    const pending = { example: { pending: { token: 'pending', text: 'do not discard', previous: [] } } }
+    json(join(home, index), pending)
+    write(join(home, auth))
+    write(join(home, preferences))
+    mkdirSync(join(home, 'automations'))
+    const selected = [...targets('cloudflared-prompt-marker', 'first-launch-plugin-tip', 'telegram-inline-settings'), '--shared']
+    const dry = run([...selected, '--dry-run'])
+    expect(dry.code, dry.output).toBe(0)
+    expect(dry.output).toContain(`Would delete "${join(home, marker)}"`)
+    expect(dry.output).toContain('Would modify')
+    expect(dry.output).toContain(`remove "${tip}", "${telegram}"`)
+    expect(dry.output).not.toContain('old-token')
+    expect(readFileSync(join(home, stateFile), 'utf8')).toBe(state)
+    expect(existsSync(join(home, marker))).toBe(true)
+
+    const denied = run([...selected, ...execute])
+    expect(denied.code, denied.output).toBe(1)
+    expect(denied.output).toContain('--acknowledge-legacy-data-loss telegram-inline-settings')
+    expect(existsSync(join(home, marker))).toBe(true)
+
+    const clean = run([...selected, ...acknowledge('telegram-inline-settings'), ...execute])
+    expect(clean.code, clean.output).toBe(0)
+    expect(clean.output.match(/^Modified /gm)).toHaveLength(1)
+    expect(existsSync(join(home, marker))).toBe(false)
+    for (const path of ['codexui-password', auth, preferences, 'automations']) expect(existsSync(join(home, path))).toBe(true)
+    const updated = readFileSync(join(home, stateFile), 'utf8')
+    expect(updated).toContain(native)
+    const parsed = JSON.parse(updated)
+    expect(parsed).not.toHaveProperty(tip)
+    expect(parsed).not.toHaveProperty(telegram)
+    expect(parsed).toMatchObject({ [migration]: { connection: { completed: false } }, [transfer]: { x: { stage: 'prepared' } },
+      'pinned-thread-ids': ['old-pin'], 'electron-saved-workspace-roots': ['/official'], 'thread-titles': { titles: {}, order: [] } })
+    expect(JSON.parse(readFileSync(join(home, index), 'utf8'))).toEqual(pending)
+    const again = run([...selected, ...acknowledge('telegram-inline-settings'), ...execute])
+    expect(again.output).toContain('0 filesystem actions')
+  })
+
+  it('cleans only the selected profile sidecars and never deletes the profile directory', () => {
+    const a = profile(home, 'work.a')
+    const b = profile(home, 'work.b')
+    const unscoped = join(home, metadataDir, hash('thread') + '.jsonl')
+    const identity = hash(JSON.stringify(['ws://127.0.0.1:4500', '/codex']))
+    const selected = join(a, metadataDir, identity, hash('thread') + '.jsonl')
+    const other = join(b, metadataDir, identity, hash('thread') + '.jsonl')
+    for (const path of [unscoped, selected, other]) write(path, metadataRow)
+    const lock = selected + '.lock'
+    mkdirSync(lock)
+    utimesSync(lock, new Date(1), new Date(1))
+    const args = [...targets('turn-metadata'), '--profile', 'work.a']
+    const preview = run(args)
+    expect(preview.code, preview.output).toBe(0)
+    expect(preview.output).toContain(`Would delete "${selected}"`)
+    expect(preview.output).not.toContain(other)
+    expect(preview.output).not.toContain(unscoped)
+    const result = run([...args, ...acknowledge('turn-metadata'), ...execute])
+    expect(result.code, result.output).toBe(0)
+    expect(existsSync(join(a, metadataDir))).toBe(false)
+    expect(existsSync(a)).toBe(true)
+    const all = run([...targets('turn-metadata'), '--all-profiles', ...acknowledge('turn-metadata'), ...execute])
+    expect(all.code, all.output).toBe(0)
+    expect(existsSync(unscoped)).toBe(false)
+    expect(existsSync(other)).toBe(false)
+  })
+
+  it('refuses malformed sidecars and unverified mixed fields before applying any action', () => {
+    const invalid = join(home, metadataDir, hash('might-be-other') + '.jsonl')
+    write(invalid, '{"type":"native-rollout","payload":{}}\n')
+    write(join(home, marker), markerContents)
+    json(join(home, stateFile), { [telegram]: { botToken: 'token', unrelated: true } })
+    const sidecars = run([...targets('cloudflared-prompt-marker', 'turn-metadata'), '--shared', ...acknowledge('turn-metadata'), ...execute])
+    expect(sidecars.code, sidecars.output).toBe(1)
+    expect(sidecars.output).toContain('Unverified legacy contents')
+    const mixed = run([...targets('cloudflared-prompt-marker', 'telegram-inline-settings'), '--shared', ...acknowledge('telegram-inline-settings'), ...execute])
+    expect(mixed.code, mixed.output).toBe(1)
+    expect(mixed.output).toContain('Unverified legacy key')
+    expect(existsSync(invalid)).toBe(true)
+    expect(existsSync(join(home, marker))).toBe(true)
+  })
+
+  it('verifies historical provider files, generated passwords, Skills sync, Telegram settings and patches', () => {
+    const provider = { enabled: true, apiKey: 'provider-key', model: 'openrouter/free', provider: 'openrouter' }
+    json(join(home, 'webui-free-mode.json'), provider)
+    json(join(home, 'webui-custom-providers.json'), { ...provider, providerKeys: { openrouter: 'provider-key' } })
+    json(join(home, 'skills-sync.json'), { githubToken: 'github-token', repoName: 'skills', installedOwners: { sample: 'owner' } })
+    json(join(home, 'telegram-bridge.json'), { botToken: 'bot-token' })
+    json(join(home, 'telegram-bridge.json.tmp'), { botToken: 'bot-token', completionNotifications: { enabled: true, chatIds: [10], appUrl: '' } })
+    write(join(home, 'codexui-password'), 'abc-123-def\n')
+    const patch = join(root, oldPatchDir, '1774425600000-1a2b.patch')
+    write(patch, 'diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-before\n+after\n')
+    for (const path of ['skills/sample/SKILL.md', 'auth.json', 'accounts/saved/auth.json', 'config.toml']) write(join(home, path), path)
+    const ids = ['provider-state', 'skills-sync-settings', 'telegram-settings', 'generated-webui-password', 'review-patches']
+    const result = run([...targets(...ids), '--shared', ...acknowledge(...ids), ...execute])
+    expect(result.code, result.output).toBe(0)
+    for (const path of ['skills/sample/SKILL.md', 'auth.json', 'accounts/saved/auth.json', 'config.toml']) {
+      expect(readFileSync(join(home, path), 'utf8')).toBe(path)
+    }
+    expect(existsSync(patch)).toBe(false)
+    expect(result.output).toContain('8 filesystem actions')
+    for (const secret of ['provider-key', 'github-token', 'bot-token', 'abc-123-def']) expect(result.output).not.toContain(secret)
+  })
+
+  it.each(['symlink', 'hardlink', 'ancestor'])('refuses %s substitution of verified files', (type) => {
+    const isolated = join(root, 'outside', 'official.jsonl')
+    write(isolated, metadataRow)
+    const expected = join(home, metadataDir, hash('thread') + '.jsonl')
+    mkdirSync(home)
+    if (type === 'ancestor') symlinkSync(dirname(isolated), join(home, metadataDir))
+    else {
+      mkdirSync(dirname(expected))
+      if (type === 'symlink') symlinkSync(isolated, expected)
+      else linkSync(isolated, expected)
+    }
+    const result = run([...targets('turn-metadata'), ...acknowledge('turn-metadata'), ...execute])
+    expect(result.code, result.output).toBe(1)
+    expect(result.output).toMatch(/Refusing a (symbolic link|special or hard-linked file)/)
+    expect(readFileSync(isolated, 'utf8')).toBe(metadataRow)
+  })
+
+  it('requires a separately confirmed remote run and an exact private upload batch', () => {
+    const remoteHome = join(root, 'remote')
+    const remoteTmp = join(root, 'remote-tmp')
+    const local = join(root, oldUploadDir, 'f-lOcAl1', 'keep.txt')
+    const remote = join(remoteTmp, oldUploadDir, 'f-ReMoTe', 'a file.txt')
+    const other = join(remoteTmp, oldUploadDir, 'f-KeEpIt', 'other.pdf')
+    const currentRemote = join(remoteHome, 'cache/model-history/v1', hash('current') + '.json')
+    const rollout = join(remoteHome, 'archived_sessions/rollout-native.jsonl')
+    json(currentRemote, { version: 1, sourcePath: rollout, modifiedAtMs: 123, turns: [] })
+    for (const path of [local, remote, other, rollout]) write(path)
+    chmodSync(dirname(remote), 0o700)
+    chmodSync(dirname(other), 0o700)
+    const args = [...targets('staged-uploads'), '--remote', '--remote-codex-home', remoteHome]
+    const env = { TMPDIR: remoteTmp }
+    const pick = ['--legacy-upload-file', 'f-ReMoTe/a file.txt']
+    const dry = run([...args, ...pick], env)
+    expect(dry.code, dry.output).toBe(0)
+    expect(dry.output).toContain(`Would delete "${remote}"`)
+    expect(existsSync(remote)).toBe(true)
+    for (const bad of ['../passwd', 'f-ReMoTe/..', 'f-ReMoTe/../../passwd', 'f-ReMoTe/dir\\file']) {
+      expect(run([...args, '--legacy-upload-file', bad], env).output).toContain('exact historical upload filename')
+    }
+    expect(run([...args, ...pick, ...acknowledge('staged-uploads'), ...execute, '--confirm-remote', 'wrong-host'], env).code).toBe(1)
+    const result = run([...args, ...pick, ...acknowledge('staged-uploads'), ...execute, '--confirm-remote', hostname()], env)
+    expect(result.code, result.output).toBe(0)
+    expect(existsSync(dirname(remote))).toBe(false)
+    for (const path of [local, other, currentRemote, rollout]) expect(existsSync(path), path).toBe(true)
   })
 })

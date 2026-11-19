@@ -9,6 +9,7 @@ import { parseArgs } from 'node:util'
 import { acquireWebuiResetLease } from '../src/server/webuiMaintenance.mjs'
 import { apply, assertUnmounted, fingerprint, inside, inspect, list, read } from './reset-webui-files.mjs'
 import { resetGlobalState } from './reset-webui-global-state.mjs'
+import { legacyFlags, planLegacyCleanup, printLegacyTargets, selectLegacyTargets } from './reset-webui-legacy.mjs'
 
 const repo = dirname(dirname(fileURLToPath(import.meta.url)))
 const host = hostname()
@@ -31,13 +32,20 @@ const help = `Usage:
   pnpm reset:webui [local scope flags] --execute --offline
   node scripts/reset-webui.mjs --remote --remote-codex-home /path [--remote-upload-root /path --remote-upload NAME ...] [--dry-run]
   node scripts/reset-webui.mjs [remote scope flags] --execute --offline --confirm-remote HOST
+  pnpm reset:webui --list-legacy-targets
+  pnpm reset:webui --all-legacy [--all-profiles] [--shared] [--dry-run]
+  pnpm reset:webui --include-legacy --legacy-target ID [--legacy-target ID ...] [--dry-run]
 
 Dry run is the default. Local mode uses CODEX_HOME and defaults to CODEXUI_CONNECTION_PROFILE or legacy.
 --shared clears global upload accounting, WebUI login sessions and local inline media.
 --build adds generated artifacts in this checkout.
 --offline confirms that all writers for the selected paths are stopped. Execution requires Linux.
 Run remote mode on the App Server host. It clears verified WebUI model-history caches and
-only uploads explicitly named by --remote-upload. Review references before naming an upload.`
+only uploads explicitly named by --remote-upload. Review references before naming an upload.
+Legacy selection operates only on the named legacy targets. It uses the same profile,
+--shared, --remote and execution safeguards. Conditional targets require
+--acknowledge-legacy-data-loss ID to execute. --all-legacy selects verified safe
+targets from all audited versions in the selected scope. See docs/webui-reset.md.`
 
 const quote = value => JSON.stringify(value)
 const line = (verb, path, detail = '') => console.log(`${verb} ${quote(path)}${detail ? ` (${detail})` : ''}`)
@@ -68,8 +76,12 @@ function options() {
     'remote-upload-root': { type: 'string' },
     'remote-upload': { type: 'string', multiple: true },
     'confirm-remote': { type: 'string' },
+    ...legacyFlags,
   } })
   if (args.help) return args
+  const legacyTargets = selectLegacyTargets(args)
+  if (args['list-legacy-targets']) return args
+  args.legacyTargets = legacyTargets
   if (args.execute && args['dry-run']) throw new Error('Choose either --dry-run or --execute')
   if (args.execute && !args.offline) throw new Error('--execute requires --offline after all writers are stopped')
   if (args.execute && process.platform !== 'linux') throw new Error('Reset execution requires Linux')
@@ -97,8 +109,9 @@ function options() {
     if (!args['all-profiles'] && !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/u.test(args.profile)) {
       throw new Error('Invalid connection profile ID')
     }
-    if (args.shared) args.media = safeBase(tmpdir(), 'OS temporary directory', true)
+    if (args.shared && !legacyTargets.length) args.media = safeBase(tmpdir(), 'OS temporary directory', true)
   }
+  if (legacyTargets.some(target => target.temporary)) args.media = safeBase(tmpdir(), 'OS temporary directory', true)
   return args
 }
 
@@ -145,6 +158,13 @@ function createPlan() {
     actions.push({ kind: 'rmdir', path, info, reason })
     removals.add(path)
   }
+  function rewriteGlobal(path, info, result, mixed) {
+    if (mixed && observe(path + '.lock')) {
+      throw new Error(`Shared Codex global state is locked: ${quote(path + '.lock')}`)
+    }
+    requireOwner(path, info)
+    actions.push({ kind: 'rewrite', path, info, replacement: result.replacement, reason: 'remove ' + result.keys.map(quote).join(', ') })
+  }
   function names(path, info) {
     return info ? list(path, info) : []
   }
@@ -161,11 +181,11 @@ function createPlan() {
       if (fingerprint(info) !== fingerprint(inspect(path))) throw new Error(`Changed during reset: ${quote(path)}`)
     }
   }
-  return { actions, notices, notice, directory, file, observe, names, removeFile, removeDirectory, removeLock, requireOwner, removals, verify }
+  return { actions, notices, notice, directory, file, observe, names, removeFile, removeDirectory, removeLock, requireOwner, rewriteGlobal, removals, verify }
 }
 
 function planProfile(plan, directory, named, group) {
-  const { notice, file, names, actions, removeFile, removeLock, removeDirectory } = plan
+  const { notice, file, names, removeFile, removeLock, removeDirectory } = plan
   if (!group) return notice('Missing', directory)
   const entries = names(directory, group)
   const statePath = join(directory, globalFile)
@@ -176,11 +196,7 @@ function planProfile(plan, directory, named, group) {
     if (named && result.preserved.length === 0) {
       removeFile(statePath, result.keys.length ? 'WebUI-only keys ' + result.keys.map(quote).join(', ') : 'empty WebUI profile state')
     } else if (result.keys.length) {
-      if (!named && plan.observe(statePath + '.lock')) {
-        throw new Error(`Shared Codex global state is locked: ${quote(statePath + '.lock')}`)
-      }
-      plan.requireOwner(statePath, state)
-      actions.push({ kind: 'rewrite', path: statePath, info: state, replacement: result.replacement, reason: 'remove ' + result.keys.map(quote).join(', ') })
+      plan.rewriteGlobal(statePath, state, result, !named)
     } else notice('Preserve', statePath, 'no removable WebUI keys')
   } else notice('Missing', statePath)
   for (const fileName of [threadIndex, modelPreferences]) {
@@ -303,6 +319,10 @@ function planRemote(plan, args) {
 
 function buildPlan(args) {
   const plan = createPlan()
+  if (args.legacyTargets.length) {
+    planLegacyCleanup(plan, args)
+    return plan
+  }
   if (args.remote) {
     planRemote(plan, args)
     return plan
@@ -366,12 +386,18 @@ function checkRunning(args) {
 function main() {
   const args = options()
   if (args.help) return console.log(help)
+  if (args['list-legacy-targets']) return printLegacyTargets()
   console.log(`${args.execute ? 'Execution' : 'Dry run'} on host ${quote(host)} (${args.remote ? 'App Server filesystem' : 'WebUI backend filesystem'})`)
   line('Codex home', args.home)
-  if (args.remote) line('Upload directory', join(args.uploadRoot, 'codexapp-uploads'))
-  else {
+  if (args.remote && !args.legacyTargets.length) line('Upload directory', join(args.uploadRoot, 'codexapp-uploads'))
+  if (!args.remote) {
     console.log(`Profiles: ${args['all-profiles'] ? 'all, including legacy' : quote(args.profile)}. Shared: ${Boolean(args.shared)}. Build: ${Boolean(args.build)}.`)
-    if (args.shared) line('Inline media', join(args.media, 'codex-web-inline-media'))
+    if (args.shared && !args.legacyTargets.length) line('Inline media', join(args.media, 'codex-web-inline-media'))
+  }
+  if (args.legacyTargets.length) {
+    console.log(args['all-legacy'] ? 'Scope: verified safe targets across all audited legacy versions.' : 'Scope: selected legacy targets only.')
+    if (args['all-legacy'] && !args.shared) console.log('Shared legacy targets require --shared.')
+    if (args.media) line('OS temporary directory', args.media)
   }
   const release = args.execute ? acquireWebuiResetLease() : undefined
   try {
