@@ -9,26 +9,13 @@ using the same user, `CODEX_HOME`, and workspace paths as the web backend. See
 The web backend does not launch a local login process, probe `codex login status`,
 install Codex, manage saved accounts, or export OS Keyring secrets.
 
-Account status and quotas use `account/read` and `account/rateLimits/read` on the
-connected server. Logout uses `account/logout`; authenticate again externally and
-reconnect. POSTs to `/codex-api/accounts/login/start` and
-`/codex-api/accounts/login/complete` return HTTP 409 with external-authentication
-guidance. CLI `--login` and `--no-login` are compatibility no-ops; the `login`
-subcommand explains external ownership. Web password protection is separate from
-Codex authentication.
-
-## Retained compatibility paths
-
-The public `getAuthStatus` RPC forces `includeToken: false` and returns metadata
-with `authToken: null` (see [credential helper](../src/server/codexCredentials.ts)).
-A bundled schema describes a protocol snapshot, not a promise that the connected
-server supports that method or releases tokens.
-
-Legacy host-managed `account/chatgptAuthTokens/refresh` handling remains in the
-[bridge](../src/server/codexAppServerBridge.ts). It checks effective file storage
-before reading and persisting file tokens, rejects non-file storage, and aborts
-persistence if credentials change concurrently. This compatibility path does not
-make Keyring credentials exportable. Prefer native Codex-managed refresh.
+Account status and quotas use native `account/read` and `account/rateLimits/read`.
+Managed ChatGPT browser and device-code sign-in use native login RPCs and logout
+uses `account/logout`. Browser status exposes only display metadata. The legacy
+token-returning RPC is blocked. External token refresh receives an explicit
+unsupported reply from WebUI, so configure native Codex-managed authentication
+on the App Server host. WebUI password protection is separate from Codex account
+authentication. See [native account and submission safety](../docs/native-authentication-state.md).
 
 ## Retired features
 

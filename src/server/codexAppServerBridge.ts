@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { CodexCredentialError, readPublicAuthStatus } from './codexCredentials.js'
+import { publicAccountStatus } from './publicAccount.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
 
 type RpcProxyRequest = {
@@ -612,8 +612,15 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           return
         }
 
-        if (body.method === 'getAuthStatus') {
-          setJson(res, 200, { result: await readPublicAuthStatus(appServer, body.params) })
+        if (body.method === 'getAuthStatus' || body.method.startsWith('account/chatgptAuthTokens/')
+          || body.method.startsWith('accountSession/')) {
+          setJson(res, 403, { error: 'Account credentials and sessions are managed on the App Server host.' })
+          return
+        }
+
+        if (body.method === 'account/read') {
+          const account = await appServer.rpc('account/read', { refreshToken: false })
+          setJson(res, 200, { result: publicAccountStatus(account) })
           return
         }
 
@@ -696,7 +703,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
               return
             }
           }
-          if (body.method.startsWith('project/') || ['account/usage/read', 'thread/compact/start', 'thread/delete', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update', 'account/login/start', 'account/login/cancel'].includes(body.method) || body.method==='config/value/write'&&req.headers['x-codex-config-write-errors']==='1' || ['command/exec','command/exec/terminate'].includes(body.method)&&req.headers['x-codex-command-errors']==='1') {
+          if (body.method.startsWith('project/') || ['account/usage/read', 'thread/compact/start', 'thread/delete', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update', 'account/login/start', 'account/login/cancel', 'account/logout'].includes(body.method) || body.method==='config/value/write'&&req.headers['x-codex-config-write-errors']==='1' || ['command/exec','command/exec/terminate'].includes(body.method)&&req.headers['x-codex-command-errors']==='1') {
             setJson(res, 502, { error: getErrorMessage(error, body.method === 'account/usage/read' ? 'Account usage unavailable' : `Native ${body.method} request failed`), ...(typeof asRecord(error)?.code === 'number' ? { rpcCode: asRecord(error)!.code } : {}) })
             return
           }
@@ -829,10 +836,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
       next()
     } catch (error) {
-      if (error instanceof CodexCredentialError) {
-        setJson(res, error.statusCode, { error: error.message, code: error.code })
-        return
-      }
       const message = getErrorMessage(error, 'Unknown bridge error')
       setJson(res, 502, { error: message })
     }

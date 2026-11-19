@@ -1,28 +1,29 @@
-import {rpcCall} from './codexRpcClient'
-import {accountInspection,loginMethodsInspection} from './authInspection'
-export type AuthRequest=(method:string,params:unknown)=>Promise<unknown>
-export type NativeAccount=ReturnType<typeof accountInspection>
-export type AuthPreparation={account:NativeAccount;methods:string[];loadedCount:number;checkedAt:string}
-export type LoginMethod='chatgpt'|'chatgptDeviceCode'
-type NativeLogin={id:string;url:string;code:string|null}
-export async function readAuthenticationAccount(request:AuthRequest=rpcCall){return accountInspection(await request('account/read',{refreshToken:false}))}
-export async function prepareAuthentication(request:AuthRequest=rpcCall):Promise<AuthPreparation>{
- const [account,rawPolicy]=await Promise.all([readAuthenticationAccount(request),request('configRequirements/read',{})])
- const methods=loginMethodsInspection(rawPolicy)
- if(account.type!=='signedOut')throw new Error('This sign-in workflow requires a signed-out native default provider. Existing account switching remains external or uses the separate Logout action.')
- if(!account.requiresAuth||!methods?.includes('chatgpt'))throw new Error('Native ChatGPT sign-in is unavailable or its effective login policy is unknown')
- const loaded=await request('thread/loaded/list',{limit:21}) as {data?:unknown[];nextCursor?:unknown}
- if(!Array.isArray(loaded?.data)||loaded.data.length>20||loaded.nextCursor!==null)throw new Error('A complete inventory of at most 20 loaded threads is required here. Inspect authentication externally when this bound is exceeded.')
- const ids=loaded.data
- if(ids.some(id=>typeof id!=='string'||!id||id.length>2000)||new Set(ids).size!==ids.length)throw new Error('Native loaded-thread identities unavailable')
- let index=0,aborted=false
- await Promise.all(Array.from({length:Math.min(4,ids.length)},async()=>{
-  try{while(!aborted&&index<ids.length){const id=ids[index++] as string,result=await request('thread/read',{threadId:id,includeTurns:false}) as {thread?:{id?:unknown;status?:{type?:unknown}}}
-    if(result?.thread?.id!==id||result.thread.status?.type!=='idle')throw new Error('A loaded thread is active or its activity is unknown. Finish work before changing native authentication')
-   }}catch(e){aborted=true;throw e}
- }))
- return {account,methods,loadedCount:ids.length,checkedAt:new Date().toISOString()}
+import { rpcCall } from './codexRpcClient'
+
+export type LoginMethod = 'chatgpt' | 'chatgptDeviceCode'
+export type NativeLogin = { id: string; url: string; code: string | null }
+
+export async function verifyIdleForLogin(isCurrent: () => boolean): Promise<void> {
+  const inventory = await rpcCall<{ data?: unknown[]; nextCursor?: unknown }>('thread/loaded/list', { limit: 21 })
+  const ids = inventory?.data
+  if (!Array.isArray(ids) || ids.length > 20 || inventory.nextCursor !== null
+    || ids.some(id => typeof id !== 'string' || !id || id.length > 2000) || new Set(ids).size !== ids.length) {
+    throw new Error('Check loaded conversations on the App Server before signing in. WebUI could not verify idle activity.')
+  }
+
+  for (let start = 0; start < ids.length; start += 4) {
+    if (!isCurrent()) throw new Error('Connection or activity changed before sign-in.')
+    await Promise.all(ids.slice(start, start + 4).map(async threadId => {
+      const { thread } = await rpcCall<{ thread?: { id: string; status?: { type: string } } }>('thread/read', {
+        threadId, includeTurns: false,
+      })
+      if (thread?.id !== threadId || thread?.status?.type !== 'idle') {
+        throw new Error('Finish active conversations before signing in.')
+      }
+    }))
+  }
 }
+
 function loginUrl(value:unknown){
  if(typeof value!=='string'||value.length>8000)throw new Error('Native login URL unavailable')
  let url:URL;try{url=new URL(value)}catch{throw new Error('Native login URL is invalid')}

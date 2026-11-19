@@ -1119,15 +1119,6 @@ export async function clearThreadGoal(threadId: string): Promise<boolean> {
   return (await callRpc<{ cleared: boolean }>('thread/goal/clear', { threadId: threadId.trim() })).cleared === true
 }
 
-export async function logoutCodex(): Promise<void> {
-  await callRpc('account/logout', {})
-}
-
-export async function getCodexAuthenticationStatus(): Promise<boolean | null> {
-  const result = await callRpc<{ account?: unknown }>('account/read', { refreshToken: false })
-  return result && typeof result === 'object' && 'account' in result ? result.account != null : null
-}
-
 // Revision comes from the row actually seen; never retry a conflict with a newer revision.
 export async function markNativeThreadRead(threadId: string, expectedRevision: string): Promise<import('../types/codex').NativeThreadReadState> {
   const result = await callRpc<{ readState: import('../types/codex').NativeThreadReadState }>('thread/readState/update', { threadId, operation: { type: 'read' }, expectedRevision })

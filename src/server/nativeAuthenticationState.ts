@@ -1,3 +1,4 @@
+import { publicAccountStatus, publicLoginChallenge } from './publicAccount.js'
 import type { NativeAuthenticationState } from '../types/nativeAuthentication.js'
 
 type Rpc = (method: string, params: unknown) => Promise<unknown>
@@ -5,7 +6,7 @@ const record = (value: unknown) => value !== null && typeof value === 'object' &
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 2000
 const rejected = (error: unknown) => [-32600, -32601, -32602].includes(Number(record(error)?.code))
 export const AUTHENTICATED_WRITES = new Set(['turn/start', 'turn/steer', 'thread/queue/add', 'thread/queue/update', 'thread/queue/start', 'review/start'])
-type Evidence = { usable: boolean; context: string | null }
+type Evidence = { usable: boolean; context: string | null; account: NativeAuthenticationState['account'] }
 type Diagnostic = { reason: string; previous: string; next: string; generation: number; revision: number; unresolved: boolean }
 
 /** One connection's evidence and operation ownership. No credentials or disk state. */
@@ -13,6 +14,7 @@ export class NativeAuthenticationStateMachine {
   private state: NativeAuthenticationState = { phase: 'checking', blocking: true, revision: 0 }
   private loginId = ''
   private starting = false
+  private loggingOut = false
   private uncertainOperation = false
   private operation = 0
   private early = new Map<string, boolean>()
@@ -29,7 +31,7 @@ export class NativeAuthenticationStateMachine {
   private diagnostics: Diagnostic[] = []
 
   constructor(private readonly rpc: Rpc, private readonly publish: (state: NativeAuthenticationState) => void) {}
-  private unresolved() { return this.starting || !!this.loginId || this.uncertainOperation }
+  private unresolved() { return this.starting || this.loggingOut || !!this.loginId || this.uncertainOperation }
   snapshot(): NativeAuthenticationState {
     return { ...this.state, loginId: this.loginId || null, generation: this.generation,
       contextRevision: this.contextRevision, operationUnresolved: this.unresolved() }
@@ -40,9 +42,9 @@ export class NativeAuthenticationStateMachine {
       revision: this.state.revision, unresolved: this.unresolved() })
     if (this.diagnostics.length > 32) this.diagnostics.shift()
   }
-  private set(phase: NativeAuthenticationState['phase'], reason: string) {
+  private set(phase: NativeAuthenticationState['phase'], reason: string, account?: NativeAuthenticationState['account']) {
     const previous = this.state.phase
-    this.state = { phase, reason, blocking: phase !== 'ready', revision: this.state.revision + 1 }
+    this.state = { phase, reason, account, blocking: phase !== 'ready', revision: this.state.revision + 1 }
     this.note(reason, previous); this.publish(this.snapshot())
   }
   private invalidate(reason: string) {
@@ -69,14 +71,9 @@ export class NativeAuthenticationStateMachine {
   dispose() { this.disposed = true; this.operation++; this.evidenceVersion++; if (this.timer) clearTimeout(this.timer); this.timer = null }
 
   private async evidence(): Promise<Evidence> {
-    const result = record(await this.rpc('account/read', { refreshToken: false }))
-    const account = record(result?.account)
-    if (!result || typeof result.requiresOpenaiAuth !== 'boolean' || !('account' in result)
-      || result.account !== null && (!account || !['chatgpt','apiKey','amazonBedrock','gcp'].includes(String(account.type)))) {
-      throw new Error('Native account state unavailable')
-    }
-    if (!result.requiresOpenaiAuth) return { usable: true, context: 'external-provider' }
-    if (!account) return { usable: false, context: null }
+    const { account, requiresOpenaiAuth } = publicAccountStatus(await this.rpc('account/read', { refreshToken: false }))
+    if (!requiresOpenaiAuth) return { usable: true, context: 'external-provider', account }
+    if (!account) return { usable: false, context: null, account }
     let context: string | null = null
     if (account.type === 'chatgpt') {
       // account/read's email/plan/workspaceName are display fields, not identity.
@@ -92,7 +89,7 @@ export class NativeAuthenticationStateMachine {
         }
       } catch { /* Unsupported/ambiguous identity requires explicit recovery on updates. */ }
     }
-    return { usable: true, context }
+    return { usable: true, context, account }
   }
 
   private async verify(): Promise<void> {
@@ -106,13 +103,13 @@ export class NativeAuthenticationStateMachine {
       try {
         const evidence = await this.evidence()
         if (!current()) { this.note('verification-superseded'); return }
-        if (this.unresolved()) { this.set(this.uncertainOperation ? 'unknown' : 'pending', 'authentication-operation-unresolved'); return }
-        if (!evidence.usable) { this.set('signedOut', 'sign-in-required'); return }
+        if (this.unresolved()) { this.set(this.uncertainOperation ? 'unknown' : 'pending', 'authentication-operation-unresolved', evidence.account); return }
+        if (!evidence.usable) { this.set('signedOut', 'sign-in-required', null); return }
         if (this.acceptContext || evidence.context !== null && evidence.context === this.verifiedContext) {
           this.verifiedContext = evidence.context; this.acceptContext = false; this.explicitAcknowledgment=false
-          this.set('ready', 'account-verified'); return
+          this.set('ready', 'account-verified', evidence.account); return
         }
-        this.set('reconciliation', evidence.context && this.verifiedContext ? 'account-context-changed' : 'account-identity-unavailable')
+        this.set('reconciliation', evidence.context && this.verifiedContext ? 'account-context-changed' : 'account-identity-unavailable', evidence.account)
       } catch {
         if (current()) this.set('unknown', 'account-verification-failed')
       }
@@ -129,7 +126,8 @@ export class NativeAuthenticationStateMachine {
   async read(): Promise<NativeAuthenticationState> {
     if (this.state.phase === 'disconnected') this.set(this.unresolved() ? 'pending' : 'checking', 'connection-rechecking')
     if (this.dirty || this.reading) await this.verify()
-    else if (['unknown','reconciliation'].includes(this.state.phase) && !this.unresolved()) {
+    else if (['unknown', 'reconciliation'].includes(this.state.phase)
+      && !this.starting && !this.loggingOut && !this.loginId) {
       this.dirty = true; this.set('checking', 'verification-retry'); await this.verify()
     }
     return this.snapshot()
@@ -141,18 +139,50 @@ export class NativeAuthenticationStateMachine {
   assertReady() {
     if (this.state.blocking) throw new Error(`Native authentication is ${this.state.phase} (${this.state.reason ?? 'verification-required'}). Check sign-in controls before sending.`)
   }
-  async reconcile(): Promise<NativeAuthenticationState> {
+  async reconcile(params: unknown): Promise<NativeAuthenticationState> {
     // A usable account cannot cancel or supersede a known native login identity.
-    if (this.starting || this.loginId) throw new Error('Native authentication is pending; complete or cancel the identified login first')
+    if (this.starting || this.loggingOut || this.loginId) throw new Error('Native authentication is pending; finish the current operation first')
+    if (record(params)?.revision !== this.state.revision) throw new Error('Native account changed. Review the current status before acknowledging it.')
     this.uncertainOperation = false; this.acceptContext = true
     this.explicitAcknowledgment=true
     this.invalidate('explicit-account-acknowledgment')
     return this.read()
   }
 
+  async logout(): Promise<unknown> {
+    await this.assertCanSend()
+    this.assertReady()
+    const generation = this.generation
+    this.loggingOut = true
+    this.evidenceVersion++
+    this.contextRevision++
+    this.set('pending', 'logout-starting')
+    try {
+      await this.rpc('account/logout', {})
+      this.loggingOut = false
+      if (generation === this.generation) {
+        this.invalidate('logout-completed')
+        await this.read()
+      }
+      return {}
+    } catch (error) {
+      this.loggingOut = false
+      this.uncertainOperation = !rejected(error)
+      if (generation === this.generation) {
+        this.invalidate('logout-unconfirmed')
+        await this.read()
+      }
+      throw error
+    }
+  }
+
   async start(params: unknown): Promise<unknown> {
     if (this.unresolved() || ['reconciliation','unknown','disconnected','checking'].includes(this.state.phase) && this.state.revision > 0) {
       throw Object.assign(new Error('Native authentication already pending or requires verification'), { code: -32600 })
+    }
+    const type = record(params)?.type
+    if (type !== 'chatgpt' && type !== 'chatgptDeviceCode') {
+      throw Object.assign(new Error('Only Codex-managed ChatGPT sign-in is available through WebUI'), { code: -32602 })
     }
     const previousPhase=this.state.phase, acceptedBefore=this.acceptContext
     const token = ++this.operation, generation = this.generation
@@ -168,17 +198,20 @@ export class NativeAuthenticationStateMachine {
         throw Object.assign(new Error('Native sign-in requires a signed-out account'), { code: -32600 })
       }
       submitted = true
-      const result = await this.rpc('account/login/start', params)
+      const result = await this.rpc('account/login/start', { type })
       if (token !== this.operation || generation !== this.generation) throw new Error('Connection changed during native sign-in')
       const id = record(result)?.loginId
       if (!text(id)) throw new Error('Native login identity unavailable')
       this.loginId = id; this.starting = false
       const completed = this.early.get(id); this.early.clear()
-      if (completed !== undefined) await this.complete(completed)
-      else this.set('pending', 'login-awaiting-completion')
-      return result
+      if (completed !== undefined) {
+        await this.complete(completed)
+        return { type, loginId: id }
+      }
+      this.set('pending', 'login-awaiting-completion')
+      return publicLoginChallenge(result, type)
     } catch (error) {
-      if (token !== this.operation) throw error
+      if (token !== this.operation || this.loginId) throw error
       this.starting = false; this.early.clear()
       this.uncertainOperation = submitted && !rejected(error)
       if (generation === this.generation) {
@@ -196,14 +229,16 @@ export class NativeAuthenticationStateMachine {
     if (!text(id) || id !== this.loginId) throw Object.assign(new Error('No matching backend native login to cancel'), { code: -32602 })
     const generation = this.generation, token = this.operation
     try {
-      const result = await this.rpc('account/login/cancel', params)
-      if (token !== this.operation || this.loginId !== id || generation !== this.generation) return result
-      if (record(result)?.status === 'canceled') await this.complete(false)
+      const result = await this.rpc('account/login/cancel', { loginId: id })
+      const value = record(result)?.status
+      const status = value === 'canceled' || value === 'notFound' ? value : undefined
+      if (token !== this.operation || this.loginId !== id || generation !== this.generation) return { status }
+      if (status === 'canceled') await this.complete(false)
       else {
-        if (record(result)?.status === 'notFound') this.loginId = ''
+        if (status === 'notFound') this.loginId = ''
         this.uncertainOperation = true; this.set('unknown', 'cancellation-outcome-unknown')
       }
-      return result
+      return { status }
     } catch (error) {
       if (generation === this.generation && token === this.operation && this.loginId === id) {
         this.uncertainOperation = true; this.set('unknown', 'cancellation-outcome-unknown')

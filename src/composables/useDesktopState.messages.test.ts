@@ -1444,6 +1444,7 @@ describe('lifecycle generation ownership across restart', () => {
     await state.sendMessageToNewThread('old send', '/tmp/project')
     state.stopPolling()
     state.startPolling()
+    notify({ method: 'native-authentication/state', params: { phase: 'ready', blocking: false, revision: 2 } })
     gateway.startThread.mockResolvedValueOnce({ threadId: 'fresh-thread', model: 'gpt-5.5' })
     await state.sendMessageToNewThread('fresh send', '/tmp/project')
     expect(state.isSendingMessage.value).toBe(true)
@@ -2529,7 +2530,7 @@ it('invalidates account views and hydrates the sending/queue barrier from backen
  await expect(state.nativeQueue.add({text:'blocked',imageUrls:[],fileAttachments:[],skills:[]})).rejects.toThrow()
  expect(gateway.startThreadTurn).not.toHaveBeenCalled()
  const restored=createState();restored.startPolling();notify({method:'native-authentication/state',params:{phase:'reconciliation',blocking:true,revision:2}});expect(restored.nativeAuthenticationBlocked.value).toBe(true)
- const auth=await restored.ensureNativeAuthentication();expect(auth?.state.value).toBe('unknown');expect(auth?.needsRefresh.value).toBe(true)
+ expect(restored.backendAuthentication.state.value.phase).toBe('reconciliation')
  notify({method:'app-server/disconnected',params:{}});notify({method:'app-server/reconnected',params:{}})
  expect(restored.nativeAuthenticationBlocked.value).toBe(true);expect(gateway.startThreadTurn).not.toHaveBeenCalled()
 })
@@ -2618,18 +2619,20 @@ it('does not retire its own login response when backend operation start invalida
  const state=await loadState();let resolve!:(value:any)=>void
  const fetch=vi.fn(async(_url:any,init:any)=>{
   const body=JSON.parse(init.body);let result:any
-  if(body.method==='account/read')result={account:null,requiresOpenaiAuth:true}
-  if(body.method==='configRequirements/read')result={requirements:{allowed_login_methods:['chatgpt']}}
   if(body.method==='thread/loaded/list')result={data:[],nextCursor:null}
   if(body.method==='account/login/start')result=await new Promise(r=>resolve=r)
   return new Response(JSON.stringify({result}),{status:200})
  });vi.stubGlobal('fetch',fetch)
- const auth=await state.ensureNativeAuthentication();await auth!.prepare();const starting=auth!.start('chatgpt',true)
+ notify({method:'native-authentication/state',params:{phase:'signedOut',blocking:true,revision:2}})
+ const auth=state.backendAuthentication
+ const starting=auth.startLogin('chatgpt',()=>true)
  for(let i=0;i<50&&!resolve;i++)await Promise.resolve()
  expect(resolve).toBeTypeOf('function')
- notify({method:'native-authentication/state',params:{phase:'pending',blocking:true,revision:2,contextRevision:1,operationUnresolved:true}})
+ notify({method:'native-authentication/state',params:{phase:'pending',blocking:true,revision:3,contextRevision:1,operationUnresolved:true}})
  resolve({type:'chatgpt',loginId:'owned',authUrl:'https://example.invalid/sign-in'});await starting
- expect(auth!.state.value).toBe('waiting');expect(auth!.url.value).toBe('https://example.invalid/sign-in')
+ notify({method:'native-authentication/state',params:{phase:'pending',blocking:true,revision:4,contextRevision:1,loginId:'owned'}})
+ expect(auth.state.value.phase).toBe('pending')
+ expect(auth.challenge.value?.url).toBe('https://example.invalid/sign-in')
  expect(state.nativeAuthenticationBlocked.value).toBe(true)
 })
 it('does not repopulate invalidated quota from account notifications while verification is unresolved',async()=>{

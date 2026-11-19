@@ -2,7 +2,7 @@
 const {spawnSync}=require('node:child_process')
 const {writeFileSync,mkdirSync}=require('node:fs')
 const {resolve}=require('node:path')
-const scripts=['subagents','hooks','config','import','permissions','denials','auth','queue','queue-management','permission-changes','config-changes','hook-policies','daybreak','native-authentication','shell','deletion']
+const scripts=['subagents','hooks','config','import','permissions','denials','queue','queue-management','permission-changes','config-changes','hook-policies','daybreak','native-authentication','shell','deletion']
 const results=[];mkdirSync('output/playwright',{recursive:true})
 for(const name of scripts){
  const script=`scripts/test-risk-${name}.cjs`,result=spawnSync(process.execPath,[script],{encoding:'utf8',env:process.env,timeout:180_000})

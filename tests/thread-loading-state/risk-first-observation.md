@@ -117,21 +117,9 @@ Screenshots: `output/playwright/risk-04-{1280,375,768}-{light,dark}.png`.
 Performance: zero RPCs and zero extra subscriptions; at most fifty bounded
 transient rows globally, 12,000-character action details, no history reload.
 
-## 29 — Authentication inspection
+## 29 — Native account status
 
-Open Settings → Native authentication details → Read authentication details.
-Check native provider/account/email/workspace and server-allowed methods.
-Signed out, unknown account, empty policy and unavailable restrictions remain
-distinct. No credentials/token/routing blob is shown. No login/refresh-token
-request is initiated. Delay a read across disconnect/profile change: the old
-account must not reappear. Test both themes and all three supported viewports.
-Cleanup: close; no authentication state changed.
-
-Automation: `pnpm exec vitest run src/api/authInspection.test.ts`,
-`pnpm run typecheck`, `PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-auth.cjs`.
-Screenshots: `output/playwright/risk-29-{1280,375,768}-{light,dark}.png`.
-Performance: two explicit lazy native reads, fixed small account projection,
-twenty method identifiers maximum, no poll/listener. Live acceptance NOT RUN.
+See the [native account controls test](../accounts-feedback-observability/accounts-panel-codex-login-callback-modal.md).
 
 ## 03 — Permission mutation acceptance gate
 
@@ -235,65 +223,8 @@ catalog page; twenty rows/page, 100 retained rows, no new subscriptions/history.
 
 ### Native managed ChatGPT sign-in and automatic account verification
 
-Prerequisites: build the current checkout, use the credential-free simulated upstream
-in `scripts/test-risk-native-authentication.cjs`, and supply the installed Playwright
-browser path. The real backend state machine drives the real UI. Example:
-`PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-connection-browsers APPROVED_DIST_ROOT="$PWD" node scripts/test-risk-native-authentication.cjs`.
-Never sign in a real account in this fixture. The native preflight requires an explicit
-`allowed_login_methods: [chatgpt]` policy and at most 20 loaded idle threads.
-
-Actions and expected results:
-
-1. Open Settings → Codex account → Native Codex sign-in. Prepare, review and confirm
-   browser/device-code sign-in. Opening/preparing must not log in. Only explicit
-   confirmation starts it; complete idle inventory checks use no full history reads.
-2. Emit `account/updated` while pending, then reload. Sending stays blocked and the
-   exact backend login ID survives; URLs/codes do not. Cancel that identified attempt.
-   The cancellation acknowledgment must not be lost when cache invalidation occurs.
-3. Start device-code sign-in; deliver unrelated completion, then matching successful
-   completion and a usable account/session identity. Expect automatic checking and
-   enabled sending without clicking reconnect, retry or acknowledgment controls.
-4. With a verified account, emit twenty updates with unchanged session/user/workspace
-   IDs. Expect a temporary block and one coalesced account verification, followed by
-   automatic readiness. No login, cancellation or message may be replayed.
-5. Hold verification, emit another update and release the obsolete result. It cannot
-   authorize sending; the queued pass must check the latest state. Reload while a
-   check is held: hydration reflects checking and eventually readiness after release.
-6. Repeat on two browsers attached to the same backend; both recover. A separate
-   backend/profile must remain independent. Deliver an old hydration/inspection result
-   or a raw account update after readiness; none may install a stale frontend latch.
-7. Change the workspace/user ID while retaining email, plan and display name. Expect
-   cache invalidation and an explicit `account-context-changed` block. Inspection,
-   retry and acknowledgment controls remain available. Missing/unsupported stable
-   identity yields `account-identity-unavailable`, never an email-based equivalence.
-8. Return signed-out, malformed or failed account reads. Expect sign-in guidance or
-   an actionable unknown state; failures do not poll/retry themselves. A provider
-   not requiring OpenAI auth continues to recover within its unchanged context.
-9. Disconnect during verification or login start. Retired results cannot authorize
-   sends. A known pending operation survives reconnect and cannot be erased by an
-   account read or manual acknowledgment. Test exact cancellation, `notFound`, early
-   completion and cancellation/completion races. Backend restart reconstructs actual
-   account state, but cannot recover the outstanding native login identity.
-10. Seed the old localStorage key and a separate preference before reload. Only the
-    obsolete authentication key disappears. Verify frontend and final backend send
-    guards while initialization or attachment work is awaiting completion.
-
-Verify the real controls/composer at 1280×900, 375×812 and 768×1024 in both themes.
-Screenshots: `output/playwright/auth-auto-ready-<width>-<theme>.png` and
-`output/playwright/auth-context-change-<width>-<theme>.png`. Confirm enabled composer
-post-refresh in recovered state and disabled composer for actual context change.
-The script does not click manual recovery during automatic-recovery scenarios.
-
-Performance: one scheduling slot per burst, at most one account verification in
-flight and one queued follow-up. ChatGPT verification adds at most one session-identity
-read. Verified ordinary sends add no upstream account reads. No periodic polling,
-database, new notification subscription, history scan or unbounded concurrent fanout.
-Diagnostics retain at most 32 identity-free transitions in connection diagnostics.
-
-Cleanup: cancel pending fixture attempts, close browser contexts, and discard their
-fixture-only unrelated settings. Do not reset real credentials, drafts or preferences.
-No production OAuth or latency claim follows from these simulated protocol checks.
-See [state policy and limitations](../../docs/native-authentication-state.md).
+Use the [account controls acceptance test](../accounts-feedback-observability/accounts-panel-codex-login-callback-modal.md).
+The state and wire guarantees are described in the [native account guide](../../docs/native-authentication-state.md).
 
 Configuration bound regression: supply disjoint profiles in several returned
 layers, plus duplicate names with differing model values. Expect at most 100 total

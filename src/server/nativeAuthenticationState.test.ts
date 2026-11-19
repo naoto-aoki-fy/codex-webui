@@ -21,7 +21,7 @@ function fixture() {
 }
 const start = (f: ReturnType<typeof fixture>) => f.rpc('account/login/start', { type: 'chatgpt' })
 const snapshot = (f: ReturnType<typeof fixture>) => f.rpc('native-authentication/read') as Promise<any>
-const reconcile = (f: ReturnType<typeof fixture>) => f.rpc('native-authentication/reconcile')
+const reconcile = (f: ReturnType<typeof fixture>) => f.rpc('native-authentication/reconcile', { revision: f.peek().revision })
 
 it('blocks pending sends and automatically restores readiness after matching successful completion', async () => {
   const f = fixture()
@@ -322,4 +322,43 @@ it('does not forget a previous context across external sign-out and sign-in to a
   f.signIn();f.changeWorkspace();f.emit('account/updated')
   await vi.waitFor(()=>expect(f.peek()).toMatchObject({phase:'reconciliation',reason:'account-context-changed'}))
  }finally{f.client.dispose()}
+})
+
+it('blocks submission across an unacknowledged logout and never replays it', async () => {
+  const f = fixture()
+  f.signIn()
+  try {
+    await snapshot(f)
+    let rejectLogout!: (error: Error) => void
+    f.wire.mockImplementationOnce(() => new Promise((_, reject) => { rejectLogout = reject }))
+    const logout = f.rpc('account/logout')
+    const failure = expect(logout).rejects.toThrow('lost logout response')
+    await vi.waitFor(() => expect(f.peek()).toMatchObject({ phase: 'pending', blocking: true }))
+    await expect(f.rpc('turn/start')).rejects.toThrow('authentication')
+    const revision = f.peek().revision
+    rejectLogout(new Error('lost logout response'))
+    await failure
+    expect(f.peek()).toMatchObject({ phase: 'unknown', blocking: true, operationUnresolved: true })
+    await expect(f.rpc('native-authentication/reconcile', { revision })).rejects.toThrow('Review the current status')
+    expect(f.wire.mock.calls.filter(([method]) => method === 'account/logout')).toHaveLength(1)
+    expect(f.wire.mock.calls.some(([method]) => method === 'turn/start')).toBe(false)
+  } finally {
+    f.client.dispose()
+  }
+})
+
+it('forwards only Codex-managed login methods and only public challenge fields', async () => {
+  const f = fixture()
+  try {
+    await expect(f.rpc('account/login/start', { type: 'chatgptAuthTokens', accessToken: 'credential' })).rejects.toThrow('Only Codex-managed')
+    expect(f.wire).not.toHaveBeenCalled()
+    f.wire.mockResolvedValueOnce({ account: null, requiresOpenaiAuth: true }).mockResolvedValueOnce({
+      type: 'chatgpt', loginId: 'owned', authUrl: 'https://example.invalid', accessToken: 'credential',
+    })
+    const login = await f.rpc('account/login/start', { type: 'chatgpt', accessToken: 'credential' })
+    expect(login).toEqual({ type: 'chatgpt', loginId: 'owned', authUrl: 'https://example.invalid' })
+    expect(f.wire).toHaveBeenLastCalledWith('account/login/start', { type: 'chatgpt' })
+  } finally {
+    f.client.dispose()
+  }
 })

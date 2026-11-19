@@ -8,4 +8,5 @@ export type NativeAuthenticationState = {
   generation?: number
   contextRevision?: number
   operationUnresolved?: boolean
+  account?: { type: string; email?: string; planType?: string; workspaceName?: string } | null
 }

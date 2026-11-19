@@ -40,10 +40,10 @@ Codex app-server `account/chatgptAuthTokens/refresh` requests are handled from `
 
 #### Steps
 1. Start the app under Keyring with no `auth.json`. Confirm Accounts, quotas, and chat work; restart and confirm the account remains available.
-3. Request browser RPC `getAuthStatus` with `includeToken: true`. Confirm the forwarded request disables token inclusion and the HTTP response contains metadata with `authToken: null` and no extra credential fields.
+3. Request browser RPC `getAuthStatus` with `includeToken: true`. Confirm WebUI rejects the request without sending it upstream. Request `account/read` and verify it returns display metadata only.
 4. Exercise a legacy external-host token-refresh request with Keyring configured, including a leftover stale file. Confirm no file token is used, no refresh endpoint is called, and the unsupported-operation response explains that Codex owns the credentials.
-5. Repeat file-backed external refresh. Confirm refreshed tokens persist only while file storage remains selected and the original file has not changed concurrently.
-6. Exercise an old Codex version without `getAuthStatus`. File-backed feature access may use its existing token file; Keyring must report unsupported access without reading a leftover credential file.
+5. Repeat file-backed external refresh. Expect the same explicit unsupported reply.
+6. Verify browser account inspection uses native `account/read` regardless of the Codex credential store.
 7. Sign out using Codex in the isolated profile. Confirm a genuine missing account is reported correctly. Repeat with a personal official API-key login and confirm chat still works while ChatGPT-only features identify their account requirement.
 8. Compare profile configuration before and after these operations. Confirm neither credential-store setting changes, and inspect responses/logs for accidental credential disclosure.
 
