@@ -15,4 +15,4 @@ Return to the [manual test index](../../tests.md).
 | [External Codex authentication](accounts-panel-codex-login-callback-modal.md) |
 | [Startup profiler request dedupe](startup-profiler-request-dedupe.md) |
 | [Account usage history](account-usage-history.md) |
-| [Read-only warnings and sanitized diagnostics](sanitized-diagnostics.md) |
+| [Connection and subscription recovery](../thread-loading-state/browser-reconnect-recovery.md) |

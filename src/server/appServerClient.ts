@@ -1,7 +1,6 @@
 import { NativeAuthenticationStateMachine, AUTHENTICATED_WRITES } from './nativeAuthenticationState.js'
 import { CodexHomeResolver } from './codexHomeResolver.js'
 import { getConnectionProfileId } from './connectionProfile.js'
-import { RemoteCapabilities } from './remoteCapabilities.js'
 import { SubscriptionRecovery } from './subscriptionRecovery.js'
 import { RolloutGenerationMetadata } from './rolloutGenerationMetadata.js'
 import { randomInt } from 'node:crypto'
@@ -55,10 +54,6 @@ export type StreamEventFrame = {
 }
 
 export class AppServerClient {
-  readonly capabilities = new RemoteCapabilities()
-
-  getAuthenticationDiagnostics() { return this.authentication.diagnosticSnapshot() }
-
   getInitializationMetadata() { return this.transport.getInitializationMetadata() }
 
   private readonly authentication = new NativeAuthenticationStateMachine(
@@ -124,7 +119,6 @@ export class AppServerClient {
     this.authentication.disconnect()
     this.connectionGeneration++
     this.codexHome.reset()
-    this.capabilities.reset()
     this.recovery.cancel()
     for (const request of this.pending.values()) request.reject(new Error('App-server disconnected. Retry to reconnect; inspect the thread before resending a turn.'))
     this.pending.clear()
@@ -341,17 +335,10 @@ export class AppServerClient {
   }
 
   private async call(method: string, params: unknown, deadlineMs?: number): Promise<unknown> {
-    const generation = this.connectionGeneration
     const homeToken = this.codexHome.token()
-    try {
-      const result = await this.callObserved(method, params, deadlineMs)
-      if (method === 'thread/read') this.codexHome.observeThreadRead(result, homeToken)
-      if (generation === this.connectionGeneration) this.capabilities.observe(method, result)
-      return result
-    } catch (error) {
-      if (generation === this.connectionGeneration) this.capabilities.observe(method, undefined, error)
-      throw error
-    }
+    const result = await this.callObserved(method, params, deadlineMs)
+    if (method === 'thread/read') this.codexHome.observeThreadRead(result, homeToken)
+    return result
   }
 
   private async callObserved(method: string, params: unknown, deadlineMs?: number): Promise<unknown> {

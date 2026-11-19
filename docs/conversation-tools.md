@@ -3,6 +3,7 @@
 For the later focused diff review, corrective commits, comparable performance
 baseline and limited live results, see [final verification](conversation-tools-verification.md).
 The implementation-pass measurements below describe revision `8c64343`.
+Current account and recovery controls are documented in the [server guide](external-app-server.md).
 
 ## Runtime evidence and scope
 
@@ -13,7 +14,7 @@ proxy, rollout scanner, archive index or usage-history store is added.
 
 The repository's [runtime floor and native contract](native-project-migration.md)
 and [connection ownership](external-app-server.md) still apply. The bundled
-0.167.2 protocol and method catalog are advisory, not capability negotiation.
+0.167.2 protocol is the schema baseline.
 The initial implementation pass used credential-free fixtures. Limited live
 checks and remaining acceptance prerequisites are recorded in the final
 verification linked above; fixture success alone is not runtime acceptance.
@@ -38,11 +39,10 @@ Upstream contracts inspected at OpenAI Codex commit
 | 09 | Native archive action, normalized thread list, project reconciliation | Expand **Archived conversations** in the sidebar; refresh/load more; restore via native unarchive and reconcile acknowledged thread identity into active project lists | Requires native archived filtering/unarchive. Failed or ambiguous restores retain the row and show an error; refresh before retrying. Persistence is server-owned. Native pins/read receipts are not mutated. |
 | 22 | Composer model/effort/fast/collaboration controls; generic thread resume configuration | **Blocked for this low-risk scope; no new control or preference** | Enum contains `disabled`, `cached`, `indexed`, `live`. `turn/start` and `thread/settings/update` have no dedicated web-search override; start/resume accept generic configuration, but their returned settings do not confirm effective web-search mode. This iteration does not alter resume/subscription/send ownership to experiment with unverifiable configuration or write global config. Default sending is unchanged. A validated scoped mechanism with effective-setting evidence is needed. |
 | 24 | Existing account settings, quota/context displays, RPC transport | Settings → Account → **Account usage history** → **Refresh account usage** | Only real lifetime/peak token counts, longest-turn seconds, streak days and returned daily buckets. Account-wide activity is separate from context tokens and remaining rate limits. No costs, inferred records or local aggregation. Nullable/missing values are unavailable; empty buckets mean no records returned. |
-| 32 | Existing compatibility endpoint, capability observations, shared desktop notification owner | Settings → Account → **Warnings and diagnostics**; read diagnostics, inspect/copy report | Latest 20 browser-observed warnings, cleared on connection changes. Runtime version stays unavailable; platform comes from initialization. Copied report excludes all free-form text and paths/URLs/profile names. No feedback upload. Existing compatibility probes remain a separate explicit action. |
 
 Normal history pagination, Portable Fork history and historical response metadata
 continue through their existing APIs. **Copy chat** copies the loaded view to the
-clipboard. Archive, usage and diagnostic results are scoped to the current
+clipboard. Archive and usage results are scoped to the current
 connection. See the [protected product requirements](product-requirements.md).
 
 ## Tests and verification
@@ -52,19 +52,17 @@ Automated coverage:
 - `src/composables/archivedThreads.test.ts`: no eager requests, pagination/dedup,
   empty/error states, acknowledged/rejected restore and stale-result rejection.
 - `src/composables/useDesktopState.test.ts`: native project reconciliation,
-  rejected restore and bounded warning capture using the existing subscription.
+  and rejected restore.
   Existing CAP/fork/read-receipt/steering/reconnect tests remain active.
 - `src/composables/accountUsage.test.ts`: nullable metrics, empty/missing history,
   actual units, malformed responses, unsupported versus permission errors,
   in-flight coalescing and stale-connection results; no automatic request loop.
-- `src/diagnostics.test.ts`: buffer/text bounds, redaction, allowlisted reports,
   unrecognized diagnostics and missing capability evidence.
 - `scripts/test-external-app-server.cjs`: unchanged generic RPC errors and scoped
   unsupported usage errors through both built CLI and dev-server entry points.
 - `scripts/test-conversation-tools.cjs`: intercepted protocol/event fixtures,
   restore/pagination/rejection/reload, clipboard copy of the loaded chat,
-  usage units/empty/unsupported, warning bounds, clipboard
-  sanitization, no external requests, and actual changed light/dark UI at
+  usage units/empty/unsupported, no external requests, and light/dark UI at
   1280×900, 375×812 and 768×1024. No paid calls or credentials.
 
 Exact commands (run from repository root):
@@ -74,7 +72,6 @@ pnpm run typecheck
 pnpm exec vitest run src/composables/archivedThreads.test.ts src/composables/useDesktopState.test.ts
 pnpm exec vitest run src/api/normalizers/v2.test.ts src/server/conversationTransfer.test.ts
 pnpm exec vitest run src/composables/accountUsage.test.ts src/server/codexAppServerBridge.archive.test.ts src/api/codexRpcClient.test.ts
-pnpm exec vitest run src/diagnostics.test.ts src/composables/useDesktopState.test.ts src/server/remoteCapabilities.test.ts
 pnpm run test:unit
 pnpm run build
 pnpm run test:integration:fixture
@@ -89,8 +86,7 @@ entry-point loading without adding a new package entry.
 Manual acceptance:
 [archives](../tests/thread-loading-state/thread-archive-recovery-and-sidebar-pruning.md),
 [copy chat](../tests/git-worktrees-rollback/thread-menu-copy-chat-action.md),
-[usage](../tests/accounts-feedback-observability/account-usage-history.md),
-[diagnostics](../tests/accounts-feedback-observability/sanitized-diagnostics.md).
+[usage](../tests/accounts-feedback-observability/account-usage-history.md).
 
 ## Performance audit
 
@@ -102,11 +98,6 @@ Manual acceptance:
 - **24:** zero usage calls before refresh; one in-flight request per mounted view;
   no timer/polling. Five summary fields and initially 30 daily rows render; further
   rows require clicks. Server response payload size is not client-controlled.
-- **32:** compact read uses existing in-memory initialization/capability evidence,
-  with no upstream probes or project-list read. The separate compatibility button
-  retains its existing explicit coalesced probes and upload inventory request.
-  Warnings retain at most 20×600 text characters plus timestamps; redaction scans at most 6,000 characters per event. No added event
-  subscription, background RPC, timer, external feedback request or raw-log buffer.
 - Build output: main JS approximately 419.59 kB / 134.11 kB gzip; no dependency,
   framework, protocol baseline or storage migration changes. Live request latency,
   account availability, and server-side pagination/restore persistence still require
@@ -154,13 +145,10 @@ focused regressions, full checks and the repeated browser matrix.
 - `src/composables/desktopConnection.ts`
 - `src/composables/useDesktopState.test.ts`
 - `src/composables/useDesktopState.ts`
-- `src/diagnostics.test.ts`
-- `src/diagnostics.ts`
 - `src/server/codexAppServerBridge.ts`
 - `src/style.css`
 - `tests/accounts-feedback-observability/account-usage-history.md`
 - `tests/accounts-feedback-observability/index.md`
-- `tests/accounts-feedback-observability/sanitized-diagnostics.md`
 - `tests/git-worktrees-rollback/thread-menu-copy-chat-action.md`
 - `tests/thread-loading-state/thread-archive-recovery-and-sidebar-pruning.md`
 
@@ -170,7 +158,6 @@ returned exit code 0 and printed the expected command/options. The browser URL w
 375×812 and 768×1024, both light and dark. Example evidence:
 
 ![Light usage at 375×812](../output/playwright/tools-375-usage-light.png)
-![Dark sanitized report at 375×812](../output/playwright/tools-375-diagnostics-dark.png)
 
 The verification dev server on 4173 was left running; the persistent server on
 5173 was not stopped or restarted. No branches were created/switched and no commit

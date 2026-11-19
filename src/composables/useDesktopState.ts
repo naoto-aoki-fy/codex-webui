@@ -13,7 +13,6 @@ import {createThreadPermissions} from './threadPermissions'
 import {createBackendAuthentication} from './backendAuthentication'
 import {rpcCall} from '../api/codexRpcClient'
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
-import { appendDiagnosticWarning, type DiagnosticWarning } from '../diagnostics'
 import { createDesktopConnection } from './desktopConnection'
 import { createConnectionNotice } from './connectionNotice'
 import { createDesktopTurns } from './desktopTurns'
@@ -296,7 +295,6 @@ export function useDesktopState() {
     ...projects.value.map(project => [project.id, project.name]),
   ]))
 
-  const diagnosticWarnings = ref<DiagnosticWarning[]>([])
   const operationEpoch = ref(0)
   const nativeShell=shallowRef<import('./nativeShell').NativeShell|null>(null)
   async function ensureNativeShell(){const epoch=operationEpoch.value,owner=connection.lifecycleGeneration,module=await import('./nativeShell');if(epoch!==operationEpoch.value||owner!==connection.lifecycleGeneration)return null
@@ -359,7 +357,7 @@ export function useDesktopState() {
   const appServerConnection = createConnectionNotice()
   const connection = createDesktopConnection({
     onBrowserConnectionState: state=>{browserConnection.update(state);if(state!=='connected'){threadTokenUsageByThreadId.value={};backendAuthentication.disconnect()}},
-    invalidateReadJobs() { operationEpoch.value++;  diagnosticWarnings.value = [] },
+    invalidateReadJobs() { operationEpoch.value++ },
     get history() { return history; },
     get setLiveAgentMessagesForThread() { return setLiveAgentMessagesForThread; },
     get clearLiveReasoningForThread() { return clearLiveReasoningForThread; },
@@ -1810,7 +1808,6 @@ export function useDesktopState() {
     nativeQueue.observe(notification)
     review.observe(notification)
     compaction.observe(notification)
-    if (notification.method === 'warning') diagnosticWarnings.value = appendDiagnosticWarning(diagnosticWarnings.value, notification.params, notification.atIso)
     if (notification.method === 'turn/completed' || notification.method === 'error') {
       const params = asRecord(notification.params)
       const threadId = extractThreadIdFromNotification(notification)
@@ -1878,7 +1875,7 @@ export function useDesktopState() {
       }
       return
     }
-    if (notification.method === 'app-server/reconnected' || notification.method === 'app-server/disconnected') { operationEpoch.value++;  diagnosticWarnings.value = [] }
+    if (notification.method === 'app-server/reconnected' || notification.method === 'app-server/disconnected') { operationEpoch.value++ }
     if (notification.method === 'app-server/reconnected') {
       transportState.value = 'connected'
       appServerConnection.update('connected')
@@ -2800,7 +2797,6 @@ export function useDesktopState() {
     backendAuthentication.dispose()
     nativeDeletion.value?.dispose();nativeDeletion.value=null
     nativeShell.value?.dispose();nativeShell.value=null
-    diagnosticWarnings.value = []
     for (const timer of recoveryDismissTimerByThreadId.values()) clearTimeout(timer)
     recoveryDismissTimerByThreadId.clear()
     browserConnection.dispose()
@@ -2962,7 +2958,6 @@ export function useDesktopState() {
     backendAuthentication, nativeAuthenticationBlocked, nativeAuthenticationStatus, nativeAccountChangeBlocked,
     nativeDeletion,ensureNativeDeletion,
     nativeShell,ensureNativeShell,
-    diagnosticWarnings,
     renameThreadById,
     forkThreadById,
     forkNativeThreadById,

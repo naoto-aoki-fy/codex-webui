@@ -37,7 +37,6 @@ it('does not return a usable attachment on remote-write failure or oversized inp
 })
 
 it('accounts for ambiguous, legacy and cross-profile uploads conservatively and enforces shared capacity', async () => {
-  const { inspectRemoteUploads } = await import('./remoteUploads')
   const state = await mkdtemp(join(tmpdir(), 'remote-capacity-'))
   const rpc = vi.fn(async (_method: string, _params?: unknown) => ({}))
   const client = { rpc, resolveCodexHome: async () => '/B' }
@@ -48,19 +47,16 @@ it('accounts for ambiguous, legacy and cross-profile uploads conservatively and 
     await stageRemoteUpload(client, 'a', Buffer.from('abc'), state)
     vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'two')
     await expect(stageRemoteUpload(client, 'b', Buffer.from('xy'), state)).rejects.toThrow('capacity reached')
-    const inventory = await inspectRemoteUploads(state)
-    expect(inventory.trackedBytes).toBe(3)
-    expect(inventory.unknownSizeCount).toBe(1)
-    expect(inventory.uploads).toHaveLength(2)
-    expect(inventory.uploads.every(record => record.protected)).toBe(true)
-    expect(inventory.cleanup.eligiblePaths).toEqual([])
-    expect(inventory.cleanup.supported).toBe(false)
+    const { records } = JSON.parse(await readFile(join(state, 'codexapp-upload-inventory.json'), 'utf8'))
+    expect(records).toEqual([
+      expect.objectContaining({ path: '/B/codexapp-uploads/legacy' }),
+      expect.objectContaining({ bytes: 3, status: 'staged', profile: 'one' }),
+    ])
     expect(rpc.mock.calls.filter(([method]) => method === 'fs/writeFile')).toHaveLength(1)
     expect(rpc.mock.calls.some(([method]) => method === 'fs/remove')).toBe(false)
   } finally { await rm(state, { recursive: true, force: true }) }
 })
-it('serializes capacity reservations and retains an ambiguous write as protected', async () => {
-  const { inspectRemoteUploads } = await import('./remoteUploads')
+it('serializes capacity reservations and retains an ambiguous write reservation', async () => {
   const state = await mkdtemp(join(tmpdir(), 'remote-race-'))
   vi.stubEnv('CODEXUI_UPLOAD_CAPACITY_BYTES', '4')
   const rpc = vi.fn(async (method: string) => { if (method === 'fs/writeFile') throw new Error('Disconnected after send'); return {} })
@@ -72,10 +68,9 @@ it('serializes capacity reservations and retains an ambiguous write as protected
     ])
     expect(results.every(result => result.status === 'rejected')).toBe(true)
     expect(rpc.mock.calls.filter(([method]) => method === 'fs/writeFile')).toHaveLength(1)
-    const inventory = await inspectRemoteUploads(state)
-    expect(inventory.trackedBytes).toBe(3)
-    expect(inventory.uploads[0]).toMatchObject({ status: 'unknown', protected: true })
-    expect(inventory.cleanup.eligiblePaths).toEqual([])
+    const { records } = JSON.parse(await readFile(join(state, 'codexapp-upload-inventory.json'), 'utf8'))
+    expect(records).toEqual([expect.objectContaining({ bytes: 3, status: 'unknown' })])
+    expect(rpc.mock.calls.some(([method]) => method === 'fs/remove')).toBe(false)
   } finally { await rm(state, { recursive: true, force: true }) }
 })
 

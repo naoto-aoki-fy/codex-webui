@@ -33,7 +33,7 @@ Immutable wiki raw material remains untouched.
 | 19 | README has one upgrade link and no duplicate mobile description or trailing compatibility link. |
 | 20 | Thread profiling requires PROFILE_THREAD_ID or PROFILE_ROUTE; TestChat profiling requires TESTCHAT_ROOT. Missing inputs fail before browser launch. |
 | 21 | Standalone scripts are retained documented diagnostics/live harnesses. Added credential-free intercepted UI acceptance. No script is deleted solely for lacking a package entry. |
-| 22 | Generator derives actual handwritten consumer dependency closure, removes stale generated TS and retains the full method catalog. Pin and runtime policy are unchanged. |
+| 22 | Generator derives actual handwritten consumer dependency closure, removes stale generated TypeScript. Pin and runtime policy are unchanged. |
 | 23 | DirectoryHub renamed SkillsMcpHub, including import and navigation test; styling classes are preserved. |
 | 24 | The service worker and its retirement script were removed. Online navigation and assets use ordinary HTTP caching. |
 | 25 | Project and pin reads use native Projects and thread sections. Earlier local records and receipts stay in storage. |

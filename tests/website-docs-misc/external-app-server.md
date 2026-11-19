@@ -386,12 +386,9 @@ local access or separate browser tunnel.
     forwarding URL at a disposable second remote environment. Register a different
     root and draft a message. Switch back to `machine-b` and verify its roots and
     draft survive, with no conversation/image content from the other profile.
-    Check compatibility again: previous capability evidence must not survive.
-12. Inspect managed uploads in account compatibility diagnostics and
-    `GET /codex-api/uploads`. Verify shared tracked-byte reservations, protected
-    unknown/legacy records and an empty cleanup preview. Test a deliberately low
-    capacity only with disposable uploads and restore the capacity afterward.
-    No cleanup action should delete an existing attachment.
+12. Inspect the fixture backend's local upload inventory. Verify shared byte
+    reservations, including unknown write outcomes. Test a deliberately low
+    capacity using disposable uploads, then restore the original limit.
 
 Cleanup/rollback: stop only smoke-test processes and the user-managed tunnel.
 Remove disposable B threads and repositories deliberately. Remove
@@ -472,24 +469,15 @@ inventory in light and dark themes. Screenshots are written to
 Codex connection. The verification server must already run from this checkout on
 `http://127.0.0.1:4173`.
 
-## Remote compatibility diagnostics
+## Workspace validation without capability probes
 
-Setup: use a disposable protocol fixture or independently managed test server;
-configure `CODEXUI_REMOTE_INITIAL_DIRECTORY` to an absolute directory on B.
+Set up a disposable App Server fixture with a valid directory, a missing directory
+and a denied directory. Attempt to start conversations in each. Also return
+JSON-RPC -32601 from `fs/getMetadata` and simulate a transport failure.
 
-Actions: open Settings → Account → Check remote compatibility. Inspect per-method
-supported/unsupported/unknown evidence and managed upload inventory. Repeat with
-a missing directory, denied directory and a fixture returning JSON-RPC -32601
-for `fs/getMetadata`. Attempt a new conversation in each case. Disconnect/reconnect
-and check again. Verify both light and dark themes.
+Expect actionable errors for denied, missing, unsupported and disconnected paths,
+with zero `thread/start` calls when validation fails. Reconnect and use the
+valid directory successfully. Opening account settings should not send test file,
+search or Git commands.
 
-Expected: only -32601 establishes unsupported. Missing paths, permissions,
-transport failures and malformed responses have distinct diagnoses. Unsupported
-metadata blocks creation with upgrade guidance; optional upload APIs remain
-unknown until an actual upload and do not block conversations. Probes only use
-metadata, directory listing, a deliberately unmatched fuzzy search and
-`git --version`; no files are written or deleted. File-read support remains
-unknown until a requested preview/read. Evidence resets on connection changes.
-Inventory explicitly covers tracked attempts and protects unknown references.
-
-Cleanup: stop disposable fixture processes; preserve existing remote uploads.
+Restore the fixture connection and remove disposable test data only.

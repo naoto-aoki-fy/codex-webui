@@ -30,7 +30,6 @@ import { buildTurnInput, type FileAttachmentParam } from './turnInput'
 export type { FileAttachmentParam } from './turnInput'
 import { ref } from 'vue'
 import {
-  fetchRpcMethodCatalog,
   fetchPendingServerRequests,
   rpcCall,
   respondServerRequest,
@@ -283,10 +282,6 @@ export async function getOlderThreadMessages(threadId: string, cursor: string, l
   } catch (error) {
     throw normalizeCodexApiError(error, `Failed to load earlier messages for thread ${threadId}`, 'thread/turns/list')
   }
-}
-
-export async function getMethodCatalog(): Promise<string[]> {
-  return fetchRpcMethodCatalog()
 }
 
 export function subscribeCodexNotifications(

@@ -11,10 +11,6 @@ export type ReasoningEffort = import('../server/protocol/0.167.2/ReasoningEffort
 export type SpeedMode = 'standard' | 'fast'
 export type CollaborationModeKind = 'default' | 'plan'
 
-export type RpcMethodCatalog = {
-  data: string[]
-}
-
 export type NativeThreadReadState = { firstUnread: { type: 'threadStart' } | { type: 'turn'; turnId: string } | null; revision: string }
 
 export type UiThread = {

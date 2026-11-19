@@ -1,11 +1,9 @@
 import { ModelPreferencesStore } from './modelPreferencesStore.js'
 import { createModelPreferenceUsage } from './modelPreferenceUsage.js'
 import type { ModelPreferences } from '../modelPreferences.js'
-import { listNativeProjects } from '../nativeProjects.js'
 import { createConversationTransfers } from './conversationTransfer.js'
 import { getConnectionProfileId } from './connectionProfile.js'
-import { WORKFLOW_CAPABILITIES, classifyCapabilityError } from './remoteCapabilities.js'
-import { stageRemoteUpload, inspectRemoteUploads } from './remoteUploads.js'
+import { stageRemoteUpload } from './remoteUploads.js'
 import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
 import { readPinnedThreadIds } from './nativeThreadPins.js'
@@ -13,7 +11,6 @@ import { asRecord, getErrorMessage, setJson, readJsonBody, isEmptyThreadReadErro
 export { isEmptyThreadReadError, isThreadMaterializationPendingError } from './bridgeHttpUtils.js'
 import { sanitizeThreadTurnsInlinePayloads, THREAD_METHODS_WITH_TURNS } from './threadInlinePayloads.js'
 export { sanitizeThreadTurnsInlinePayloads } from './threadInlinePayloads.js'
-import appServerMethods from './appServerMethods.json'
 import { AppServerClient, STREAM_EVENT_BUFFER_LIMIT, type StreamEventFrame } from './appServerClient.js'
 export { AppServerClient } from './appServerClient.js'
 import { readFileSync } from 'node:fs'
@@ -549,43 +546,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
-      if (req.method === 'GET' && url.pathname === '/codex-api/uploads') {
-        setJson(res, 200, await inspectRemoteUploads(getCodexHomeDir()))
-        return
-      }
-
       if (req.method === 'POST' && url.pathname === '/codex-api/upload-file') {
         handleFileUpload(req, res, appServer)
-        return
-      }
-
-      if (req.method === 'GET' && url.pathname === '/codex-api/connection-diagnostics') {
-        const probing = url.searchParams.get('probe') === '1'
-        const initialDirectory = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim()
-        const projectRows = probing && !initialDirectory ? await listNativeProjects((method, params) => appServer.rpc(method, params)) : []
-        const directory = initialDirectory || projectRows.find(project => project.roots.length)?.roots[0]?.path || null
-        const generation = appServer.getConnectionGeneration()
-        const diagnostics = appServer.capabilities
-        let git: { available: boolean | null; detail: string } = { available: null, detail: 'Not checked. command/exec support does not establish Git availability.' }
-        if (url.searchParams.get('probe') === '1' && directory && projectPath(directory).isAbsolute(directory)) {
-          // Only read-only operations. Never probe writes or enumerate/read arbitrary files.
-          const probeResults = await diagnostics.coalesceProbe(directory, () => Promise.allSettled([
-            files.getMetadata(directory), files.readDirectory(directory),
-            appServer.rpc('fuzzyFileSearch', { query: '__codexapp_capability_probe_no_match__', roots: [directory], cancellationToken: null }),
-            appServer.rpc('command/exec', { command: ['git', '--version'], cwd: directory, timeoutMs: 3000, outputBytesCap: 4096 }),
-          ]))
-          const gitResult = probeResults[3]
-          if (gitResult?.status === 'fulfilled') {
-            const row = asRecord(gitResult.value)
-            git = typeof row?.exitCode === 'number' ? { available: row.exitCode === 0, detail: String(row.stdout || row.stderr || `Exit ${row.exitCode}`).slice(0, 4096) }
-              : { available: null, detail: 'Incompatible command/exec response' }
-          } else if (gitResult?.status === 'rejected') git = { available: null, detail: getErrorMessage(gitResult.reason, 'Git availability unknown') }
-        }
-        if (generation !== appServer.getConnectionGeneration()) {
-          setJson(res, 409, { error: 'Connection changed during diagnosis. Check compatibility again.' })
-          return
-        }
-        setJson(res, 200, { data: { connection: appServer.getInitializationMetadata() ? 'initialized' : 'unknown-or-disconnected', platformOs: appServer.getInitializationMetadata()?.platformOs ?? null, profile: getConnectionProfileId(), generation, directory, workflows: WORKFLOW_CAPABILITIES, capabilities: diagnostics.snapshot(), authentication: appServer.getAuthenticationDiagnostics(), git } })
         return
       }
 
@@ -652,11 +614,10 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
               return
             }
           } catch (error) {
-            const evidence = classifyCapabilityError(error)
-            const guidance = evidence.support === 'unsupported'
-              ? 'The connected server lacks fs/getMetadata, required for workspace validation. Upgrade the remote Codex app-server; check remote compatibility in account settings.'
-              : `Remote workspace validation failed (${evidence.diagnosis}). Check the directory, permissions and connection on the App Server host before retrying.`
-            setJson(res, 502, { error: `${guidance} ${evidence.detail}`, capability: 'fs/getMetadata', diagnosis: evidence.diagnosis })
+            const guidance = asRecord(error)?.code === -32601
+              ? 'Upgrade the remote Codex App Server. This version does not support the directory validation required to start a conversation.'
+              : 'Could not validate the workspace. Check the directory, permissions and connection on the App Server host before retrying.'
+            setJson(res, 502, { error: `${guidance} ${getErrorMessage(error, 'Directory validation failed.')}` })
             return
           }
         }
@@ -761,11 +722,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
       if (req.method === 'GET' && url.pathname === '/codex-api/server-requests/pending') {
         setJson(res, 200, { data: appServer.listPendingServerRequests() })
-        return
-      }
-
-      if (req.method === 'GET' && url.pathname === '/codex-api/meta/methods') {
-        setJson(res, 200, { data: appServerMethods.methods })
         return
       }
 

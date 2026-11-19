@@ -1,16 +1,13 @@
 <script setup lang="ts">
-import type { DiagnosticWarning } from '../../diagnostics'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import type { createBackendAuthentication } from '../../composables/backendAuthentication'
 import type { LoginMethod } from '../../api/nativeAuthentication'
 import ComposerDropdown from '../content/ComposerDropdown.vue'
 import AccountUsage from './AccountUsage.vue'
-import ConnectionDiagnostics from './ConnectionDiagnostics.vue'
 
 const RemoteControlStatus = defineAsyncComponent(() => import('./RemoteControlStatus.vue'))
 
 const props = defineProps<{
-  warnings: DiagnosticWarning[]
   epoch: number
   auth: ReturnType<typeof createBackendAuthentication>
   status: string
@@ -77,7 +74,6 @@ watch(() => state.value.revision, () => { confirmed.value = false })
     </div>
     <RemoteControlStatus :epoch="epoch" />
     <AccountUsage :epoch="epoch" />
-    <ConnectionDiagnostics :epoch="epoch" :warnings="warnings" />
   </div>
 </template>
 

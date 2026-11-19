@@ -6,7 +6,7 @@
 | --- | --- |
 | Archived conversations | Sidebar → Archived conversations |
 | General preferences and rate limits | Sidebar → Settings → General |
-| Codex account, native authentication, Remote Control, usage and diagnostics | Sidebar → Settings → Codex account |
+| Codex account, native authentication, Remote Control and usage | Sidebar → Settings → Codex account |
 | MCP connection/authentication/configuration and curated plugins | Sidebar → Settings → Apps / Connectors; also linked from Skills and the conversation App picker |
 | Current conversation context usage | Conversation header … → Context; the dialog identifies the title and native ID |
 | Conversation inspection and detailed operations | Conversation header … → Conversation tools…; the dialog identifies the title and native ID |

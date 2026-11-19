@@ -1,5 +1,8 @@
 # R1–R9 implementation and verification
 
+This is a historical verification record. Current operational behavior is documented
+in the [external server guide](external-app-server.md).
+
 This change revalidated the historical v0.1.87 findings against the current branch.
 All implementation remains on the existing `main` branch. No publication, deployment,
 merge, production disconnect, or deletion of existing uploads was performed.

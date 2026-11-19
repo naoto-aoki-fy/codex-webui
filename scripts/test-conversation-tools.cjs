@@ -10,9 +10,8 @@ const { resolve } = require('node:path')
  for (const viewport of [{width:1280,height:900},{width:375,height:812},{width:768,height:1024}].filter(v=>!process.env.TOOLS_WIDTH||v.width===Number(process.env.TOOLS_WIDTH))) {
   const context = await browser.newContext({viewport, permissions:['clipboard-read','clipboard-write']})
   const page = await context.newPage(); const calls=[]; const errors=[]; const bytes=[]; const externalRequests=[]
-  if(process.env.TOOLS_DEBUG)await page.addInitScript(()=>{window.settingsEvents=[];document.addEventListener('pointerdown',event=>{window.settingsEvents.push({type:'pointer',tag:event.target.tagName,cls:event.target.className,inside:!!event.target.closest?.('.sidebar-settings-panel'),width:innerWidth,mobile:matchMedia('(max-width:767px)').matches});window.settingsEvents=window.settingsEvents.slice(-20)},true)})
   page.on('request',request=>{if(!request.url().startsWith('http://127.0.0.1:4173/')&&!request.url().startsWith('data:'))externalRequests.push(request.url())})
-  let restored=false, usageKind='valid', diagnosticFailure=false; const sockets=new Set()
+  let restored=false, usageKind='valid'; const sockets=new Set()
   const thread = {id:'tools-fixture',name:'Tools fixture',cwd:'/fixture',projectId:'p',preview:'fixture',createdAt:1,updatedAt:1,status:{type:'idle'}}
   const archived = {...thread,id:'archived-a',name:'Archived original'}
   const rejected = {...thread,id:'archived-b',name:'Rejected restore'}
@@ -38,11 +37,6 @@ const { resolve } = require('node:path')
    if(url.pathname.endsWith('/thread-pins'))payload={data:{threadIds:[]}}
    if(url.pathname.endsWith('/pending'))payload={data:[]}
    if(url.pathname.endsWith('/methods'))payload={data:[]}
-   if(url.pathname.endsWith('/connection-diagnostics')) {
-    if(diagnosticFailure){status=502;payload={error:'Diagnostic unavailable'}}
-    else payload={data:{connection:'initialized',platformOs:'linux',profile:'fixture-secret-profile',generation:1,directory:'/fixture/private',capabilities:{'fs/readFile':{support:'unsupported',diagnosis:'unsupported-api',detail:'token=secret-value https://user:pass@host/?token=secret'}},git:{available:null,detail:'Not checked'}}}
-   }
-   bytes.push(Buffer.byteLength(JSON.stringify(payload)))
    await route.fulfill({status,json:payload})
   })
   await page.routeWebSocket('**/codex-api/ws', ws=>{sockets.add(ws);ws.onClose(()=>sockets.delete(ws))})
@@ -87,37 +81,18 @@ const { resolve } = require('node:path')
    await page.getByRole('button',{name:'Refresh account usage',exact:true}).click()
    await page.getByText('12,345 tokens',{exact:true}).waitFor()
    assert.equal(await page.getByText('Unavailable',{exact:true}).count()>=1,true)
-   await page.locator('.connection-diagnostics > summary').click()
-   await page.getByRole('button',{name:'Read diagnostics',exact:true}).click()
-   await page.getByText('Runtime version: unavailable',{exact:false}).waitFor()
-   assert.equal(calls.filter(c=>c.method==='command/exec').length,0)
-   for(let i=0;i<25;i++)for(const socket of sockets)socket.send(JSON.stringify({method:'warning',params:{message:`Warning ${i} token=secret-value https://user:pass@host/`},atIso:'2026-11-15T00:00:00Z'}))
-   await page.getByText('Warnings and diagnostics (20)',{exact:true}).waitFor()
-   await page.getByRole('button',{name:'Copy diagnostic report',exact:true}).click()
-   const copied=await page.evaluate(()=>navigator.clipboard.readText())
-   assert.ok(!copied.includes('secret'));assert.ok(!copied.includes('/fixture'));assert.equal(JSON.parse(copied).warnings.length,20)
-   await page.getByText('Inspect sanitized report',{exact:true}).click()
    for(const theme of ['light','dark']){
     await page.evaluate(dark=>document.documentElement.classList.toggle('dark',dark),theme==='dark')
-    if(await page.locator('.connection-diagnostics').getAttribute('open')!==null)await page.locator('.connection-diagnostics > summary').click()
-    if(await page.locator('.account-usage').getAttribute('open')===null)await page.locator('.account-usage > summary').click()
     await page.locator('.account-usage').scrollIntoViewIfNeeded();evidence.push(await shot(`usage-${theme}`))
-    await page.locator('.account-usage > summary').click()
-    await page.locator('.connection-diagnostics > summary').click()
-    await page.locator('.diagnostic-report').scrollIntoViewIfNeeded();evidence.push(await shot(`diagnostics-${theme}`))
-    const color=await page.locator('.connection-diagnostics').evaluate(el=>getComputedStyle(el).color)
-    assert.equal(color,theme==='dark'?'rgb(212, 212, 216)':'rgb(63, 63, 70)')
    }
-   await page.locator('.account-usage > summary').click()
    usageKind='empty';await page.getByRole('button',{name:'Refresh account usage',exact:true}).click();await page.getByText('No daily usage records returned.',{exact:true}).waitFor()
    usageKind='unsupported';await page.getByRole('button',{name:'Refresh account usage',exact:true}).click();await page.getByText('Account usage is unsupported by this App Server.',{exact:true}).waitFor()
-   diagnosticFailure=true;await page.getByRole('button',{name:'Read diagnostics',exact:true}).click();await page.getByRole('alert').filter({hasText:'Diagnostic unavailable'}).waitFor()
    const usageBefore=calls.filter(c=>c.method==='account/usage/read').length
    await page.waitForTimeout(1500);assert.equal(calls.filter(c=>c.method==='account/usage/read').length,usageBefore)
    assert.equal(calls.some(c=>/feedback|billing|consume|purchase/.test(c.path+' '+c.method)),false)
    assert.deepEqual(errors,[]);assert.deepEqual(externalRequests,[])
-   evidence.push({viewport,calls,totalApiKB:bytes.reduce((a,b)=>a+b,0)/1024,apiResponseCount:bytes.length,assertions:'archive pagination/rejection/restore/reload, usage absent/empty/unsupported/no polling, warning bound/report copy/no external upload, themes'})
-  } catch(error) {if(process.env.TOOLS_DEBUG)console.error(JSON.stringify(await page.evaluate(()=>({events:window.settingsEvents,width:innerWidth,mobile:matchMedia('(max-width:767px)').matches,sidebar:document.querySelector('.sidebar-root')?.getBoundingClientRect().toJSON()}))));await shot('failure');console.error((await page.locator('body').innerText()).slice(-4000));throw error}
+   evidence.push({viewport,calls,totalApiKB:bytes.reduce((a,b)=>a+b,0)/1024,apiResponseCount:bytes.length,assertions:'archive pagination/rejection/restore/reload, usage absent/empty/unsupported/no polling, no external upload, themes'})
+  } catch(error) {await shot('failure');console.error((await page.locator('body').innerText()).slice(-4000));throw error}
   finally {await context.close()}
  }
  writeFileSync(resolve(out,'conversation-tools-results.json'),JSON.stringify(evidence,null,2))

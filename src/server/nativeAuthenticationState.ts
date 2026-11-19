@@ -7,7 +7,6 @@ const text = (value: unknown): value is string => typeof value === 'string' && v
 const rejected = (error: unknown) => [-32600, -32601, -32602].includes(Number(record(error)?.code))
 export const AUTHENTICATED_WRITES = new Set(['turn/start', 'turn/steer', 'thread/queue/add', 'thread/queue/update', 'thread/queue/start', 'review/start'])
 type Evidence = { usable: boolean; context: string | null; account: NativeAuthenticationState['account'] }
-type Diagnostic = { reason: string; previous: string; next: string; generation: number; revision: number; unresolved: boolean }
 
 /** One connection's evidence and operation ownership. No credentials or disk state. */
 export class NativeAuthenticationStateMachine {
@@ -28,7 +27,6 @@ export class NativeAuthenticationStateMachine {
   private reading: Promise<void> | null = null
   private timer: ReturnType<typeof setTimeout> | null = null
   private disposed = false
-  private diagnostics: Diagnostic[] = []
 
   constructor(private readonly rpc: Rpc, private readonly publish: (state: NativeAuthenticationState) => void) {}
   private unresolved() { return this.starting || this.loggingOut || !!this.loginId || this.uncertainOperation }
@@ -36,16 +34,9 @@ export class NativeAuthenticationStateMachine {
     return { ...this.state, loginId: this.loginId || null, generation: this.generation,
       contextRevision: this.contextRevision, operationUnresolved: this.unresolved() }
   }
-  diagnosticSnapshot() { return this.diagnostics.map(row => ({ ...row })) }
-  private note(reason: string, previous = this.state.phase) {
-    this.diagnostics.push({ reason, previous, next: this.state.phase, generation: this.generation,
-      revision: this.state.revision, unresolved: this.unresolved() })
-    if (this.diagnostics.length > 32) this.diagnostics.shift()
-  }
   private set(phase: NativeAuthenticationState['phase'], reason: string, account?: NativeAuthenticationState['account']) {
-    const previous = this.state.phase
     this.state = { phase, reason, account, blocking: phase !== 'ready', revision: this.state.revision + 1 }
-    this.note(reason, previous); this.publish(this.snapshot())
+    this.publish(this.snapshot())
   }
   private invalidate(reason: string) {
     if(reason==='account-update-verifying'&&this.explicitAcknowledgment){this.acceptContext=false;this.explicitAcknowledgment=false}
@@ -102,7 +93,7 @@ export class NativeAuthenticationStateMachine {
     const reading = (async () => {
       try {
         const evidence = await this.evidence()
-        if (!current()) { this.note('verification-superseded'); return }
+        if (!current()) return
         if (this.unresolved()) { this.set(this.uncertainOperation ? 'unknown' : 'pending', 'authentication-operation-unresolved', evidence.account); return }
         if (!evidence.usable) { this.set('signedOut', 'sign-in-required', null); return }
         if (this.acceptContext || evidence.context !== null && evidence.context === this.verifiedContext) {

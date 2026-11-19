@@ -33,7 +33,6 @@ const thread = { id: 'maintenance-fixture', name: marker, preview: marker, proje
           let payload = {}
           if (path.endsWith('/thread-pins')) payload = { data: { threadIds: [...pinnedIds] } }
           else if (path.endsWith('/home-directory')) payload = { data: { path: '/fixture' } }
-          else if (path.endsWith('/meta/methods')) payload = { data: require('../src/server/appServerMethods.json').methods }
           else if (path.endsWith('/skills-hub')) payload = { installed: [{ name: 'fixture-skill', path: '/fixture/skills/fixture-skill/SKILL.md', description: 'Installed fixture skill', enabled: true }] }
           else if (path.endsWith('/skills-hub/readme')) payload = { content: '# Fixture skill instructions', description: 'Installed fixture skill' }
           else if (path.endsWith('/upload-file')) payload = { path: '/fixture/disposable.txt' }
