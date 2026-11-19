@@ -3,7 +3,7 @@ const { spawn, spawnSync } = require('node:child_process')
 const { once } = require('node:events')
 const { createServer } = require('node:http')
 const { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } = require('node:fs')
-const { tmpdir } = require('node:os')
+const { hostname, tmpdir } = require('node:os')
 const { join } = require('node:path')
 const { WebSocketServer, WebSocket } = require('ws')
 const { fixtureWebuiStorage } = require('./fixture-webui-storage.cjs')
@@ -68,25 +68,35 @@ async function run() {
   })
   try {
     for (const [command, args] of [[process.execPath, ['dist-cli/index.js', '--no-open']], ['pnpm', ['run', 'dev']]]) {
-      const missing = spawnSync(command, args, {
-        env: { ...process.env, ...storageEnv, CODEXUI_CONNECTION_PROFILE: '' },
+      const invalid = spawnSync(command, args, {
+        env: { ...process.env, ...storageEnv, CODEXUI_CONNECTION_PROFILE: '../outside' },
         encoding: 'utf8', timeout: 20_000,
       })
-      assert.notEqual(missing.status, 0)
-      assert.match(missing.stderr, /App Server ID is required/)
-      console.log('PASS', command === 'pnpm' ? 'pnpm run dev' : 'built CLI', 'rejects startup without an ID')
+      assert.notEqual(invalid.status, 0)
+      assert.match(invalid.stderr, /Invalid App Server ID/)
+      console.log('PASS', command === 'pnpm' ? 'pnpm run dev' : 'built CLI', 'rejects an invalid ID')
     }
-    for (const dev of [false, true, false]) {
-      const profile = dev ? 'fixture-vite' : 'fixture-cli'
+    const shortHostname = hostname().split('.', 1)[0]
+    const profileRuns = new Map()
+    for (const { dev, flagProfile, envProfile, profile } of [
+      { dev: false, flagProfile: 'fixture-cli', envProfile: 'fixture-vite', profile: 'fixture-cli' },
+      { dev: true, envProfile: 'fixture-vite', profile: 'fixture-vite' },
+      { dev: false, profile: shortHostname },
+      { dev: true, profile: shortHostname },
+    ]) {
       const port = dev ? 4199 : 4198
       // Codex is absent on this host; CLI precedence deliberately overrides a refused env URL.
+      const env = {
+        ...process.env, ...storageEnv, CODEXUI_APP_SERVER_URL: dev ? endpoint : 'ws://127.0.0.1:1',
+        CODEXUI_REMOTE_UPLOAD_DIR: '/fixture/attachments',
+      }
+      if (envProfile === undefined) delete env.CODEXUI_CONNECTION_PROFILE
+      else env.CODEXUI_CONNECTION_PROFILE = envProfile
+      const profileArgs = flagProfile === undefined ? [] : ['--connection-profile', flagProfile]
       const child = spawn(dev ? 'pnpm' : process.execPath, dev
         ? ['run', 'dev', '--host', '127.0.0.1', '--port', String(port)]
-        : ['dist-cli/index.js', '--host', '127.0.0.1', '--port', String(port), '--no-open', '--app-server-url', endpoint, '--connection-profile', profile], {
-        env: {
-          ...process.env, ...storageEnv, CODEXUI_APP_SERVER_URL: dev ? endpoint : 'ws://127.0.0.1:1',
-          CODEXUI_REMOTE_UPLOAD_DIR: '/fixture/attachments',
-        },
+        : ['dist-cli/index.js', '--host', '127.0.0.1', '--port', String(port), '--no-open', '--app-server-url', endpoint, ...profileArgs], {
+        env,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
       })
@@ -139,9 +149,9 @@ async function run() {
           assert.equal(response.status, 200)
           return (await response.json()).result
         }
-        const hasPreviousState = !dev && files.size > 0
+        const previousRuns = profileRuns.get(profile) ?? 0
         const preferred = { providerId: 'fixture-provider', modelId: profile, reasoningEffort: 'high', collaborationMode: 'default' }
-        assert.deepEqual((await preferences('read')).preferred, hasPreviousState ? preferred : null)
+        assert.deepEqual((await preferences('read')).preferred, previousRuns ? preferred : null)
         assert.equal(connections, before, 'profile bootstrap and preferences do not contact the App Server')
         await preferences('update', { preferred })
         const attachment = new FormData()
@@ -154,13 +164,14 @@ async function run() {
         assert.equal(files.get(uploaded).toString(), profile)
         const { data } = resolveWebuiStorage({ ...process.env, ...storageEnv }, process.platform, storageEnv.HOME)
         const ledger = JSON.parse(readFileSync(join(data, 'app-servers', hash, 'uploads', 'inventory.json'), 'utf8'))
-        assert.equal(ledger.records.length, hasPreviousState ? 2 : 1)
+        assert.equal(ledger.records.length, previousRuns + 1)
+        profileRuns.set(profile, previousRuns + 1)
         assert(ledger.records.every(record => record.path.startsWith('/fixture/attachments/codexapp-uploads/' + hash + '/')))
         assert.deepEqual(readdirSync(storageEnv.CODEX_HOME).sort(), Object.keys(oldFiles).sort())
         for (const [name, raw] of Object.entries(oldFiles)) {
           assert.equal(readFileSync(join(storageEnv.CODEX_HOME, name), 'utf8'), raw)
         }
-        console.log('PASS', profile, hasPreviousState ? 'reuses' : 'initializes', 'preferences and upload accounting with an untouched Codex home')
+        console.log('PASS', profile, previousRuns ? 'reuses' : 'initializes', 'preferences and upload accounting with an untouched Codex home')
         const [unknown, active] = await Promise.all([call('maintenance/unknown'), call('account/read')])
         assert.equal(unknown.status, 502)
         assert.deepEqual(unknown.body, { error: 'Method not found' })
@@ -235,7 +246,9 @@ async function run() {
         }
         const ws = new WebSocket(url.replace('http:', 'ws:') + '/codex-api/ws')
         const [raw] = await once(ws, 'message', { signal: AbortSignal.timeout(5000) })
-        assert.equal(JSON.parse(String(raw)).method, 'ready')
+        const readyFrame = JSON.parse(String(raw))
+        assert.equal(readyFrame.method, 'ready')
+        assert.equal(readyFrame.params.connectionProfile, profile)
         ws.terminate()
         assert.equal(connections - before, 1)
         console.log('PASS', dev ? 'pnpm run dev' : 'built CLI', 'HTTP RPC and browser WS; one upstream connection')

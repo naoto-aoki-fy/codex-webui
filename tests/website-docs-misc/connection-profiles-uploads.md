@@ -6,10 +6,18 @@ Start the App Server with a separate disposable Codex home. Place arbitrary
 sentinels in that home, including an old `.codex-global-state.json`, model
 preferences, and upload inventory. Use the same endpoint for all test IDs.
 
-1. Start the built CLI without `--connection-profile` or
-   `CODEXUI_CONNECTION_PROFILE`. Repeat with `pnpm run dev`, and try an ID of
-   `../outside`. Each process exits before serving HTTP and prints the App
-   Server ID error.
+1. On a backend host with a valid short hostname, unset `CODEXUI_CONNECTION_PROFILE`
+   and run `node dist-cli/index.js --host 127.0.0.1 --port 5900 --no-open`
+   with `CODEXUI_APP_SERVER_URL` set to the fixture endpoint. Fetch
+   `http://127.0.0.1:5900/codex-api/connection-profile` and confirm the returned
+   ID matches `hostname -s` on the backend host (the first hostname label on
+   Windows). Stop the CLI, then run `pnpm run dev --host 127.0.0.1 --port 4199`
+   and confirm `http://127.0.0.1:4199/codex-api/connection-profile` returns the
+   same ID. Repeat with `CODEXUI_CONNECTION_PROFILE=fixture-env` and expect
+   `fixture-env`. Add `--connection-profile fixture-cli` to the CLI command
+   while that variable is set and expect `fixture-cli`. Start each command
+   with `CODEXUI_CONNECTION_PROFILE=../outside` and no profile flag and confirm
+   that it exits before serving HTTP with an invalid App Server ID error.
 2. Launch with `--connection-profile one` against the fixture endpoint. Choose a
    Home model/mode, save a thread draft, and sign in with WebUI password
    protection enabled. Restart with the same ID and confirm all three persist.
