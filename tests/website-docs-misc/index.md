@@ -19,6 +19,7 @@ Return to the [manual test index](../../tests.md).
 | [External app-server connection](external-app-server.md) |
 | [Connected Codex home discovery](codex-home-discovery.md) |
 | [Shared local file HTTP operations](shared-local-file-http.md) |
+| [WebUI reset](webui-reset.md) |
 
 - [Connection profiles and upload accounting](connection-profiles-uploads.md)
 

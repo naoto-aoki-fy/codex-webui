@@ -7,6 +7,7 @@ import { networkInterfaces } from 'node:os'
 import { spawn } from 'node:child_process'
 import { Command } from 'commander'
 import { createServer as createApp } from '../server/httpServer.js'
+import { holdWebuiWriterLease } from '../server/webuiMaintenance.mjs'
 
 const program = new Command().name('codexui').description('Web interface for Codex app-server')
 
@@ -69,6 +70,7 @@ function listenWithFallback(server: ReturnType<typeof createServer>, startPort: 
 }
 
 async function persistLaunchProject(projectPath: string): Promise<void> {
+  holdWebuiWriterLease()
   const trimmed = projectPath.trim()
   if (!trimmed) return
   if (!isAbsoluteLikePath(trimmed)) throw new Error('Use an absolute project path on the App Server host')
@@ -102,6 +104,7 @@ async function startServer(options: {
   if (options.connectionProfile) process.env.CODEXUI_CONNECTION_PROFILE = options.connectionProfile
   getConnectionProfileId()
   process.env.CODEXUI_APP_SERVER_URL = resolveAppServerUrl(options.appServerUrl)
+  holdWebuiWriterLease()
   const password = typeof options.password === 'string' ? options.password : undefined
   const { app, dispose, attachWebSocket } = createApp({ password })
   const projectPath = options.projectPath?.trim() ?? ''
