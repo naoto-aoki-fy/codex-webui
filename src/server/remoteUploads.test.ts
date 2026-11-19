@@ -36,23 +36,31 @@ it('does not return a usable attachment on remote-write failure or oversized inp
   } finally { await rm(state, { recursive: true }) }
 })
 
-it('accounts for ambiguous, legacy and cross-profile uploads conservatively and enforces shared capacity', async () => {
+it('recovers current upload reservations from the journal and enforces shared capacity', async () => {
   const state = await mkdtemp(join(tmpdir(), 'remote-capacity-'))
   const rpc = vi.fn(async (_method: string, _params?: unknown) => ({}))
   const client = { rpc, resolveCodexHome: async () => '/B' }
+  const journalPath = join(state, 'codexapp-uploads.jsonl')
+  const inventoryPath = join(state, 'codexapp-upload-inventory.json')
   try {
-    await writeFile(join(state, 'codexapp-uploads.jsonl'), JSON.stringify({ path: '/B/codexapp-uploads/legacy', at: '2020-01-01' }) + '\n')
+    const olderRecord = JSON.stringify({ path: '/B/codexapp-uploads/legacy', at: '2020-01-01' }) + '\n'
+    await writeFile(journalPath, olderRecord)
     vi.stubEnv('CODEXUI_UPLOAD_CAPACITY_BYTES', '4')
     vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'one')
-    await stageRemoteUpload(client, 'a', Buffer.from('abc'), state)
+    const first = await stageRemoteUpload(client, 'a', Buffer.from('abc'), state)
     vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'two')
     await expect(stageRemoteUpload(client, 'b', Buffer.from('xy'), state)).rejects.toThrow('capacity reached')
-    const { records } = JSON.parse(await readFile(join(state, 'codexapp-upload-inventory.json'), 'utf8'))
+    await rm(inventoryPath)
+    await expect(stageRemoteUpload(client, 'b', Buffer.from('xy'), state)).rejects.toThrow('capacity reached')
+    const second = await stageRemoteUpload(client, 'b', Buffer.from('x'), state)
+    const { records } = JSON.parse(await readFile(inventoryPath, 'utf8'))
     expect(records).toEqual([
       expect.objectContaining({ path: '/B/codexapp-uploads/legacy' }),
-      expect.objectContaining({ bytes: 3, status: 'staged', profile: 'one' }),
+      expect.objectContaining({ path: first, bytes: 3, status: 'unknown', profile: 'one' }),
+      expect.objectContaining({ path: second, bytes: 1, status: 'staged', profile: 'two' }),
     ])
-    expect(rpc.mock.calls.filter(([method]) => method === 'fs/writeFile')).toHaveLength(1)
+    expect((await readFile(journalPath, 'utf8')).startsWith(olderRecord)).toBe(true)
+    expect(rpc.mock.calls.filter(([method]) => method === 'fs/writeFile')).toHaveLength(2)
     expect(rpc.mock.calls.some(([method]) => method === 'fs/remove')).toBe(false)
   } finally { await rm(state, { recursive: true, force: true }) }
 })

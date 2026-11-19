@@ -71,10 +71,10 @@ it does not select B's home, credentials or project files. Choose an explicit
 `--connection-profile <id>` / `CODEXUI_CONNECTION_PROFILE` when changing machines,
 even when the forwarding URL is unchanged. Restart A to switch profile and repoint
 the tunnel; do not repoint a running profile at another host. The default `legacy`
-profile exclusively retains old workspace/presentation state in place. Named
-profiles start empty in hashed subdirectories; migration never copies legacy
-roots to every profile. Workspace updates retain interprocess locking and atomic
-replacement. Global browser preferences and A's web authentication remain global.
+profile uses the backend home for its state. Named profiles use separate hashed
+subdirectories. Native project and workspace records belong to the connected
+App Server. Browser appearance and WebUI password sessions remain shared across
+profiles.
 See [profile storage and upload controls](connection-profiles-uploads.md). These are not remote project
 files. Generated inline images use `/codex-app-asset?id=...`; remote attachments
 and project images use the remote image proxy.
