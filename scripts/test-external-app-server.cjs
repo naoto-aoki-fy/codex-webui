@@ -95,9 +95,9 @@ async function run() {
           assert.match(missing.headers.get('content-type'), /application\/json/)
           if (method !== 'HEAD') assert.deepEqual(await missing.json(), { error: 'Not found' })
         }
-        const call = async (method, configWriteErrors=false, commandErrors=false) => {
+        const call = async (method) => {
           const response = await fetch(url + '/codex-api/rpc', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', ...(configWriteErrors?{'X-Codex-Config-Write-Errors':'1'}:{}), ...(commandErrors?{'X-Codex-Command-Errors':'1'}:{}) },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ method, params: method === 'account/login/start' ? { type: 'chatgpt' } : { threadId: 'fixture', name: 'Native title' } }),
           })
           return { status: response.status, body: await response.json() }
@@ -111,8 +111,6 @@ async function run() {
         assert.deepEqual(await call('account/login/start'),{status:502,body:{error:'Native sign-in requires a signed-out account',rpcCode:-32600}})
         assert.deepEqual(await call('account/login/cancel'),{status:502,body:{error:'No matching backend native login to cancel',rpcCode:-32602}})
         assert.deepEqual(await call('config/value/write'),{status:502,body:{error:'Method not found'}})
-        assert.deepEqual(await call('config/value/write',true),{status:502,body:{error:'Method not found',rpcCode:-32601}})
-        for(const method of ['command/exec','command/exec/terminate']){assert.deepEqual(await call(method),{status:502,body:{error:'Method not found'}});assert.deepEqual(await call(method,false,true),{status:502,body:{error:'Method not found',rpcCode:-32601}})}
         assert.equal(active.status, 200)
         assert.deepEqual(await call('generate-thread-title'), { status: 502, body: { error: 'Method not found' } })
         const auth = await call('getAuthStatus')

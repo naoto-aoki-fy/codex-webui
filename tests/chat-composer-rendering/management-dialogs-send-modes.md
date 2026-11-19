@@ -13,18 +13,19 @@ use a disposable native conversation and a supported independently managed serve
    Expand an MCP execution result. Its outer column must match assistant messages;
    output remains left aligned, with code/log scrolling local to its output.
 2. Enter a draft, select Queue mode from **+ → Send mode**, and leave the chat at
-   a known scroll position. Open **sidebar → Archived conversations**. Read a long
+   a known scroll position. Open **sidebar → Settings → Archived conversations**. Read a long
    title, inspect its full text/title tooltip, refresh, and exercise loading,
    empty and read-error states. Restore remains distinct from permanent deletion.
    No permanent-delete capability is added to archive rows.
 3. Open **sidebar → Settings**. Use General, Codex account, and Apps / Connectors
-   categories. In Codex account, expand Remote Control status and explicitly read
-   it. Long status text must wrap in the main content area. Merely opening any
-   category must not log in/out, connect/disconnect, enable Remote Control or
-   reload/write MCP configuration.
+   categories. Confirm the native account status appears and MCP status loads.
+   Opening any category must not log in/out, change connections or reload/write MCP
+   configuration. Confirm the Remote Control panel is absent.
 4. Open **conversation header … → Conversation tools…**. The header contains only
    **Conversation tools** and its close button, with no conversation title, native
-   ID, or description. Inspect the existing controls and restrictions. Close with
+   ID, or description. Verify permissions, queue, subagents and background
+   processes remain. Hooks, advanced configuration, Daybreak, standalone commands,
+   memory inspection and external-agent import preview are absent. Close with
    Escape, then open **conversation header … → Context**: its header contains only
    **Context** and its close button. Verify context usage content still renders
    when available. Close with the close button; focus returns to the header menu.

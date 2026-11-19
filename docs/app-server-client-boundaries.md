@@ -17,7 +17,7 @@ advances connection generation and schedules reconnect. Obsolete socket replies
 cannot settle new calls. Subscription restoration runs sequentially with
 `excludeTurns: true`, reports per-thread failures and never gates unrelated RPCs.
 Application operations are never automatically replayed. Ordinary calls have a
-default 60-second caller deadline; standalone commands default to 600 seconds. Deadlines
+default 60-second caller deadline; native command RPCs default to 600 seconds. Deadlines
 release pending ownership without cancelling remote work: outcomes can be unknown.
 See [connection settings and recovery](external-app-server.md).
 

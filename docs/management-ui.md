@@ -6,7 +6,7 @@
 | --- | --- |
 | Archived conversations | Sidebar → Archived conversations |
 | General preferences and rate limits | Sidebar → Settings → General |
-| Codex account, native authentication, Remote Control and usage | Sidebar → Settings → Codex account |
+| Codex account, native authentication and usage | Sidebar → Settings → Codex account |
 | MCP connection/authentication/configuration and curated plugins | Sidebar → Settings → Apps / Connectors; also linked from Skills and the conversation App picker |
 | Current conversation context usage | Conversation header … → Context; the dialog identifies the title and native ID |
 | Conversation inspection and detailed operations | Conversation header … → Conversation tools…; the dialog identifies the title and native ID |
@@ -24,10 +24,18 @@ keyboard-accessible disclosures. MCP execution rows reuse the conversation's
 Dark styles live in `src/style.css`. At narrow widths dialogs nearly fill the
 viewport and composer controls wrap rather than overlap.
 
+Conversation tools include native review, compaction, subagents, thread
+permissions, denied actions, the prompt queue and thread-owned background
+processes. Hooks and advanced configuration management, Daybreak status,
+Remote Control, standalone shell, memory inspection and external-agent import
+preview are no longer available in WebUI. Codex still applies its own Hooks,
+configuration and memory settings, and conversation command output still appears
+in chat.
+
 ## Ownership and safety
 
 Archive state is owned by its existing archive controller. Account, authentication,
-queue, permission, review, compaction, shell and deletion controllers keep their
+queue, permission, review, compaction and deletion controllers keep their
 existing owners in App/desktop state. Tools and Settings categories
 mount lazily on first use and remain mounted when closed; reopening does not create
 new subscriptions or restart operations.
@@ -39,7 +47,7 @@ usage and unavailable-data explanations. Opening it adds no fetch or subscriptio
 Switching the selected conversation synchronously dismisses Context and conversation tools
 before their controls can be used for a different thread. Existing asynchronous
 owner/connection guards remain. Opening management does not mutate server state;
-connection authentication, configuration writes, queue start/remove and other
+connection authentication, MCP settings, queue start/remove and other
 operations still require their existing explicit controls and confirmations.
 
 No deferred feature is enabled. In particular, permanent deletion remains read-only
@@ -72,7 +80,7 @@ queue state blocks sends and links to inspection, without falling back to Immedi
 ## Historical verification
 
 These results describe the management layout before the WebUI feature removal.
-Prompt CRUD/history and the prompts screenshots below describe retired behavior.
+Screenshots and checks below describe the controls available at the recorded revision.
 
 - `pnpm run test:unit`: 1,492 passed, 2 skipped (138 files passed, 2 skipped).
 - `pnpm run typecheck`: frontend and server passed. No lint script is configured.

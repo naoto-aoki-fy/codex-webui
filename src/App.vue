@@ -268,8 +268,7 @@
                   v-show="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
                   :has-pending-request="!!selectedThreadPendingRequest"
-                  :disabled="nativeShell?.selectedBlocking.value || nativeDeletion?.selectedBlocking.value || nativeAuthenticationBlocked || isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
-                  :allow-interrupt-when-disabled="nativeShell?.selectedBlocking.value===true && !nativeDeletion?.selectedBlocking.value && !nativeAuthenticationBlocked && !isSelectedThreadImportIncomplete && !compaction.selectedBusy.value && !review.selectedBusy.value && !permissionChanges.blocking.value"
+                  :disabled="nativeDeletion?.selectedBlocking.value || nativeAuthenticationBlocked || isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
                   :active-thread-id="composerThreadContextId"
                   :queue-ready="nativeQueue.available.value"
                   :cwd="composerCwd"
@@ -304,13 +303,12 @@
     </template>
   </DesktopLayout>
   <ManagementDialog :open="isConversationToolsOpen" title="Conversation tools" @close="isConversationToolsOpen=false">
-                  <ConversationTools v-if="areConversationToolsLoaded" :thread-id="selectedThreadId" :cwd="composerCwd"
+                  <ConversationTools v-if="areConversationToolsLoaded" :thread-id="selectedThreadId"
                     :security="securityObservation.snapshots.value[selectedThreadId] ?? null"
                     :denied-actions="deniedActions.rows.value"
                     :queue="nativeQueue"
                     :permission-changes="permissionChanges"
                     :deletion="nativeDeletion" :ensure-deletion="ensureNativeDeletion" :has-draft="()=>threadComposerRef?.hasUnsavedDraft()??false"
-                    :shell="nativeShell" :ensure-shell="ensureNativeShell"
                     :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
                     :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage || permissionChanges.blocking.value || nativeAuthenticationBlocked" :incomplete="isSelectedThreadImportIncomplete"
                     :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
@@ -527,7 +525,6 @@ const {
   permissionChanges,
   backendAuthentication, nativeAuthenticationBlocked, nativeAuthenticationStatus, nativeAccountChangeBlocked,
   nativeDeletion,ensureNativeDeletion,
-  nativeShell,ensureNativeShell,
   compaction, review,
   forkThreadById,
   forkNativeThreadById,

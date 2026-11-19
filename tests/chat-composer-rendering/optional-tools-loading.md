@@ -5,7 +5,7 @@ Current access and layout/state checks: [management dialogs and send modes](../c
 
 Setup: fresh browser context and the built production fixture. Open a conversation.
 Only compact header/composer entry points should appear. Their
-optional UI chunks and the Remote Control view must not be fetched
+optional UI chunks must not be fetched
 at startup. Open each header/composer entry or Settings explicitly: its actual controls must
 load. Open Conversation actions and Background processes explicitly within
 Conversation tools. Verify that opening the dialogs alone sends no mutation. Close/reopen and navigate threads: no
@@ -16,7 +16,7 @@ resources are changed.
 Performance audit: uses existing Vue async-component boundaries and explicit first-
 open mounting, not a new state/capability owner. Removes optional panel code from
 startup, retaining existing history/notification ownership. Production comparison
-asserts no ConversationTools/AppsPicker/RemoteControlStatus chunk
+asserts no ConversationTools/AppsPicker chunk
 request before opening; startup API counts and native response bytes must match
 pre-pass fixtures. Lazy body objects are invalidated by existing connection epochs.
 

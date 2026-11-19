@@ -8,8 +8,6 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
-| [Memory readiness and selected summary](memory-status.md) |
-| [Remote Control status and registered clients](remote-control-status.md) |
 | [Version-checked MCP switches](mcp-configuration-switches.md) |
 | [Curated native plugin collection](curated-plugins.md) |
 | [Feature: Website describes the current Codex web application](github-website-redesign-openclaw-inspired-design-web-demo-link.md) |

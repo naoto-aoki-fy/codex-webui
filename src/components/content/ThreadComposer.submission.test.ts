@@ -261,16 +261,6 @@ it('preserves structured App references in drafts and submission and clears them
  c.submitted.mock.calls[0]![1](false);c.props.connectionEpoch=1;await vue.nextTick();c.submit()
  expect(c.submitted.mock.calls[1]![0].apps).toBeUndefined()
 })
-it('can preserve explicit model interruption while standalone execution blocks submissions',async()=>{
- const interrupt=vi.fn(),c=mount({disabled:true,isTurnInProgress:true,onInterrupt:interrupt})
- const stop=()=>c.nodes().find(n=>n.props['aria-label']==='Stop')!
- expect(stop().props.disabled).toBe(true);c.props.allowInterruptWhenDisabled=true;await vue.nextTick();expect(stop().props.disabled).toBe(false)
- stop().props.onClick();expect(interrupt).toHaveBeenCalledTimes(1)
- c.exposed.appendTextToDraft('do not steer');await vue.nextTick();c.submit();expect(c.submitted).not.toHaveBeenCalled()
- expect(stop().props.disabled).toBe(false)
- c.props.allowInterruptWhenDisabled=false;await vue.nextTick();expect(stop()).toBeUndefined();expect(c.nodes().find(n=>n.props['aria-label']==='Steer')?.props.disabled).toBe(true)
-})
-
 it('selects send modes in the + menu without opening tools or changing submitted snapshots', async () => {
   const c = mount({ queueReady: true, isTurnInProgress: true })
   const choose = async (label: string) => {
@@ -372,9 +362,6 @@ it('keeps Stop in the collapsed view with a draft and respects pending and disab
   c.props.disabled = true
   await vue.nextTick()
   expect(stop().props.disabled).toBe(true)
-  c.props.allowInterruptWhenDisabled = true
-  await vue.nextTick()
-  expect(stop().props.disabled).toBeFalsy()
   c.props.isTurnInProgress = false
   await vue.nextTick()
   expect(stop()).toBeUndefined()

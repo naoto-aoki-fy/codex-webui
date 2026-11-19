@@ -75,7 +75,7 @@ async function setup(context, root) {
     assert.deepEqual(errors,[])
     assert.equal(calls.some(call=>call.params?.archived===true||call.method==='account/usage/read'||call.method==='thread/turns/list'),false)
     const counts={};for(const call of calls){const key=call.method||call.path;counts[key]=(counts[key]||0)+1}
-    assert.equal(assetRequests.some(path=>/\/(ConversationTools|AppsPicker|RemoteControlStatus|threadDeletion|NativeShell|nativeShell)-/.test(path)),false,'Optional feature module fetched before opening it')
+    assert.equal(assetRequests.some(path=>/\/(ConversationTools|AppsPicker|threadDeletion)-/.test(path)),false,'Optional feature module fetched before opening it')
     const javascriptBytes=[...new Set(assetRequests)].filter(path=>path.endsWith('.js')).reduce((sum,path)=>sum+readFileSync(join(root,'dist',path.slice(1))).length,0)
     report.startup.push({revision,trial,assetRequests,javascriptBytes,nativeConnections:sockets(),count:calls.length,responseBytes:payloads.reduce((a,b)=>a+b,0),counts})
     console.log('Startup measured',revision,trial,calls.length,sockets())

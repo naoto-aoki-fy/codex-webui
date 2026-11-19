@@ -1,6 +1,7 @@
 # Approved feature implementation and evidence
 
 This report records the original implementation and verification. The WebUI working-tree panel (12), prompt library and command aliases (25), and Markdown downloads (11) have since been removed. Current entry points are listed in [management UI](management-ui.md).
+Memory inspection and the Remote Control panel have also been removed.
 
 Scope: 01, 02, 06, 08, 12, 15–20, 25, 31. Ceiling: medium regression risk.
 Starting state: clean `main`, `99acc2c`; no merge/rebase in progress.

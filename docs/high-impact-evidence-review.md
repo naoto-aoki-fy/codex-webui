@@ -1,6 +1,7 @@
 # High-impact acceptance evidence review
 
 Subsequent [finalization](implementation-finalization.md) operationally withholds the deletion mutation in the UI and controller. The analysis below describes the reviewed revision; its formerly available deletion submission is historical, not current behavior.
+Standalone command controls described here were later removed from WebUI.
 
 Review began on clean `main` at actual revision
 `5ff6df5597e670f0f382b1b69bc70c736fe2c36c`. There was no merge or rebase in

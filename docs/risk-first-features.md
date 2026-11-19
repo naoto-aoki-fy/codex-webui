@@ -1,6 +1,7 @@
 # Risk-first feature implementation
 
 This report is historical. The WebUI worktree creation workflow (13) has since been removed. Existing worktree directories can still be opened.
+The current interfaces are listed in [management UI](management-ui.md).
 
 Final outcomes, verification, performance and the complete file/commit manifest
 are in the [completion report](risk-first-completion.md).

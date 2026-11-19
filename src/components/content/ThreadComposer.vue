@@ -336,7 +336,7 @@
           class="thread-composer-actions"
         >
           <button
-            v-if="isTurnInProgress && (!hasSubmitContent || (disabled && allowInterruptWhenDisabled))"
+            v-if="isTurnInProgress && !hasSubmitContent"
             class="thread-composer-stop"
             type="button"
             :aria-label="isStopPending ? ('Saving thread before stop is available') : ('Stop')"
@@ -530,7 +530,7 @@ const {
 const editorId = useId()
 const showInputButtonRef = ref<HTMLButtonElement | null>(null)
 const collapseInputButtonRef = ref<HTMLButtonElement | null>(null)
-const isStopDisabled = computed(() => (props.disabled && !props.allowInterruptWhenDisabled)
+const isStopDisabled = computed(() => props.disabled
   || !props.activeThreadId || props.isInterruptingTurn || props.isStopPending)
 
 function setComposerCollapsed(collapsed: boolean): void {
