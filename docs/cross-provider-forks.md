@@ -129,8 +129,8 @@ reasoning), images, attachments, provider execution state, instructions and
 unknown item/content types are silently excluded. None are converted to text,
 placeholders, summaries or omission notices. The displayed imported transcript
 is stored from the same text messages used to build the injection request.
-The legacy `warnings` response field remains an empty array for compatibility;
-the picker and completion path do not render omission notices.
+New transfer responses and records omit the retired `warnings` field. Existing
+receipts and imported transcripts remain readable in place.
 
 The initial request budget is 8 MiB; larger histories fail before creation.
 A destination can impose a smaller context limit, reported as an import failure,

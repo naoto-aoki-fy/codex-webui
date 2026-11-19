@@ -184,6 +184,8 @@ attachments. Include adjacent user messages and items containing no text.
 
 1. Choose Portable Fork from the whole-conversation action, then from a selected
    response. Expect no omission notices or generated placeholders in the picker.
+   In the Network panel, inspect `conversation-transfer/prepare` and
+   `conversation-transfer/create`. Expect each result to omit `warnings`.
 2. Inspect the injection request. Expect only user/assistant text messages in
    source order through the inclusive cutoff. No tool calls/results, observations,
    reasoning, provider state, images or unsupported items may appear. Expect no

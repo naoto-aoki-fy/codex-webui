@@ -99,7 +99,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       const id = `snapshot-${++snapshotNumber}`
       snapshots.set(id, turns)
       if (pendingPreparation) await new Promise(resolve => preparations.push({ id, resolve }))
-      result = { id, warnings: [], messageCount: turns.length * 2, sourceModelProvider: conversation.modelProvider }
+      result = { id, messageCount: turns.length * 2, sourceModelProvider: conversation.modelProvider }
     }
     if (rpc === 'conversation-transfer/cancel') snapshots.delete(params.id)
     if (rpc === 'thread/fork' || rpc === 'thread/fork-at-response') {
@@ -125,7 +125,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       const importedTranscript = textTranscript(turns, composerProvider)
       destinations.set('imported', { thread: { ...conversation, id: 'imported', turns: [] }, model: params.model,
         modelProvider: params.modelProvider, importedTranscript, importStage: 'ready' })
-      result = { threadId: 'imported', model: params.model, modelProvider: params.modelProvider, warnings: [], ...(entry === 'revert' ? { draftText: 'Original question 1' } : {}) }
+      result = { threadId: 'imported', model: params.model, modelProvider: params.modelProvider, ...(entry === 'revert' ? { draftText: 'Original question 1' } : {}) }
     }
     if (rpc === 'turn/start') result = { turn: { id: 'explicit-turn', status: 'inProgress', items: [] } }
     // Keep the confirmation pending long enough to exercise duplicate clicks.

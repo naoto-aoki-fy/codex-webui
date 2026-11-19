@@ -26,7 +26,7 @@ function setup() {
 }
 const target = { turnId: 'turn', messageId: 'u' }
 beforeEach(() => {
-  gateway.prepare.mockReset().mockResolvedValue({ id: 'snapshot', messageCount: 8, warnings: [], sourceModelProvider: 'P' })
+  gateway.prepare.mockReset().mockResolvedValue({ id: 'snapshot', messageCount: 8, sourceModelProvider: 'P' })
   gateway.cancel.mockReset().mockResolvedValue(undefined)
 })
 afterEach(() => vi.restoreAllMocks())
@@ -56,7 +56,7 @@ describe('Portable Fork and Revert provider dialog', () => {
     gateway.prepare.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     const opening = dialog.openTransferPicker('source', undefined, target)
     await dialog.cancelTransferPicker()
-    finish({ id: 'snapshot', warnings: [], messageCount: 8 })
+    finish({ id: 'snapshot', messageCount: 8 })
     await opening
     expect(gateway.cancel).toHaveBeenCalledExactlyOnceWith('snapshot')
     expect(dialog.transferPicker.value).toBeNull()
