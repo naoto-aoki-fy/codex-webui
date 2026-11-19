@@ -46,6 +46,32 @@ function run(args: string[] = [], overrides: Record<string, string> = {}, script
   return { code: child.status, output: child.stdout + child.stderr }
 }
 
+function previewActions(result: ReturnType<typeof run>) {
+  expect(result.code, result.output).toBe(0)
+  const actions = new Map<string, { verb: string; keys: string[] }>()
+  for (const [, verb, quotedPath, reason] of result.output.matchAll(/^Would (delete|modify) ("(?:[^"\\]|\\.)*") \((.*)\)$/gmu)) {
+    const path = JSON.parse(quotedPath!)
+    expect(actions.has(path), `duplicate action for ${path}`).toBe(false)
+    const keys = verb === 'modify' ? JSON.parse(`[${reason!.slice('remove '.length)}]`) : []
+    actions.set(path, { verb: verb!, keys })
+  }
+  return actions
+}
+
+function comparePlans(scope: string[], overrides = {}, script = backendScript) {
+  const standard = previewActions(run([...scope, '--dry-run'], overrides, script))
+  const withLegacy = previewActions(run([...scope, include, '--dry-run'], overrides, script))
+  const acknowledged = previewActions(run([...scope, include, acknowledge, '--dry-run'], overrides, script))
+  for (const [smaller, larger] of [[standard, withLegacy], [withLegacy, acknowledged]] as const) {
+    for (const [path, action] of smaller) {
+      const expanded = larger.get(path)
+      expect(expanded?.verb, path).toBe(action.verb)
+      if (action.keys.length) expect(expanded?.keys, path).toEqual(expect.arrayContaining(action.keys))
+    }
+  }
+  return { standard, withLegacy, acknowledged }
+}
+
 describe('WebUI reset preview and validation', () => {
   it('defaults to a dry run and reports the plan without mutations', () => {
     const raw = `{"${transfer}":{"one":"secret value"},"official":true}`
@@ -143,7 +169,9 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
     const expected = { 'electron-saved-workspace-roots': ['/project'], 'pinned-thread-ids': ['pin'],
       [migration]: { connection: { completed: true } }, 'active-workspace-roots': ['/project'] }
     json(join(home, stateFile), { ...expected, [transfer]: {} })
-    const result = run(execute)
+    const plans = comparePlans([])
+    expect(plans.acknowledged.get(join(home, stateFile))?.keys).toEqual([transfer])
+    const result = run([include, acknowledge, ...execute])
     expect(result.code, result.output).toBe(0)
     expect(JSON.parse(readFileSync(join(home, stateFile), 'utf8'))).toEqual(expected)
   })
@@ -196,9 +224,11 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
   it('refuses active-looking persistence locks', () => {
     write(join(home, preferences))
     mkdirSync(join(home, index + '.lock'))
-    const result = run(execute)
-    expect(result.code, result.output).toBe(1)
-    expect(result.output).toContain('Persistence lock may be active')
+    for (const flags of [[], [include, acknowledge]]) {
+      const result = run([...flags, ...execute])
+      expect(result.code, result.output).toBe(1)
+      expect(result.output).toContain('Persistence lock may be active')
+    }
     expect(existsSync(join(home, preferences))).toBe(true)
   })
 
@@ -289,7 +319,17 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
     const blocked = run(['--build', ...execute], {}, script)
     expect(blocked.output).toContain('contains tracked files')
     git('rm', '--cached', '--', generated[0]!)
-    const result = run(['--build', '--include-legacy', ...execute], {}, script)
+    // TMPDIR may overlap explicitly selected build outputs. The standard
+    // removal wins even for files a legacy-only layout check would reject.
+    const buildTemp = { TMPDIR: join(checkout, 'dist') }
+    const schema = join(buildTemp.TMPDIR, 'codex-web-local-schema-abcXYZ')
+    write(join(schema, 'ClientRequest.json'), 'build output with unrecognized legacy contents')
+    const scope = ['--build', '--shared']
+    const plans = comparePlans(scope, buildTemp, script)
+    expect(plans.standard.has(schema)).toBe(true)
+    expect(plans.withLegacy).toEqual(plans.standard)
+    expect(plans.acknowledged).toEqual(plans.standard)
+    const result = run([...scope, include, ...execute], buildTemp, script)
     expect(result.code, result.output).toBe(0)
     for (const path of generated) expect(existsSync(join(checkout, path))).toBe(false)
     for (const path of ['output/unrelated', 'src/source.txt']) expect(existsSync(join(checkout, path))).toBe(true)
@@ -348,16 +388,30 @@ describe.skipIf(process.platform !== 'linux')('historical WebUI reset', () => {
   it('protects separate profile, shared and pre-profile server identity scopes', () => {
     const a = profile(home, 'a')
     const b = profile(home, 'b')
-    for (const path of [a, b]) json(join(path, preferences), {})
+    for (const path of [a, b]) {
+      json(join(path, preferences), {})
+      json(join(path, stateFile), { [transfer]: { saved: true } })
+      write(join(path, `.${stateFile}.${id}.tmp`))
+      const lock = join(path, stateFile + '.lock')
+      mkdirSync(lock)
+      utimesSync(lock, new Date(1), new Date(1))
+    }
     const oldIdentity = join(home, 'codexapp-turn-metadata', 'a'.repeat(64), 'b'.repeat(64) + '.jsonl')
     write(oldIdentity, '\n' + row)
     write(join(home, sidecar), row)
     write(join(home, marker), '1712345678901\n')
+    write(join(home, inventory))
     json(join(home, stateFile), { [retiredTip]: true })
+    const plans = comparePlans(['--profile', 'a'])
+    for (const path of [a, join(a, stateFile), join(a, stateFile + '.lock'), join(a, `.${stateFile}.${id}.tmp`)]) {
+      expect(plans.standard.get(path)?.verb, path).toBe('delete')
+    }
+    expect(plans.withLegacy).toEqual(plans.standard)
+    expect(plans.acknowledged).toEqual(plans.standard)
     const named = run(['--profile', 'a', include, acknowledge, ...execute])
     expect(named.code, named.output).toBe(0)
     expect(existsSync(a)).toBe(false)
-    for (const target of [b, oldIdentity, join(home, sidecar), join(home, stateFile), join(home, marker)]) {
+    for (const target of [b, oldIdentity, join(home, sidecar), join(home, stateFile), join(home, marker), join(home, inventory)]) {
       expect(existsSync(target), target).toBe(true)
     }
     const defaultProfile = run(['--profile', 'legacy', include, acknowledge, ...execute])
@@ -369,24 +423,33 @@ describe.skipIf(process.platform !== 'linux')('historical WebUI reset', () => {
     for (const target of [b, oldIdentity, join(home, marker)]) expect(existsSync(target), target).toBe(false)
   })
 
-  it('rewrites only verified historical members and retains migration and recovery data', () => {
+  it('combines standard and historical WebUI actions while preserving unrelated state byte-for-byte', () => {
     const path = join(home, stateFile)
     const native = ' "native": {"precise": 123456789876543212345 } '
-    const keys = {
-      [migration]: { 'verified-migration': { completed: true } },
-      [transfer]: { attempt: { stage: 'injecting' } },
+    const retained = {
       'thread-queue-state': { thread: [{ id, text: 'unsent' }] },
       'pinned-thread-ids': ['native'],
       'telegram-bridge': { botToken: 'secret', unknown: true },
     }
-    const retained = JSON.stringify(keys)
-    write(path, `{${native}, "${retiredTip}": true, "thread-pinned-ids": ["old"],${retained.slice(1)}`)
+    const portable = JSON.stringify({ [transfer]: { attempt: { stage: 'injecting' } },
+      [migration]: { 'verified-migration': { completed: true } } })
+    const expected = `{${native},${JSON.stringify(retained).slice(1)}`
+    write(path, `{${native}, "${retiredTip}": true, "thread-pinned-ids": ["old"],${portable.slice(1, -1)},${JSON.stringify(retained).slice(1)}`)
     const pending = { thread: { pending: { token: id, previous: [], text: 'payload' } } }
     json(join(home, index), pending)
     const scratch = join(home, `${index}.${id}.tmp`)
     json(scratch, pending)
     json(join(home, inventory), { records: [{ status: 'unknown' }] })
     write(join(home, journal), '{"path":"/remote/preserved"}\n')
+    const uploadScratch = join(home, `.${inventory}.${id}.tmp`)
+    write(uploadScratch)
+    const uploadLock = join(home, inventory + '.lock')
+    mkdirSync(uploadLock)
+    utimesSync(uploadLock, new Date(1), new Date(1))
+    const markerPath = join(home, marker)
+    write(markerPath, '1712345678901\n')
+    const providerPath = join(home, 'webui-free-mode.json')
+    json(providerPath, providerState)
     const outbox = join(home, 'telegram-notification-outbox.json')
     json(outbox, { pending: [{ text: 'awaiting delivery' }], settled: [], lastError: '' })
     const schedules = join(home, 'codexui-automations', 'store.json')
@@ -397,15 +460,25 @@ describe.skipIf(process.platform !== 'linux')('historical WebUI reset', () => {
     write(join(home, 'skills-sync.json'), '{"githubToken":{"unverified":true},"githubToken":"test"}')
     const malformed = join(home, 'codexapp-turn-metadata', 'e'.repeat(64) + '.jsonl')
     write(malformed, row + '{"truncated":')
-    const result = run(['--shared', include, acknowledge, ...execute])
+    const scope = ['--shared']
+    const { standard, withLegacy, acknowledged } = comparePlans(scope)
+    const standardFiles = [join(home, index), scratch, join(home, inventory), join(home, journal), uploadScratch, uploadLock]
+    for (const target of standardFiles) expect(standard.get(target)?.verb, target).toBe('delete')
+    expect(standard.get(path)?.keys).toEqual([transfer, migration])
+    expect(withLegacy.get(path)?.keys).toEqual([retiredTip, transfer, migration])
+    expect(acknowledged.get(path)?.keys).toEqual([retiredTip, 'thread-pinned-ids', transfer, migration])
+    expect([...withLegacy.keys()].filter(target => !standard.has(target))).toEqual([markerPath])
+    expect([...acknowledged.keys()].filter(target => !withLegacy.has(target))).toEqual([providerPath])
+
+    const result = run([...scope, include, acknowledge, ...execute])
     expect(result.code, result.output).toBe(0)
-    const after = readFileSync(path, 'utf8')
-    expect(after).toContain(native)
-    expect(JSON.parse(after)).toEqual({ native: { precise: 123456789876543212345 }, ...keys })
-    for (const target of [index, basename(scratch), inventory, journal, basename(outbox), 'webui-custom-providers.json',
+    expect(readFileSync(path, 'utf8')).toBe(expected)
+    for (const target of [...standardFiles, markerPath, providerPath]) expect(existsSync(target), target).toBe(false)
+    for (const target of [basename(outbox), 'webui-custom-providers.json',
       'skills-sync.json']) expect(existsSync(join(home, target)), target).toBe(true)
     expect(existsSync(malformed)).toBe(true)
     expect(existsSync(schedules)).toBe(true)
+    expect(run([...scope, include, acknowledge, ...execute]).output).toContain('0 filesystem actions')
   })
 
   it('cleans verified retired integrations, automation runs and search database layouts', () => {
@@ -449,16 +522,31 @@ describe.skipIf(process.platform !== 'linux')('historical WebUI reset', () => {
     const remote = join(root, 'remote')
     const sourcePath = join(remote, 'sessions/2026/11/19/rollout-old.jsonl')
     const cache = join(remote, 'cache/model-history/v1', 'd'.repeat(64) + '.json')
+    const currentCache = join(dirname(cache), 'c'.repeat(64) + '.json')
+    const overlappingCache = join(dirname(cache), 'e'.repeat(64) + '.json')
     const stage = join(root, 'codex-web-uploads', 'f-Abc123', 'old.txt')
     const upload = join(remote, 'codexapp-uploads', id + '-old.txt')
+    const selected = join(dirname(upload), id + '-selected.txt')
     write(sourcePath)
     write(stage)
     write(upload)
+    write(selected)
     write(join(home, marker), '1712345678901\n')
     json(cache, { version: 1, sourcePath, modifiedAtMs: 1, turns: [
       { turnId: 'turn', metadata: { effort: null, effortSource: 'execution' } },
     ] })
-    const args = ['--remote', '--remote-codex-home', remote, include, acknowledge]
+    const current = { version: 1, sourcePath, modifiedAtMs: 1, turns: [
+      { turnId: 'turn', metadata: { model: 'model', modelSource: 'execution' } },
+    ] }
+    // The historical validator is stricter about unknown fields.
+    json(currentCache, { ...current, versionNote: 'accepted by the standard validator' })
+    json(overlappingCache, current)
+    const scope = ['--remote', '--remote-codex-home', remote, '--remote-upload', basename(selected)]
+    const plans = comparePlans(scope)
+    expect([...plans.standard.keys()]).toEqual([currentCache, overlappingCache, selected])
+    expect([...plans.withLegacy.keys()].filter(path => !plans.standard.has(path))).toEqual([cache, dirname(cache)])
+    expect(plans.acknowledged).toEqual(plans.withLegacy)
+    const args = [...scope, include, acknowledge]
     expect(run([...args, '--shared']).output).toContain('separate commands')
     const dry = run(args)
     expect(dry.code, dry.output).toBe(0)
@@ -468,8 +556,21 @@ describe.skipIf(process.platform !== 'linux')('historical WebUI reset', () => {
     expect(run([...args, ...execute]).output).toContain('--confirm-remote')
     const result = run([...args, ...execute, '--confirm-remote', hostname()])
     expect(result.code, result.output).toBe(0)
-    expect(existsSync(cache)).toBe(false)
+    for (const path of [currentCache, overlappingCache, cache, selected, dirname(cache)]) expect(existsSync(path)).toBe(false)
     for (const path of [stage, upload, sourcePath, join(home, marker)]) expect(existsSync(path)).toBe(true)
+  })
+
+  it('refuses an unreadable standard remote cache in both modes', () => {
+    const remote = join(root, 'remote')
+    const cache = join(remote, 'cache/model-history/v1', 'd'.repeat(64) + '.json')
+    mkdirSync(dirname(cache), { recursive: true })
+    writeFileSync(cache, Buffer.from([0xff]))
+    for (const flags of [[], [include, acknowledge]]) {
+      const result = run(['--remote', '--remote-codex-home', remote, ...flags, '--dry-run'])
+      expect(result.code, result.output).toBe(1)
+      expect(result.output).toContain('utf-8')
+      expect(result.output).not.toContain('Would delete')
+    }
   })
 
   it.each(['symbolic', 'hard', 'active lock'])('preflights %s legacy paths before making any changes', (kind) => {

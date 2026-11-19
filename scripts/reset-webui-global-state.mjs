@@ -1,5 +1,6 @@
 const transferKey = 'conversation-transfers-v1'
 const migrationKey = 'codexapp-native-project-migrations-v1'
+const standardKeys = new Set([transferKey, migrationKey])
 
 function hasMigrationInput(state) {
   // These legacy inputs are shared with native Codex or still consulted by the
@@ -8,7 +9,7 @@ function hasMigrationInput(state) {
     state[key] !== undefined && (!Array.isArray(state[key]) || state[key].length > 0))
 }
 
-export function resetGlobalState(raw, path, legacyKeys) {
+export function readGlobalStateReset(raw, path) {
   let state
   try { state = JSON.parse(raw) } catch { throw new Error(`Invalid global JSON. Preserving ${path}`) }
   if (!state || typeof state !== 'object' || Array.isArray(state)) {
@@ -43,15 +44,23 @@ export function resetGlobalState(raw, path, legacyKeys) {
       if (depth === 0) end = token.index
     }
   }
-  const removed = new Set(legacyKeys ? legacyKeys(state) : [transferKey])
+  const standardRemovals = new Set([transferKey])
   const receipts = state[migrationKey]
-  if (!legacyKeys && !hasMigrationInput(state) && receipts && typeof receipts === 'object' && !Array.isArray(receipts)
-    && Object.values(receipts).every(receipt => receipt?.completed === true)) removed.add(migrationKey)
-  const keys = members.filter(member => removed.has(member.key)).map(member => member.key)
-  const preserved = members.filter(member => !removed.has(member.key))
+  if (!hasMigrationInput(state) && receipts && typeof receipts === 'object' && !Array.isArray(receipts)
+    && Object.values(receipts).every(receipt => receipt?.completed === true)) standardRemovals.add(migrationKey)
+  function select(additionalKeys = []) {
+    const removed = new Set([...standardRemovals, ...additionalKeys.filter(name => !standardKeys.has(name))])
+    const keys = members.filter(member => removed.has(member.key)).map(member => member.key)
+    const preserved = members.filter(member => !removed.has(member.key))
+    return {
+      keys,
+      preserved: preserved.map(member => member.key),
+      replacement: raw.slice(0, raw.indexOf('{') + 1) + preserved.map(member => member.raw).join(',') + raw.slice(end),
+    }
+  }
   return {
-    keys,
-    preserved: preserved.map(member => member.key),
-    replacement: raw.slice(0, raw.indexOf('{') + 1) + preserved.map(member => member.raw).join(',') + raw.slice(end),
+    // Expose only keys outside the standard policy to historical validators.
+    get historicalState() { return Object.fromEntries(Object.entries(state).filter(([name]) => !standardKeys.has(name))) },
+    select,
   }
 }

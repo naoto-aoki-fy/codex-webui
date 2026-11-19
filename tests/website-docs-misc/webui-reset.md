@@ -32,17 +32,19 @@ temporary directory. In the backend home, write `1712345678901` plus a
 newline to `.cloudflared-install-prompted` and write
 `{"enabled":true,"apiKey":"fixture","model":"old"}` to
 `webui-free-mode.json`. Put a native sentinel alongside
-`first-launch-plugins-card-dismissed` in `.codex-global-state.json`.
+`conversation-transfers-v1` and `first-launch-plugins-card-dismissed` in
+`.codex-global-state.json`. Also create `codexapp-thread-index.json`,
+`codexapp-upload-inventory.json`, and `codexapp-uploads.jsonl`.
 Stop all writers for both fixture homes.
 
-1. Run `pnpm reset:webui --all-profiles --shared --dry-run`. Expect neither
-   historical file nor the historical global member in the deletion plan.
-2. Add `--include-legacy`. Expect the marker and onboarding member in the
-   plan and a preservation message for the provider file. Add
+1. Run `pnpm reset:webui --all-profiles --shared --dry-run`. Record the standard
+   action list, including the index, upload files, and transfer member.
+2. Add `--include-legacy`. Compare both plans. Expect every standard action,
+   the marker and onboarding member, and a preservation message for the provider file. Add
    `--acknowledge-legacy-data-loss` and confirm the provider file appears.
 3. Run the acknowledged command with `--execute --offline` in place of
-   `--dry-run`. Expect both retired files to be removed and the native
-   sentinel to retain its bytes. Repeat and expect zero filesystem actions.
+   `--dry-run`. Expect the combined plan to be applied and the native sentinel
+   to retain its bytes. Repeat and expect zero filesystem actions.
 4. On the separate App Server host, preview
    `node scripts/reset-webui.mjs --remote --remote-codex-home /path/to/fixture --include-legacy --dry-run`.
    Expect only verified rollout caches in the plan unless an existing
