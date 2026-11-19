@@ -92,7 +92,7 @@ function sameFile(path, expected, actual) {
   if (fingerprint(expected) !== fingerprint(actual)) throw new Error(`Changed during reset: ${path}`)
 }
 
-export function read(path, expected, limit = 64 * 1024 * 1024) {
+export function readBytes(path, expected, limit = 64 * 1024 * 1024) {
   if (expected.size > BigInt(limit)) throw new Error(`File exceeds reset inspection limit: ${path}`)
   return inParent(path, child => {
     const fd = openSync(child, constants.O_RDONLY | constants.O_NONBLOCK | noFollow)
@@ -100,9 +100,13 @@ export function read(path, expected, limit = 64 * 1024 * 1024) {
       sameFile(path, expected, fstatSync(fd, { bigint: true }))
       const bytes = readFileSync(fd)
       sameFile(path, expected, fstatSync(fd, { bigint: true }))
-      return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
+      return bytes
     } finally { closeSync(fd) }
   })
+}
+
+export function read(path, expected, limit) {
+  return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(readBytes(path, expected, limit))
 }
 
 export function apply({ path, info, kind, replacement }) {

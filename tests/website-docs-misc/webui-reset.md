@@ -24,3 +24,31 @@ Record their contents.
 
 Cleanup. Stop the disposable backend and App Server, remove the disposable
 test directories, and discard the test browser profile.
+
+## Historical WebUI state
+
+Prerequisites. Use disposable backend and App Server homes and a disposable
+temporary directory. In the backend home, write `1712345678901` plus a
+newline to `.cloudflared-install-prompted` and write
+`{"enabled":true,"apiKey":"fixture","model":"old"}` to
+`webui-free-mode.json`. Put a native sentinel alongside
+`first-launch-plugins-card-dismissed` in `.codex-global-state.json`.
+Stop all writers for both fixture homes.
+
+1. Run `pnpm reset:webui --all-profiles --shared --dry-run`. Expect neither
+   historical file nor the historical global member in the deletion plan.
+2. Add `--include-legacy`. Expect the marker and onboarding member in the
+   plan and a preservation message for the provider file. Add
+   `--acknowledge-legacy-data-loss` and confirm the provider file appears.
+3. Run the acknowledged command with `--execute --offline` in place of
+   `--dry-run`. Expect both retired files to be removed and the native
+   sentinel to retain its bytes. Repeat and expect zero filesystem actions.
+4. On the separate App Server host, preview
+   `node scripts/reset-webui.mjs --remote --remote-codex-home /path/to/fixture --include-legacy --dry-run`.
+   Expect only verified rollout caches in the plan unless an existing
+   explicit upload selection was supplied. Keep old staging and native
+   attachments. Repeat for the browser profile using the
+   [historical browser inventory](../../docs/webui-reset.md#clear-browser-state).
+
+Cleanup. Remove the disposable fixture homes and temporary directories, and
+discard the disposable browser profile.

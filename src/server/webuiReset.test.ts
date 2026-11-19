@@ -197,7 +197,7 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
 
   it('refuses execution while a WebUI writer lease is held', async () => {
     const writer = spawn(process.execPath, ['--input-type=module', '-e',
-      `import { holdWebuiWriterLease } from ${JSON.stringify(maintenance)}; holdWebuiWriterLease(); console.log('ready'); setInterval(() => {}, 1000)`])
+      `import { holdWebuiWriterLease } from ${JSON.stringify(maintenance)}; holdWebuiWriterLease(); process.once('SIGTERM', () => process.exit(0)); console.log('ready'); setInterval(() => {}, 1000)`])
     try {
       await new Promise<void>((resolve, reject) => {
         writer.stdout.once('data', () => resolve())
@@ -264,7 +264,7 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
     const checkout = join(root, 'checkout')
     mkdirSync(checkout)
     for (const path of ['scripts/reset-webui.mjs', 'scripts/reset-webui-files.mjs', 'scripts/reset-webui-global-state.mjs',
-      'src/server/webuiMaintenance.mjs']) {
+      'scripts/reset-webui-legacy.mjs', 'scripts/reset-webui-legacy-registry.mjs', 'src/server/webuiMaintenance.mjs']) {
       mkdirSync(dirname(join(checkout, path)), { recursive: true })
       cpSync(join(repository, path), join(checkout, path))
     }
@@ -282,9 +282,216 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
     const blocked = run(['--build', ...execute], {}, script)
     expect(blocked.output).toContain('contains tracked files')
     git('rm', '--cached', '--', generated[0]!)
-    const result = run(['--build', ...execute], {}, script)
+    const result = run(['--build', '--include-legacy', ...execute], {}, script)
     expect(result.code, result.output).toBe(0)
     for (const path of generated) expect(existsSync(join(checkout, path))).toBe(false)
     for (const path of ['output/unrelated', 'src/source.txt']) expect(existsSync(join(checkout, path))).toBe(true)
+  })
+})
+
+const include = '--include-legacy'
+const acknowledge = '--acknowledge-legacy-data-loss'
+const marker = '.cloudflared-install-prompted'
+const retiredTip = 'first-launch-plugins-card-dismissed'
+const sidecar = 'codexapp-turn-metadata/' + 'c'.repeat(64) + '.jsonl'
+const row = JSON.stringify({ turnId: 'turn', metadata: { model: 'historic', modelSource: 'submitted' } }) + '\n'
+const providerState = { enabled: true, apiKey: 'test-provider-key', model: 'historical' }
+
+describe.skipIf(process.platform !== 'linux')('historical WebUI reset', () => {
+  it('retains old state by default and automatically selects every eligible era with one flag', () => {
+    const markerPath = join(home, marker)
+    const tipPath = join(home, stateFile)
+    const providerPath = join(home, 'webui-free-mode.json')
+    const metadata = join(home, sidecar)
+    const schema = join(root, 'codex-web-local-schema-abcXYZ')
+    write(markerPath, '1712345678901\n')
+    json(tipPath, { [retiredTip]: true })
+    json(providerPath, providerState)
+    write(metadata, row)
+    mkdirSync(schema, { mode: 0o700 })
+    json(join(schema, 'ClientRequest.json'), {
+      $schema: 'http://json-schema.org/draft-07/schema#', title: 'ClientRequest', oneOf: [],
+    })
+    const flags = ['--all-profiles', '--shared']
+    const base = run([...flags, ...execute])
+    expect(base.code, base.output).toBe(0)
+    for (const target of [markerPath, tipPath, providerPath, metadata, schema]) expect(existsSync(target)).toBe(true)
+
+    const preview = run([...flags, include, '--dry-run'])
+    expect(preview.code, preview.output).toBe(0)
+    expect(preview.output).toContain('Would modify ' + JSON.stringify(tipPath))
+    expect(preview.output).toContain('Would delete ' + JSON.stringify(markerPath))
+    expect(preview.output).toContain('requires ' + acknowledge)
+    expect(preview.output).not.toContain(providerState.apiKey)
+    expect(existsSync(markerPath)).toBe(true)
+    expect(run([acknowledge]).output).toContain('requires ' + include)
+    expect(run([...flags, include, '--execute']).output).toContain('requires --offline')
+
+    const safe = run([...flags, include, ...execute])
+    expect(safe.code, safe.output).toBe(0)
+    expect(readFileSync(tipPath, 'utf8')).toBe('{}')
+    for (const target of [markerPath, schema]) expect(existsSync(target)).toBe(false)
+    for (const target of [providerPath, metadata]) expect(existsSync(target)).toBe(true)
+    const full = run([...flags, include, acknowledge, ...execute])
+    expect(full.code, full.output).toBe(0)
+    for (const target of [providerPath, metadata]) expect(existsSync(target)).toBe(false)
+    expect(run([...flags, include, acknowledge, ...execute]).output).toContain('0 filesystem actions')
+  })
+
+  it('protects separate profile, shared and pre-profile server identity scopes', () => {
+    const a = profile(home, 'a')
+    const b = profile(home, 'b')
+    for (const path of [a, b]) json(join(path, preferences), {})
+    const oldIdentity = join(home, 'codexapp-turn-metadata', 'a'.repeat(64), 'b'.repeat(64) + '.jsonl')
+    write(oldIdentity, '\n' + row)
+    write(join(home, sidecar), row)
+    write(join(home, marker), '1712345678901\n')
+    json(join(home, stateFile), { [retiredTip]: true })
+    const named = run(['--profile', 'a', include, acknowledge, ...execute])
+    expect(named.code, named.output).toBe(0)
+    expect(existsSync(a)).toBe(false)
+    for (const target of [b, oldIdentity, join(home, sidecar), join(home, stateFile), join(home, marker)]) {
+      expect(existsSync(target), target).toBe(true)
+    }
+    const defaultProfile = run(['--profile', 'legacy', include, acknowledge, ...execute])
+    expect(defaultProfile.code, defaultProfile.output).toBe(0)
+    expect(existsSync(join(home, sidecar))).toBe(false)
+    for (const target of [b, oldIdentity, join(home, marker)]) expect(existsSync(target), target).toBe(true)
+    const all = run(['--all-profiles', '--shared', include, acknowledge, ...execute])
+    expect(all.code, all.output).toBe(0)
+    for (const target of [b, oldIdentity, join(home, marker)]) expect(existsSync(target), target).toBe(false)
+  })
+
+  it('rewrites only verified historical members and retains migration and recovery data', () => {
+    const path = join(home, stateFile)
+    const native = ' "native": {"precise": 123456789876543212345 } '
+    const keys = {
+      [migration]: { 'verified-migration': { completed: true } },
+      [transfer]: { attempt: { stage: 'injecting' } },
+      'thread-queue-state': { thread: [{ id, text: 'unsent' }] },
+      'pinned-thread-ids': ['native'],
+      'telegram-bridge': { botToken: 'secret', unknown: true },
+    }
+    const retained = JSON.stringify(keys)
+    write(path, `{${native}, "${retiredTip}": true, "thread-pinned-ids": ["old"],${retained.slice(1)}`)
+    const pending = { thread: { pending: { token: id, previous: [], text: 'payload' } } }
+    json(join(home, index), pending)
+    const scratch = join(home, `${index}.${id}.tmp`)
+    json(scratch, pending)
+    json(join(home, inventory), { records: [{ status: 'unknown' }] })
+    write(join(home, journal), '{"path":"/remote/preserved"}\n')
+    const outbox = join(home, 'telegram-notification-outbox.json')
+    json(outbox, { pending: [{ text: 'awaiting delivery' }], settled: [], lastError: '' })
+    const schedules = join(home, 'codexui-automations', 'store.json')
+    json(schedules, { version: 1, automations: [], runs: [
+      { id: 'run_mhd3_aabbcc', automationId: 'automation_mhd2_aabbcc', status: 'running' },
+    ] })
+    json(join(home, 'webui-custom-providers.json'), { ...providerState, unrelated: true })
+    write(join(home, 'skills-sync.json'), '{"githubToken":{"unverified":true},"githubToken":"test"}')
+    const malformed = join(home, 'codexapp-turn-metadata', 'e'.repeat(64) + '.jsonl')
+    write(malformed, row + '{"truncated":')
+    const result = run(['--shared', include, acknowledge, ...execute])
+    expect(result.code, result.output).toBe(0)
+    const after = readFileSync(path, 'utf8')
+    expect(after).toContain(native)
+    expect(JSON.parse(after)).toEqual({ native: { precise: 123456789876543212345 }, ...keys })
+    for (const target of [index, basename(scratch), inventory, journal, basename(outbox), 'webui-custom-providers.json',
+      'skills-sync.json']) expect(existsSync(join(home, target)), target).toBe(true)
+    expect(existsSync(malformed)).toBe(true)
+    expect(existsSync(schedules)).toBe(true)
+  })
+
+  it('cleans verified retired integrations, automation runs and search database layouts', () => {
+    const integrations = new Map([
+      ['telegram-bridge.json', { botToken: 'test', chatIds: [42], allowedUserIds: ['*'] }],
+      ['telegram-notification-outbox.json', { pending: [], settled: ['delivery'], lastError: '' }],
+      [`telegram-notification-outbox.json.${id}.tmp`, { pending: [], settled: [], lastError: '' }],
+      ['skills-sync.json', { githubToken: 'test', installedOwners: { skill: 'owner' } }],
+      ['pulse.json', { settings: { showInNewChats: true, referenceMemoryInSuggestions: false }, feedbackHistory: [] }],
+    ])
+    for (const [name, payload] of integrations) json(join(home, name), payload)
+    write(join(home, 'codexui-password'), 'abc-12z-def\n')
+    const automations = join(home, 'codexui-automations')
+    const runId = 'run_mhd3_aabbcc'
+    const automationId = 'automation_mhd2_aabbcc'
+    json(join(automations, 'store.json'), { version: 1,
+      automations: [{ id: automationId, title: 'Old schedule', prompt: 'unique schedule', projectPaths: [], enabled: true }],
+      runs: [{ id: runId, automationId, status: 'completed' }],
+    })
+    write(join(automations, 'runs', runId, 'last-message.txt'))
+    const native = join(home, 'automations', 'same', 'automation.toml')
+    write(native, 'native scheduling')
+    const search = join(root, 'codex-web-local-thread-search-Abc321')
+    mkdirSync(search, { mode: 0o700 })
+    write(join(search, 'manifest.0'), '\x0a\x0dthread_search\x0a\x0bcontent_vec')
+    write(join(search, '0', '0.wal'))
+    write(join(search, 'idmap.0', 'MANIFEST-000005'))
+    const unknown = join(root, 'codex-web-local-thread-search-Def321')
+    mkdirSync(unknown, { mode: 0o700 })
+    write(join(unknown, 'manifest.0'), 'different collection')
+    const patch = join(root, 'codexui-review-patches', '1712345678901-c0de.patch')
+    write(patch, 'diff --git a/old b/old\n')
+    const result = run(['--shared', include, acknowledge, ...execute])
+    expect(result.code, result.output).toBe(0)
+    for (const target of [...[...integrations.keys(), 'codexui-password'].map(name => join(home, name)),
+      automations, search, patch]) expect(existsSync(target), target).toBe(false)
+    for (const target of [native, unknown]) expect(existsSync(target)).toBe(true)
+  })
+
+  it('keeps ambiguous remote attachment references and verifies older cache records on the App Server host', () => {
+    const remote = join(root, 'remote')
+    const sourcePath = join(remote, 'sessions/2026/11/19/rollout-old.jsonl')
+    const cache = join(remote, 'cache/model-history/v1', 'd'.repeat(64) + '.json')
+    const stage = join(root, 'codex-web-uploads', 'f-Abc123', 'old.txt')
+    const upload = join(remote, 'codexapp-uploads', id + '-old.txt')
+    write(sourcePath)
+    write(stage)
+    write(upload)
+    write(join(home, marker), '1712345678901\n')
+    json(cache, { version: 1, sourcePath, modifiedAtMs: 1, turns: [
+      { turnId: 'turn', metadata: { effort: null, effortSource: 'execution' } },
+    ] })
+    const args = ['--remote', '--remote-codex-home', remote, include, acknowledge]
+    expect(run([...args, '--shared']).output).toContain('separate commands')
+    const dry = run(args)
+    expect(dry.code, dry.output).toBe(0)
+    expect(dry.output).toContain('Would delete ' + JSON.stringify(cache))
+    expect(dry.output).toContain('historical staged attachments')
+    expect(existsSync(cache)).toBe(true)
+    expect(run([...args, ...execute]).output).toContain('--confirm-remote')
+    const result = run([...args, ...execute, '--confirm-remote', hostname()])
+    expect(result.code, result.output).toBe(0)
+    expect(existsSync(cache)).toBe(false)
+    for (const path of [stage, upload, sourcePath, join(home, marker)]) expect(existsSync(path)).toBe(true)
+  })
+
+  it.each(['symbolic', 'hard', 'active lock'])('preflights %s legacy paths before making any changes', (kind) => {
+    const original = join(root, 'original.json')
+    json(original, providerState)
+    write(join(home, marker), '1712345678901\n')
+    if (kind === 'symbolic') symlinkSync(original, join(home, 'webui-free-mode.json'))
+    else if (kind === 'hard') linkSync(original, join(home, 'webui-free-mode.json'))
+    else mkdirSync(join(home, sidecar + '.lock'), { recursive: true })
+    const result = run(['--all-profiles', '--shared', include, acknowledge, ...execute])
+    expect(result.code, result.output).toBe(1)
+    expect(result.output).not.toContain('Deleted ')
+    expect(existsSync(join(home, marker))).toBe(true)
+    expect(JSON.parse(readFileSync(original, 'utf8'))).toEqual(providerState)
+  })
+
+  it('refuses a mounted legacy directory before applying any deletion', (context) => {
+    const patches = join(root, 'codexui-review-patches')
+    mkdirSync(patches)
+    write(join(home, marker), '1712345678901\n')
+    const result = spawnSync('unshare', ['--user', '--map-root-user', '--mount', 'sh', '-c',
+      'mount -t tmpfs tmpfs "$1" || exit 77; shift; "$@"',
+      'sh', patches, process.execPath, backendScript, '--shared', include, acknowledge, ...execute], {
+      encoding: 'utf8', env: { ...process.env, CODEX_HOME: home, TMPDIR: root, CODEXUI_CONNECTION_PROFILE: '' },
+    })
+    const missingUnshare = result.error && 'code' in result.error && result.error.code === 'ENOENT'
+    if (missingUnshare || result.status === 77 || result.stderr?.includes('unshare failed')) context.skip()
+    expect(result.status, result.stdout + result.stderr).toBe(1)
+    expect(result.stderr).toContain('Refusing a mounted cleanup target')
+    expect(existsSync(join(home, marker))).toBe(true)
   })
 })

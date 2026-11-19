@@ -9,10 +9,11 @@ import { parseArgs } from 'node:util'
 import { acquireWebuiResetLease } from '../src/server/webuiMaintenance.mjs'
 import { apply, assertUnmounted, fingerprint, inside, inspect, list, read } from './reset-webui-files.mjs'
 import { resetGlobalState } from './reset-webui-global-state.mjs'
+import { hasThreadIndexRecovery, legacyFlags, legacyGlobalKeys, planLegacyCleanup } from './reset-webui-legacy.mjs'
+import { legacyRemoteCache, uuid } from './reset-webui-legacy-registry.mjs'
 
 const repo = dirname(dirname(fileURLToPath(import.meta.url)))
 const host = hostname()
-const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
 const storeTemp = file => new RegExp(`^\\.${file.replaceAll('.', '\\.')}\\.${uuid}\\.tmp$`, 'u')
 const indexTemp = new RegExp(`^codexapp-thread-index\\.json\\.${uuid}\\.tmp$`, 'u')
 const resetTemp = new RegExp(`^\\.\\.codex-global-state\\.json\\.webui-reset-${uuid}\\.tmp$`, 'u')
@@ -27,14 +28,16 @@ const hashName = /^[0-9a-f]{64}$/u
 const freshLockNs = 30_000_000_000n
 
 const help = `Usage:
-  pnpm reset:webui [--profile ID | --all-profiles] [--shared] [--build] [--dry-run]
+  pnpm reset:webui [--profile ID | --all-profiles] [--shared] [--build] [legacy flags] [--dry-run]
   pnpm reset:webui [local scope flags] --execute --offline
-  node scripts/reset-webui.mjs --remote --remote-codex-home /path [--remote-upload-root /path --remote-upload NAME ...] [--dry-run]
+  node scripts/reset-webui.mjs --remote --remote-codex-home /path [--remote-upload-root /path --remote-upload NAME ...] [legacy flags] [--dry-run]
   node scripts/reset-webui.mjs [remote scope flags] --execute --offline --confirm-remote HOST
 
 Dry run is the default. Local mode uses CODEX_HOME and defaults to CODEXUI_CONNECTION_PROFILE or legacy.
---shared clears global upload accounting, WebUI login sessions and local inline media.
+--shared includes WebUI login sessions and local inline media. Legacy mode retains upload recovery data.
 --build adds generated artifacts in this checkout.
+--include-legacy adds all verified historical WebUI artifacts in the selected scope.
+--acknowledge-legacy-data-loss allows deleting obsolete records with potentially unique data.
 --offline confirms that all writers for the selected paths are stopped. Execution requires Linux.
 Run remote mode on the App Server host. It clears verified WebUI model-history caches and
 only uploads explicitly named by --remote-upload. Review references before naming an upload.`
@@ -68,11 +71,15 @@ function options() {
     'remote-upload-root': { type: 'string' },
     'remote-upload': { type: 'string', multiple: true },
     'confirm-remote': { type: 'string' },
+    ...legacyFlags,
   } })
   if (args.help) return args
   if (args.execute && args['dry-run']) throw new Error('Choose either --dry-run or --execute')
   if (args.execute && !args.offline) throw new Error('--execute requires --offline after all writers are stopped')
   if (args.execute && process.platform !== 'linux') throw new Error('Reset execution requires Linux')
+  if (args['acknowledge-legacy-data-loss'] && !args['include-legacy']) {
+    throw new Error('--acknowledge-legacy-data-loss requires --include-legacy')
+  }
   if (args.profile !== undefined && args['all-profiles']) throw new Error('Choose either --profile or --all-profiles')
   if (args.remote) {
     if (args.profile !== undefined || args['all-profiles'] || args.shared || args.build) {
@@ -164,14 +171,16 @@ function createPlan() {
   return { actions, notices, notice, directory, file, observe, names, removeFile, removeDirectory, removeLock, requireOwner, removals, verify }
 }
 
-function planProfile(plan, directory, named, group) {
+function planProfile(plan, args, directory, named, group) {
   const { notice, file, names, actions, removeFile, removeLock, removeDirectory } = plan
   if (!group) return notice('Missing', directory)
   const entries = names(directory, group)
   const statePath = join(directory, globalFile)
   const state = file(statePath)
+  const legacy = args['include-legacy']
   if (state) {
-    const result = resetGlobalState(read(statePath, state), statePath)
+    const result = resetGlobalState(read(statePath, state), statePath,
+      legacy ? value => named ? [] : legacyGlobalKeys(plan, args, statePath, value) : undefined)
     if (result.preserved.length) notice('Preserve keys in', statePath, result.preserved.map(quote).join(', '))
     if (named && result.preserved.length === 0) {
       removeFile(statePath, result.keys.length ? 'WebUI-only keys ' + result.keys.map(quote).join(', ') : 'empty WebUI profile state')
@@ -183,13 +192,34 @@ function planProfile(plan, directory, named, group) {
       actions.push({ kind: 'rewrite', path: statePath, info: state, replacement: result.replacement, reason: 'remove ' + result.keys.map(quote).join(', ') })
     } else notice('Preserve', statePath, 'no removable WebUI keys')
   } else notice('Missing', statePath)
+  let preserveIndex = false
+  if (legacy) {
+    // A pending intent can be present in either the live store or a crashed write.
+    preserveIndex = entries.filter(name => name === threadIndex || indexTemp.test(name)).some(name => {
+      const path = join(directory, name)
+      const info = file(path)
+      return info && hasThreadIndexRecovery(path, info)
+    })
+  }
   for (const fileName of [threadIndex, modelPreferences]) {
+    if (fileName === threadIndex && preserveIndex) {
+      notice('Preserve', join(directory, fileName), 'unresolved attachment recovery or unverified index; retain its scratch and lock')
+      continue
+    }
     removeFile(join(directory, fileName), 'profile state')
     removeLock(join(directory, fileName + '.lock'))
   }
-  if (named) removeLock(statePath + '.lock')
+  if (named && !legacy) removeLock(statePath + '.lock')
   for (const name of entries) {
     const path = join(directory, name)
+    if (preserveIndex && indexTemp.test(name)) {
+      notice('Preserve', path, 'attachment index recovery scratch')
+      continue
+    }
+    if (legacy && (storeTemp(globalFile).test(name) || name === globalFile + '.lock')) {
+      notice('Preserve', path, 'global-state recovery scratch or lock')
+      continue
+    }
     if (indexTemp.test(name) || storeTemp(modelPreferences).test(name) || resetTemp.test(name) ||
       (named && storeTemp(globalFile).test(name))) {
       removeFile(path, 'WebUI persistence temporary file')
@@ -206,14 +236,26 @@ function planProfile(plan, directory, named, group) {
   }
 }
 
-function planShared(plan, args, homeInfo) {
+function planShared(plan, args, homeNames) {
   const { notice, names, directory, removeFile, removeLock, removeDirectory } = plan
-  for (const fileName of [inventory, 'codexapp-uploads.jsonl', 'webui-auth-sessions.json', 'webui-auth-sessions.json.tmp']) {
+  const legacy = args['include-legacy']
+  const sharedFiles = ['webui-auth-sessions.json', 'webui-auth-sessions.json.tmp']
+  const uploadFiles = [inventory, 'codexapp-uploads.jsonl']
+  if (!legacy) sharedFiles.unshift(...uploadFiles)
+  for (const fileName of sharedFiles) {
     removeFile(join(args.home, fileName), 'shared WebUI state')
   }
-  removeLock(join(args.home, inventory + '.lock'))
-  for (const name of names(args.home, homeInfo)) {
-    if (storeTemp(inventory).test(name)) removeFile(join(args.home, name), 'upload inventory temporary file')
+  if (legacy) {
+    for (const name of [...uploadFiles, inventory + '.lock']) {
+      notice('Preserve', join(args.home, name), 'upload migration, accounting and uncertain remote write outcomes')
+    }
+  } else removeLock(join(args.home, inventory + '.lock'))
+  for (const name of homeNames) {
+    if (storeTemp(inventory).test(name)) {
+      const path = join(args.home, name)
+      if (legacy) notice('Preserve', path, 'upload accounting recovery scratch')
+      else removeFile(path, 'upload inventory temporary file')
+    }
   }
   const media = join(args.media, 'codex-web-inline-media')
   const mediaInfo = directory(media)
@@ -273,7 +315,7 @@ function cacheRecord(raw, home) {
 }
 
 function planRemote(plan, args) {
-  const cache = join(args.home, 'cache', 'model-history', 'v1')
+  const cache = join(args.home, ...legacyRemoteCache.path)
   // The cache parent is a native namespace. Neither it nor its siblings are removed.
   assertUnmounted(join(args.home, 'cache'))
   assertUnmounted(dirname(cache))
@@ -282,9 +324,9 @@ function planRemote(plan, args) {
   let preserved = false
   for (const name of plan.names(cache, info)) {
     const path = join(cache, name)
-    if (/^[0-9a-f]{64}\.json$/u.test(name)) {
+    if (legacyRemoteCache.match.test(name)) {
       const entry = plan.file(path)
-      if (entry && entry.size <= 2_097_152n && cacheRecord(read(path, entry, 2_097_152), args.home)) {
+      if (entry && entry.size <= BigInt(legacyRemoteCache.limit) && verifiedRemoteCache(path, entry, args)) {
         plan.removeFile(path, 'verified WebUI rollout metadata cache')
         continue
       }
@@ -301,15 +343,27 @@ function planRemote(plan, args) {
   plan.notice('Preserve', uploads, 'directory and all attachments outside the explicit selection')
 }
 
+function verifiedRemoteCache(path, info, args) {
+  let raw
+  try { raw = read(path, info, legacyRemoteCache.limit) } catch (error) {
+    if (args['include-legacy'] && error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA') return false
+    throw error
+  }
+  if (!args['include-legacy']) return cacheRecord(raw, args.home)
+  return legacyRemoteCache.validate(raw, source => inside(args.home, source) && resolve(source) === source
+    && /^(?:sessions\/\d{4}\/\d{2}\/\d{2}|archived_sessions)\/rollout-[^/]+\.jsonl$/u.test(source.slice(args.home.length + 1)))
+}
+
 function buildPlan(args) {
   const plan = createPlan()
   if (args.remote) {
     planRemote(plan, args)
+    if (args['include-legacy']) planLegacyCleanup(plan, args)
     return plan
   }
   const home = plan.directory(args.home, true)
   const profiles = join(args.home, 'codexapp-profiles')
-  if (args['all-profiles'] || args.profile === 'legacy') planProfile(plan, args.home, false, home)
+  if (args['all-profiles'] || args.profile === 'legacy') planProfile(plan, args, args.home, false, home)
   if (args['all-profiles'] || args.profile !== 'legacy') {
     const root = plan.directory(profiles)
     if (!root) plan.notice('Missing', profiles)
@@ -317,18 +371,20 @@ function buildPlan(args) {
       : [createHash('sha256').update(args.profile).digest('hex')]
     for (const name of selected) {
       const path = join(profiles, name)
-      if (hashName.test(name)) planProfile(plan, path, true, plan.directory(path))
+      if (hashName.test(name)) planProfile(plan, args, path, true, plan.directory(path))
       else plan.notice('Preserve', path, 'unrecognized profile directory name')
     }
     if (root && args['all-profiles'] && selected.every(name => plan.removals.has(join(profiles, name)))) {
       plan.removeDirectory(profiles, root, 'empty WebUI profiles directory')
     }
   }
-  if (args.shared) planShared(plan, args, home)
+  const homeNames = args.shared ? plan.names(args.home, home) : []
+  if (args.shared) planShared(plan, args, homeNames)
   else plan.notice('Skip', args.home, 'shared WebUI state and inline media require --shared')
   if (args.build) planBuild(plan)
   else plan.notice('Skip', repo, 'build artifacts require --build')
-  plan.notice('Exclude', join(args.home, 'codexapp-turn-metadata'), 'retired sidecars may contain historical evidence')
+  if (args['include-legacy']) planLegacyCleanup(plan, args, homeNames)
+  else plan.notice('Exclude', join(args.home, 'codexapp-turn-metadata'), 'retired sidecars may contain historical evidence')
   return plan
 }
 
