@@ -29,7 +29,6 @@
   },
   "scripts": {
     "dev": "node scripts/dev.cjs",
-    "reset:webui": "node scripts/reset-webui.mjs",
     "dev:open": "pnpm run build:cli && sh -c 'pnpm run dev & VPID=$!; node dist-cli/index.js --open-project \"${1:-.}\"; wait $VPID' --",
     "build:frontend": "vue-tsc --noEmit && vite build && node scripts/precompress-assets.cjs",
     "build:cli": "tsup",

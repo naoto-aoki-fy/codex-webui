@@ -40,7 +40,6 @@ and configure a private network or external reverse proxy for remote access.
 
 - [Usage, configuration, mobile access, and troubleshooting](docs/usage.md)
 - [Local development and optional HTTPS](docs/development.md)
-- [Reset WebUI state](docs/webui-reset.md)
 - [Implementation and feature status](PROJECT_SPEC.md)
 - [Supported Codex capabilities](docs/native-project-migration.md)
 - [Maintenance scope](docs/maintenance-scope.md) · [Open items](docs/maintenance/open-items.md)

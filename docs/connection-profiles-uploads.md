@@ -80,4 +80,3 @@ file directly inside the intended ID directory after resolving filesystem
 identity. Keep files with uncertain references, including files absent from
 partial history or staging requests with an unknown outcome. Keep the backend
 accounting until it has been independently audited.
-See the [reset tool](webui-reset.md#app-server-uploads).

@@ -7,7 +7,6 @@ export function resolveWebuiStorage(env?: NodeJS.ProcessEnv, platform?: NodeJS.P
   logs: string
 }
 export function requireConnectionProfile(value?: string): string
-export const profileDirectoryPattern: RegExp
 export function profileDirectoryName(id: string): string
 export function isAbsoluteUploadPath(value: string): boolean
 export function remoteUploadsDirectory(root: string, id: string): string

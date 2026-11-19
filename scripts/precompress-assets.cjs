@@ -21,10 +21,7 @@ async function precompress(root) {
 }
 module.exports = { precompress };
 if (require.main === module) {
-  import('../src/server/webuiMaintenance.mjs').then(({ holdWebuiWriterLease }) => {
-    holdWebuiWriterLease();
-    return precompress(join(__dirname, '..', 'dist'));
-  }).catch(error => {
+  precompress(join(__dirname, '..', 'dist')).catch(error => {
     console.error(error);
     process.exitCode = 1;
   });
