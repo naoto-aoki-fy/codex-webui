@@ -15,7 +15,7 @@ function capacityBytes(): number {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error('CODEXUI_UPLOAD_CAPACITY_BYTES must be a nonnegative integer')
   return value
 }
-async function legacyInventory(stateDirectory: string): Promise<UploadRecord[]> {
+async function recoverInventoryFromJournal(stateDirectory: string): Promise<UploadRecord[]> {
   try {
     const lines = (await readFile(join(stateDirectory, 'codexapp-uploads.jsonl'), 'utf8')).split('\n').filter(Boolean)
     // Never silently ignore a corrupt journal: it may describe retained files.
@@ -27,7 +27,7 @@ async function legacyInventory(stateDirectory: string): Promise<UploadRecord[]> 
 }
 async function withInventory<T>(stateDirectory: string, operation: (records: UploadRecord[]) => T): Promise<T> {
   return updateCodexGlobalState(async state => {
-    if (!Array.isArray(state.records)) state.records = await legacyInventory(stateDirectory)
+    if (!Array.isArray(state.records)) state.records = await recoverInventoryFromJournal(stateDirectory)
     return operation(state.records as UploadRecord[])
   }, join(stateDirectory, 'codexapp-upload-inventory.json'))
 }
@@ -53,7 +53,7 @@ export async function stageRemoteUpload(
     if (used + bytes.length > capacityBytes()) throw new Error('Managed upload capacity reached; audit the retained attachments and local upload inventory before raising CODEXUI_UPLOAD_CAPACITY_BYTES')
     records.push(intent)
   })
-  // Record intent before sending a mutation: a lost response can leave a remote file.
+  // Keep a second record of each reservation for recovery if the inventory is lost.
   await appendFile(join(stateDirectory, 'codexapp-uploads.jsonl'), JSON.stringify(intent) + '\n', { mode: 0o600 })
   await client.rpc('fs/writeFile', { path, dataBase64: bytes.toString('base64') })
   await withInventory(stateDirectory, records => { const record = records.find(record => record.path === path); if (record) record.status = 'staged' })

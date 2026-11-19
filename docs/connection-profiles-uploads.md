@@ -2,7 +2,16 @@
 
 Use `--connection-profile workstation-b` or `CODEXUI_CONNECTION_PROFILE=workstation-b` to identify the **remote machine**, independently of its WebSocket URL. IDs contain 1–80 letters, digits, dots, underscores or hyphens, starting with a letter or digit. Stop the backend and restart with the desired profile when changing the tunnel target; do not repoint a live connection to another machine. A local forwarding URL is not a durable machine identity.
 
-The default profile is `legacy`. Existing workspace roots, labels, active roots, project ordering, historical pin records and application thread-index files remain in their original local state directory and belong only to this profile. Named profiles start empty under `CODEX_HOME/codexapp-profiles/<sha256-profile-id>/`. Profile selection leaves existing local files in place. Existing atomic replacement and interprocess file locking apply to named profile stores. Authentication session state stays global in A's local state directory; Codex authentication belongs to B. Global browser appearance and reasoning preferences remain shared. Remote browser context, selected threads, token usage, per-thread model/mode choices and composer drafts use profile-specific storage keys; legacy keys stay assigned only to `legacy`. On detecting a different profile in the notification ready frame, the UI reloads once to discard all remote caches and outstanding callbacks. A `connection-profile` URL query hint prevents reload loops when browser storage is disabled. Returning to a profile restores its saved drafts; drafts are never copied to another profile.
+The default profile is `legacy`. It stores backend model preferences and Portable
+Fork records directly under the WebUI backend's `CODEX_HOME`. Named profiles
+store them under `CODEX_HOME/codexapp-profiles/<sha256-profile-id>/`. Both use
+atomic replacement and interprocess file locking. WebUI password sessions and
+browser appearance are shared across profiles. Codex authentication belongs to
+the App Server host. Browser model/mode choices and drafts are profile-scoped.
+When the notification ready frame identifies a different profile, the UI reloads
+once to discard remote caches and outstanding callbacks. A `connection-profile`
+URL query hint prevents reload loops when browser storage is disabled. Returning
+to a profile restores its own saved drafts.
 
 Project identity, names, roots, positions and thread associations now belong to
 the connected App Server's native Projects registry. Old local snapshots and
@@ -16,9 +25,11 @@ endpoint/home strings are not server instance UUIDs. See
 Attachments are written on B under `<CODEXUI_REMOTE_UPLOAD_DIR or remote codexHome>/codexapp-uploads`. The 20 MiB per-file limit remains unchanged. Automatic deletion is disabled and retention is indefinite, including interrupted writes and uncertain submissions.
 
 The backend keeps attempted uploads in `codexapp-upload-inventory.json` and
-appends an intent to `codexapp-uploads.jsonl` before writing remotely. Inventory
-bytes cover the attempts tracked by this backend. Manually copied files, files
-tracked elsewhere and journal entries with unknown size are outside that total.
+appends an intent to `codexapp-uploads.jsonl` before writing remotely. The journal
+recovers tracked byte reservations if the inventory is missing. Recovered
+attempts retain the journal's `unknown` outcome and older entries retain their
+paths even when their size is unknown. Inventory bytes cover attempts tracked by
+this backend that have recorded sizes.
 
 `CODEXUI_UPLOAD_CAPACITY_BYTES` defaults to `1073741824` (1 GiB). Before a write, the backend atomically reserves its bytes in a shared inventory under A's state directory. This limit covers all profiles sharing that state directory, so shared upload roots cannot evade capacity by switching profiles. Raising the limit is an explicit operator action; zero prevents nonempty uploads. Ambiguous writes remain reserved. Unknown legacy sizes mean this is a tracked-byte budget, not a hard remote filesystem quota. Use a quota on B for a true filesystem limit.
 
@@ -33,4 +44,8 @@ For operator-assisted cleanup, use disposable data first. Stop uploads and submi
 
 ## Performance scope
 
-Workspace reads remain one local JSON read; updates retain the existing per-file queue, interprocess lock and atomic rename. Profile lookup hashes one short identifier; it creates no upstream requests. Upload accounting adds two local locked inventory updates per successful upload and one legacy journal append, with no upstream directory scan or history fanout. Capacity checks scan the tracked attempts locally before a write; filesystem quota remains the scalable capacity authority. This is concrete code-path analysis, not a live WAN benchmark.
+Profile lookup hashes one short identifier. Successful uploads use two local
+locked inventory updates and one journal append. Capacity checks scan tracked
+attempts locally. Recovery reads the journal only when the inventory has no
+records array. The accounting path issues no upstream directory or history
+scans.
