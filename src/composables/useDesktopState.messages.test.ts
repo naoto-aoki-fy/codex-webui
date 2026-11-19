@@ -2512,16 +2512,6 @@ it('does not resurrect native-deleted history from a late read or retain its liv
  expect(state.messages.value).toEqual([])
  expect(state.projectGroups.value.flatMap(group=>group.threads).some(row=>row.id===thread.id)).toBe(false)
 })
-it('keeps standalone native commands separate and blocks conflicting chat and history mutations',async()=>{
- const state=await loadState(),shell=await state.ensureNativeShell()
- expect(shell).not.toBeNull();shell!.thread.value=thread.id;shell!.state.value='requested'
- const fetch=vi.fn();vi.stubGlobal('fetch',fetch)
- await expect(state.sendMessageToSelectedThread('do not steer')).rejects.toThrow('native conversation action')
- expect(await state.forkNativeThreadById(thread.id)).toBe('');expect(await state.executeThreadRevert(thread.id,'turn-1','revert')).toBe('')
- await state.review.run();await state.compaction.run();const deletion=await state.ensureNativeDeletion();await deletion?.prepare()
- shell!.thread.value='another-thread';await deletion?.prepare();expect(deletion?.state.value).toBe('idle')
- expect(fetch).not.toHaveBeenCalled();expect(gateway.startThreadTurn).not.toHaveBeenCalled()
-})
 it('invalidates account views and hydrates the sending/queue barrier from backend state across document recreation',async()=>{
  const state=await loadState();const epoch=state.operationEpoch.value
  notify({method:'native-authentication/state',params:{phase:'checking',blocking:true,revision:2,contextRevision:1}});notify({method:'account/updated',params:{authMode:'chatgpt'}})

@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { createBackendAuthentication } from '../../composables/backendAuthentication'
 import type { LoginMethod } from '../../api/nativeAuthentication'
 import ComposerDropdown from '../content/ComposerDropdown.vue'
 import AccountUsage from './AccountUsage.vue'
-
-const RemoteControlStatus = defineAsyncComponent(() => import('./RemoteControlStatus.vue'))
 
 const props = defineProps<{
   epoch: number
@@ -72,7 +70,6 @@ watch(() => state.value.revision, () => { confirmed.value = false })
         Logout
       </button>
     </div>
-    <RemoteControlStatus :epoch="epoch" />
     <AccountUsage :epoch="epoch" />
   </div>
 </template>

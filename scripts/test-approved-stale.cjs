@@ -4,9 +4,7 @@ const {setup,assert,openComposerEntry}=require('./approved-fixture.cjs')
  const browser=await chromium.launch({headless:true})
  const cases=[
   {id:'08',summary:'Background processes',button:'Refresh background processes',method:'thread/backgroundTerminals/list',result:{data:[{processId:'42',itemId:'stale',command:'STALE_PROCESS',cwd:'/remote'}],nextCursor:null},panel:'.background-terminals',absent:'STALE_PROCESS'},
-  {id:'20',summary:'Memory status',button:'Read memory status',method:'thread/memory/read',result:{summary:'STALE_MEMORY'},panel:'.memory-status',absent:'STALE_MEMORY'},
   {id:'18',summary:'Apps / Connectors',button:'Refresh available Apps',method:'app/list',result:{data:[{id:'stale',name:'STALE_APP',isAccessible:true,isEnabled:true}],nextCursor:null},panel:'.composer-apps-popover',absent:'STALE_APP'},
-  {id:'31',summary:'Codex Remote Control status',button:'Read Remote Control status',method:'remoteControl/status/read',result:{status:'connected',serverName:'STALE_REMOTE',environmentId:'stale'},panel:'.remote-control-status',absent:'STALE_REMOTE',settings:true},
   {id:'16',summary:'MCP configuration switches',button:'Read MCP configuration',method:'config/read',filter:b=>b.params?.includeLayers,result:{layers:[{name:{type:'user',file:'/remote/config.toml'},version:'v1',config:{mcp_servers:{STALE_MCP:{enabled:true}}}}]},panel:'.mcp-configuration',absent:'STALE_MCP',skills:true},
   {id:'17',summary:'Curated plugin collection',button:'Read curated plugins',method:'plugin/list',result:{marketplaces:[{name:'stale',plugins:[{id:'stale',name:'STALE_PLUGIN'}]}]},panel:'.curated-plugins',absent:'STALE_PLUGIN',skills:true},
  ]

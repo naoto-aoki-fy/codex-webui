@@ -1245,10 +1245,10 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 :root.dark .feature-panel { color: #d4d4d8; background: #18181b; }
 :root.dark .feature-panel button { color: #e4e4e7; border-color: #52525b; background: #27272a; }
 :root.dark .feature-panel [role="alert"] { color: #fda4af; }
-:is(.permanent-deletion, .config-inspection, .native-shell) input:not([type="checkbox"]) { display: block; width: 100%; max-width: 100%; min-height: 32px; margin: 4px 0; padding: 5px 8px; border: 1px solid #a1a1aa; border-radius: 6px; background: #fff; color: #18181b; }
+.permanent-deletion input:not([type="checkbox"]) { display: block; width: 100%; max-width: 100%; min-height: 32px; margin: 4px 0; padding: 5px 8px; border: 1px solid #a1a1aa; border-radius: 6px; background: #fff; color: #18181b; }
 .permanent-deletion label { display: block; margin: 6px 0; }
-:is(.permanent-deletion, .config-inspection, .native-shell) input:not([type="checkbox"]):focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
-:root.dark :is(.permanent-deletion, .config-inspection, .native-shell) input:not([type="checkbox"]) { border-color: #71717a; background: #27272a; color: #f4f4f5; }
+.permanent-deletion input:not([type="checkbox"]):focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+:root.dark .permanent-deletion input:not([type="checkbox"]) { border-color: #71717a; background: #27272a; color: #f4f4f5; }
 
 
 .execution-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
@@ -1262,10 +1262,7 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .background-terminals pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
 
 
-.memory-status { max-height: 35vh; overflow: auto; overflow-wrap: anywhere; }
-.memory-status pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 15rem; overflow: auto; }
 
-.remote-control-status { overflow-wrap: anywhere; max-height: 35vh; overflow: auto; }
 
 .mcp-configuration { overflow-wrap: anywhere; max-height: 45vh; overflow: auto; }
 
@@ -1273,9 +1270,6 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .curated-plugins input { background: transparent; color: inherit; border: 1px solid #a1a1aa; padding: .3rem; }
 .curated-plugins pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-.native-shell textarea { display:block;width:100%;min-height:80px;padding:6px 8px;border:1px solid #a1a1aa;border-radius:6px;background:#fff;color:#18181b; }
-:root.dark .native-shell textarea { border-color:#71717a;background:#27272a;color:#f4f4f5; }
-.native-shell pre { white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto; }
 
 /* Management uses the same zinc surfaces and Tabler controls as chat. */
 .management-dialog { width: min(1000px, calc(100vw - 48px)); max-width: none; height: min(800px, calc(100dvh - 64px)); max-height: none; margin: auto; padding: 0; border: 1px solid #e4e4e7; border-radius: 16px; background: #fff; color: #3f3f46; box-shadow: 0 24px 70px #0003; font: inherit; font-size: 14px; line-height: 1.5; overflow: hidden; }

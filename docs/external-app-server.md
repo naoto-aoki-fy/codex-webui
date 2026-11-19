@@ -52,10 +52,8 @@ the remote filesystem and tools, and returns errors from the App Server.
   `fs/readFile`. Paths retain remote Windows or POSIX lexical semantics.
 - Registration and thread creation validate directories on B, without creating
   directories on A. Launch project arguments must be absolute remote paths.
-- Git repository detection (`GET /codex-api/git/repository-status`): `command/exec`, using argv and an
-  explicit remote cwd, without sandbox or permission overrides. Git must exist
-  on B and server policy must permit the operation. The UI accepts existing
-  worktree directories. Dedicated branch/worktree endpoints have been retired; `/codex-api/worktree/branches` and `/codex-api/worktree/create` return 404.
+- Existing Git worktrees can be selected as ordinary remote folders. Codex's
+  own Git tools and conversation file diffs remain available.
 - Composer search: `fuzzyFileSearch`, using the selected remote root.
 - Skills: `skills/list` and remote Markdown via `fs/readFile`; no local catalog
   supplementation. Native thread history is authoritative. Local session scans,
@@ -134,7 +132,7 @@ settings on A:
 | CODEXUI_APP_SERVER_PING_MS | 15000 | Transport ping cadence |
 | CODEXUI_APP_SERVER_PONG_TIMEOUT_MS | 30000 | Missing-pong deadline |
 | CODEXUI_APP_SERVER_RPC_DEADLINE_MS | 60000 | Ordinary RPC caller deadline |
-| CODEXUI_APP_SERVER_COMMAND_DEADLINE_MS | 600000 | Long standalone command caller deadline |
+| CODEXUI_APP_SERVER_COMMAND_DEADLINE_MS | 600000 | Native command RPC caller deadline |
 
 Connection initialization has a 10-second deadline. Commands retain server-side
 timeout defaults; a client deadline never terminates remote execution.

@@ -23,17 +23,17 @@ async function screenshot(page,name,width,theme) {
   const page=await browser.newPage({viewport:{width,height}})
   let archiveMode='rows',pending=[]
   const {calls,emit,errors}=await setup(page,(body,_page,url)=>{
-   if(url.pathname.endsWith('/methods'))return {json:{data:['mcpServerStatus/list']}}
+   if(body.method==='native-authentication/read')return {json:{result:{phase:'ready',blocking:false,revision:1,account:{type:'chatgpt'}}}}
    if(body.method==='thread/list'&&body.params?.archived)return archiveMode==='error'?{status:502,json:{error:'Archive fixture unavailable'}}:{json:{result:{data:archiveMode==='empty'?[]:[{id:'archived-long',name:'A very long archived conversation title '.repeat(10),cwd:'/remote/project',createdAt:1,updatedAt:1,status:{type:'idle'}}],nextCursor:null}}}
-   if(body.method==='remoteControl/status/read')return {json:{result:{status:'connected',serverName:'Long remote server explanation '.repeat(12),environmentId:'env'}}}
-   if(body.method==='remoteControl/client/list')return {json:{result:{data:[],nextCursor:null}}}
    if(body.method==='thread/queue/list')return {json:{result:{data:pending,nextCursor:null}}}
    if(body.method==='thread/queue/add'){const queuedSubmission={id:'pending-fixture',input:body.params.input,clientUserMessageId:body.params.clientUserMessageId};pending.push(queuedSubmission);return {json:{result:{queuedSubmission}}}}
    if(body.method==='mcpServerStatus/list')return {json:{result:{data:[],nextCursor:null}}}
   },false)
+  emit('ready',{ok:true})
+  await page.waitForFunction(()=>!document.querySelector('.thread-composer-input')?.disabled)
   const startup={requests:calls.length,methods:calls.map(c=>c.method).filter(Boolean)}
   assert(!startup.methods.some(m=>/thread\/queue\/|remoteControl\/|app\/list|plugin\/list|mcpServerStatus\/list/.test(m)))
-  const optionalChunks=await page.evaluate(()=>performance.getEntriesByType('resource').map(r=>r.name).filter(name=>/\/(ConversationTools|AppsPicker|RemoteControlStatus|SkillsMcpHub)-/.test(name)))
+  const optionalChunks=await page.evaluate(()=>performance.getEntriesByType('resource').map(r=>r.name).filter(name=>/\/(ConversationTools|AppsPicker|SkillsMcpHub)-/.test(name)))
   assert.deepEqual(optionalChunks,[])
   const draft=page.locator('.thread-composer-input')
   await draft.fill('Retained draft fixture')
@@ -86,9 +86,8 @@ async function screenshot(page,name,width,theme) {
    assert(await settings.evaluate(d=>d.contains(document.activeElement)))
    await settings.getByRole('button',{name:'Close dialog',exact:true}).focus();await page.keyboard.press('Shift+Tab');assert(await settings.evaluate(d=>d.contains(document.activeElement)))
    await settings.getByRole('button',{name:'Codex account',exact:true}).click()
-   if(!await page.locator('.remote-control-status').evaluate(el=>el.open))await page.getByText('Codex Remote Control status',{exact:true}).click()
-   await page.getByRole('button',{name:'Read Remote Control status',exact:true}).click()
-   await page.getByText('Native service: connected',{exact:false}).waitFor()
+   await settings.getByText('Signed in to Codex',{exact:true}).waitFor()
+   assert.equal(await settings.getByText('Codex Remote Control status',{exact:true}).count(),0)
    await noOverflow(page,true)
    images.push(await screenshot(page,'settings',width,theme))
    for(let i=0;i<15;i++){await page.keyboard.press('Tab');assert(await settings.evaluate(d=>d.contains(document.activeElement)))}
@@ -98,8 +97,9 @@ async function screenshot(page,name,width,theme) {
    images.push(await screenshot(page,'connectors',width,theme))
    await page.keyboard.press('Escape');assert.equal(await settings.count(),0)
    assert.equal(await page.evaluate(()=>document.activeElement?.textContent?.trim()),'Settings')
-   await page.getByRole('button',{name:'Archived conversations',exact:true}).click()
-   const archive=page.getByRole('dialog',{name:'Archived conversations',exact:true})
+   await page.getByRole('button',{name:'Settings',exact:true}).click()
+   await settings.getByRole('button',{name:'Archived conversations',exact:true}).click()
+   const archive=settings
    await archive.getByRole('button',{name:/Restore A very long/}).waitFor()
    assert((await archive.locator('li span').getAttribute('title')).length>200)
    await noOverflow(page,true)
@@ -128,6 +128,11 @@ async function screenshot(page,name,width,theme) {
    assert.equal(await tools.locator('.management-dialog-header h2').innerText(),'Conversation tools')
    assert.equal(await tools.locator('.management-dialog-header p').count(),0)
    await tools.getByText('Background processes',{exact:true}).waitFor()
+   for (const label of ['Hooks inspection', 'Configuration inspection', 'Native Daybreak status',
+     'Standalone native command', 'Memory status', 'External-agent import preview']) {
+     assert.equal(await tools.getByText(label,{exact:true}).count(),0)
+   }
+   await tools.getByText('Permissions inspection',{exact:true}).waitFor()
    assert.equal(await tools.getByText('Current Git working tree',{exact:true}).count(),0)
    assert.equal(await tools.getByText('Create remote Git worktree',{exact:true}).count(),0)
    await noOverflow(page,true)
@@ -144,7 +149,7 @@ async function screenshot(page,name,width,theme) {
    reports.push({url:originalRoute,width,height,theme,images,alignment})
   }
   assert.equal(calls.filter(c=>c.method==='thread/queue/add').length,1)
-  assert(!calls.some(c=>/remoteControl\/(enable|disable|pairing)|account\/login|mcpServer\/oauth\/login|config\/mcpServer\/reload|config\/value\/write/.test(c.method||'')))
+  assert(!calls.some(c=>/remoteControl\/|account\/login|mcpServer\/oauth\/login|config\/mcpServer\/reload|config\/value\/write/.test(c.method||'')))
   assert.equal(calls.filter(c=>c.method==='mcpServerStatus/list').length,1)
   // Route change dismisses the dialog before controls can retarget.
   await openToolsDialog(page)
@@ -157,10 +162,13 @@ async function screenshot(page,name,width,theme) {
  }
  const creationPage=await browser.newPage({viewport:{width:1280,height:900}})
  const creation=await setup(creationPage,body=>{
+  if(body.method==='native-authentication/read')return {json:{result:{phase:'ready',blocking:false,revision:1}}}
   if(body.method==='thread/start')return {json:{result:{thread:{id:'created-fixture',cwd:'/remote/project',projectId:'p',turns:[]},model:'fixture-model',modelProvider:'fixture'}}}
   if(body.method==='turn/start')return {json:{result:{turn:{id:'first-turn',status:'inProgress'}}}}
   if(body.method==='thread/queue/list')return {json:{result:{data:[],nextCursor:null}}}
  },false)
+ creation.emit('ready',{ok:true})
+ await creationPage.waitForFunction(()=>!document.querySelector('.thread-composer-input')?.disabled)
  await creationPage.getByRole('button',{name:'Start new thread',exact:true}).click()
  await creationPage.waitForURL(url=>!url.hash.includes('/thread/'))
  assert(!await creationPage.getByRole('button',{name:'Send mode: Queue mode',exact:true}).count())

@@ -2,12 +2,11 @@
 import {nativeWriteError} from '../../api/nativeWriteOutcome'
 import {ref,watch} from 'vue'
 import type {ThreadSecurity} from '../../api/threadSecurity'
-import {readConfigRestrictions} from '../../api/configInspection'
 import ComposerDropdown from './ComposerDropdown.vue'
 import {readPermissionConfiguration,type PermissionChoices} from '../../api/threadPermissions'
 import type {createThreadPermissions} from '../../composables/threadPermissions'
 const props=defineProps<{threadId:string;epoch:number;disconnected:boolean;security:ThreadSecurity|null;blocked:boolean;changes:ReturnType<typeof createThreadPermissions>}>()
-const busy=ref(false),error=ref(''),requirements=ref<Awaited<ReturnType<typeof readConfigRestrictions>>|undefined>(undefined)
+const busy=ref(false),error=ref(''),requirements=ref<Awaited<ReturnType<typeof readPermissionConfiguration>>['display']|undefined>(undefined)
 const choices=ref<PermissionChoices|null>(null),approval=ref(''),sandbox=ref(''),confirmed=ref(false)
 const approvalOptions=[{value:'',label:'Keep approval policy'},{value:'on-request',label:'On request'},{value:'never',label:'Never request approval'}]
 const sandboxOptions=[{value:'',label:'Keep sandbox policy'},{value:'readOnly',label:'Read only · no network'},{value:'workspaceWrite',label:'Workspace write · no network or extra temp roots'},{value:'dangerFullAccess',label:'Full access · unrestricted filesystem and network'}]

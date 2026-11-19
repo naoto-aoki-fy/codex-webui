@@ -296,14 +296,9 @@ export function useDesktopState() {
   ]))
 
   const operationEpoch = ref(0)
-  const nativeShell=shallowRef<import('./nativeShell').NativeShell|null>(null)
-  async function ensureNativeShell(){const epoch=operationEpoch.value,owner=connection.lifecycleGeneration,module=await import('./nativeShell');if(epoch!==operationEpoch.value||owner!==connection.lifecycleGeneration)return null
-    if(!nativeShell.value)nativeShell.value=module.createNativeShell({epoch:operationEpoch,selected:selectedThreadId,ready:()=>transportState.value!=='disconnected',blocked:()=>nativeDeletion.value?.selectedBlocking.value||nativeAuthenticationBlocked.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||turns.isSendingMessage.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.blocking.value||(approvals.pendingServerRequestsByThreadId.value[selectedThreadId.value]?.length??0)>0})
-    return nativeShell.value
-  }
   const nativeDeletion=shallowRef<import('./threadDeletion').ThreadDeletion|null>(null)
   async function ensureNativeDeletion(){const epoch=operationEpoch.value,owner=connection.lifecycleGeneration,module=await import('./threadDeletion');if(epoch!==operationEpoch.value||owner!==connection.lifecycleGeneration)return null
-    if(!nativeDeletion.value)nativeDeletion.value=module.createThreadDeletion({epoch:operationEpoch,selected:selectedThreadId,ready:()=>transportState.value!=='disconnected',blocked:()=>nativeShell.value?.blocking.value||nativeAuthenticationBlocked.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||turns.isSendingMessage.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.blocking.value||(approvals.pendingServerRequestsByThreadId.value[selectedThreadId.value]?.length??0)>0})
+    if(!nativeDeletion.value)nativeDeletion.value=module.createThreadDeletion({epoch:operationEpoch,selected:selectedThreadId,ready:()=>transportState.value!=='disconnected',blocked:()=>nativeAuthenticationBlocked.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||turns.isSendingMessage.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.blocking.value||(approvals.pendingServerRequestsByThreadId.value[selectedThreadId.value]?.length??0)>0})
     return nativeDeletion.value
   }
   const backendAuthentication=createBackendAuthentication(()=>{
@@ -326,16 +321,16 @@ export function useDesktopState() {
       void refreshModelPreferences();void refreshRateLimits()
     }
   },{flush:'sync'})
-  const nativeAccountChangeBlocked=computed(()=>nativeShell.value?.blocking.value||nativeDeletion.value?.blocking.value||hasActiveInProgressThreads()||turns.isSendingMessage.value||turns.isInterruptingTurn.value||isRollingBack.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.busy.value||permissionChanges.state.value==='unknown'||Object.values(approvals.pendingServerRequestsByThreadId.value).some(rows=>rows.length>0))
+  const nativeAccountChangeBlocked=computed(()=>nativeDeletion.value?.blocking.value||hasActiveInProgressThreads()||turns.isSendingMessage.value||turns.isInterruptingTurn.value||isRollingBack.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.busy.value||permissionChanges.state.value==='unknown'||Object.values(approvals.pendingServerRequestsByThreadId.value).some(rows=>rows.length>0))
   watch(operationEpoch,()=>{securityObservation.clear();deniedActions.clear()},{flush:'sync'})
   const review = createThreadReview({ epoch: operationEpoch, selected: selectedThreadId,
-    blocked: () => nativeShell.value?.selectedBlocking.value || nativeDeletion.value?.selectedBlocking.value || nativeAuthenticationBlocked.value || isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value || permissionChanges.blocking.value ||
+    blocked: () => nativeDeletion.value?.selectedBlocking.value || nativeAuthenticationBlocked.value || isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value || permissionChanges.blocking.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
     interrupt: (threadId, turnId) => interruptThreadTurn(threadId, turnId),
   })
   const compaction = createThreadCompaction({ epoch: operationEpoch, selected: selectedThreadId,
-    blocked: () => nativeShell.value?.selectedBlocking.value || nativeDeletion.value?.selectedBlocking.value || nativeAuthenticationBlocked.value || isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || review.busy.value || permissionChanges.blocking.value ||
+    blocked: () => nativeDeletion.value?.selectedBlocking.value || nativeAuthenticationBlocked.value || isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || review.busy.value || permissionChanges.blocking.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
     refresh: id => history.loadMessages(id, { force: true }),
@@ -344,12 +339,12 @@ export function useDesktopState() {
     active:()=>inProgressById.value[selectedThreadId.value]===true,
     refreshHistory:id=>history.loadMessages(id,{force:true}),
     ready:()=>transportState.value!=='disconnected',
-    blocked:()=>nativeShell.value?.selectedBlocking.value||nativeDeletion.value?.selectedBlocking.value||nativeAuthenticationBlocked.value||isRollingBack.value||compaction.busy.value||review.busy.value||permissionChanges.blocking.value||turns.isSendingMessage.value||
+    blocked:()=>nativeDeletion.value?.selectedBlocking.value||nativeAuthenticationBlocked.value||isRollingBack.value||compaction.busy.value||review.busy.value||permissionChanges.blocking.value||turns.isSendingMessage.value||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
   })
   const permissionChanges=createThreadPermissions({epoch:operationEpoch,selected:selectedThreadId,
     ready:()=>transportState.value!=='disconnected',snapshot:id=>securityObservation.snapshots.value[id]??null,
-    blocked:()=>nativeShell.value?.selectedBlocking.value||nativeDeletion.value?.selectedBlocking.value||nativeAuthenticationBlocked.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||compaction.busy.value||review.busy.value||nativeQueue.writing.value||turns.isSendingMessage.value||
+    blocked:()=>nativeDeletion.value?.selectedBlocking.value||nativeAuthenticationBlocked.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||compaction.busy.value||review.busy.value||nativeQueue.writing.value||turns.isSendingMessage.value||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
   })
 
@@ -2627,7 +2622,7 @@ export function useDesktopState() {
   }
 
   function hasPendingNativeAction(threadId: string): boolean {
-    return (nativeShell.value?.blocking.value&&nativeShell.value.thread.value===threadId) || (nativeDeletion.value?.blocking.value&&nativeDeletion.value.thread.value===threadId) || nativeAuthenticationBlocked.value || ((permissionChanges.busy.value || permissionChanges.state.value==='unknown') && permissionChanges.thread.value === threadId) || (compaction.busy.value && compaction.thread.value === threadId)
+    return (nativeDeletion.value?.blocking.value&&nativeDeletion.value.thread.value===threadId) || nativeAuthenticationBlocked.value || ((permissionChanges.busy.value || permissionChanges.state.value==='unknown') && permissionChanges.thread.value === threadId) || (compaction.busy.value && compaction.thread.value === threadId)
       || (review.busy.value && review.thread.value === threadId)
   }
 
@@ -2796,7 +2791,6 @@ export function useDesktopState() {
     operationEpoch.value++
     backendAuthentication.dispose()
     nativeDeletion.value?.dispose();nativeDeletion.value=null
-    nativeShell.value?.dispose();nativeShell.value=null
     for (const timer of recoveryDismissTimerByThreadId.values()) clearTimeout(timer)
     recoveryDismissTimerByThreadId.clear()
     browserConnection.dispose()
@@ -2957,14 +2951,13 @@ export function useDesktopState() {
     permissionChanges,
     backendAuthentication, nativeAuthenticationBlocked, nativeAuthenticationStatus, nativeAccountChangeBlocked,
     nativeDeletion,ensureNativeDeletion,
-    nativeShell,ensureNativeShell,
     renameThreadById,
     forkThreadById,
     forkNativeThreadById,
     executeThreadRevert,
 
     sendMessageToSelectedThread: (...args: Parameters<typeof turns.sendMessageToSelectedThread>) => {
-      if (nativeShell.value?.selectedBlocking.value || nativeDeletion.value?.selectedBlocking.value || nativeAuthenticationBlocked.value || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value&&permissionChanges.thread.value===selectedThreadId.value) return Promise.reject(new Error('Wait for the native conversation action to finish.'))
+      if (nativeDeletion.value?.selectedBlocking.value || nativeAuthenticationBlocked.value || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value&&permissionChanges.thread.value===selectedThreadId.value) return Promise.reject(new Error('Wait for the native conversation action to finish.'))
       return turns.sendMessageToSelectedThread(...args)
     },
     sendMessageToNewThread: (...args:Parameters<typeof turns.sendMessageToNewThread>)=>nativeAuthenticationBlocked.value?Promise.reject(new Error('Finish native authentication before sending')):turns.sendMessageToNewThread(...args),
