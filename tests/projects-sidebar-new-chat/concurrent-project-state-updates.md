@@ -23,7 +23,7 @@ Expected: `extra` and the CLI registration survive every operation. Only the sel
 2. Temporarily replace the isolated state file contents with invalid JSON, then attempt a deletion. Repeat with a valid non-object JSON value such as `[]`.
 3. Restore the saved state. With the server running as an ordinary user, make the isolated destination directory unwritable and attempt another change; then restore its permissions.
 
-Expected: the old PUT returns `409` and asks for a reload without changing the file. Invalid JSON and write failures surface in the existing error display. The list and localStorage retain the last successfully saved state. No empty replacement configuration is written. Legacy rename/reorder PATCH requests return 400 without registering roots.
+Expected: the old PUT returns JSON 404 and leaves the file unchanged. Invalid JSON and write failures surface in the existing error display. The list and localStorage retain the last successfully saved state. No empty replacement configuration is written. Legacy rename/reorder PATCH requests return 400 without registering roots.
 
 ## Delayed reads, restoration, and themes
 

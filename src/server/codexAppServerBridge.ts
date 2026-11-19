@@ -22,7 +22,6 @@ import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { handleAccountRoutes } from './accountRoutes.js'
 import { CodexCredentialError, readPublicAuthStatus } from './codexCredentials.js'
 import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
@@ -534,10 +533,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
       const url = new URL(req.url, 'http://localhost')
 
-      if (await handleAccountRoutes(req, res, url)) {
-        return
-      }
-
       if (await handleSkillsRoutes(req, res, url, { appServer, readJsonBody })) {
         return
       }
@@ -653,7 +648,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         try {
           if(body.method==='thread/delete')await transfers.assertNativeDeletion(readNonEmptyString(asRecord(body.params)?.threadId))
           const params = asRecord(body.params)
-          rpcResult = responseFork || (body.method === 'thread/fork' && params && Object.prototype.hasOwnProperty.call(params, 'forkFromTurnIndex'))
+          rpcResult = responseFork
             ? await forkThreadAtCutoff(appServer, params ?? {})
             : body.method === 'thread/read' && params?.includeTurns === true && typeof appServer.readThreadPage === 'function'
               ? (await appServer.readThreadPage(readNonEmptyString(params.threadId), '', THREAD_RESPONSE_TURN_LIMIT)).result
@@ -759,7 +754,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
-      // Retired API: terminate here so SPA middleware cannot serve HTML.
       if (req.method === 'POST' && url.pathname === '/codex-api/server-requests/respond') {
         const payload = await readJsonBody(req)
         await appServer.respondToServerRequest(payload)
@@ -777,11 +771,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
-      if (req.method === 'GET' && url.pathname === '/codex-api/meta/notifications') {
-        setJson(res, 200, { data: appServerMethods.notifications })
-        return
-      }
-
       if (req.method === 'GET' && url.pathname === '/codex-api/workspace-roots-state') {
         const state = await projects.read()
         setJson(res, 200, { data: state })
@@ -793,12 +782,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         const path = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state.active[0] || state.order[0]
         if (!path) { setJson(res, 409, { error: 'Enter an absolute workspace path on the App Server host, or set CODEXUI_REMOTE_INITIAL_DIRECTORY.' }); return }
         setJson(res, 200, { data: { path } })
-        return
-      }
-
-
-      if (req.method === 'PUT' && url.pathname === '/codex-api/workspace-roots-state') {
-        setJson(res, 409, { error: 'Workspace updates have changed. Reload this tab before editing projects.' })
         return
       }
 

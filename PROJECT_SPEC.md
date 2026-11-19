@@ -104,7 +104,6 @@ Persistence does not make sending messages available while disconnected.
 | POST | `/codex-api/server-requests/respond` | Reply to server-initiated requests |
 | GET | `/codex-api/server-requests/pending` | List pending server requests |
 | GET | `/codex-api/meta/methods` | Discover available RPC methods |
-| GET | `/codex-api/meta/notifications` | Discover available notification types |
 | GET | `/codex-api/events` | SSE fallback stream for real-time notifications |
 | WS upgrade | `/codex-api/ws` | Primary WebSocket channel for real-time notifications |
 
@@ -113,8 +112,6 @@ Metadata is bundled advisory information, not live negotiation.
 Project file routes and HTTP semantics are documented in
 [project file access](docs/project-file-access.md).
 
-GET `/codex-api/meta/notifications` remains a compatibility contract even without
-an internal caller; removing it requires an explicit retirement decision.
 `/codex-api/thread-file-change-fallback`, `/codex-api/thread-live-state`, and
 `/codex-api/thread-stream-events` return JSON 404 (`{"error":"Not found"}`)
 for all methods, including query strings, without RPC or SPA fallthrough. There

@@ -44,7 +44,7 @@ retired. Preserve existing credential and legacy account files.
 From the repository root:
 
 ```sh
-pnpm exec vitest run src/server/accountRoutes.test.ts src/server/directoryRoutes.test.ts src/server/codexAppServerBridge.authRefresh.test.ts
+pnpm exec vitest run src/server/directoryRoutes.test.ts src/server/codexAppServerBridge.authRefresh.test.ts
 ```
 
 These isolated tests cover the login rejection, retired routes and guarded refresh

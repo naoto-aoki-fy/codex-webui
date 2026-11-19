@@ -11,7 +11,7 @@
 4. Authenticate in the external server environment and reconnect the app. Reload the account status and confirm it reflects that server.
 5. Disconnect the external server. Existing connection-error handling remains available; no local CLI login probe or installer runs.
 6. Repeat the account-panel checks in light and dark themes. No login URL, callback input, or modal appears in either theme.
-7. POST to the old `/codex-api/accounts/login/start` and `/codex-api/accounts/login/complete` endpoints. Both return 409 with external authentication/reconnect guidance without spawning a process or changing credentials.
+7. POST to the old `/codex-api/accounts/login/start` and `/codex-api/accounts/login/complete` endpoints. Both return JSON 404. The connected server and credentials stay unchanged.
 8. Run the built CLI with `--sandbox-mode workspace-write`, `--approval-policy never`, and `--no-memories` separately. Each exits with an unknown-option error. `login` likewise explains external authentication.
 
 #### Cleanup
