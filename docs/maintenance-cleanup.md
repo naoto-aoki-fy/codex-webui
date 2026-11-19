@@ -179,10 +179,6 @@ navigate and refresh repeatedly.
   unit/fixture/manual coverage and explicit capability checks.
 - Keep distinct connection profiles for independent remote hosts. Endpoint/home
   strings cannot identify a replaced server instance with the same values.
-- Keep rateLimitDecodeRecovery until an enforced runtime compatibility floor and
-  native tests establish that every supported endpoint handles the relevant quota
-  payloads through structured responses/errors. A successful 0.169.0 call alone
-  is insufficient justification to remove the narrow fallback.
 
 ## Continuation commits
 

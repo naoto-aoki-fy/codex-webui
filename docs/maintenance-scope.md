@@ -38,7 +38,7 @@ Immutable wiki raw material remains untouched.
 | 24 | Intentionally retain minimal sw.js. Older registrations require the same URL to clear only codexweb-shell/assets caches and unregister. Both server entry points have fixture coverage. Removal requires an explicit support policy excluding old registrations. |
 | 25 | Intentionally retain read-only Project receipts and independent pin guards. Native records do not prove legacy migration completion. Removal requires real completion/support evidence; no cutoff or receipts are fabricated. |
 | 26 | Already simplified before this scope: no list snapshots, names, timestamps or archive writes. PersistentThreadIndex retains durable intent, uncertain-response reconciliation, duplicate prevention, profile isolation, locking and atomic writes. Unknown historical fields and disk paths are preserved. |
-| 27 | Intentionally retain account/rateLimits/read recovery for unknown-variant plan_type decoder errors with embedded JSON body. Generated prolite support is insufficient evidence for every supported endpoint. Removal requires supported-runtime evidence for structured unknown-plan handling. |
+| 27 | Account rate-limit reads pass through the native response and ordinary RPC errors. A server that cannot decode a quota response cannot supply a fresh snapshot. |
 | 28 | Dependencies remain used by runtime, tests, scripts or generation. No unrelated upgrade/lockfile churn. proper-lockfile protects send recovery; Codex supplies pinned generation, Playwright supplies acceptance and zstd supplies rollout tests. |
 
 ## Permanent product boundaries

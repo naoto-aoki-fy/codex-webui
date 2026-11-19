@@ -4,7 +4,6 @@ import {
   isEmptyThreadReadError,
   isThreadMaterializationPendingError,
   isThreadNotFoundError,
-  isUnauthenticatedRateLimitError,
 } from './codexAppServerBridge'
 
 const originalCodexHome = process.env.CODEX_HOME
@@ -135,23 +134,13 @@ it.each(['/remote/link/../root', 'C:\\work\\demo', '\\\\host\\share\\demo'])('pr
   expect(await callRpcWithArchiveRecovery({ rpc }, 'thread/list', {})).toBe(result)
 })
 
-describe('isUnauthenticatedRateLimitError', () => {
-  it('matches unauthenticated rate-limit failures from a fresh Codex home', () => {
-    expect(isUnauthenticatedRateLimitError(new Error('codex account authentication required to read rate limits'))).toBe(true)
-  })
-
-  it('matches direct message fields from Codex stream errors', () => {
-    expect(isUnauthenticatedRateLimitError({
-      message: 'codex account authentication required to read rate limits',
-      codexErrorInfo: 'other',
-      additionalDetails: null,
-    })).toBe(true)
-  })
-
-  it('does not match unrelated authentication failures', () => {
-    expect(isUnauthenticatedRateLimitError(new Error('codex account authentication required to send messages'))).toBe(false)
-    expect(isUnauthenticatedRateLimitError(new Error('failed to read rate limits'))).toBe(false)
-  })
+it('forwards native rate-limit results and failures with one RPC per read', async () => {
+  const result = { rateLimits: { limitId: 'codex', primary: { usedPercent: 25 } } }
+  const error = new Error('Unknown quota variant in native rate-limit response')
+  const rpc = vi.fn().mockResolvedValueOnce(result).mockRejectedValueOnce(error)
+  await expect(callRpcWithArchiveRecovery({ rpc }, 'account/rateLimits/read', null)).resolves.toBe(result)
+  await expect(callRpcWithArchiveRecovery({ rpc }, 'account/rateLimits/read', null)).rejects.toBe(error)
+  expect(rpc.mock.calls).toEqual([['account/rateLimits/read', null], ['account/rateLimits/read', null]])
 })
 
 describe('isEmptyThreadReadError', () => {
