@@ -72,7 +72,7 @@ async function mountNativeSidebar() {
   const groups = filterGroupsByWorkspaceRoots(normalizeThreadGroupsV2({ data: [
     row('a-old', 'Alpha', 10, 10), row('a-new', 'Alpha', 60, 20),
     row('z-old', 'Zulu', 20, 30), row('z-new', 'Zulu', 30, 50),
-  ] }), { projectMode: 'native', order: [], nativeProjects })
+  ] }), { order: [], nativeProjects })
   const props = reactive({ groups, projectDisplayNameById: {}, selectedThreadId: '',
     activeProjectName: null, isLoading: false, isThreadListFullyLoaded: false,
     newThreadCwd: undefined as string | undefined,
@@ -220,9 +220,9 @@ describe('SidebarThreadTree native project timestamp sorting', () => {
 it('keeps native conversations accessible and existing pins intact when pin loading fails, then recovers', async () => {
   const { state } = await mountNativeSidebar()
   const before = ids(state.globalThreads)
-  vi.mocked(getPinnedThreadState).mockRejectedValueOnce(new Error('Legacy pin migration is incomplete'))
+  vi.mocked(getPinnedThreadState).mockRejectedValueOnce(new Error('Native thread sections are required for pinning'))
   await state.threads.refreshPinnedThreadState()
-  expect(state.pinStateError).toContain('Legacy pin migration')
+  expect(state.pinStateError).toContain('Native thread sections')
   expect(ids(state.globalThreads)).toEqual(before)
   expect(ids(state.pinnedThreads)).toEqual(['z-new'])
   await state.threads.togglePin('a-new')

@@ -1,8 +1,8 @@
 # Maintenance scope
 
 This is the current maintenance overview. [Development](development.md) owns setup,
-profiling and tools; [native Project migration](native-project-migration.md) owns
-supported runtime versions, capabilities and upgrade procedures;
+profiling and tools; [native server contract](native-project-migration.md) describes
+supported runtime capabilities.
 [open items](maintenance/open-items.md) owns unresolved concerns.
 The pinned 0.167.2 type generator is independent of the runtime support baseline.
 
@@ -18,9 +18,9 @@ Immutable wiki raw material remains untouched.
 | 03 | Removed App cwd/basename inference and Sidebar path-context naming. Native Project IDs, names, roots and order are authoritative; empty options remain empty, desktop/backend errors remain explicit. |
 | 04 | Simplified installed Skills to name, description, path and enabled. Readme requires name and optionally path; fixed owner/installed arguments are removed. Details, toggles and Composer selection remain. |
 | 05 | Removed unused path/translation imports, account context and workspace-group argument; shared helpers remain. |
-| 06 | Removed translation-wrapper tests with their subject. English language is checked by the browser fixture. Dynamic component, recovery, provider and migration fixtures remain active. |
-| 07 | Frontend workspace state retains ordered roots, native Projects/mode and errors. Legacy labels, active, projectOrder and remoteProjects remain backend migration inputs. No persisted state is stripped or rewritten. Cache cloning/invalidation remain necessary. |
-| 08 | Retired account login routes retain JSON 409 guidance; unused context is removed. CLI login remains a failing guidance command. Authentication belongs to the external server; Web password auth is unchanged. |
+| 06 | Removed translation-wrapper tests with their subject. English language is checked by the browser fixture. Dynamic component, recovery and provider fixtures remain active. |
+| 07 | Frontend workspace state retains ordered roots, native Projects and errors. Reads coalesce and writes invalidate the cached snapshot. |
+| 08 | Retired account login routes return JSON 404. CLI login remains a failing guidance command. Authentication belongs to the external server; Web password auth is unchanged. |
 | 09 | Retired rebuild uses the common JSON 404 handler before SPA fallback; local scanning remains unsupported. |
 | 10 | Unsupported token refresh directly returns correlated protocol error -32001. Removed throwing async helper/re-export; no credentials or refresh network request are accessed. |
 | 11 | Removed useUiLanguage/t; English labels, conditional expressions and installed-count interpolation are direct. index.html declares English. |
@@ -29,14 +29,14 @@ Immutable wiki raw material remains untouched.
 | 15 | Removed obsolete App branches and extracted native option/root presentation into useNativeProjectOptions. Existing folder/settings/transfer dialogs retain ownership. |
 | 16 | Simplified Sidebar native-name presentation, removing path collision scans. Existing threadVisibility and row components retain search, pagination, pins and actions. |
 | 17 | Extracted profile-scoped draft serialization, validation and fork-recovery reads into composerDraftStorage. Keyboard/IME, upload, submission and settings state remain in Composer. Keys/payloads are unchanged. |
-| 18 | Current ownership is consolidated in this overview, development, migration policy and open-items. Previous acceptance records are explicitly historical. |
+| 18 | Current ownership is consolidated in this overview, development, the server contract and open-items. Previous acceptance records are explicitly historical. |
 | 19 | README has one upgrade link and no duplicate mobile description or trailing compatibility link. |
 | 20 | Thread profiling requires PROFILE_THREAD_ID or PROFILE_ROUTE; TestChat profiling requires TESTCHAT_ROOT. Missing inputs fail before browser launch. |
 | 21 | Standalone scripts are retained documented diagnostics/live harnesses. Added credential-free intercepted UI acceptance. No script is deleted solely for lacking a package entry. |
 | 22 | Generator derives actual handwritten consumer dependency closure, removes stale generated TS and retains the full method catalog. Pin and runtime policy are unchanged. |
 | 23 | DirectoryHub renamed SkillsMcpHub, including import and navigation test; styling classes are preserved. |
 | 24 | The service worker and its retirement script were removed. Online navigation and assets use ordinary HTTP caching. |
-| 25 | Intentionally retain read-only Project receipts and independent pin guards. Native records do not prove legacy migration completion. Removal requires real completion/support evidence; no cutoff or receipts are fabricated. |
+| 25 | Project and pin reads use native Projects and thread sections. Earlier local records and receipts stay in storage. |
 | 26 | Already simplified before this scope: no list snapshots, names, timestamps or archive writes. PersistentThreadIndex retains durable intent, uncertain-response reconciliation, duplicate prevention, profile isolation, locking and atomic writes. Unknown historical fields and disk paths are preserved. |
 | 27 | Account rate-limit reads pass through the native response and ordinary RPC errors. A server that cannot decode a quota response cannot supply a fresh snapshot. |
 | 28 | Dependencies remain used by runtime, tests, scripts or generation. No unrelated upgrade/lockfile churn. proper-lockfile protects send recovery; Codex supplies pinned generation, Playwright supplies acceptance and zstd supplies rollout tests. |

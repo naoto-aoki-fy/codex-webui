@@ -1,13 +1,4 @@
 const transferKey = 'conversation-transfers-v1'
-const migrationKey = 'codexapp-native-project-migrations-v1'
-const standardKeys = new Set([transferKey, migrationKey])
-
-function hasMigrationInput(state) {
-  // These legacy inputs are shared with native Codex or still consulted by the
-  // upgrade guard. Preserve the receipts when their removal could trip it.
-  return ['electron-saved-workspace-roots', 'remote-projects'].some(key =>
-    state[key] !== undefined && (!Array.isArray(state[key]) || state[key].length > 0))
-}
 
 export function readGlobalStateReset(raw, path) {
   let state
@@ -44,12 +35,8 @@ export function readGlobalStateReset(raw, path) {
       if (depth === 0) end = token.index
     }
   }
-  const standardRemovals = new Set([transferKey])
-  const receipts = state[migrationKey]
-  if (!hasMigrationInput(state) && receipts && typeof receipts === 'object' && !Array.isArray(receipts)
-    && Object.values(receipts).every(receipt => receipt?.completed === true)) standardRemovals.add(migrationKey)
   function select(additionalKeys = []) {
-    const removed = new Set([...standardRemovals, ...additionalKeys.filter(name => !standardKeys.has(name))])
+    const removed = new Set([transferKey, ...additionalKeys])
     const keys = members.filter(member => removed.has(member.key)).map(member => member.key)
     const preserved = members.filter(member => !removed.has(member.key))
     return {
@@ -60,7 +47,7 @@ export function readGlobalStateReset(raw, path) {
   }
   return {
     // Expose only keys outside the standard policy to historical validators.
-    get historicalState() { return Object.fromEntries(Object.entries(state).filter(([name]) => !standardKeys.has(name))) },
+    get historicalState() { return Object.fromEntries(Object.entries(state).filter(([name]) => name !== transferKey)) },
     select,
   }
 }

@@ -94,7 +94,9 @@ it('opens and lists an existing project without importing or changing its files'
   expect(opened.json.data.path).toBe(project)
   const listing = await request('/codex-api/workspace-roots-state')
   expect(listing.json.data.order).toContain(project)
-  expect(listing.json.data.labels[project]).toBeUndefined()
+  expect(listing.json.data.nativeProjects).toEqual([
+    expect.objectContaining({ id: opened.json.data.projectId, roots: [{ path: project }] }),
+  ])
   expect(sqlite).not.toHaveBeenCalled()
   await expectPreservedFiles()
 })
@@ -179,16 +181,19 @@ it('rejects an adapter missing native pagination without fetching full history',
   expect(rpc).not.toHaveBeenCalled()
 })
 
-it('reports Project and pin upgrade errors without blocking native conversation reads or rewriting state', async () => {
+it('loads native Projects and pins independently of historical state without changing it', async () => {
   const path = join(home, '.codex-global-state.json')
-  const before = JSON.stringify({ 'electron-saved-workspace-roots': ['/legacy'], 'pinned-thread-ids': ['legacy-pin'], other: 42 }) + '\n'
+  const before = JSON.stringify({ 'electron-saved-workspace-roots': ['/legacy'], 'pinned-thread-ids': ['legacy-pin'], 'codexapp-native-project-migrations-v1': { old: { completed: false } }, other: 42 }) + '\n'
   await writeFile(path, before)
+  const project = { id: 'native-project', name: 'Native', roots: [{ path: '/native' }], position: 0, metadata: {} }
+  rpc.mockResolvedValueOnce({ data: [project], nextCursor: null })
   const projects = await request('/codex-api/workspace-roots-state')
-  expect(projects.res.statusCode).toBe(502)
-  expect(projects.json.error).toContain('pre-cleanup WebUI')
+  expect(projects.res.statusCode).toBe(200)
+  expect(projects.json.data).toMatchObject({ order: ['/native'], nativeProjects: [project] })
+  rpc.mockResolvedValueOnce({ data: [{ id: 'native-pin' }], nextCursor: null })
   const pins = await request('/codex-api/thread-pins')
-  expect(pins.res.statusCode).toBe(502)
-  expect(pins.json.error).toContain('Legacy pin migration')
+  expect(pins.res.statusCode).toBe(200)
+  expect(pins.json.data.threadIds).toEqual(['native-pin'])
   const listed = await request('/codex-api/rpc', 'POST', { method: 'thread/list', params: {} })
   expect(listed.res.statusCode).toBe(200)
   rpc.mockResolvedValueOnce({ thread: { id: 'native', turns: [] } })

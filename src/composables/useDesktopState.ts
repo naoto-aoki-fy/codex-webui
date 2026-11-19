@@ -2237,7 +2237,7 @@ export function useDesktopState() {
       return await getWorkspaceRootsState()
     } catch (cause) {
       if (generation === connection.lifecycleGeneration) error.value = cause instanceof Error ? cause.message : 'Failed to load projects'
-      return loadedThreadListRootsState ?? { projectMode: 'native', nativeProjects: [], order: [], projectError: cause instanceof Error ? cause.message : 'Projects unavailable' }
+      return loadedThreadListRootsState ?? { nativeProjects: [], order: [], projectError: cause instanceof Error ? cause.message : 'Projects unavailable' }
     }
   }
 

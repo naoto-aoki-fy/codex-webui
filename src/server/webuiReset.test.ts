@@ -148,7 +148,7 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
     const a = profile(home, 'a.prod')
     const b = profile(home, 'b')
     for (const folder of [home, a, b]) write(join(folder, index))
-    json(join(a, stateFile), { [transfer]: { a: true }, [migration]: { connection: { completed: true } } })
+    json(join(a, stateFile), { [transfer]: { a: true } })
     json(join(b, stateFile), { [transfer]: { b: true }, [migration]: { connection: { completed: false } }, official: 1 })
     write(join(home, auth))
     const one = run(execute, { CODEXUI_CONNECTION_PROFILE: 'a.prod' })
@@ -165,7 +165,7 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
     expect(JSON.parse(readFileSync(join(b, stateFile), 'utf8'))).toEqual({ [migration]: { connection: { completed: false } }, official: 1 })
   })
 
-  it('keeps migration receipts when native or legacy roots still need them', () => {
+  it('preserves historical Project receipts and legacy roots', () => {
     const expected = { 'electron-saved-workspace-roots': ['/project'], 'pinned-thread-ids': ['pin'],
       [migration]: { connection: { completed: true } }, 'active-workspace-roots': ['/project'] }
     json(join(home, stateFile), { ...expected, [transfer]: {} })
@@ -177,7 +177,7 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
   })
 
   it('keeps the shared root JSON file even when only removable WebUI keys are present', () => {
-    json(join(home, stateFile), { [transfer]: {}, [migration]: { x: { completed: true } } })
+    json(join(home, stateFile), { [transfer]: {} })
     const result = run(execute)
     expect(result.code, result.output).toBe(0)
     expect(readFileSync(join(home, stateFile), 'utf8')).toBe('{}')
@@ -427,12 +427,12 @@ describe.skipIf(process.platform !== 'linux')('historical WebUI reset', () => {
     const path = join(home, stateFile)
     const native = ' "native": {"precise": 123456789876543212345 } '
     const retained = {
+      [migration]: { 'verified-migration': { completed: true } },
       'thread-queue-state': { thread: [{ id, text: 'unsent' }] },
       'pinned-thread-ids': ['native'],
       'telegram-bridge': { botToken: 'secret', unknown: true },
     }
-    const portable = JSON.stringify({ [transfer]: { attempt: { stage: 'injecting' } },
-      [migration]: { 'verified-migration': { completed: true } } })
+    const portable = JSON.stringify({ [transfer]: { attempt: { stage: 'injecting' } } })
     const expected = `{${native},${JSON.stringify(retained).slice(1)}`
     write(path, `{${native}, "${retiredTip}": true, "thread-pinned-ids": ["old"],${portable.slice(1, -1)},${JSON.stringify(retained).slice(1)}`)
     const pending = { thread: { pending: { token: id, previous: [], text: 'payload' } } }
@@ -464,9 +464,9 @@ describe.skipIf(process.platform !== 'linux')('historical WebUI reset', () => {
     const { standard, withLegacy, acknowledged } = comparePlans(scope)
     const standardFiles = [join(home, index), scratch, join(home, inventory), join(home, journal), uploadScratch, uploadLock]
     for (const target of standardFiles) expect(standard.get(target)?.verb, target).toBe('delete')
-    expect(standard.get(path)?.keys).toEqual([transfer, migration])
-    expect(withLegacy.get(path)?.keys).toEqual([retiredTip, transfer, migration])
-    expect(acknowledged.get(path)?.keys).toEqual([retiredTip, 'thread-pinned-ids', transfer, migration])
+    expect(standard.get(path)?.keys).toEqual([transfer])
+    expect(withLegacy.get(path)?.keys).toEqual([retiredTip, transfer])
+    expect(acknowledged.get(path)?.keys).toEqual([retiredTip, 'thread-pinned-ids', transfer])
     expect([...withLegacy.keys()].filter(target => !standard.has(target))).toEqual([markerPath])
     expect([...acknowledged.keys()].filter(target => !withLegacy.has(target))).toEqual([providerPath])
 

@@ -1,7 +1,7 @@
 # Focused native maintenance cleanup
 
 > Historical verification record. Numbering and commands describe that review.
-> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [migration policy](native-project-migration.md).
+> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [native server contract](native-project-migration.md).
 
 | Item | Change |
 | --- | --- |
@@ -16,7 +16,7 @@
 | 12 | Removed unused credential-store readers/guards, canonicalization functions and compatibility exports. Public auth redaction and shared persistence/locks remain. Remote paths pass through unchanged. |
 | 13 | Replaced legacy inference/migration tests with upgrade-boundary/native tests; corrected retired persistent-index/rebuild documentation. Retirement safeguards remain. |
 
-See [minimum capabilities and pre-upgrade procedure](native-project-migration.md).
+See [supported server capabilities](native-project-migration.md).
 The old release must complete Project and pin migration before upgrade. No user
 files, credentials, browser storage, native sections or transfer receipts are
 cleaned up. No dependent removal remains blocked: legacy parsing is intentionally

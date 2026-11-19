@@ -1,7 +1,7 @@
 # Maintenance cleanup status
 
 > Historical verification record. Numbering and commands describe that review.
-> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [migration policy](native-project-migration.md).
+> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [native server contract](native-project-migration.md).
 
 ## Final scope status
 

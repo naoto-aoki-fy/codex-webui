@@ -135,7 +135,7 @@ beforeEach(() => {
   })
   gateway.getThreadGroupsPage.mockResolvedValue({ groups: [{ projectName: 'project', threads: [thread] }], nextCursor: null })
   gateway.getThreadTitleCache.mockResolvedValue({ titles: {} })
-  gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [], projectMode: 'native', nativeProjects: [] })
+  gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [], nativeProjects: [] })
   gateway.getAvailableModelIds.mockResolvedValue({ ids: ['gpt-5.5'], models: [] })
   gateway.getCurrentModelConfig.mockResolvedValue({ model: 'gpt-5.5', reasoningEffort: '', speedMode: 'standard' })
   gateway.getAvailableCollaborationModes.mockResolvedValue([{ value: 'default', label: 'Default' }])

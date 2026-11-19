@@ -20,7 +20,7 @@ async function fixture(context) {
     if (body.method === 'config/read') result = { config: { model: 'A', model_provider: 'fixture' } }
     if (body.method === 'skills/list') result = { data: [] }
     let json = { result }
-    if (path.endsWith('/workspace-roots-state')) json = { data: { projectMode: 'native', nativeProjects: [{ id: 'p', name: 'Project', roots: [{ path: '/remote/project' }], position: 0, metadata: {} }], order: ['/remote/project'], active: [], labels: {}, projectOrder: ['p'] } }
+    if (path.endsWith('/workspace-roots-state')) json = { data: { nativeProjects: [{ id: 'p', name: 'Project', roots: [{ path: '/remote/project' }], position: 0, metadata: {} }], order: ['/remote/project'], active: [], labels: {}, projectOrder: ['p'] } }
     if (path.endsWith('/pending') || path.endsWith('/methods')) json = { data: [] }
     if (path.endsWith('/thread-pins')) json = { data: { threadIds: [] } }
     await route.fulfill({ json })

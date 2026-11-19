@@ -1,4 +1,4 @@
-# Native Projects and upgrade prerequisites
+# Native Projects, pins and supported server capabilities
 
 Native Project IDs, names, roots, positions and explicit `Thread.projectId`
 associations are authoritative. Empty projects, identical names/roots and native
@@ -6,39 +6,12 @@ ordering are retained. Unassigned history remains visible. Cwd is an execution
 path, never a membership rule. Native rename/delete/move operations do not delete
 conversation contents or workspace files.
 
-## Before upgrading from legacy Projects or pins
+## Historical local records
 
-1. Back up the profile-scoped global state and the remote Codex home using your
-   normal backup procedure. Do not delete legacy metadata, uploads, receipts or
-   native databases. Keep the same connection profile, endpoint and remote home.
-2. Run the pre-cleanup WebUI revision `3f659043adef2fb075919dec669e88e843fe4889`
-   against a capable server (see below). Load Projects and pins. That revision
-   migrates legacy roots, labels, order and archived/active membership and moves
-   `pinned-thread-ids` into the built-in native Pinned section.
-3. Resolve every migration error before upgrading. Ambiguous native identities or
-   conflicting thread associations require explicit reconciliation in the old
-   release. Interrupted migrations must finish there; do not manufacture a
-   completion flag. Verify empty projects, duplicate names/roots, order, archived
-   members, imported destinations and pins after reload/reconnect.
-4. Confirm the existing connection's journal under
-   `codexapp-native-project-migrations-v1` has `completed: true`. The old pin
-   migration removes `pinned-thread-ids` only after successful moves; verify native
-   pins before proceeding. Upgrade using the same connection identity.
-
-The new runtime does not migrate or write legacy state. If registered legacy
-roots/remote projects or an interrupted journal exist without that connection's
-completed receipt, Project loading fails with a pre-upgrade instruction rather
-than hiding data or inferring membership. Restore the old release to finish
-migration. Completed receipts remain intact; stale legacy names cannot overwrite
-native changes. New installations need no migration receipt.
-
-The remaining Project/pin compatibility code is a read-only upgrade safeguard,
-not an importer, converter, backfill or dual writer. It reads only the existing
-profile global-state path; it does not scan backups or the thread recovery index.
-A populated native Project list does not bypass the receipt check. Malformed or
-unreadable global state propagates an error; a missing file is treated as a fresh
-installation, not as a manufactured completion receipt. No documented cutoff
-permits removing these checks for installations that still hold legacy state.
+The connected App Server supplies Projects and pin membership. WebUI leaves
+earlier local roots, labels, pins and receipts untouched. Records that exist
+only in those older formats do not appear as native Projects or pins. Existing
+conversations remain available through native thread listing or by their ID.
 
 ## Supported server contract
 
@@ -61,9 +34,7 @@ provider/model's `model/list.serviceTiers` to advertise `fast`, and
 unknown availability; the model name provides no evidence.
 
 Missing required APIs produce upgrade errors. Permission, transport and malformed
-response errors remain distinct. Full-history fallback and legacy Project runtime
-support have ended. Supported history pagination, absolute turn indices, fork
-cutoffs, invalidation and concurrent-read protections are unchanged.
+response errors remain distinct.
 
 Portable Fork receipts, imported transcripts, incomplete-transfer safeguards and
 per-response generation metadata remain in their existing services. No migration
@@ -80,60 +51,10 @@ Acknowledged moves update the UI without a duplicate list request; section
 notifications and reconnect refresh native membership. Pinning replaces a
 thread's section, consistent with native single-section semantics.
 
-Pin reads paginate serially at 100 rows per request, with no separate writable
-pin store or background polling. Legacy moves belong only to the old migration
-revision described below; the current reader rejects unmigrated pins.
+Pin reads paginate serially at 100 rows per request. Reads and writes use only
+native section membership.
 
-## Reproducible migration source and environment
-
-The exact migration source is Git commit
-`3f659043adef2fb075919dec669e88e843fe4889` (not the current package tag).
-To obtain it without changing the working branch, extract it into a fresh source
-folder and install that revision's locked dependencies:
-
-```sh
-migration_source=$(mktemp -d /tmp/codex-webui-migration.XXXXXX)
-git archive 3f659043adef2fb075919dec669e88e843fe4889 | tar -x -C "$migration_source"
-cd "$migration_source"
-pnpm install --frozen-lockfile
-# Stop the current WebUI before pointing this process at the same local state.
-CODEX_HOME="$existing_webui_state_home" \
-CODEXUI_CONNECTION_PROFILE="$existing_profile_id" \
-CODEXUI_APP_SERVER_URL="$existing_exact_endpoint" \
-pnpm run dev --host 127.0.0.1 --port 4173
-```
-
-Supply the **existing** values from the deployment being upgraded, not a new
-profile or fresh home. Default profile is `legacy`; changing it creates a distinct
-state namespace and does not migrate the old one. `CODEX_HOME` here is the
-WebUI's local application-state home. The independently managed server must keep
-its original user, remote Codex home, native database and capabilities; do not
-point it at a different home or copy credentials. Keep the exact resolved endpoint
-(including transport/address) used during migration and upgrade.
-
-The Project receipt key is SHA-256 of
-`JSON.stringify([profileId, resolvedAppServerUrl, initializedRemoteCodexHome])`.
-The state file is `$CODEX_HOME/.codex-global-state.json` for `legacy`, or
-`$CODEX_HOME/codexapp-profiles/<sha256(profileId)>/.codex-global-state.json` for a
-named profile. An initialized remote home is required for the same receipt key;
-a successful connection to a different server is not proof of migration.
-
-Observable completion checks in the old revision:
-
-- Authenticated `GET /codex-api/workspace-roots-state` succeeds in native mode;
-  the receipt for the exact identity above has `completed: true`. Check native
-  empty projects, duplicate identities, ordering and archived/imported membership.
-- Separately, authenticated `GET /codex-api/thread-pins` succeeds and contains
-  every intended old pin in native section order. `pinned-thread-ids` must be
-  absent after the old migrator finishes. A completed Project receipt is **not**
-  a pin receipt. Retry the old pin reader after an interrupted native move.
-- Reload/reconnect and repeat both reads before replacing the old WebUI.
-
-The current pin reader independently rejects any remaining valid legacy pin ID,
-even with completed Projects or no legacy Projects. It never deletes the key or
-moves sections. A pin error blocks pin loading/toggling in the sidebar, leaves
-already loaded pins intact and displays a warning. Project upgrade errors block
-Project loading/registration/rename/move/delete. Neither guard gates ordinary
-native thread list/read, direct conversation navigation, or history APIs. They
-can coexist: finish each prerequisite independently. Empty legacy pin arrays do
-not represent unmigrated pins.
+Project and pin reads make no local state-file reads. Registering a root walks
+the native Project list once before reusing or creating a Project. Concurrent
+Project reads still coalesce, and mutations use the existing frontend cache
+invalidation. Live latency was not measured for the guard removal.
