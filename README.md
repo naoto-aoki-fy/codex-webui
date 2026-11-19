@@ -18,7 +18,7 @@ pnpm run build
 # Separate terminal on the App Server host:
 codex app-server --listen ws://127.0.0.1:4500
 # Web backend:
-node dist-cli/index.js --app-server-url ws://127.0.0.1:4500
+node dist-cli/index.js --app-server-url ws://127.0.0.1:4500 --connection-profile workstation
 ```
 
 Open the printed URL (default: `http://localhost:5900`). If the port is occupied,
@@ -26,9 +26,9 @@ the CLI tries the next available port. Authentication and runtime defaults belon
 to the external server. Unix sockets (`unix:///absolute/path.sock`) are also supported
 on Linux/macOS. See the [connection guide](docs/external-app-server.md).
 
-The App Server ID defaults to the WebUI backend's short hostname. When connecting
-to multiple App Servers from the same backend host, choose a unique ID for each
-with `--connection-profile <id>` and reuse it when reconnecting.
+Set an App Server ID with `--connection-profile <id>` or
+`CODEXUI_CONNECTION_PROFILE`. Choose a unique ID for each distinct server and
+reuse it when reconnecting to that server.
 For attachments, set `CODEXUI_REMOTE_UPLOAD_DIR` to a dedicated absolute path on
 the App Server host. See [storage and upload configuration](docs/connection-profiles-uploads.md).
 

@@ -16,8 +16,8 @@ Independently managed Codex app-server (ws/wss or Unix socket)
 ```
 
 The backend does not install, launch, authenticate, or terminate Codex. The UI and
-App Server may run on separate hosts. Each backend starts with one App Server ID,
-which defaults to the backend's short hostname and is independent of the endpoint.
+App Server may run on separate hosts. Each backend requires one explicit App
+Server ID that is independent of the endpoint.
 The backend stores WebUI-owned data and caches in OS application directories.
 Upload bytes use a dedicated absolute App Server path. See
 [storage and upload configuration](docs/connection-profiles-uploads.md).

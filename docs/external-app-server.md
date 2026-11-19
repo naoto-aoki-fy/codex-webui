@@ -67,12 +67,11 @@ enter an absolute remote workspace path. Neither A's home nor B's CODEX_HOME is
 assumed to be B's user home.
 
 A stores WebUI preferences, password sessions, presentation assets and caches
-in its OS application directories. The App Server ID selects the storage
-namespace and defaults to A's short hostname. Override it with
-`--connection-profile <id>` or `CODEXUI_CONNECTION_PROFILE`. Use the same ID with
-the same App Server and restart with a different ID and endpoint when changing
-servers. Native Projects and workspace records belong to the connected App
-Server. See [storage and upload configuration](connection-profiles-uploads.md).
+in its OS application directories. Set the App Server ID that selects the storage
+namespace with `--connection-profile <id>` or `CODEXUI_CONNECTION_PROFILE`. Use the
+same ID with the same App Server and restart with a different ID and endpoint
+when changing servers. Native Projects and workspace records belong to the
+connected App Server. See [storage and upload configuration](connection-profiles-uploads.md).
 
 ## Uploads and transfer limits
 

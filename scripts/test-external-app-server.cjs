@@ -3,7 +3,7 @@ const { spawn, spawnSync } = require('node:child_process')
 const { once } = require('node:events')
 const { createServer } = require('node:http')
 const { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } = require('node:fs')
-const { hostname, tmpdir } = require('node:os')
+const { tmpdir } = require('node:os')
 const { join } = require('node:path')
 const { WebSocketServer, WebSocket } = require('ws')
 const { fixtureWebuiStorage } = require('./fixture-webui-storage.cjs')
@@ -69,26 +69,28 @@ async function run() {
   })
   try {
     for (const [command, args] of [[process.execPath, ['dist-cli/index.js', '--no-open']], ['pnpm', ['run', 'dev']]]) {
-      const invalid = spawnSync(command, args, {
-        env: { ...process.env, ...storageEnv, CODEXUI_CONNECTION_PROFILE: '../outside' },
-        encoding: 'utf8', timeout: 20_000,
-      })
-      assert.notEqual(invalid.status, 0)
-      assert.match(invalid.stderr, /Invalid App Server ID/)
-      console.log('PASS', command === 'pnpm' ? 'pnpm run dev' : 'built CLI', 'rejects an invalid ID')
+      for (const [profile, error] of [[undefined, /App Server ID is required/], ['../outside', /Invalid App Server ID/]]) {
+        const env = { ...process.env, ...storageEnv }
+        if (profile === undefined) delete env.CODEXUI_CONNECTION_PROFILE
+        else env.CODEXUI_CONNECTION_PROFILE = profile
+        const invalid = spawnSync(command, args, { env, encoding: 'utf8', timeout: 20_000 })
+        assert.equal(invalid.status, 1)
+        assert.match(invalid.stderr, error)
+        console.log('PASS', command === 'pnpm' ? 'pnpm run dev' : 'built CLI', 'rejects a missing or invalid ID')
+      }
     }
-    const shortHostname = hostname().split('.', 1)[0]
     const profileRuns = new Map()
-    for (const { dev, flagProfile, envProfile, profile } of [
+    for (const { dev, flagProfile, envProfile, profile, changedEndpoint } of [
       { dev: false, flagProfile: 'fixture-cli', envProfile: 'fixture-vite', profile: 'fixture-cli' },
       { dev: true, envProfile: 'fixture-vite', profile: 'fixture-vite' },
-      { dev: false, profile: shortHostname },
-      { dev: true, profile: shortHostname },
+      { dev: false, flagProfile: 'fixture-shared', profile: 'fixture-shared' },
+      { dev: true, envProfile: 'fixture-shared', profile: 'fixture-shared', changedEndpoint: true },
     ]) {
       const port = dev ? 4199 : 4198
       // Codex is absent on this host; CLI precedence deliberately overrides a refused env URL.
+      const devEndpoint = changedEndpoint ? (unix ? endpoint.replace(/codex\.sock$/, '%63odex.sock') : endpoint + '?forwarded=1') : endpoint
       const env = {
-        ...process.env, ...storageEnv, CODEXUI_APP_SERVER_URL: dev ? endpoint : 'ws://127.0.0.1:1',
+        ...process.env, ...storageEnv, CODEXUI_APP_SERVER_URL: dev ? devEndpoint : 'ws://127.0.0.1:1',
         CODEXUI_REMOTE_UPLOAD_DIR: '/fixture/attachments',
       }
       if (envProfile === undefined) delete env.CODEXUI_CONNECTION_PROFILE
@@ -113,6 +115,7 @@ async function run() {
           await new Promise(resolve => setTimeout(resolve, 100))
         }
         assert(ready, output)
+        assert.equal(output.includes('Endpoint changed'), Boolean(changedEndpoint), output)
         for (const path of ['/codex-api/git/repository-status', '/codex-api/prompts', '/codex-api/thread-titles', '/codex-api/worktree/create', '/codex-api/worktree/branches', '/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion', '/codex-api/telegram/config', '/codex-api/telegram/configure-bot', '/codex-api/telegram/status', '/codex-api/telegram/test-notification', '/codex-api/worktree/create-permanent', '/codex-api/thread-file-change-fallback', '/codex-api/thread-live-state', '/codex-api/thread-stream-events', '/codex-api/thread-turn-page', '/codex-api/connection-diagnostics', '/codex-api/uploads', '/codex-api/meta/methods']) {
           for (const method of ['GET', 'HEAD', 'POST']) {
             for (const query of ['', '?threadId=fixture-thread']) {

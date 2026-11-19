@@ -115,7 +115,7 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
       join(home, 'config.toml'), join(home, 'sessions/2026/11/19/rollout-native.jsonl'),
       join(home, '.codex-global-state.json'), join(home, 'webui-auth-sessions.json'),
       join(home, 'codexapp-thread-index.json'), join(home, 'codexapp-upload-inventory.json'),
-      join(server, 'uploads/inventory.json'), join(server, 'uploads/journal.jsonl'),
+      join(server, 'uploads/inventory.json'), join(server, 'uploads/journal.jsonl'), join(server, 'endpoint.json'),
       join(profile(data, 'other'), 'model-preferences.json'), join(profile(cache, 'other'), 'inline-media/other'),
       join(serverCache, 'inline-media/unknown'), join(server, 'unknown'), auth(),
     ]

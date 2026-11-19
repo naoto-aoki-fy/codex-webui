@@ -61,6 +61,7 @@ export const storageNames = {
   state: 'state.json',
   modelPreferences: 'model-preferences.json',
   authSessions: 'auth-sessions.json',
+  endpoint: 'endpoint.json',
   uploads: 'uploads',
   inventory: 'inventory.json',
   journal: 'journal.jsonl',

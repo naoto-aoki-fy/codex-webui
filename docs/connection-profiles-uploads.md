@@ -1,15 +1,20 @@
 # App Server IDs, storage, and uploads
 
-Each WebUI backend process connects to one Codex App Server. The ID comes from
-`--connection-profile workstation-b`, then `CODEXUI_CONNECTION_PROFILE=workstation-b`,
-then the WebUI backend's short hostname (the part before the first dot, as in
-`hostname -s`).
+Each WebUI backend process connects to one Codex App Server. Set the required
+ID with `--connection-profile workstation-b` or
+`CODEXUI_CONNECTION_PROFILE=workstation-b`. The flag takes precedence.
 IDs are case-sensitive and contain 1–80 ASCII letters, digits, dots, underscores
 or hyphens, starting with a letter or digit. The URL selects the endpoint
 independently of the ID. Use a unique ID for each App Server, including when
 multiple servers use the same SSH forwarding URL at different times. Stop and
 restart the backend with the desired ID and URL when changing servers. Use the
 same ID again to reuse that server's saved state.
+
+The backend stores a fingerprint of the last configured endpoint for each ID.
+A changed endpoint prints a startup warning and keeps using the selected ID.
+Confirm that a changed forwarding address or tunnel still reaches the same
+server. Different servers can also use the same URL over time, so the warning
+can only detect changes in the configured URL after the first recorded launch.
 
 ## Storage on the WebUI backend
 

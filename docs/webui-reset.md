@@ -19,7 +19,8 @@ when `--profile` is omitted, and `--all-profiles` selects every ID in the curren
 storage roots. Both reset per-ID WebUI state, model preferences and known caches.
 Saved Portable Fork records are part of the ID's WebUI state. The reset preserves
 upload ledgers and journals so retained or uncertain attachments continue to
-count against their capacity. Add `--shared` to clear WebUI password sessions
+count against their capacity. The endpoint diagnostic also remains available
+after reset. Add `--shared` to clear WebUI password sessions
 and `--build` to remove generated output from the current checkout.
 
 The tool uses the [WebUI storage layout](connection-profiles-uploads.md#storage-on-the-webui-backend).

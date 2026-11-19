@@ -29,7 +29,7 @@ const help = `Usage:
 
 Dry run is the default. A profile must be supplied with --profile or CODEXUI_CONNECTION_PROFILE unless using --all-profiles.
 --shared includes backend-wide login sessions. --build adds generated artifacts in this checkout.
-Local reset preserves upload ledgers. Run remote mode on the App Server host to remove explicitly named uploads.
+Local reset preserves upload ledgers and endpoint diagnostics. Run remote mode on the App Server host to remove explicitly named uploads.
 --offline confirms that all writers for the selected paths are stopped. Linux-only execution uses /proc for directory anchors and mount checks.`
 
 const quote = value => JSON.stringify(value)
@@ -184,6 +184,7 @@ function planData(plan, directory, info) {
     const path = join(directory, name)
     if (files.some(file => storeTemp(file).test(name))) plan.removeFile(path, 'WebUI persistence temporary file')
     else if (name === storageNames.uploads) plan.notice('Preserve', path, 'upload accounting and recovery journal')
+    else if (name === storageNames.endpoint) plan.notice('Preserve', path, 'App Server endpoint diagnostic')
     else if (!plan.removes(path)) plan.notice('Preserve', path, 'unrecognized content')
   }
   removeEmpty(plan, directory, info, entries)

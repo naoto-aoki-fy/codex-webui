@@ -1,4 +1,4 @@
-import { getCodexGlobalStatePath, readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState'
+import { checkProfileEndpoint, getCodexGlobalStatePath, readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -6,12 +6,10 @@ import { tmpdir } from 'node:os'
 import { getConnectionProfileId, profileStorageDirectory } from './connectionProfile'
 import { profileDirectoryName, profileDirectoryPattern, resolveWebuiStorage, storageNames } from './webuiStorage.mjs'
 
-afterEach(() => vi.unstubAllEnvs())
-
-vi.mock('node:os', async importOriginal => ({
-  ...await importOriginal<typeof import('node:os')>(),
-  hostname: () => 'Workstation.example.test',
-}))
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
 
 it('isolates case-sensitive IDs at the same endpoint and leaves native and old WebUI data untouched', async () => {
   const home = await mkdtemp(join(tmpdir(), 'core-home-'))
@@ -43,16 +41,42 @@ it('isolates case-sensitive IDs at the same endpoint and leaves native and old W
   } finally { await rm(home, { recursive: true, force: true }) }
 })
 
-it('defaults to the short WebUI hostname when the profile is unset', () => {
-  vi.stubEnv('CODEXUI_CONNECTION_PROFILE', undefined)
+it.each([undefined, '', '  '])('requires an explicit ID (%j)', value => {
   vi.stubEnv('CODEXUI_APP_SERVER_URL', 'ws://app-server.example.test:4500')
-  expect(getConnectionProfileId()).toBe('Workstation')
-  expect(profileStorageDirectory('data')).toBe(profileStorageDirectory('data', 'Workstation'))
-})
-
-it.each(['', '  '])('rejects an explicitly blank ID (%j)', value => {
   vi.stubEnv('CODEXUI_CONNECTION_PROFILE', value)
   expect(() => getConnectionProfileId()).toThrow('App Server ID is required')
+})
+
+it('warns only on an endpoint change for an existing ID and preserves its state', async () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const firstEndpoint = 'wss://first.example.test/?token=private'
+  const forwarded = 'ws://127.0.0.1:4501/'
+  const id = getConnectionProfileId()
+  await updateCodexGlobalState(state => { state['test-state'] = 'saved' })
+  const path = join(profileStorageDirectory('data'), storageNames.endpoint)
+  await checkProfileEndpoint(id, firstEndpoint)
+  const fingerprint = JSON.parse(await readFile(path, 'utf8'))
+  expect(fingerprint).toEqual({ fingerprint: expect.stringMatching(profileDirectoryPattern) })
+  await checkProfileEndpoint(id, firstEndpoint)
+  await checkProfileEndpoint('other', forwarded)
+  expect(warning).not.toHaveBeenCalled()
+  await checkProfileEndpoint(id, forwarded)
+  expect(warning).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('Endpoint changed'))
+  expect(warning.mock.calls[0]![0]).not.toMatch(/private|first\.example\.test|127\.0\.0\.1/u)
+  await checkProfileEndpoint(id, forwarded)
+  expect(warning).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(await readFile(path, 'utf8'))).not.toEqual(fingerprint)
+  expect(await readCodexGlobalState()).toEqual({ 'test-state': 'saved' })
+})
+
+it('still permits startup if the endpoint diagnostic is unreadable', async () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const path = join(profileStorageDirectory('data'), storageNames.endpoint)
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, '{broken')
+  await checkProfileEndpoint(getConnectionProfileId(), 'ws://127.0.0.1:4500/')
+  expect(warning).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('Could not check the saved endpoint'))
+  expect(await readFile(path, 'utf8')).toBe('{broken')
 })
 
 it.each(['../outside', 'a/b', 'a\\b', 'a:b', 'a b', 'é', '.hidden', 'a'.repeat(81)])('rejects malformed IDs (%j)', value => {

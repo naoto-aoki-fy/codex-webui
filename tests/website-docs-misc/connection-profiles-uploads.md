@@ -6,18 +6,16 @@ Start the App Server with a separate disposable Codex home. Place arbitrary
 sentinels in that home, including an old `.codex-global-state.json`, model
 preferences, and upload inventory. Use the same endpoint for all test IDs.
 
-1. On a backend host with a valid short hostname, unset `CODEXUI_CONNECTION_PROFILE`
-   and run `node dist-cli/index.js --host 127.0.0.1 --port 5900 --no-open`
-   with `CODEXUI_APP_SERVER_URL` set to the fixture endpoint. Fetch
-   `http://127.0.0.1:5900/codex-api/connection-profile` and confirm the returned
-   ID matches `hostname -s` on the backend host (the first hostname label on
-   Windows). Stop the CLI, then run `pnpm run dev --host 127.0.0.1 --port 4199`
-   and confirm `http://127.0.0.1:4199/codex-api/connection-profile` returns the
-   same ID. Repeat with `CODEXUI_CONNECTION_PROFILE=fixture-env` and expect
-   `fixture-env`. Add `--connection-profile fixture-cli` to the CLI command
-   while that variable is set and expect `fixture-cli`. Start each command
-   with `CODEXUI_CONNECTION_PROFILE=../outside` and no profile flag and confirm
-   that it exits before serving HTTP with an invalid App Server ID error.
+1. Unset `CODEXUI_CONNECTION_PROFILE`. Run
+   `node dist-cli/index.js --host 127.0.0.1 --port 5900 --no-open` and
+   `pnpm run dev --host 127.0.0.1 --port 4199` with the fixture endpoint.
+   Both commands should exit with an App Server ID required error. Repeat
+   with `CODEXUI_CONNECTION_PROFILE=fixture-env` and expect
+   `fixture-env` at `/codex-api/connection-profile`. Add
+   `--connection-profile fixture-cli` to the CLI command with the variable
+   set and expect `fixture-cli`. Start each command with
+   `CODEXUI_CONNECTION_PROFILE=../outside` and no profile flag and expect
+   an invalid App Server ID error before either process serves HTTP.
 2. Launch with `--connection-profile one` against the fixture endpoint. Choose a
    Home model/mode, save a thread draft, and sign in with WebUI password
    protection enabled. Restart with the same ID and confirm all three persist.
@@ -38,6 +36,11 @@ preferences, and upload inventory. Use the same endpoint for all test IDs.
    `unknown`. Simulate a lost write response and verify its bytes stay reserved.
 6. Repeat with a missing or Codex-owned upload root. Expect a clear
    `CODEXUI_REMOTE_UPLOAD_DIR` error and no writes under Codex home.
+7. Stop the backend, change the fixture forwarding address, and restart with
+   ID `one`. Expect an endpoint warning, the same preferences and capacity
+   reservations, and normal traffic through the new address. Repeat using
+   that address and ID and expect no warning. Use a new ID for a distinct
+   server even when it shares the forwarding address.
 
 Credential-free API entry-point coverage runs with
 `pnpm run test:integration:fixture`, and with `CODEXAPP_FIXTURE_TRANSPORT=unix`

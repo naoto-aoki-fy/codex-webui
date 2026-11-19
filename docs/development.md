@@ -5,8 +5,8 @@ fork/revert, conversation transfer or historical response metadata.
 
 First start `codex app-server --listen ws://127.0.0.1:4500` independently on the host that owns
 the repositories and Codex login. The web backend can use a separate host and SSH tunnel. See [connection details](external-app-server.md).
-Development defaults to the WebUI backend's short hostname. Set `CODEXUI_CONNECTION_PROFILE`
-to override the ID and `CODEXUI_APP_SERVER_URL` to override the endpoint. See the
+Set `CODEXUI_CONNECTION_PROFILE` to choose the required App Server ID and
+`CODEXUI_APP_SERVER_URL` to override the endpoint. See the
 [storage layout](connection-profiles-uploads.md).
 
 Use Node.js 22 for development/CI (the runtime minimum in package.json is separate).

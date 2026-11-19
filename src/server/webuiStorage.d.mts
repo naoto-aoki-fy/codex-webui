@@ -12,5 +12,5 @@ export function profileDirectoryName(id: string): string
 export function isAbsoluteUploadPath(value: string): boolean
 export function remoteUploadsDirectory(root: string, id: string): string
 export const storageNames: Record<'profiles' | 'global' | 'state' | 'modelPreferences' | 'authSessions' |
-  'uploads' | 'inventory' | 'journal' | 'inlineMedia' | 'rolloutCache', string>
+  'endpoint' | 'uploads' | 'inventory' | 'journal' | 'inlineMedia' | 'rolloutCache', string>
 export function projectPath(path: string): PlatformPath

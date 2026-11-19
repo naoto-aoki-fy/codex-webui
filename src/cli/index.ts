@@ -1,4 +1,5 @@
 import { getConnectionProfileId } from '../server/connectionProfile.js'
+import { checkProfileEndpoint } from '../server/codexGlobalState.js'
 import { AppServerClient } from '../server/appServerClient.js'
 import { ProjectFileService } from '../server/appServerFileSystem.js'
 import { listNativeProjects } from '../nativeProjects.js'
@@ -110,6 +111,7 @@ async function startServer(options: {
 }) {
   process.env.CODEXUI_APP_SERVER_URL = resolveAppServerUrl(options.appServerUrl)
   holdWebuiWriterLease()
+  await checkProfileEndpoint(getConnectionProfileId(), process.env.CODEXUI_APP_SERVER_URL)
   const password = typeof options.password === 'string' ? options.password : undefined
   const { app, dispose, attachWebSocket } = createApp({ password })
   const projectPath = options.projectPath?.trim() ?? ''
@@ -179,7 +181,7 @@ program
   .option('--no-password', 'disable password protection (default)')
   .option('--open', 'open browser on startup', true)
   .option('--no-open', 'do not open browser on startup')
-  .option('--connection-profile <id>', 'App Server ID (env CODEXUI_CONNECTION_PROFILE, otherwise the short hostname)')
+  .option('--connection-profile <id>', 'required App Server ID (or set CODEXUI_CONNECTION_PROFILE)')
   .option('--app-server-url <url>', 'external Codex app-server URL (ws://, wss://, unix:///path.sock)')
   .action(async (
     projectPath: string | undefined,

@@ -1,6 +1,6 @@
 import { storageNames } from './webuiStorage.mjs'
 import { profileStorageDirectory } from './connectionProfile.js'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { lstat, mkdir, open, readFile, readlink, realpath, rename, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
@@ -121,5 +121,23 @@ export async function updateCodexGlobalState<T>(
     return await run
   } finally {
     if (mutationsByPath.get(destination) === run) mutationsByPath.delete(destination)
+  }
+}
+
+/** Record only a fingerprint of the configured URL. An endpoint is a hint, not a server identity. */
+export async function checkProfileEndpoint(profile: string, endpoint: string): Promise<void> {
+  const fingerprint = createHash('sha256').update(endpoint).digest('hex')
+  const path = join(profileStorageDirectory('data', profile), storageNames.endpoint)
+  try {
+    const changed = await updateCodexGlobalState(state => {
+      const previous = state.fingerprint
+      state.fingerprint = fingerprint
+      return typeof previous === 'string' && previous !== fingerprint
+    }, path)
+    if (changed) {
+      console.warn(`[App Server ID ${profile}] Endpoint changed. Confirm it reaches the same App Server. Use a unique ID for each distinct server.`)
+    }
+  } catch {
+    console.warn(`[App Server ID ${profile}] Could not check the saved endpoint. Use a unique ID for each distinct server.`)
   }
 }
