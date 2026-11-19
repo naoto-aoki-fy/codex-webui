@@ -42,9 +42,8 @@ The rows below describe earlier revisions. For current storage owners, see the
 There is no production IndexedDB, sessionStorage, document.cookie API, or OPFS
 usage before this change. A server-issued authentication cookie is inventoried
 below; it is browser persistence even though frontend JavaScript cannot read it. Ordinary HTTP/browser caches are managed
-by the browser. `public/sw.js` is a retirement worker: deletes only
-`codexweb-shell-*` / `codexweb-assets-*` CacheStorage entries and unregisters; it
-has no fetch handler and no new worker is registered. Old project/read-state,
+by the browser. Older installations may still have worker registrations and
+caches from a previous release. Old project/read-state,
 terminal, queue, language and provider keys mentioned in historical tests/docs
 have no active production reader; leave them untouched rather than guessing at
 migration needs. Server project configuration, native queue, imported portable
@@ -216,7 +215,7 @@ above, unless explicitly marked global.
 | New atomic records | IndexedDB `codex-web-local.persistence.v1` / `records`, primary key = scoped `queue-submissions.v1`; value = bounded receipt map | `utils/browserTransactionalRecords.ts`, `utils/queueSubmissionReceipts.ts`, `composables/nativeQueue.ts` | Profile; transactionally authoritative queue recovery data |
 | New sidebar records | Global `collapsed-projects.v2.<encoded project>`, `collapsed-folders.v2.<encoded folder>`, `sidebar-section-expansion.v2.pinned`: JSON `1`/`0` strings | `browserPreferenceRecords.ts`, `SidebarThreadTree.vue` | Shared UI preference per entry. v1 values are inert. |
 | Retained scalar UI preferences | Global `send-with-enter.v1`, `dark-mode.v1`, `chat-width.v1`, `sidebar-collapsed.v1`, `sidebar-width.v1`, `chat-sort-mode.v1`, `thread-view-mode.v1`: schemas in original inventory | `utils/browserUiStorage.ts`, App/layout/sidebar callers in original inventory | Shared settings, best-effort storage, last-writer wins with storage-event visibility |
-| Retained connection and retirement behavior | `connection-profile.v1`, retired service-worker caches | Original owners unchanged | No unknown data reset; active profile fixed for document |
+| Connection Profile | `connection-profile.v1` | `utils/browserConnectionProfile.ts` | Active profile fixed for the document |
 
 ## Historical verification and performance evidence
 

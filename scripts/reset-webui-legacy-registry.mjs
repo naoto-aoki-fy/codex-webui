@@ -213,7 +213,7 @@ export const protectedLegacy = [
   { scope: 'shared', path: 'project files, rollbacks/, prompts/, config.toml, session_index.jsonl, state_5.sqlite',
     writer: 'c08ab16, 4ea0589, a7db33d, 035a465, 12fdc90',
     purpose: 'user-owned and native persistence, including imported chats and project backups' },
-  { scope: 'browser', path: 'Local Storage, Session Storage, IndexedDB, cookies, Cache Storage and service workers',
+  { scope: 'browser', path: 'Local Storage, Session Storage, IndexedDB and cookies',
     writer: 'fbc8a66, a096997, b63525f, d85c80c', purpose: 'browser-owned state covered by the procedure in docs/webui-reset.md' },
   { scope: 'browser', path: 'Firebase Auth and heartbeat records', writer: '86c76a9, 1584c9f^ src/composables/useGithubSkillsSync.ts',
     purpose: 'mixed Firebase stores require verification of the individual WebUI records' },

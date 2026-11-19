@@ -264,12 +264,7 @@ receipts and any migration inputs you still need.
    Cookies can affect other ports on the same host. Leave ambiguous
    cookies alone. Backend removal of `webui-auth-sessions.json` revokes
    persisted WebUI login tokens.
-6. For shared cleanup, remove only the WebUI Cache Storage entries
-   `codexweb-shell-v1`, `codexweb-shell-v2`, `codexweb-shell-v3`,
-   and `codexweb-assets-v1`, then unregister the verified WebUI `/sw.js`
-   registration for that deployment's scope. Keep other apps' workers and
-   caches. The current worker already retires these old caches.
-7. Open the unsuffixed WebUI origin in a fresh tab, without an old thread
+6. Open the unsuffixed WebUI origin in a fresh tab, without an old thread
    route or `connection-profile` query parameter. Verify that the intended
    preferences reset and pending recovery information is still accessible.
 
