@@ -1,4 +1,4 @@
-// Mocked filesystem and project writes; startup reads use the local dev server.
+// Isolated App Server responses for the full folder picker and project flow.
 const { chromium } = require('playwright')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -17,16 +17,41 @@ const fs = require('node:fs')
           const path = url.searchParams.get('path')
           await route.fulfill({ json: { data: { path, parentPath: path, entries: [{ name: 'Child', path: `${path}/Child` }] } } })
         })
-        await page.route('**/codex-api/project-root', async (route) => {
-          const body = route.request().postDataJSON(); registrations.push(body)
-          await route.fulfill({ json: { data: { path: body.path } } })
-        })
-        await page.route('**/codex-api/workspace-roots-state', async (route) => {
-          const roots = registrations.map((entry) => entry.path)
-          await route.fulfill({ json: { data: { order: roots, active: roots, labels: {}, projectOrder: roots } } })
+        const projects = [
+          { id: 'workspace-a', name: 'Workspace A', roots: [{ path: '/fixture' }], position: 0 },
+          { id: 'workspace-b', name: 'Workspace B', roots: [{ path: '/fixture/other' }], position: 1 },
+        ]
+        const calls = []
+        await page.routeWebSocket('**/codex-api/ws', () => {})
+        await page.route('**/codex-api/**', async (route) => {
+          if (!route.request().url().endsWith('/rpc')) return route.fulfill({ json: { data: [] } })
+          const { method, params } = route.request().postDataJSON()
+          calls.push({ method, params })
+          let result = { data: [], nextCursor: null }
+          if (method === 'project/list') result = { data: projects, nextCursor: null }
+          if (method === 'fs/getMetadata') result = { isDirectory: true, isFile: false }
+          if (method === 'project/create') {
+            registrations.push(params)
+            const project = { id: 'new-project', name: params.name, roots: params.roots, position: projects.length }
+            projects.push(project)
+            result = { project }
+          }
+          if (method === 'project/update') {
+            const project = projects.find(project => project.id === params.projectId)
+            project.name = params.name
+            result = { project }
+          }
+          if (method === 'project/move') {
+            const [project] = projects.splice(projects.findIndex(project => project.id === params.projectId), 1)
+            projects.splice(params.beforeProjectId ? projects.findIndex(project => project.id === params.beforeProjectId) : projects.length, 0, project)
+          }
+          if (method === 'project/delete') projects.splice(projects.findIndex(project => project.id === params.projectId), 1)
+          if (method === 'native-authentication/read') result = { phase: 'ready', blocking: false, revision: 1 }
+          return route.fulfill({ json: { result } })
         })
         await page.goto('http://127.0.0.1:4173/#/')
         await page.waitForLoadState('networkidle')
+        assert.equal(calls.filter(call => call.method === 'project/list').length, 1)
         const open = page.locator('.new-thread-folder-actions button').filter({ hasText: 'Select folder' })
         await open.click()
         const dialog = page.getByRole('dialog', { name: 'Select folder', exact: true })
@@ -51,9 +76,37 @@ const fs = require('node:fs')
         await dialog.locator('.new-thread-open-folder-item-open').click()
         await dialog.waitFor({ state: 'detached' })
         assert.equal(registrations.length, 1)
-        assert.deepEqual(Object.keys(registrations[0]), ['path'])
-        assert.ok(registrations[0].path.endsWith('/Child'))
-        assert.ok((await page.locator('.new-thread-folder-selected').innerText()).includes('/Child'))
+        assert.match(registrations[0].idempotencyKey, /^[0-9a-f-]{36}$/)
+        assert.deepEqual(registrations[0].roots, [{ path: '/fixture/Child' }])
+        await page.waitForURL('**projectId=new-project')
+        assert.equal(await page.locator('.new-thread-folder-selected').getAttribute('title'), '/fixture/Child')
+        assert.equal(calls.filter(call => call.method === 'fs/getMetadata').length, 1)
+        if (device === 'desktop') {
+          const project = page.locator('[data-project-name="new-project"]')
+          const openProjectMenu = async () => {
+            await project.hover()
+            await project.locator('.project-menu-trigger').click()
+          }
+          await openProjectMenu()
+          await page.getByRole('button', { name: 'Rename', exact: true }).click()
+          const rename = page.getByRole('dialog', { name: 'Project name' })
+          await rename.getByRole('textbox').fill('Renamed project')
+          await rename.getByRole('button', { name: 'Save' }).click()
+          await project.getByText('Renamed project').waitFor()
+          await openProjectMenu()
+          await page.getByRole('button', { name: 'Move up', exact: true }).click()
+          const order = () => page.locator('.project-group').evaluateAll(rows => rows.map(row => row.dataset.projectName))
+          await page.waitForFunction(() => document.querySelectorAll('.project-group')[1]?.dataset.projectName === 'new-project')
+          await page.reload()
+          await project.getByText('Renamed project').waitFor()
+          assert.deepEqual(await order(), ['workspace-a', 'new-project', 'workspace-b'])
+          await openProjectMenu()
+          await page.waitForTimeout(2200)
+          await page.screenshot({ path: `output/playwright/project-menu-${theme}.png`, fullPage: true })
+          await page.getByRole('button', { name: 'Remove', exact: true }).click()
+          await project.waitFor({ state: 'detached' })
+          assert.deepEqual(await order(), ['workspace-a', 'workspace-b'])
+        }
         console.log(JSON.stringify({ device, theme, screenshot, listings: listings.length, registrations: registrations.length, result: 'PASS' }))
         await page.close()
       }

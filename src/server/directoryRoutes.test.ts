@@ -30,7 +30,6 @@ it.each([
   ['POST', '/codex-api/accounts/login/start'],
   ['POST', '/codex-api/accounts/login/complete'],
   ['GET', '/codex-api/meta/notifications'],
-  ['PUT', '/codex-api/workspace-roots-state'],
 ])('handles removed %s %s through the API 404 handler', async (method, path) => {
   const authPath = join(home, 'auth.json')
   await writeFile(authPath, 'Existing credential bytes')

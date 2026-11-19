@@ -25,10 +25,9 @@ const fs = require('node:fs')
           const { method } = route.request().postDataJSON()
           const result = method === 'native-authentication/read' ? {phase:'ready',blocking:false,revision:1} : method === 'thread/list' ? { data: [thread], nextCursor: null }
             : ['thread/read', 'thread/resume'].includes(method) ? { thread }
-            : method === 'model/list' ? { data: [], nextCursor: null } : {}
+            : ['model/list', 'project/list'].includes(method) ? { data: [], nextCursor: null } : {}
           return route.fulfill({ json: { result } })
         }
-        if (path.endsWith('/workspace-roots-state')) return route.fulfill({ json: { data: { order: ['/remote/disposable'], active: ['/remote/disposable'], labels: {}, projectOrder: ['/remote/disposable'] } } })
         return route.fulfill({ json: { data: [] } })
       })
       await page.goto('http://127.0.0.1:4173/?connection-profile=legacy#/thread/shared-profile-thread')

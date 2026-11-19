@@ -5,7 +5,7 @@ import { renderToString } from 'vue/server-renderer'
 import type { Thread } from '../../api/appServerDtos'
 import type { UiThread } from '../../types/codex'
 import { normalizeThreadGroupsV2 } from '../../api/normalizers/v2'
-import { filterGroupsByWorkspaceRoots } from '../../utils/desktopProjectGroups'
+import { groupThreadsByProject } from '../../utils/desktopProjectGroups'
 import { folderGroupKey, projectGroupKey, type SidebarGroup, type ThreadViewMode } from './sidebarGroups'
 import SidebarThreadTree from './SidebarThreadTree.vue'
 import type { createSidebarThreads } from './sidebarThreads'
@@ -69,17 +69,15 @@ async function mountNativeSidebar() {
     id: name, name, roots: [{ path: '/shared' }], metadata: {}, position,
     createdAt: 999, updatedAt: 999, recencyAt: null,
   }))
-  const groups = filterGroupsByWorkspaceRoots(normalizeThreadGroupsV2({ data: [
+  const groups = groupThreadsByProject(normalizeThreadGroupsV2({ data: [
     row('a-old', 'Alpha', 10, 10), row('a-new', 'Alpha', 60, 20),
     row('z-old', 'Zulu', 20, 30), row('z-new', 'Zulu', 30, 50),
-  ] }), { order: [], nativeProjects })
+  ] }), nativeProjects)
   const props = reactive({ groups, projectDisplayNameById: {}, selectedThreadId: '',
     activeProjectName: null, isLoading: false, isThreadListFullyLoaded: false,
     newThreadCwd: undefined as string | undefined,
     searchQuery: '', searchMatchedThreadIds: null as string[] | null,
-    // Reproduce the native parent's pre-fix input. After removal this is an inert
-    // attribute; restoring the old conditional prop must fail these tests.
-    nativeProjectOrder: true,
+    removableProjectIds: nativeProjects.map(project => project.id),
   })
   let state!: SidebarState
   const component = {
@@ -165,23 +163,23 @@ it('keeps Projects and Threads visible with stored section collapse preferences'
   expect(getThreadSummary).not.toHaveBeenCalled()
 })
 
-describe('SidebarThreadTree native project timestamp sorting', () => {
-  it('sorts saved native order by member timestamps and switches modes, including pinned members', async () => {
+describe('SidebarThreadTree native project order', () => {
+  it('preserves native positions while sorting threads and pinned membership', async () => {
     const { props, state, nativeProjects } = await mountNativeSidebar()
     expect(props.groups.map(group => group.projectName)).toEqual(['Alpha', 'Empty', 'Zulu'])
-    expect(names(state.filteredGroups)).toEqual(['Zulu', 'Alpha', 'Empty'])
-    expect(ids(state.threads.sortedGroups.value[0]!.threads)).toEqual(['z-new', 'z-old'])
+    expect(names(state.filteredGroups)).toEqual(['Alpha', 'Empty', 'Zulu'])
+    expect(ids(state.threads.sortedGroups.value[2]!.threads)).toEqual(['z-new', 'z-old'])
     expect(ids(state.pinnedThreads)).toEqual(['z-new'])
     expect(ids(state.threads.unpinnedThreadsByGroupKey.value.get(projectGroupKey('Zulu'))!)).toEqual(['z-old'])
 
     state.chatSortMode = 'created'
     await nextTick()
-    expect(names(state.filteredGroups)).toEqual(['Alpha', 'Zulu', 'Empty'])
+    expect(names(state.filteredGroups)).toEqual(['Alpha', 'Empty', 'Zulu'])
     expect(ids(state.threads.sortedGroups.value[0]!.threads)).toEqual(['a-new', 'a-old'])
     expect(ids(state.globalThreads)).toEqual(['a-new', 'z-old', 'a-old'])
     state.chatSortMode = 'updated'
     await nextTick()
-    expect(names(state.filteredGroups)).toEqual(['Zulu', 'Alpha', 'Empty'])
+    expect(names(state.filteredGroups)).toEqual(['Alpha', 'Empty', 'Zulu'])
     expect(ids(state.pinnedThreads)).toEqual(['z-new'])
     expect(props.groups.map(group => group.projectName)).toEqual(['Alpha', 'Empty', 'Zulu'])
     expect(props.groups.map(group => ids(group.threads))).toEqual([['a-new', 'a-old'], [], ['z-new', 'z-old']])
@@ -191,11 +189,11 @@ describe('SidebarThreadTree native project timestamp sorting', () => {
     expect(setThreadPinned).not.toHaveBeenCalled()
   })
 
-  it('reacts to metadata and additional pages, keeping empty projects last and ties deterministic', async () => {
+  it('keeps native project positions as thread metadata and pages change', async () => {
     const { props, state } = await mountNativeSidebar()
     props.groups.find(group => group.projectName === 'Alpha')!.threads.find(thread => thread.id === 'a-old')!.updatedAtIso = new Date(70000).toISOString()
     await nextTick()
-    expect(names(state.filteredGroups)).toEqual(['Alpha', 'Zulu', 'Empty'])
+    expect(names(state.filteredGroups)).toEqual(['Alpha', 'Empty', 'Zulu'])
     expect(ids(state.threads.sortedGroups.value[0]!.threads)).toEqual(['a-old', 'a-new'])
 
     const page = normalizeThreadGroupsV2({ data: [
@@ -204,16 +202,16 @@ describe('SidebarThreadTree native project timestamp sorting', () => {
     props.groups = props.groups.map(group => group.projectName === 'Zulu'
       ? { ...group, threads: [...group.threads, ...page[0]!.threads] } : group)
     await nextTick()
-    expect(names(state.filteredGroups)).toEqual(['Zulu', 'Alpha', 'Empty'])
-    expect(ids(state.threads.sortedGroups.value[0]!.threads)).toEqual(['z-page-a', 'z-page-b', 'z-new', 'z-old'])
+    expect(names(state.filteredGroups)).toEqual(['Alpha', 'Empty', 'Zulu'])
+    expect(ids(state.threads.sortedGroups.value[2]!.threads)).toEqual(['z-page-a', 'z-page-b', 'z-new', 'z-old'])
 
     props.groups.find(group => group.projectName === 'Alpha')!.threads.find(thread => thread.id === 'a-old')!.updatedAtIso = new Date(90000).toISOString()
     props.groups.unshift({ projectName: 'Empty A', threads: [] })
     await nextTick()
-    expect(names(state.filteredGroups)).toEqual(['Alpha', 'Zulu', 'Empty', 'Empty A'])
+    expect(names(state.filteredGroups)).toEqual(['Alpha', 'Empty', 'Zulu', 'Empty A'])
     state.chatSortMode = 'created'
     await nextTick()
-    expect(names(state.filteredGroups)).toEqual(['Zulu', 'Alpha', 'Empty', 'Empty A'])
+    expect(names(state.filteredGroups)).toEqual(['Alpha', 'Empty', 'Zulu', 'Empty A'])
   })
 })
 

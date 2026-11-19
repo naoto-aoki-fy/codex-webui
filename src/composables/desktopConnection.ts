@@ -34,6 +34,7 @@ export function createDesktopConnection(deps: {
     }) => void;
     loadThreads: (options?: {
         force?: boolean;
+        refreshProjects?: boolean;
     }) => Promise<void>;
     selectedThreadId: Ref<string, string>;
     inProgressById: Ref<Record<string, boolean>>;
@@ -202,7 +203,7 @@ export function createDesktopConnection(deps: {
             }
             const recoveryIds = threadId ? [threadId] : [];
             await Promise.allSettled([
-                deps.loadThreads({ force: true }),
+                deps.loadThreads({ force: true, refreshProjects: true }),
                 (async () => {
                     // Recover only the selected conversation.
                     for (const id of recoveryIds) {

@@ -1,3 +1,4 @@
+import * as codexRpc from '../api/codexRpcClient'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // These orchestration fixtures begin with an already verified backend account.
 // Backend hydration/race behavior is exercised in backendAuthentication.test.ts.
@@ -17,7 +18,6 @@ import {
 import { loadPersistedDraftForThread, persistDraftForThread } from '../utils/composerDraftStorage'
 import type { UiProjectGroup } from '../types/codex'
 import type { ReasoningModel } from '../api/modelCapabilities'
-import type { WorkspaceRootsState } from '../api/codexGateway'
 
 const gatewayMocks = vi.hoisted(() => ({
   markNativeThreadRead: vi.fn(),
@@ -34,7 +34,7 @@ const gatewayMocks = vi.hoisted(() => ({
   getSkillsList: vi.fn(),
   getThreadDetail: vi.fn(),
   getThreadGroupsPage: vi.fn(),
-  getWorkspaceRootsState: vi.fn(),
+  getProjects: vi.fn(),
   interruptThreadTurn: vi.fn(),
   renameThread: vi.fn(),
   replyToServerRequest: vi.fn(),
@@ -43,8 +43,6 @@ const gatewayMocks = vi.hoisted(() => ({
   revertThreadHistory: vi.fn(),
   validateThreadRevert: vi.fn(),
   setCodexSpeedMode: vi.fn(),
-  setWorkspaceRootsState: vi.fn(),
-  updateWorkspaceRootsState: vi.fn(),
   startThread: vi.fn(),
   startThreadTurn: vi.fn(),
   subscribeCodexNotifications: vi.fn(),
@@ -93,7 +91,7 @@ function installTestWindow(initialStorage: Record<string, string> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  gatewayMocks.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [], nativeProjects: [] })
+  gatewayMocks.getProjects.mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -839,9 +837,7 @@ describe('locally created threads awaiting sidebar indexing', () => {
     gatewayMocks.getThreadGroupsPage.mockResolvedValue({
       groups: [{ projectName: 'project', threads: [thread('existing', '/tmp/project')] }], nextCursor: null,
     })
-    gatewayMocks.getWorkspaceRootsState.mockResolvedValue({
-      order: ['/tmp/allowed'], active: ['/tmp/allowed'], labels: {}, projectOrder: [],
-    })
+    gatewayMocks.getProjects.mockResolvedValue([{ id: 'allowed', name: 'Allowed', roots: [{ path: '/tmp/allowed' }] }])
     await refresh()
     expect(new Set(ids())).toEqual(new Set(['new-chat', 'existing']))
   })
@@ -1199,18 +1195,19 @@ describe('history discovery across pagination and workspace removal', () => {
     installTestWindow()
     const cwd = '/home/user/Documents/Codex/2026-11-12/hello'
     const empty = { id: 'empty', name: 'Empty', roots: [], metadata: {}, position: 1, createdAt: 1, updatedAt: 1, recencyAt: null }
-    const roots = { order: [cwd], active: [], projectOrder: ['hello', 'empty'], labels: {}, nativeProjects: [{ ...empty, id: 'hello', name: 'Hello', roots: [{ path: cwd }], position: 0 }, empty] }
-    const unregistered = { ...roots, nativeProjects: [empty], projectOrder: ['empty'] }
+    const roots = [{ ...empty, id: 'hello', name: 'Hello', roots: [{ path: cwd }], position: 0 }, empty]
+    const unregistered = [empty]
     const first = { projectName: 'hello', threads: [thread('first', cwd)] }
     const later = { projectName: 'hello', threads: [thread('first', cwd), thread('older', cwd)] }
-    gatewayMocks.getWorkspaceRootsState.mockResolvedValue(roots)
+    gatewayMocks.getProjects.mockResolvedValue(roots)
     gatewayMocks.getThreadGroupsPage.mockResolvedValueOnce({ groups: [first], nextCursor: 'older-page' })
       .mockResolvedValue({ groups: [later], nextCursor: null })
-    gatewayMocks.updateWorkspaceRootsState.mockResolvedValue(unregistered)
     const state = useDesktopState()
     await state.refreshAll({ includeSelectedThreadMessages: false })
+    const rpc = vi.spyOn(codexRpc, 'rpcCall').mockResolvedValueOnce({})
+    gatewayMocks.getProjects.mockResolvedValue(unregistered)
     await state.removeProject('hello')
-    expect(gatewayMocks.updateWorkspaceRootsState).toHaveBeenCalledWith({ type: 'delete', projectId: 'hello' })
+    expect(rpc).toHaveBeenCalledWith('project/delete', { projectId: 'hello' })
     expect(state.projectGroups.value.find(group => group.projectName === '__codexapp_unassigned__')?.threads.map(row => row.id)).toEqual(['first'])
     const timer = vi.mocked(window.setTimeout).mock.calls.find(call => call[1] === 10_000)
     expect(timer).toBeDefined()
@@ -1219,9 +1216,9 @@ describe('history discovery across pagination and workspace removal', () => {
     expect(gatewayMocks.getThreadGroupsPage).toHaveBeenCalledWith('older-page', 100)
     expect(state.projectGroups.value.find(group => group.projectName === '__codexapp_unassigned__')?.threads.map(row => row.id)).toEqual(['first', 'older'])
     await state.removeProject('hello') // Unregistered history is not removable as a workspace.
-    expect(gatewayMocks.updateWorkspaceRootsState).toHaveBeenCalledTimes(1)
+    expect(rpc.mock.calls.filter(([method]) => method === 'project/delete')).toHaveLength(1)
     expect(state.projectGroups.value.flatMap(group => group.threads)).toHaveLength(2)
-    gatewayMocks.getWorkspaceRootsState.mockResolvedValue(unregistered)
+    gatewayMocks.getProjects.mockResolvedValue(unregistered)
     const restored = useDesktopState()
     await restored.refreshAll({ includeSelectedThreadMessages: false })
     expect(restored.projectGroups.value.map(group => group.projectName)).toEqual(['empty', '__codexapp_unassigned__'])
@@ -1229,6 +1226,7 @@ describe('history discovery across pagination and workspace removal', () => {
     expect(gatewayMocks.getThreadDetail).not.toHaveBeenCalled()
     state.stopPolling()
     restored.stopPolling()
+    rpc.mockRestore()
   })
 })
 
@@ -1251,7 +1249,7 @@ describe('native archive restore', () => {
     const state = useDesktopState()
     gatewayMocks.unarchiveThread.mockResolvedValue({ ...thread('restored', '/remote'), projectName: 'project-id', projectId: 'project-id' })
     gatewayMocks.getThreadGroupsPage.mockResolvedValue({ groups: [], nextCursor: null })
-    gatewayMocks.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: ['project-id'], nativeProjects: [{ id: 'project-id', name: 'Project', roots: [] }] })
+    gatewayMocks.getProjects.mockResolvedValue([{ id: 'project-id', name: 'Project', roots: [] }])
     await state.restoreThreadById('restored')
     expect(state.projectGroups.value.flatMap(group => group.threads).some(row => row.id === 'restored' && row.projectId === 'project-id')).toBe(true)
   })

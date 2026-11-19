@@ -1,7 +1,7 @@
 import { ModelPreferencesStore } from './modelPreferencesStore.js'
 import { createModelPreferenceUsage } from './modelPreferenceUsage.js'
 import type { ModelPreferences } from '../modelPreferences.js'
-import { NativeProjects } from './nativeProjects.js'
+import { listNativeProjects } from '../nativeProjects.js'
 import { createConversationTransfers } from './conversationTransfer.js'
 import { getConnectionProfileId } from './connectionProfile.js'
 import { WORKFLOW_CAPABILITIES, classifyCapabilityError } from './remoteCapabilities.js'
@@ -429,7 +429,6 @@ function handleFileUpload(req: IncomingMessage, res: ServerResponse, appServer: 
 
 type CodexBridgeMiddleware = ((req: IncomingMessage, res: ServerResponse, next: () => void) => Promise<void>) & {
   files: ProjectFileService
-  projects: NativeProjects
   dispose: () => void
   subscribeNotifications: (listener: (value: { method: string; params: unknown; atIso: string }) => void) => () => void
 }
@@ -496,7 +495,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   }
   const transfers = createConversationTransfers((method, params) => appServer.rpc(method, params))
   const files = sharedState.files ?? new ProjectFileService(appServer)
-  const projects = new NativeProjects((method, params) => appServer.rpc(method, params))
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const requestStartNs = process.hrtime.bigint()
     const rawUrl = req.url ?? ''
@@ -562,8 +560,10 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       if (req.method === 'GET' && url.pathname === '/codex-api/connection-diagnostics') {
-        const state = url.searchParams.get('probe') === '1' ? await projects.read() : null
-        const directory = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state?.order[0] || null
+        const probing = url.searchParams.get('probe') === '1'
+        const initialDirectory = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim()
+        const projectRows = probing && !initialDirectory ? await listNativeProjects((method, params) => appServer.rpc(method, params)) : []
+        const directory = initialDirectory || projectRows.find(project => project.roots.length)?.roots[0]?.path || null
         const generation = appServer.getConnectionGeneration()
         const diagnostics = appServer.capabilities
         let git: { available: boolean | null; detail: string } = { available: null, detail: 'Not checked. command/exec support does not establish Git availability.' }
@@ -696,7 +696,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
               return
             }
           }
-          if (['account/usage/read', 'thread/compact/start', 'thread/delete', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update', 'account/login/start', 'account/login/cancel'].includes(body.method) || body.method==='config/value/write'&&req.headers['x-codex-config-write-errors']==='1' || ['command/exec','command/exec/terminate'].includes(body.method)&&req.headers['x-codex-command-errors']==='1') {
+          if (body.method.startsWith('project/') || ['account/usage/read', 'thread/compact/start', 'thread/delete', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update', 'account/login/start', 'account/login/cancel'].includes(body.method) || body.method==='config/value/write'&&req.headers['x-codex-config-write-errors']==='1' || ['command/exec','command/exec/terminate'].includes(body.method)&&req.headers['x-codex-command-errors']==='1') {
             setJson(res, 502, { error: getErrorMessage(error, body.method === 'account/usage/read' ? 'Account usage unavailable' : `Native ${body.method} request failed`), ...(typeof asRecord(error)?.code === 'number' ? { rpcCode: asRecord(error)!.code } : {}) })
             return
           }
@@ -762,51 +762,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
-      if (req.method === 'GET' && url.pathname === '/codex-api/workspace-roots-state') {
-        const state = await projects.read()
-        setJson(res, 200, { data: state })
-        return
-      }
-
       if (req.method === 'GET' && url.pathname === '/codex-api/home-directory') {
-        const state = await projects.read()
-        const path = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state.order[0]
-        if (!path) { setJson(res, 409, { error: 'Enter an absolute workspace path on the App Server host, or set CODEXUI_REMOTE_INITIAL_DIRECTORY.' }); return }
-        setJson(res, 200, { data: { path } })
-        return
-      }
-
-      if (req.method === 'PATCH' && url.pathname === '/codex-api/workspace-roots-state') {
-        const record = asRecord(await readJsonBody(req))
-        if (!record || !['delete', 'rename', 'move'].includes(String(record.type)) || typeof record.projectId !== 'string' || !record.projectId
-          || (record.type === 'rename' && (typeof record.name !== 'string' || !record.name.trim()))
-          || (record.type === 'move' && record.beforeProjectId != null && typeof record.beforeProjectId !== 'string')) {
-          setJson(res, 400, { error: 'Expected a native project operation with projectId' })
-          return
-        }
-        const state = await projects.operation(record as { type: 'delete' | 'rename' | 'move'; projectId: string; name?: string; beforeProjectId?: string | null })
-        setJson(res, 200, { data: state })
-        return
-      }
-
-      if (req.method === 'POST' && url.pathname === '/codex-api/project-root') {
-        const payload = asRecord(await readJsonBody(req))
-        const rawPath = typeof payload?.path === 'string' ? payload.path.trim() : ''
-        if (!rawPath) {
-          setJson(res, 400, { error: 'Missing path' })
-          return
-        }
-
-        const normalizedPath = rawPath
-        if (!projectPath(rawPath).isAbsolute(rawPath)) throw new Error('Expected absolute remote workspace path')
-        const info = await files.getMetadata(normalizedPath)
-        if (!info.isDirectory) {
-          setJson(res, 400, { error: 'Path exists but is not a directory' })
-          return
-        }
-
-        const selection = await projects.register(normalizedPath)
-        setJson(res, 200, { data: selection })
+        setJson(res, 200, { data: { path: process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || '' } })
         return
       }
 
@@ -882,7 +839,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   }
 
   middleware.files = sharedState.files
-  middleware.projects = projects
   middleware.dispose = () => {
     if (released) return
     released = true

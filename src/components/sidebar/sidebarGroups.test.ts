@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { normalizeThreadGroupsV2 } from '../../api/normalizers/v2'
 import type { Thread } from '../../api/appServerDtos'
-import { filterGroupsByWorkspaceRoots, UNASSIGNED_PROJECT } from '../../utils/desktopProjectGroups'
+import { groupThreadsByProject, UNASSIGNED_PROJECT } from '../../utils/desktopProjectGroups'
 import { folderGroupKey, groupThreadsByFolder, parseThreadViewMode, toSidebarProjectGroups } from './sidebarGroups'
 
 it('groups actual working directories across native assignments without changing any threads', () => {
@@ -15,12 +15,10 @@ it('groups actual working directories across native assignments without changing
     { id: 'missing', projectId: 'p1' },
     { id: 'blank', cwd: '  ' },
   ].map(row => ({ ...row, createdAt: 1, updatedAt: 1, preview: row.id })) as Thread[]
-  const native = filterGroupsByWorkspaceRoots(normalizeThreadGroupsV2({ data }), {
-    order: [], nativeProjects: ['p1', 'p2', 'empty'].map((id, position) => ({
+  const native = groupThreadsByProject(normalizeThreadGroupsV2({ data }), ['p1', 'p2', 'empty'].map((id, position) => ({
       id, name: 'Shared name', roots: [{ path: '/unrelated/root' }], metadata: {}, position,
       createdAt: 1, updatedAt: 1, recencyAt: null,
-    })),
-  })
+    })))
   expect(toSidebarProjectGroups(native).filter(group => group.kind === 'project' && group.projectId === UNASSIGNED_PROJECT)
     .map(group => group.threads.map(thread => thread.id))).toEqual([['ios', 'same-name', 'blank']])
   const original = structuredClone(native)

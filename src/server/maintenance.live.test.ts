@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { resolveAppServerUrl } from './appServerWebSocketClient'
-import { NativeProjects } from './nativeProjects'
+import { listNativeProjects } from '../nativeProjects'
 import { RolloutGenerationMetadata, parseRolloutMetadata } from './rolloutGenerationMetadata'
 import { createConversationTransfers } from './conversationTransfer'
 import { normalizeThreadMessagesV2 } from '../api/normalizers/v2'
@@ -57,16 +57,18 @@ it.skipIf(process.env.CODEX_MAINTENANCE_LIVE !== '1')('accepts native Projects, 
       if (method === 'project/list') return { ...result, data: result.data.filter((project: { id: string }) => projects.has(project.id)) }
       return result
     }
-    const manager = new NativeProjects(isolatedRpc)
-    const { projectId } = await manager.register(root + '/source')
-    const { projectId: emptyProjectId } = await manager.register(root + '/empty')
-    await manager.operation({ type: 'rename', projectId: emptyProjectId, name: 'Empty ' + tag })
-    await manager.operation({ type: 'move', projectId: emptyProjectId, beforeProjectId: projectId })
-    const projectState = await new NativeProjects(isolatedRpc).read()
-    expect(projectState.nativeProjects.map(project => project.id)).toEqual([emptyProjectId, projectId])
-    expect(projectState.nativeProjects[0]?.roots).toContainEqual(expect.objectContaining({ path: root + '/empty' }))
-    await manager.operation({ type: 'rename', projectId, name: 'Renamed ' + tag })
-    await manager.operation({ type: 'rename', projectId, name: 'Source ' + tag })
+    const createProject = async (path: string) => (await isolatedRpc('project/create', {
+      name: path.split('/').at(-1), roots: [{ path }], idempotencyKey: randomUUID(),
+    })).project.id as string
+    const projectId = await createProject(root + '/source')
+    const emptyProjectId = await createProject(root + '/empty')
+    await rpc('project/update', { projectId: emptyProjectId, name: 'Empty ' + tag })
+    await rpc('project/move', { projectId: emptyProjectId, beforeProjectId: projectId })
+    const projectState = await listNativeProjects(isolatedRpc)
+    expect(projectState.map(project => project.id)).toEqual([emptyProjectId, projectId])
+    expect(projectState[0]?.roots).toContainEqual(expect.objectContaining({ path: root + '/empty' }))
+    await rpc('project/update', { projectId, name: 'Renamed ' + tag })
+    await rpc('project/update', { projectId, name: 'Source ' + tag })
     const rooted = await rpc('project/update', { projectId, roots: [{ path: root + '/source' }, { path: root + '/empty' }] })
     expect(rooted.project.roots).toHaveLength(2)
     await rpc('project/update', { projectId, roots: [{ path: root + '/source' }] })
@@ -115,13 +117,13 @@ it.skipIf(process.env.CODEX_MAINTENANCE_LIVE !== '1')('accepts native Projects, 
     report.checks.rolloutCache = { coldTurns: cold.size, restartedSourceReads: 0, appendedTurns: refreshed.size, appendedSourceReads: 1, persistentCacheCreated: true }
 
     await rpc('fs/createDirectory', { path: root + '/registered', recursive: true })
-    const registered = await manager.register(root + '/registered')
-    expect((await manager.register(root + '/registered')).projectId).toBe(registered.projectId)
+    const registeredId = await createProject(root + '/registered')
     const createCall = calls.find(c => c.method === 'project/create' && c.params.roots[0]?.path === root + '/registered')!
-    expect((await isolatedRpc('project/create', createCall.params)).project.id).toBe(registered.projectId)
-    await manager.operation({ type: 'delete', projectId: registered.projectId })
-    projects.delete(registered.projectId)
-    report.checks.nativeCreateDelete = { idempotentCreate: true, registeredRepeatedly: true, nativeDeleteVerified: true }
+    expect((await isolatedRpc('project/create', createCall.params)).project.id).toBe(registeredId)
+    await rpc('project/delete', { projectId: registeredId })
+    expect((await listNativeProjects(rpc)).some(project => project.id === registeredId)).toBe(false)
+    projects.delete(registeredId)
+    report.checks.nativeCreateDelete = { idempotentCreate: true, nativeDeleteVerified: true }
     const fork = (await rpc('thread/fork', { threadId: sourceId })).thread; threads.add(fork.id)
     expect(fork.turns).toHaveLength(3); expect(fork.projectId).toBe(projectId)
     const forkMetadata = await new RolloutGenerationMetadata(cacheClient).recover(fork.id)

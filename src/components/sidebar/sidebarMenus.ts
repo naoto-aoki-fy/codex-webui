@@ -12,7 +12,9 @@ export function createSidebarMenus(deps: {
     emit: ((evt: "select", threadId: string) => void) & ((evt: "archive", threadId: string) => void) & ((evt: "start-new-thread", target: NewThreadTarget) => void) & ((evt: "rename-thread", payload: {
         threadId: string;
         title: string;
-    }) => void) & ((evt: "remove-project", projectName: string) => void) & ((evt: "copy-thread-chat", threadId: string) => void) & ((evt: "fork-thread", payload: {
+    }) => void) & ((evt: "rename-project", payload: { projectId: string; name: string }) => void)
+      & ((evt: "move-project", payload: { projectId: string; direction: -1 | 1 }) => void)
+      & ((evt: "remove-project", projectName: string) => void) & ((evt: "copy-thread-chat", threadId: string) => void) & ((evt: "fork-thread", payload: {
         threadId: string;
         method: ForkMethod;
     }) => void);
@@ -27,6 +29,7 @@ export function createSidebarMenus(deps: {
     const openThreadMenuStyle = ref<Record<string, string>>({});
     const renameThreadDialogVisible = ref(false);
     const renameThreadDialogThreadId = ref('');
+    const renameProjectId = ref('');
     const renameThreadDraft = ref('');
     const renameThreadInputRef = ref<HTMLInputElement | null>(null);
     const deleteThreadDialogVisible = ref(false);
@@ -142,14 +145,18 @@ export function createSidebarMenus(deps: {
     function closeRenameThreadDialog(): void {
         renameThreadDialogVisible.value = false;
         renameThreadDialogThreadId.value = '';
+        renameProjectId.value = '';
         renameThreadDraft.value = '';
     }
     function submitRenameThread(): void {
         const threadId = renameThreadDialogThreadId.value;
         const title = renameThreadDraft.value.trim();
-        if (!threadId || !title)
-            return;
-        deps.emit('rename-thread', { threadId, title });
+        if (!title) return;
+        if (renameProjectId.value) {
+            deps.emit('rename-project', { projectId: renameProjectId.value, name: title });
+        } else if (threadId) {
+            deps.emit('rename-thread', { threadId, title });
+        }
         closeRenameThreadDialog();
     }
     function openDeleteThreadDialog(threadId: string, currentTitle: string): void {
@@ -234,6 +241,27 @@ export function createSidebarMenus(deps: {
         isOrganizeMenuOpen.value = false;
         openProjectMenuId.value = projectName;
         scheduleProjectMenuDirection(projectName);
+    }
+    function onRenameProject(group: SidebarGroup): void {
+        if (group.kind !== 'project' || !canRemoveProject(group)) return;
+        renameProjectId.value = group.projectId;
+        renameThreadDraft.value = deps.props.projectDisplayNameById[group.projectId] ?? '';
+        renameThreadDialogVisible.value = true;
+        closeProjectMenu();
+        nextTick(() => {
+            renameThreadInputRef.value?.focus();
+            renameThreadInputRef.value?.select();
+        });
+    }
+    function canMoveProject(group: SidebarGroup, direction: -1 | 1): boolean {
+        if (group.kind !== 'project' || !canRemoveProject(group)) return false;
+        const ids = deps.props.removableProjectIds ?? [];
+        return Boolean(ids[ids.indexOf(group.projectId) + direction]);
+    }
+    function onMoveProject(group: SidebarGroup, direction: -1 | 1): void {
+        if (group.kind !== 'project' || !canMoveProject(group, direction)) return;
+        deps.emit('move-project', { projectId: group.projectId, direction });
+        closeProjectMenu();
     }
     function onRemoveProject(group: SidebarGroup): void {
         if (group.kind !== 'project' || !canRemoveProject(group))
@@ -445,6 +473,7 @@ openThreadMenuId,
 projectMenuDirectionById,
 openThreadMenuStyle,
 renameThreadDialogVisible,
+renameProjectId,
 renameThreadDraft,
 renameThreadInputRef,
 deleteThreadDialogVisible,
@@ -481,6 +510,9 @@ setThreadViewMode,
 toggleProjectMenu,
 openProjectContextMenu,
 onRemoveProject,
+onRenameProject,
+canMoveProject,
+onMoveProject,
 setProjectMenuWrapRef,
 setThreadMenuWrapRef,
 getThreadMenuDirection,

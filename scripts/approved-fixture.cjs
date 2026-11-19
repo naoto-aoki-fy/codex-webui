@@ -19,8 +19,8 @@ async function setup(page, handle = () => undefined, openTools = true) {
   if(body.method==='model/list')result={data:[{id:'fixture-model',model:'fixture-model',isDefault:true}],nextCursor:null}
   if(body.method==='config/read')result={config:{model:'fixture-model',model_provider:'fixture'}}
   if(body.method==='skills/list')result={data:[]}
+  if (body.method === 'project/list') result = { data: [{id:'p',name:'Fixture project',roots:[{path:'/remote/project'}],position:0,metadata:{}}], nextCursor: null }
   let payload={result}
-  if(url.pathname.endsWith('/workspace-roots-state'))payload={data:{nativeProjects:[{id:'p',name:'Fixture project',roots:[{path:'/remote/project'}],position:0,metadata:{}}],order:['/remote/project'],active:[],labels:{},projectOrder:['p']}}
   if(url.pathname.endsWith('/thread-pins'))payload={data:{threadIds:[]}}
   if(url.pathname.endsWith('/pending')||url.pathname.endsWith('/methods'))payload={data:[]}
   await route.fulfill({json:payload})

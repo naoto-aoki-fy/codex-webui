@@ -25,18 +25,20 @@ export { removeThreadFromGroups } from './threadListReconciliation'
 import { fastModeAvailability, modelSelectionKey, parseModelSelection, defaultModelForProvider } from '../api/modelCapabilities'
 import { interruptThreadTurn, markNativeThreadRead, refreshThreadGenerationMetadata } from '../api/codexGateway'
 import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } from '../utils/desktopModelPreferences'
-import { getWorkspaceProjectId, filterGroupsByWorkspaceRoots } from '../utils/desktopProjectGroups'
+import { groupThreadsByProject, UNASSIGNED_PROJECT } from '../utils/desktopProjectGroups'
+import type { Project } from '../server/protocol/0.167.2/v2/Project'
+import { clientMessageId } from '../utils/clientMessageId'
 import { readPlanUpdate, asRecord, readString, readNumber, readThreadTokenUsageUpdate, extractThreadIdFromNotification, readTurnErrorMessage, readNotificationErrorState, readTurnActivity, liveReasoningMessageId, readReasoningStartedItemId, readReasoningDelta, readReasoningSectionBreakMessageId, readReasoningCompletedId, readAgentMessageStartedId, readAgentMessageDelta, readAgentMessageCompleted, readCompletedImageView, readCommandOutputDelta, isAgentContentEvent, type TurnActivityState } from './desktopNotificationReaders'
 import { NEW_THREAD_MODEL_CONTEXT, normalizeStoredModelId, createStringKeyedRecord, cloneStringKeyedRecord, omitStringKeyedRecordKey, pruneThreadContextStateMap, isNewThreadContextId, toThreadContextId, loadSelectedModelMap, readSelectedModel, saveSelectedModelMap, loadSelectedCollaborationModeMap, readSelectedCollaborationMode, writeSelectedCollaborationModeForContext, saveSelectedCollaborationModeMap } from './desktopStatePersistence'
 import { areStringArraysEqual, areMessageArraysEqual, normalizeMessageText, isOptimisticUserMessage, upsertMessage } from '../utils/desktopMessageReconciliation'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { formatTurnDuration, parseIsoTimestamp } from '../utils/turnTiming'
-import { createConversationTransfer, unarchiveThread, archiveThread, forkThread, forkThreadFromResponse, getAvailableCollaborationModes, getAccountRateLimits, renameThread, getAvailableModelIds, acquireReasoningCatalog, reasoningCatalog, reasoningOptions, resolveReasoningEffort, findReasoningModel, getCurrentModelConfig, getSkillsList, getBackgroundThreadListLimit, pickCodexRateLimitSnapshot, revertThreadHistory, validateThreadRevert, getThreadDetailForRevert, invalidateResumeThread, resumeThreadSubscription, getThreadGroupsPage, getWorkspaceRootsState, getWorkspaceRootsStateGeneration, setCodexSpeedMode, updateWorkspaceRootsState, invalidateWorkspaceRootsStateCache, type RpcNotification, type SkillInfo, type WorkspaceRootsState } from '../api/codexGateway'
+import { createConversationTransfer, unarchiveThread, archiveThread, forkThread, forkThreadFromResponse, getAvailableCollaborationModes, getAccountRateLimits, renameThread, getAvailableModelIds, acquireReasoningCatalog, reasoningCatalog, reasoningOptions, resolveReasoningEffort, findReasoningModel, getCurrentModelConfig, getSkillsList, getBackgroundThreadListLimit, pickCodexRateLimitSnapshot, revertThreadHistory, validateThreadRevert, getThreadDetailForRevert, invalidateResumeThread, resumeThreadSubscription, getThreadGroupsPage, getProjects, setCodexSpeedMode, type RpcNotification, type SkillInfo } from '../api/codexGateway'
 import { CodexApiError } from '../api/codexErrors'
 import { normalizeFileChangeStatus, toUiFileChanges } from '../api/normalizers/v2'
 import { readGenerationMetadata, mergeGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata'
 import type { CollaborationModeKind, CollaborationModeOption, CommandExecutionData, ReasoningEffort, SpeedMode, UiLiveOverlay, UiMessage, UiPlanData, UiProjectGroup, UiRateLimitSnapshot, UiServerRequest, UiThreadTokenUsage, UiThread } from '../types/codex'
-import { normalizePathForUi } from '../pathUtils.js'
+import { isAbsoluteLikePath, normalizePathForUi, toProjectName } from '../pathUtils.js'
 
 function flattenThreads(groups: UiProjectGroup[]): UiThread[] {
   return groups.flatMap((group) => group.threads)
@@ -288,8 +290,11 @@ export function useDesktopState() {
   }
   const selectedReasoningEffort = computed(() => readReasoningEffortForThread(selectedThreadId.value))
   const selectedSpeedMode = ref<SpeedMode>('standard')
-  const projectDisplayNameById = ref<Record<string, string>>({})
-  const workspaceRootsState = ref<WorkspaceRootsState | null>(null)
+  const projects = shallowRef<Project[]>([])
+  const projectDisplayNameById = computed(() => Object.fromEntries([
+    [UNASSIGNED_PROJECT, 'Unassigned'],
+    ...projects.value.map(project => [project.id, project.name]),
+  ]))
 
   const diagnosticWarnings = ref<DiagnosticWarning[]>([])
   const operationEpoch = ref(0)
@@ -512,9 +517,9 @@ export function useDesktopState() {
   let remainingThreadPageRequest: { generation: number; cursor: string } | null = null
   let hasLoadedAllThreadPages = false
   let loadedThreadListGroups: UiProjectGroup[] = []
-  let loadedThreadListRootsState: WorkspaceRootsState | null = null
   let projectOperationPromise: Promise<void> = Promise.resolve()
-  let workspaceRootsRefreshPromise: Promise<WorkspaceRootsState | null> | null = null
+  let projectListRequest: Promise<void> | null = null
+  let projectsNeedRefresh = true
   let activeReasoningItemId = ''
   const pendingTurnStartsById = new Map<string, TurnStartedInfo>()
 
@@ -1955,10 +1960,7 @@ export function useDesktopState() {
       setTurnActivityForThread(turnActivity.threadId, turnActivity.activity)
     }
 
-    if (notification.method === 'project/changed' || notification.method === 'thread/project/updated') {
-      invalidateWorkspaceRootsStateCache()
-      connection.pendingThreadsRefresh = true
-    }
+    if (notification.method === 'project/changed') projectsNeedRefresh = true
     const notificationThreadId = extractThreadIdFromNotification(notification)
     if (notificationThreadId && notification.method !== 'turn/generationMetadata' && (
       notification.method.startsWith('turn/') || notification.method.startsWith('item/') || notification.method === 'error'
@@ -2199,54 +2201,61 @@ export function useDesktopState() {
 
   }
 
-  function applyWorkspaceRootsState(rootsState: WorkspaceRootsState): void {
-    const nextLabels: Record<string, string> = { __codexapp_unassigned__: 'Unassigned' }
-    for (const project of rootsState.nativeProjects ?? []) nextLabels[project.id] = project.name
-    if (rootsState.projectError) error.value = rootsState.projectError
-    projectDisplayNameById.value = nextLabels
-    loadedThreadListRootsState = rootsState
-    workspaceRootsState.value = rootsState
-    applyThreadGroups(loadedThreadListGroups, rootsState)
+  function refreshProjects(): Promise<void> {
+    if (projectListRequest) return projectListRequest
+    const lifecycle = connection.lifecycleGeneration
+    projectsNeedRefresh = false
+    projectListRequest = getProjects().then(rows => {
+      if (lifecycle !== connection.lifecycleGeneration) return
+      projects.value = rows
+    }).catch((cause: unknown) => {
+      if (lifecycle === connection.lifecycleGeneration) {
+        error.value = cause instanceof Error ? cause.message : 'Failed to load projects'
+      }
+    }).finally(() => { projectListRequest = null })
+    return projectListRequest
   }
 
-  function queueProjectOperation(operation: () => Promise<void>): Promise<void> {
-    const run = projectOperationPromise.then(operation).catch((cause: unknown) => {
-      error.value = cause instanceof Error ? cause.message : 'Failed to update projects'
+  async function changeProject<T>(operation: () => Promise<T>): Promise<T> {
+    const lifecycle = connection.lifecycleGeneration
+    const run = projectOperationPromise.then(async () => {
+      if (lifecycle !== connection.lifecycleGeneration) throw new Error('The connection changed. Select the project again.')
+      const result = await operation()
+      if (lifecycle === connection.lifecycleGeneration) {
+        // An earlier listing may have started before the mutation was accepted.
+        await projectListRequest
+        await refreshProjects()
+        applyThreadGroups(loadedThreadListGroups)
+      }
+      return result
     })
-    projectOperationPromise = run
+    projectOperationPromise = run.then(() => undefined, () => undefined)
     return run
   }
 
-  function refreshWorkspaceRoots(): Promise<WorkspaceRootsState | null> {
-    if (workspaceRootsRefreshPromise) return workspaceRootsRefreshPromise
-    let refreshedState: WorkspaceRootsState | null = null
-    const run = queueProjectOperation(async () => {
-      invalidateWorkspaceRootsStateCache()
-      refreshedState = await getWorkspaceRootsState()
-      applyWorkspaceRootsState(refreshedState)
-    }).then(() => refreshedState).finally(() => {
-      if (workspaceRootsRefreshPromise === run) workspaceRootsRefreshPromise = null
+  async function selectProjectFolder(path: string): Promise<Project> {
+    if (!isAbsoluteLikePath(path)) throw new Error('Enter an absolute workspace path on the App Server host.')
+    return changeProject(async () => {
+      const info = await rpcCall<{ isDirectory: boolean }>('fs/getMetadata', { path })
+      if (!info?.isDirectory) throw new Error('The selected path is not a directory.')
+      const rows = await getProjects()
+      const existing = rows.find(project => project.roots.some(root => root.path === path))
+      const project = existing ?? (await rpcCall<{ project: Project }>('project/create', {
+        name: toProjectName(path), roots: [{ path }], idempotencyKey: clientMessageId(),
+      })).project
+      if (!project?.id || !project.roots?.some(root => root.path === path)) {
+        throw new Error('The App Server did not confirm the selected project root. Check the project list before retrying.')
+      }
+      return project
     })
-    workspaceRootsRefreshPromise = run
-    return run
   }
 
-  async function loadWorkspaceRootsStateForThreadList(): Promise<WorkspaceRootsState | null> {
-    const generation = connection.lifecycleGeneration
-    try {
-      return await getWorkspaceRootsState()
-    } catch (cause) {
-      if (generation === connection.lifecycleGeneration) error.value = cause instanceof Error ? cause.message : 'Failed to load projects'
-      return loadedThreadListRootsState ?? { nativeProjects: [], order: [], projectError: cause instanceof Error ? cause.message : 'Projects unavailable' }
-    }
-  }
-
-  function applyThreadGroups(groups: UiProjectGroup[], rootsState: WorkspaceRootsState | null): void {
-    const visibleGroups = filterGroupsByWorkspaceRoots(groups, rootsState)
+  function applyThreadGroups(groups: UiProjectGroup[]): void {
+    const visibleGroups = groupThreadsByProject(groups, projects.value)
     const serverThreadIds = new Set(flattenThreads(visibleGroups).map((thread) => thread.id))
     markServerListedThreads(serverThreadIds)
     // Use the same project identities for incoming history and retained local threads.
-    const visibleLocalGroups = filterGroupsByWorkspaceRoots(sourceGroups.value, rootsState)
+    const visibleLocalGroups = groupThreadsByProject(sourceGroups.value, projects.value)
     const visibleLocalIds = new Set(flattenThreads(visibleLocalGroups).map((thread) => thread.id))
     const now = Date.now()
     for (const [threadId, deadline] of localThreadConfirmationDeadlineById) {
@@ -2300,7 +2309,7 @@ export function useDesktopState() {
       void loadThreads().catch(() => {
         // Even if the bridge stays unavailable, the local retention lease is bounded.
       }).finally(() => {
-        if (generation === connection.lifecycleGeneration) applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
+        if (generation === connection.lifecycleGeneration) applyThreadGroups(loadedThreadListGroups)
       })
     }, LOCAL_THREAD_RECONCILIATION_INTERVAL_MS)
   }
@@ -2382,7 +2391,7 @@ export function useDesktopState() {
       isThreadListFullyLoaded.value = hasLoadedAllThreadPages
       loadedThreadListGroups = mergeThreadGroupPages(loadedThreadListGroups, page.groups)
       // Roots may have changed while this history request was in flight.
-      applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
+      applyThreadGroups(loadedThreadListGroups)
       applied = true
     } catch {
       // Retain the last list and cursor; retry only after a later refresh.
@@ -2394,13 +2403,13 @@ export function useDesktopState() {
     }
   }
 
-  async function loadThreads(options: { force?: boolean } = {}): Promise<void> {
+  async function loadThreads(options: { force?: boolean; refreshProjects?: boolean } = {}): Promise<void> {
     const lifecycle = connection.lifecycleGeneration
+    if (options.refreshProjects) projectsNeedRefresh = true
     if (loadThreadsPromise) {
       if (options.force === true && !pendingForcedThreadLoad) {
         pendingForcedThreadLoad = true
         invalidateThreadListGeneration()
-        invalidateWorkspaceRootsStateCache()
       }
       return loadThreadsPromise
     }
@@ -2416,34 +2425,26 @@ export function useDesktopState() {
         pendingForcedThreadLoad = false
         failure = undefined
         const generation = invalidateThreadListGeneration()
-        if (force) invalidateWorkspaceRootsStateCache()
         if (!hasLoadedThreads.value) isLoadingThreads.value = true
         try {
-          const rootsGeneration = getWorkspaceRootsStateGeneration()
-          const requestedRootsState = await loadWorkspaceRootsStateForThreadList()
-          const page = await getThreadGroupsPage()
+          const [page] = await Promise.all([
+            getThreadGroupsPage(),
+            projectsNeedRefresh ? refreshProjects() : projectListRequest,
+          ])
           if (generation === threadListGeneration) {
-            // A registration or edit can invalidate roots while the thread page loads.
-            const rootsState = rootsGeneration === getWorkspaceRootsStateGeneration()
-              ? requestedRootsState
-              : await loadWorkspaceRootsStateForThreadList()
-            if (generation === threadListGeneration) {
-              loadedThreadListGroups = hasLoadedThreads.value
-                ? mergeThreadGroupPages(loadedThreadListGroups, page.groups)
-                : page.groups
-              threadListNextCursor = hasLoadedThreads.value && !force && !hasLoadedAllThreadPages
-                ? threadListNextCursor
-                : page.nextCursor
-              hasLoadedAllThreadPages = threadListNextCursor === null
-              isThreadListFullyLoaded.value = hasLoadedAllThreadPages
-              if (rootsState) applyWorkspaceRootsState(rootsState)
-              else applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
-              completedGeneration = generation
-              hasLoadedThreads.value = true
-              lastThreadListLoadAt = Date.now()
-              const threads = flattenThreads(projectGroups.value)
-              pruneThreadScopedState(threads)
-            }
+            loadedThreadListGroups = hasLoadedThreads.value
+              ? mergeThreadGroupPages(loadedThreadListGroups, page.groups)
+              : page.groups
+            threadListNextCursor = hasLoadedThreads.value && !force && !hasLoadedAllThreadPages
+              ? threadListNextCursor
+              : page.nextCursor
+            hasLoadedAllThreadPages = threadListNextCursor === null
+            isThreadListFullyLoaded.value = hasLoadedAllThreadPages
+            applyThreadGroups(loadedThreadListGroups)
+            completedGeneration = generation
+            hasLoadedThreads.value = true
+            lastThreadListLoadAt = Date.now()
+            pruneThreadScopedState(flattenThreads(projectGroups.value))
           }
         } catch (cause) {
           if (generation === threadListGeneration) failure = cause
@@ -2622,7 +2623,7 @@ export function useDesktopState() {
     history.invalidateThreadHistory(threadId)
     invalidateResumeThread(threadId)
     loadedThreadListGroups = mergeThreadGroupPages(loadedThreadListGroups, [{ projectName: restored.projectName, threads: [restored] }])
-    applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
+    applyThreadGroups(loadedThreadListGroups)
     try { await loadThreads({ force: true }) }
     catch { error.value = 'Conversation restored, but refreshing active conversations failed. Reload to reconcile.' }
     if (epoch !== operationEpoch.value) throw new Error('Connection changed. Refresh archived conversations.')
@@ -2630,7 +2631,7 @@ export function useDesktopState() {
     // when the first active page did not include it.
     if (!flattenThreads(loadedThreadListGroups).some(thread => thread.id === threadId)) {
       loadedThreadListGroups = mergeThreadGroupPages(loadedThreadListGroups, [{ projectName: restored.projectName, threads: [restored] }])
-      applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
+      applyThreadGroups(loadedThreadListGroups)
     }
   }
 
@@ -2786,20 +2787,28 @@ export function useDesktopState() {
     }
   }
 
-  async function removeProject(projectName: string): Promise<void> {
-    if (!projectName) return
-    const path = getWorkspaceProjectId(loadedThreadListRootsState, projectName)
-    const isRegisteredLocalRoot = Boolean(path)
-    await queueProjectOperation(async () => {
-      if (isRegisteredLocalRoot) {
-        const state = await updateWorkspaceRootsState({ type: 'delete', projectId: path })
-        applyWorkspaceRootsState(state)
-      }
-      const threads = flattenThreads(projectGroups.value)
-      pruneThreadScopedState(threads)
-      if (!threads.some((thread) => thread.id === selectedThreadId.value)) {
-        setSelectedThreadId(threads[0]?.id ?? '')
-      }
+  async function removeProject(projectId: string): Promise<void> {
+    if (!projects.value.some(project => project.id === projectId)) return
+    await changeProject(async () => {
+      await rpcCall('project/delete', { projectId })
+      const unassign = (groups: UiProjectGroup[]) => groups.map(group => group.projectName === projectId
+        ? { ...group, threads: group.threads.map(thread => ({ ...thread, projectId: null })) }
+        : group)
+      loadedThreadListGroups = unassign(loadedThreadListGroups)
+      sourceGroups.value = unassign(sourceGroups.value)
+    })
+  }
+
+  function renameProject(projectId: string, name: string): Promise<unknown> {
+    return changeProject(() => rpcCall('project/update', { projectId, name }))
+  }
+
+  function moveProject(projectId: string, direction: -1 | 1): Promise<unknown> {
+    return changeProject(async () => {
+      const index = projects.value.findIndex(project => project.id === projectId)
+      if (index < 0 || !projects.value[index + direction]) return
+      const beforeProjectId = projects.value[index + (direction === -1 ? -1 : 2)]?.id ?? null
+      await rpcCall('project/move', { projectId, beforeProjectId })
     })
   }
 
@@ -2918,7 +2927,7 @@ export function useDesktopState() {
     transportState, selectedRecoveryState, selectedUnknownOutcome, selectedLostApproval,
     retrySelectedSubscription, reconcileSelectedHistory,
     projectGroups,
-    projectDisplayNameById, workspaceRootsState,
+    projectDisplayNameById, projects,
     selectedThread,
     selectedThreadTokenUsage,
     isSelectedThreadInterruptPending,
@@ -2953,7 +2962,9 @@ export function useDesktopState() {
 
     error,
     refreshAll,
-    refreshWorkspaceRoots,
+    selectProjectFolder,
+    renameProject,
+    moveProject,
     refreshSkills,
     selectThread,
     loadMessages: history.loadMessages,

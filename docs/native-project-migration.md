@@ -54,7 +54,9 @@ thread's section, consistent with native single-section semantics.
 Pin reads paginate serially at 100 rows per request. Reads and writes use only
 native section membership.
 
-Project and pin reads make no local state-file reads. Registering a root walks
-the native Project list once before reusing or creating a Project. Concurrent
-Project reads still coalesce, and mutations use the existing frontend cache
-invalidation. Live latency was not measured for the guard removal.
+Project and pin reads make no local state-file reads. The browser lists projects
+in native position order through the shared RPC transport. Project menu mutations
+send `project/update`, `project/move` or `project/delete` with the native ID.
+Selecting an existing directory validates it on the App Server and reuses or creates
+a native Project. The browser requests the optional configured initial directory
+only when opening the picker without a known workspace.

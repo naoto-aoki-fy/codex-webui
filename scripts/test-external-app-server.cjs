@@ -46,7 +46,7 @@ async function run() {
         : frame.method === 'account/read' ? { account: { type: 'apiKey' }, requiresOpenaiAuth: true }
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
         : frame.method === 'model/list' ? { data: [{ id: frame.params.cursor ? 'fixture-hidden' : 'fixture-model', hidden: Boolean(frame.params.cursor), isDefault: !frame.params.cursor }], nextCursor: frame.params.cursor ? null : 'fixture-next' }
-        : frame.method === 'thread/list' ? { data: [], nextCursor: null }
+        : ['thread/list', 'project/list'].includes(frame.method) ? { data: [], nextCursor: null }
         : frame.method === 'thread/read' && frame.params.threadId === historyId ? { thread: { id: historyId, turns: [] } }
         : frame.method === 'thread/turns/list' && frame.params.threadId === historyId
           ? { data: frame.params.cursor ? historyTurns.slice(0, 5).reverse() : historyTurns.slice(5).reverse(), nextCursor: frame.params.cursor ? null : olderCursor }
@@ -156,7 +156,7 @@ async function run() {
         assert.equal((await metadataRead()).status,200,'ordinary history reads retain their existing empty-rollout snapshot fallback')
         console.log('PASS',dev?'pnpm run dev':'built CLI','failed activity inspection never receives a cached idle snapshot')
         console.log('PASS', dev ? 'pnpm run dev' : 'built CLI', 'API misses, correlated RPC errors, auth redaction and native titles')
-        for (const method of ['account/read', 'modelProvider/list', 'model/list', 'thread/list']) {
+        for (const method of ['account/read', 'modelProvider/list', 'model/list', 'thread/list', 'project/list']) {
           const response = await fetch(url + '/codex-api/rpc', {
             method: 'POST', headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ method, params: method === 'model/list' ? { modelProvider: 'fixture-provider', includeHidden: true } : {} }),

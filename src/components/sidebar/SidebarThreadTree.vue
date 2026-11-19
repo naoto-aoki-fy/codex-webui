@@ -192,6 +192,15 @@
                     <button class="project-menu-item" type="button" @click="onOpenGroupInNewTab(group)">
                       Open in new tab
                     </button>
+                    <button v-if="canRemoveProject(group)" class="project-menu-item" type="button" @click="onRenameProject(group)">
+                      Rename
+                    </button>
+                    <button v-if="canMoveProject(group, -1)" class="project-menu-item" type="button" @click="onMoveProject(group, -1)">
+                      Move up
+                    </button>
+                    <button v-if="canMoveProject(group, 1)" class="project-menu-item" type="button" @click="onMoveProject(group, 1)">
+                      Move down
+                    </button>
                     <button
                       v-if="canRemoveProject(group)"
                       class="project-menu-item project-menu-item-danger"
@@ -299,15 +308,15 @@
 
     <Teleport to="body">
       <div v-if="renameThreadDialogVisible" class="rename-thread-overlay" @click.self="closeRenameThreadDialog">
-        <div class="rename-thread-panel" role="dialog" aria-modal="true" aria-label="Thread title">
-          <h3 class="rename-thread-title">{{ ('Rename thread') }}</h3>
+        <div class="rename-thread-panel" role="dialog" aria-modal="true" :aria-label="renameProjectId ? 'Project name' : 'Thread title'">
+          <h3 class="rename-thread-title">{{ renameProjectId ? 'Rename project' : 'Rename thread' }}</h3>
           <p class="rename-thread-subtitle">Make it short and recognizable.</p>
           <input
             ref="renameThreadInputRef"
             v-model="renameThreadDraft"
             class="rename-thread-input"
             type="text"
-            placeholder="Add title..."
+            :placeholder="renameProjectId ? 'Add name...' : 'Add title...'"
             @keydown.enter.prevent="submitRenameThread"
             @keydown.esc.prevent="closeRenameThreadDialog"
           />
@@ -373,7 +382,9 @@ const emit = defineEmits<{
   archive: [threadId: string]
   'start-new-thread': [target: NewThreadTarget]
   'rename-thread': [payload: { threadId: string; title: string }]
-  'remove-project': [projectName: string]
+  'remove-project': [projectId: string]
+  'rename-project': [payload: { projectId: string; name: string }]
+  'move-project': [payload: { projectId: string; direction: -1 | 1 }]
   'copy-thread-chat': [threadId: string]
   'fork-thread': [payload: { threadId: string; method: ForkMethod }]
 }>()
@@ -420,6 +431,7 @@ const {
   projectMenuDirectionById,
   openThreadMenuStyle,
   renameThreadDialogVisible,
+  renameProjectId,
   renameThreadDraft,
   renameThreadInputRef,
   deleteThreadDialogVisible,
@@ -455,6 +467,9 @@ const {
   toggleProjectMenu,
   openProjectContextMenu,
   onRemoveProject,
+  onRenameProject,
+  canMoveProject,
+  onMoveProject,
   setProjectMenuWrapRef,
   setThreadMenuWrapRef,
   getThreadMenuDirection,

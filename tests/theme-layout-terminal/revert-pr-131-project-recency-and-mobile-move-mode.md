@@ -11,13 +11,13 @@ PR #131 revert: remove project recency ordering and mobile project move mode whi
 #### Steps
 1. In light theme, open the sidebar Projects section.
 2. Open the Projects organize menu.
-3. Confirm the menu still exposes thread organization and chat sort controls, but does not expose project recency/manual sort controls.
+3. Confirm the menu still exposes thread organization and chat sort controls, and offers native Move up and Move down in registered project menus.
 4. Open a project action menu and confirm browse, rename, remove, worktree, and git status actions still behave normally.
 5. On a mobile-sized viewport, confirm there is no project move mode affordance or drag handle from PR #131.
 6. Switch to dark theme and repeat steps 1-5.
 
 #### Expected Results
-- Project recency/manual sort controls from PR #131 are absent.
+- The separate project recency sort and mobile move mode are absent. Native project menu actions update server positions.
 - Project pinning/move mode controls from PR #131 are absent.
 - Existing sidebar project actions and git-status menu behavior remain available.
 - Sidebar rows, menus, and actions remain readable in light and dark themes.

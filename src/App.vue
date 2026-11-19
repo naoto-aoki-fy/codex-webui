@@ -61,7 +61,7 @@
 
           <p v-if="threadSearchError" role="alert">{{ threadSearchError }}</p>
           <SidebarThreadTree :groups="sidebarSearchGroups" :project-display-name-by-id="projectDisplayNameById"
-            :removable-project-ids="removableProjectIds"
+            :removable-project-ids="nativeProjectIds"
             :resolve-new-thread-cwd="resolveProjectNewThreadCwd"
             :active-project-name="activeProjectName"
             :new-thread-cwd="isHomeRoute ? newThreadCwd : undefined"
@@ -75,7 +75,9 @@
             @archive="onArchiveThread" @start-new-thread="onStartNewThread"
             @rename-thread="onRenameThread"
             @fork-thread="onForkThread"
-            @remove-project="onRemoveProject"
+            @remove-project="projectId => runProjectAction(() => removeProject(projectId))"
+            @rename-project="({ projectId, name }) => runProjectAction(() => renameProject(projectId, name))"
+            @move-project="({ projectId, direction }) => runProjectAction(() => moveProject(projectId, direction))"
             @copy-thread-chat="onCopyThreadChat" />
         </div>
 
@@ -392,7 +394,6 @@ import { createComposerSendMode } from './composables/composerSendMode'
 import { createAppRouteCoordinator } from './appRouteCoordinator'
 import { createAppTransferDialog } from './appTransferDialog'
 
-import { useNativeProjectOptions } from './composables/useNativeProjectOptions'
 
 import { parseModelSelection } from './api/modelCapabilities'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -423,11 +424,11 @@ import IconTablerX from './components/icons/IconTablerX.vue'
 import { useDesktopState } from './composables/useDesktopState'
 import { useFolderPicker } from './composables/useFolderPicker'
 import { useMobile } from './composables/useMobile'
-import { logoutCodex, getHomeDirectory, getWorkspaceRootsState, openProjectRootSelection, searchThreads } from './api/codexGateway'
+import { logoutCodex, getHomeDirectory, searchThreads } from './api/codexGateway'
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import { getCodexAuthenticationStatus } from './api/codexGateway'
-import { getPathParent, normalizePathForUi } from './pathUtils.js'
+import { normalizePathForUi } from './pathUtils.js'
 import { formatChatPageTitle, getChatFolderName, getThreadContextLabel } from './utils/chatFolderLabels'
 import { copyTextToClipboard } from './utils/clipboard'
 
@@ -485,7 +486,7 @@ const CHAT_WIDTH_PRESETS: Record<ChatWidthMode, ChatWidthPreset> = {
 
 const {
   projectGroups,
-  projectDisplayNameById, workspaceRootsState,
+  projectDisplayNameById, projects,
   selectedThread,
   selectedThreadTokenUsage,
   selectedThreadServerRequests,
@@ -517,7 +518,9 @@ const {
   modelPreferencesError,
   refreshBackendModelPreferences,
   refreshAll,
-  refreshWorkspaceRoots,
+  selectProjectFolder,
+  renameProject,
+  moveProject,
   refreshSkills,
   selectThread,
   ensureThreadMessagesLoaded,
@@ -587,10 +590,6 @@ const newThreadCwd = ref('')
 const newThreadFolderName = computed(() => getChatFolderName(newThreadCwd.value))
 const newThreadProjectId = computed(() => typeof route.query.projectId === 'string' ? route.query.projectId : '')
 useNewThreadCwdRoute(router, newThreadCwd)
-const workspaceRootOptionsState = ref<import('./api/codexGateway').WorkspaceRootsState>({
-  order: [],
-})
-watch(workspaceRootsState, state => { if (state) workspaceRootOptionsState.value = state })
 const isSidebarCollapsed = ref(loadSidebarCollapsed())
 const sidebarSearchQuery = ref('')
 const isSidebarSearchVisible = ref(false)
@@ -618,7 +617,6 @@ let threadSearchTimer: ReturnType<typeof setTimeout> | null = null
 let sidebarScrollTop = 0
 let sidebarScrollRestoreRequestId = 0
 let isRestoringSidebarScroll = false
-const homeDirectory = ref('')
 const isSettingsOpen = ref(false)
 const recoverableDraftCount = ref(0)
 const settingsCategories = ['General', 'Codex account', 'Apps / Connectors', 'Archived conversations', 'About']
@@ -659,9 +657,6 @@ const {
   resolveStartPath: async () => newThreadCwd.value.trim() || await resolveProjectBaseDirectory(),
   focusPathInput: () => folderPickerModalRef.value?.focusPathInput(),
 })
-let workspaceRootsResumeTimer: ReturnType<typeof setTimeout> | null = null
-let workspaceRootsResumeInProgress = false
-let lastWorkspaceRootsResumeAt = 0
 const visualViewportHeight = ref(typeof window !== 'undefined' ? window.visualViewport?.height ?? window.innerHeight : 0)
 const visualViewportOffsetTop = ref(typeof window !== 'undefined' ? window.visualViewport?.offsetTop ?? 0 : 0)
 const layoutViewportHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 0)
@@ -788,7 +783,12 @@ const threadContextSecondaryText = computed(() => {
 
 const threadContextTooltip = computed(() => buildThreadContextTooltip(selectedThreadTokenUsage.value))
 
-const { newThreadFolderOptions, removableProjectIds, resolveWorkspaceRootCwd } = useNativeProjectOptions(workspaceRootOptionsState)
+const newThreadFolderOptions = computed(() => projects.value.map(project => ({ value: project.id, label: project.name })))
+const nativeProjectIds = computed(() => projects.value.map(project => project.id))
+
+function resolveWorkspaceRootCwd(projectId: string): string {
+  return projects.value.find(project => project.id === projectId)?.roots[0]?.path || ''
+}
 const darkModeMediaQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
 const chatWidthLabel = computed(() => (CHAT_WIDTH_PRESETS[chatWidth.value].label))
 const contentStyle = computed(() => {
@@ -808,9 +808,6 @@ const contentStyle = computed(() => {
 onMounted(() => {
   window.addEventListener('storage', onUiPreferenceStorage)
   window.addEventListener('keydown', onWindowKeyDown)
-  document.addEventListener('visibilitychange', onDocumentVisibilityChange)
-  window.addEventListener('pageshow', onWindowPageShow)
-  window.addEventListener('focus', onWindowFocus)
   window.addEventListener('resize', updateVisualViewportState)
   window.visualViewport?.addEventListener('resize', updateVisualViewportState)
   window.visualViewport?.addEventListener('scroll', updateVisualViewportState)
@@ -818,17 +815,12 @@ onMounted(() => {
   applyDarkMode()
   darkModeMediaQuery?.addEventListener('change', applyDarkMode)
   void initialize()
-  void loadHomeDirectory()
-  void loadWorkspaceRootOptionsState()
   void loadCodexAuthStatus()
 })
 
 onUnmounted(() => {
   window.removeEventListener('storage', onUiPreferenceStorage)
   window.removeEventListener('keydown', onWindowKeyDown)
-  document.removeEventListener('visibilitychange', onDocumentVisibilityChange)
-  window.removeEventListener('pageshow', onWindowPageShow)
-  window.removeEventListener('focus', onWindowFocus)
   window.removeEventListener('resize', updateVisualViewportState)
   window.visualViewport?.removeEventListener('resize', updateVisualViewportState)
   window.visualViewport?.removeEventListener('scroll', updateVisualViewportState)
@@ -837,7 +829,6 @@ onUnmounted(() => {
     clearTimeout(threadSearchTimer)
     threadSearchTimer = null
   }
-  if (workspaceRootsResumeTimer !== null) clearTimeout(workspaceRootsResumeTimer)
   stopPolling()
 })
 
@@ -996,8 +987,7 @@ function resolvePreferredLocalCwd(projectId: string, fallbackCwd = ''): string {
 
 function resolveProjectNewThreadCwd(projectName: string): string {
   const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
-  const projectCwd = resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
-  return projectCwd || (workspaceRootOptionsState.value.nativeProjects ? '' : newThreadCwd.value)
+  return resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
 }
 
 function onStartNewThread({ cwd, projectId }: NewThreadTarget): void {
@@ -1030,9 +1020,12 @@ function onRenameThread(payload: { threadId: string; title: string }): void {
   void renameThreadById(payload.threadId, payload.title)
 }
 
-async function onRemoveProject(projectName: string): Promise<void> {
-  await removeProject(projectName)
-  await loadWorkspaceRootOptionsState()
+async function runProjectAction(action: () => Promise<unknown>): Promise<void> {
+  try {
+    await action()
+  } catch (error) {
+    desktopError.value = error instanceof Error ? error.message : 'Failed to update project.'
+  }
 }
 
 function onRespondServerRequest(payload: UiServerRequestReply): void {
@@ -1080,41 +1073,6 @@ function onWindowKeyDown(event: KeyboardEvent): void {
     setSidebarCollapsed(!isSidebarCollapsed.value)
     return
   }
-}
-
-function onDocumentVisibilityChange(): void {
-  if (document.visibilityState === 'hidden') {
-    lastWorkspaceRootsResumeAt = 0
-    if (workspaceRootsResumeTimer !== null) clearTimeout(workspaceRootsResumeTimer)
-    workspaceRootsResumeTimer = null
-    return
-  }
-  scheduleWorkspaceRootsResume()
-}
-
-function onWindowPageShow(event: PageTransitionEvent): void {
-  if (event.persisted) scheduleWorkspaceRootsResume()
-}
-
-function onWindowFocus(): void {
-  scheduleWorkspaceRootsResume()
-}
-
-function scheduleWorkspaceRootsResume(): void {
-  if (!hasInitialized.value || document.visibilityState !== 'visible') return
-  if (workspaceRootsResumeInProgress || workspaceRootsResumeTimer !== null) return
-  if (Date.now() - lastWorkspaceRootsResumeAt < 400) return
-  workspaceRootsResumeTimer = setTimeout(() => {
-    workspaceRootsResumeTimer = null
-    if (document.visibilityState !== 'visible') return
-    lastWorkspaceRootsResumeAt = Date.now()
-    workspaceRootsResumeInProgress = true
-    void refreshWorkspaceRoots().then((state) => {
-      if (state) {
-        workspaceRootOptionsState.value = state
-      }
-    }).finally(() => { workspaceRootsResumeInProgress = false })
-  }, 100)
 }
 
 async function openNativeQueue() {
@@ -1171,7 +1129,7 @@ function scheduleMobileConversationJumpToLatest(): void {
 }
 
 function onSelectNewThreadFolder(projectId: string): void {
-  const project = workspaceRootOptionsState.value.nativeProjects?.find(p => p.id === projectId)
+  const project = projects.value.find(p => p.id === projectId)
   if (!project) return
   void router.replace({ name: 'home', query: { ...route.query, cwd: project.roots[0]?.path || '', projectId } })
 }
@@ -1183,17 +1141,8 @@ async function onConfirmExistingFolder(path = resolvedExistingFolderPath.value):
   existingFolderError.value = ''
   isOpeningExistingFolder.value = true
   try {
-    const selection = await openProjectRootSelection(targetPath)
-    const normalizedPath = selection.path
-    if (!normalizedPath) {
-      existingFolderError.value = 'Failed to open the selected folder.'
-      return
-    }
-
-    newThreadCwd.value = normalizedPath
-    await router.replace({ name: 'home', query: { cwd: normalizedPath, ...(selection.projectId ? { projectId: selection.projectId } : {}) } })
-    await loadWorkspaceRootOptionsState()
-    await refreshAll({ includeSelectedThreadMessages: false, forceThreadRefresh: true })
+    const project = await selectProjectFolder(targetPath)
+    await router.replace({ name: 'home', query: { cwd: targetPath, projectId: project.id } })
     onCloseExistingFolderPanel()
   } catch (error) {
     existingFolderError.value = error instanceof Error ? error.message : 'Failed to open the selected folder.'
@@ -1206,11 +1155,9 @@ async function applyLaunchProjectPathFromUrl(): Promise<boolean> {
   const launchProjectPath = new URLSearchParams(window.location.search).get('openProjectPath')?.trim() ?? ''
   if (!launchProjectPath) return false
   try {
-    const selection = await openProjectRootSelection(launchProjectPath)
-    const normalizedPath = selection.path
-    if (!normalizedPath) return false
-    await router.replace({ name: 'home', query: { cwd: normalizedPath, ...(selection.projectId ? { projectId: selection.projectId } : {}) } })
-    await loadWorkspaceRootOptionsState()
+    const path = normalizePathForUi(launchProjectPath)
+    const project = await selectProjectFolder(path)
+    await router.replace({ name: 'home', query: { cwd: path, projectId: project.id } })
     const nextUrl = new URL(window.location.href)
     nextUrl.searchParams.delete('openProjectPath')
     window.history.replaceState({}, '', nextUrl.toString())
@@ -1222,42 +1169,12 @@ async function applyLaunchProjectPathFromUrl(): Promise<boolean> {
 }
 
 async function resolveProjectBaseDirectory(): Promise<string> {
-  const baseDir = getProjectBaseDirectory()
-  if (baseDir) return baseDir
+  const preferredRoot = projects.value.find(project => project.roots.length)?.roots[0]?.path || ''
+  if (preferredRoot) return preferredRoot
   try {
-    const loadedHomeDirectory = await getHomeDirectory()
-    if (loadedHomeDirectory) {
-      homeDirectory.value = loadedHomeDirectory
-      return loadedHomeDirectory
-    }
+    return await getHomeDirectory()
   } catch {
-    // Fallback handled by empty return.
-  }
-  return ''
-}
-
-function getProjectBaseDirectory(): string {
-  const selected = newThreadCwd.value.trim()
-  if (selected) return getPathParent(selected)
-  const first = newThreadFolderOptions.value[0]?.value?.trim() ?? ''
-  if (first) return getPathParent(first)
-  return homeDirectory.value.trim()
-}
-
-async function loadHomeDirectory(): Promise<void> {
-  try {
-    homeDirectory.value = await getHomeDirectory()
-  } catch {
-    homeDirectory.value = ''
-  }
-}
-
-async function loadWorkspaceRootOptionsState(): Promise<void> {
-  try {
-    const state = await getWorkspaceRootsState()
-    workspaceRootOptionsState.value = state
-  } catch (cause) {
-    desktopError.value = cause instanceof Error ? cause.message : 'Failed to load projects'
+    return ''
   }
 }
 

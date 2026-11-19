@@ -15,8 +15,8 @@ const assert = require('node:assert/strict')
   if(body.method==='model/list') result={data:models,nextCursor:null}
   if(body.method==='config/read') result={config:{model:'arbitrary',model_provider:'fixture',service_tier:null}}
   if(body.method==='skills/list') result={data:[]}
+  if (body.method === 'project/list') result = { data: [{id:'p',name:'Fixture',roots:[{path:'/fixture'}],position:0,metadata:{}}], nextCursor: null }
   let payload={result}
-  if(url.pathname.endsWith('/workspace-roots-state')) payload={data:{nativeProjects:[{id:'p',name:'Fixture',roots:[{path:'/fixture'}],position:0,metadata:{}}],order:['/fixture'],active:[],labels:{},projectOrder:['p']}}
   if(url.pathname.endsWith('/thread-pins')) { await route.fulfill({status:502,json:{error:'Native thread sections are required for pinning. Upgrade Codex.'}});return }
   if(url.pathname.endsWith('/pending')) payload={data:[]}
   if(url.pathname.endsWith('/methods')) payload={methods:[]}
