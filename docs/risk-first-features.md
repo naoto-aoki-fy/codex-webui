@@ -43,7 +43,7 @@ estimates are recorded with delivered results. These are engineering judgments.
 | 34 | 21 | 4/4/4/5 = 21 | Establish native editor/buffer identity before context UI | On-disk file reads cannot substitute for unsaved editor buffers; no new local bridge/listener. |
 | 03 | 23 | 5/5/4/4 = 23 | Observe actual resumed/native-updated thread permissions; 2/2/1/2 = 9 | Existing event ownership only. No extra resume to inspect; configuration defaults are not effective thread state. |
 | 04 | 21 | 4/5/3/4 = 21 | Observe native denied-review identities and retry eligibility; 2/2/1/3 = 10 | Bounded transient events; display text cannot reconstruct a native retry event. |
-| 29 | 24 | 4/5/5/5 = 24 | Actual account state and supported methods; 2/2/1/2 = 9 | Server owns tokens. Login requires completion/cancellation semantics and account-cache isolation. |
+| 29 | 24 | 4/5/5/5 = 24 | Display account details and offer native sign-in | The App Server owns credentials and applies login policy. |
 | 27 | 18 | 4/4/3/3 = 18 | Verify transcription-only/native realtime isolation first | No third-party transcription; microphone lifecycle, synthetic media and no billable live session. |
 | 07 | 20 | 4/4/4/4 = 20 | Explicit native queue add/list, preserving structured inputs; 3/3/2/3 = 14 | Native persistence only; immediate steering remains default, no uncertain write replay. |
 | 13 | 22 | 4/5/4/4 = 22 | One explicit remote worktree creation; 3/4/3/4 = 18 | Existing remote fixed-argv Git, no force/reset/cleanup; disposable repository and reconciliation fixtures. |
@@ -186,20 +186,10 @@ duplicates, other-thread identity, credential omission and disconnect cleanup.
 Zero new requests or subscriptions. Live acceptance **NOT RUN**. Retry contract
 and staleness validation remain a Phase 3 gate.
 
-### 29 — PARTIAL (authentication inspection delivered)
+### 29 — Native account details
 
-`account/read {refreshToken:false}` reads actual server-owned account state;
-`configRequirements/read.requirements.allowed_login_methods` reports effective
-login policy, including an explicit empty list. Missing policy stays unknown.
-The 0.169.0 account processor implements browser/device ChatGPT workflows and
-validates restrictions/external-token ownership before initiation. Inspection
-does not start login, refresh credentials or expose opaque account routing/tokens.
-The WebUI password remains separate. Residual inspection risk 1/2/1/2 = **8**.
-
-Two focused unit tests, type checks and six browser views passed: native account,
-allowed methods, secrets, signed out/no allowed method, errors and disconnect.
-Two lazy reads per explicit action; no startup read, polling or subscription.
-Native login lifecycle remains pending Phase 3. Live acceptance **NOT RUN**.
+Settings displays native account metadata on demand. See the
+[native account guide](native-codex-account.md) for current RPCs and credential handling.
 
 ## Phase 1 gate
 
@@ -489,38 +479,14 @@ queue browser suite with `randomUUID` disabled passed. Performance: sixteen rand
 bytes per explicit submission, no startup request/storage/subscription change.
 Native queue IDs remain opaque correlation strings, not credentials.
 
-### 29 — PARTIAL, native managed ChatGPT sign-in
+### 29 — Native managed ChatGPT sign-in
 
-This section records the original implementation. See [current account controls](native-authentication-state.md) for the sign-in flow and submission behavior after the WebUI guard was removed.
-
-The official `account_processor.rs` implements browser/device-code start,
-ID-specific cancellation, completion notification, AuthManager reload and account
-updates. Login URLs use `open_browser: false`; tokens remain native-owned. This
-workflow is limited to a signed-out default provider with actual native ChatGPT
-login permission. API keys, external-auth providers, account switching and logout
-remain outside this extension; the existing Logout action is preserved.
-
-Preparation reads account/policy plus at most 20 loaded thread identities and
-metadata (four reads in flight maximum); every loaded thread must be idle. The
-same checks run again before start. Existing known activity/approvals also block
-all account-changing UI. Native APIs have no cross-client activity lock; another
-client can race after preflight, which is disclosed before confirmation. Start
-requires explicit scope confirmation and warns that native start replaces pending
-login. Only matching completion plus actual ChatGPT account state establishes
-completion. Cancellation uses the exact acknowledged ID, including cancel intent
-before acknowledgment. Codes/URLs exist only in memory and clear on termination,
-disconnect or teardown. Unknown/internal errors never replay. Account changes keep
-sending paused until explicit existing gateway reconnect plus page reload clears
-connection/account caches. No OAuth client, process manager or secret storage.
-
-Full risk 4/5/5/5 = **24**; initial limited 4/5/4/4 = **22**, residual
-3/5/4/4 = **21**. Nine controller tests (15 including shared auth tests), type
-checks and six browser views passed: lazy reads, confirmation, both methods,
-exact cancellation, unrelated/early completions, native failure, unsafe URLs,
-account changes, disconnect, memory-only codes and cache barrier. Two preflight
-passes cost 3+N reads each (N≤20), one start, one reconciliation account read;
-no startup request, polling or added subscription. Live **NOT RUN**. Existing
-accounts/credentials were not changed during development.
+The App Server manages browser and device-code sign-in, ID-specific cancellation,
+completion notifications and logout. WebUI checks loaded conversation activity
+before an explicit sign-in and holds the sign-in link or device code in memory.
+See the [native account guide](native-codex-account.md) for the Settings workflow
+and the [account acceptance test](../tests/accounts-feedback-observability/accounts-panel-codex-login-callback-modal.md)
+for verification steps.
 
 ### Phase 3 contract limits: external imports, IDE and Cloud
 

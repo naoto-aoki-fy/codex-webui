@@ -32,7 +32,6 @@ it('does not record request or notification settings, read legacy sidecars, or c
   const client = new AppServerClient()
   vi.spyOn(client as any, 'ensureInitialized').mockResolvedValue(undefined)
   vi.spyOn(client as any, 'call').mockImplementation(async (method: unknown) => {
-    if (method === 'account/read') return { account: { type: 'chatgpt' }, requiresOpenaiAuth: true }
     if (method === 'turn/start' || method === 'thread/fork') return wire(method)
     return { thread: {} }
   })

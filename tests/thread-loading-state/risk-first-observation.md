@@ -98,4 +98,4 @@ polling or startup calls. Live permission-effect verification NOT RUN.
 ### Native managed ChatGPT sign-in
 
 Use the [account controls acceptance test](../accounts-feedback-observability/accounts-panel-codex-login-callback-modal.md).
-The state and wire guarantees are described in the [native account guide](../../docs/native-authentication-state.md).
+See the [native account guide](../../docs/native-codex-account.md) for the App Server RPCs and Settings behavior.

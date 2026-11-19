@@ -3,7 +3,7 @@ import { rpcCall } from './codexRpcClient'
 export type LoginMethod = 'chatgpt' | 'chatgptDeviceCode'
 export type NativeLogin = { id: string; url: string; code: string | null }
 
-export async function verifyIdleForLogin(isCurrent: () => boolean): Promise<void> {
+export async function assertLoadedConversationsIdle(isCurrent: () => boolean): Promise<void> {
   const inventory = await rpcCall<{ data?: unknown[]; nextCursor?: unknown }>('thread/loaded/list', { limit: 21 })
   const ids = inventory?.data
   if (!Array.isArray(ids) || ids.length > 20 || inventory.nextCursor !== null
@@ -30,7 +30,7 @@ function loginUrl(value:unknown){
  if(url.username||url.password||url.protocol!=='https:'&&!(url.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(url.hostname)))throw new Error('Native login URL scheme/credentials are unsafe to open')
  return value
 }
-export function nativeLogin(value:unknown,method:LoginMethod):NativeLogin{
+export function readNativeLoginChallenge(value:unknown,method:LoginMethod):NativeLogin{
  const row=value as Record<string,unknown>
  if(!row||row.type!==method||typeof row.loginId!=='string'||!row.loginId||row.loginId.length>2000)throw new Error('Native login identity/method unavailable; outcome may be unknown')
  const code=method==='chatgptDeviceCode'?row.userCode:null

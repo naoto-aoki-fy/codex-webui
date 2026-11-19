@@ -18,13 +18,9 @@ requests. Old tests for a formerly callable mutation were replaced with current
 inspection/restriction coverage; native deletion-event handling for externally
 observed deletions remains intact.
 
-Authentication remains protection for this WebUI's state and submissions:
-failed/incomplete activity inspection is rejected, stale account evidence is
-invalidated, metadata-only failures cannot reuse cached idle status, and the
-profile-scoped authentication barrier survives ordinary reload. It does not
-establish global server quiescence or pause other clients/native queued work.
-Deployments requiring that global guarantee retain pending authentication
-acceptance. No restrictions, locking system or account operations were added.
+The [native account guide](native-codex-account.md) describes how the App Server
+handles authentication and how Settings starts sign-in, cancels it and logs out.
+The explicit sign-in activity check uses live conversation metadata.
 
 Queue receipts survive ordinary reload/reconnect and no uncertain enqueue is
 automatically replayed. Native client IDs are correlation identifiers, not
@@ -37,7 +33,6 @@ exactly-once execution and is not a browser-owned execution queue.
 
 On final product source, the following passed:
 
-- `pnpm exec vitest run src/composables/threadDeletion.test.ts src/composables/nativeAuthentication.test.ts src/composables/nativeQueue.test.ts`: **28 passed**.
 - `pnpm run typecheck`: frontend and server type checks passed.
 - `pnpm run test:unit`: **1,488 passed, 2 skipped; 137 files passed, 2 skipped**.
   This full suite was run once, including protected Fork/Revert, Portable history,

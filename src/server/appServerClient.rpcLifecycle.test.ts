@@ -194,6 +194,7 @@ it.each(['tunnel', 'server restart'])('restores one subscription per thread afte
     expect(fresh.frames.some((f: any) => f.method === 'turn/start')).toBe(false)
     fresh.reply(frames[0].id, { thread: { id: 'running' } })
     await flush()
+    expect(fresh.frames.some((f: any) => f.method === 'account/read')).toBe(false)
     expect(wire.sockets).toHaveLength(2)
   } finally { client.dispose() }
 })

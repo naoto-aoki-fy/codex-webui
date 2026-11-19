@@ -80,7 +80,6 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (rpc === 'model/list') result = { data: params.modelProvider !== 'P'
       ? [{ id: 'A', displayName: 'Alternate', priority: 9 }, { id: 'C', displayName: 'C', priority: 0, isDefault: true }, { id: 'D', displayName: 'D', priority: 1 }]
       : [{ id: 'A', displayName: 'A', priority: 0 }, { id: 'P-only', displayName: 'P only', priority: 1 }] }
-    if (rpc === 'account/read') result = { account: { type: 'apiKey' } }
     if (rpc === 'config/read') result = { config: { model: 'A', model_provider: 'P' } }
     if (rpc === 'model-preferences/read') result = { schemaVersion: 1, revision: 1,
       preferred: { providerId: 'P', modelId: 'A', reasoningEffort: '', collaborationMode: 'default' },

@@ -1,6 +1,6 @@
 import { ref, shallowRef } from 'vue'
 import { rpcCall } from '../api/codexRpcClient'
-import { nativeLogin, verifyIdleForLogin, type LoginMethod, type NativeLogin } from '../api/nativeAuthentication'
+import { assertLoadedConversationsIdle, readNativeLoginChallenge, type LoginMethod, type NativeLogin } from '../api/nativeSignIn'
 
 type AccountStatus = {
   account: { type: string; email?: string; planType?: string; workspaceName?: string } | null
@@ -97,12 +97,12 @@ export function createAccountSettings() {
     return run(async isCurrent => {
       const canStart = () => isCurrent() && status.value?.account === null && workIsIdle()
       if (challenge.value || !status.value?.requiresOpenaiAuth || !canStart()) return
-      await verifyIdleForLogin(canStart)
+      await assertLoadedConversationsIdle(canStart)
       if (!canStart()) throw new Error('Connection or activity changed before sign-in.')
       earlyCompletions = new Map()
       const result = await rpcCall('account/login/start', { type: method })
       if (!isCurrent()) return
-      const login = nativeLogin(result, method)
+      const login = readNativeLoginChallenge(result, method)
       const error = earlyCompletions?.get(login.id)
       if (error === undefined) challenge.value = login
       else finishLogin(error)

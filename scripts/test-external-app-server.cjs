@@ -108,6 +108,7 @@ async function run() {
       if (envProfile === undefined) delete env.CODEXUI_CONNECTION_PROFILE
       else env.CODEXUI_CONNECTION_PROFILE = envProfile
       const profileArgs = flagProfile === undefined ? [] : ['--connection-profile', flagProfile]
+      const startupFrames = frames.length
       const child = spawn(dev ? 'pnpm' : process.execPath, dev
         ? ['run', 'dev', '--host', '127.0.0.1', '--port', String(port)]
         : ['dist-cli/index.js', '--host', '127.0.0.1', '--port', String(port), '--no-open', '--app-server-url', endpoint, ...profileArgs], {
@@ -202,6 +203,7 @@ async function run() {
           })
         }
         assert.deepEqual(frames.slice(firstWrite).map(frame => frame.method), ['turn/start', 'turn/steer'])
+        assert.equal(frames.slice(startupFrames).some(frame => frame.method === 'account/read'), false)
         const [unknown, active] = await Promise.all([call('maintenance/unknown'), call('account/read')])
         assert.equal(unknown.status, 502)
         assert.deepEqual(unknown.body, { error: 'Method not found' })
@@ -231,7 +233,9 @@ async function run() {
         assert.equal(auth.status, 403)
         assert.equal(frames.some(frame => frame.method === 'getAuthStatus'), false)
         assert.deepEqual(active.body, { result: { account: { type: 'apiKey' }, requiresOpenaiAuth: true } })
+        const beforeSessionRequest = frames.length
         assert.equal((await call('accountSession/switch')).status, 403)
+        assert.equal(frames.length, beforeSessionRequest)
         assert.deepEqual(await call('thread/name/set'), { status: 200, body: { result: {} } })
         const historyRequest = async (method, params) => {
           const response = await fetch(url + '/codex-api/rpc', {

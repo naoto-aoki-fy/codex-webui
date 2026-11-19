@@ -24,13 +24,14 @@ const thread = { id: 'maintenance-fixture', name: marker, preview: marker, proje
         const rpcCalls = [], pinnedIds = []
         const fixtureThread = structuredClone(thread)
         const pagedThread = { ...structuredClone(thread), id: 'paged-fixture', name: 'Paged fixture', turns: [] }
+        let connectionProfile = 'isolated-fixture'
         let socket
         const notify = (method, params) => socket.send(JSON.stringify({ method, params }))
         page.on('pageerror', e => errors.push(e.message))
         await page.routeWebSocket('**/codex-api/ws', ws => { socket = ws; ws.send(JSON.stringify({ method: 'ready', params: { ok: true } })) })
         await page.route('**/codex-api/**', async route => {
           const path = new URL(route.request().url()).pathname
-          if (path.endsWith('/connection-profile')) return route.fulfill({ json: { connectionProfile: 'isolated-fixture' } })
+          if (path.endsWith('/connection-profile')) return route.fulfill({ json: { connectionProfile } })
           let payload = {}
           if (path.endsWith('/thread-pins')) payload = { data: { threadIds: [...pinnedIds] } }
           else if (path.endsWith('/home-directory')) payload = { data: { path: '/fixture' } }
@@ -50,7 +51,6 @@ const thread = { id: 'maintenance-fixture', name: marker, preview: marker, proje
               : method === 'model/list' ? { data: [{ id: 'fixture-model', model: 'fixture-model', displayName: 'Fixture', isDefault: true, supportedReasoningEfforts: [] }], nextCursor: null }
               : method === 'config/read' ? { config: { model: 'fixture-model', model_provider: 'openai' } }
               : method === 'skills/list' ? { data: [] }
-              : method === 'account/read' ? { account: { type: 'apiKey' } }
               : { data: [], nextCursor: null }
             payload = { result }
           }
@@ -120,10 +120,12 @@ const thread = { id: 'maintenance-fixture', name: marker, preview: marker, proje
         }
         await page.locator('.thread-composer-input').fill('Profile isolation ' + marker)
         await page.waitForTimeout(500)
-        await page.goto(base + '/#/thread/' + thread.id)
+        connectionProfile = 'other-fixture'
+        await page.reload()
         await page.locator('.thread-composer-input').waitFor()
         assert.equal(await page.locator('.thread-composer-input').inputValue(), '')
-        await page.goto(base + '/#/thread/' + thread.id)
+        connectionProfile = 'isolated-fixture'
+        await page.reload()
         await page.locator('.thread-composer-input').waitFor()
         await page.waitForFunction(marker => document.querySelector('.thread-composer-input')?.value === 'Profile isolation ' + marker, marker)
         assert.equal(await page.locator('html').getAttribute('lang'), 'en')
