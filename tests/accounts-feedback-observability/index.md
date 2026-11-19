@@ -16,7 +16,3 @@ Return to the [manual test index](../../tests.md).
 | [Startup profiler request dedupe](startup-profiler-request-dedupe.md) |
 | [Account usage history](account-usage-history.md) |
 | [Read-only warnings and sanitized diagnostics](sanitized-diagnostics.md) |
-
-## Historical references (excluded from acceptance)
-
-- [Historical: Sentry error tracking and encrypted auth context](sentry-error-tracking-and-encrypted-auth-context.md)

@@ -12,8 +12,8 @@
 4. Copy plain text only and paste into composer.
 5. Copy mixed content (plain text + image, if source provides both) and paste once.
 6. Copy long plain text (at least 2000 characters) and paste into composer.
-7. Confirm the long text is attached as a `.txt` file instead of being inserted into the textarea.
-8. Send the message with the pasted image/text attachment.
+7. Edit the pasted text in the textarea. Verify no new attachment appears.
+8. Send the message with the pasted text and the previously attached image.
 
 #### Expected Results
 - Image-only clipboard paste adds an image attachment to composer.
