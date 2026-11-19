@@ -41,9 +41,8 @@ async function run() {
         assert.equal(frame.params.modelProvider, 'fixture-provider')
         assert.equal(frame.params.includeHidden, true)
       }
-      const result = frame.method === 'getAuthStatus' ? { authMethod: 'apiKey', authToken: 'fixture-secret', requiresOpenaiAuth: false }
-        : frame.method === 'thread/name/set' ? {}
-        : frame.method === 'account/read' ? { account: { type: 'apiKey' }, requiresOpenaiAuth: true }
+      const result = frame.method === 'thread/name/set' ? {}
+        : frame.method === 'account/read' ? { account: { type: 'apiKey', apiKey: 'fixture-secret' }, requiresOpenaiAuth: true, authToken: 'fixture-secret' }
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
         : frame.method === 'model/list' ? { data: [{ id: frame.params.cursor ? 'fixture-hidden' : 'fixture-model', hidden: Boolean(frame.params.cursor), isDefault: !frame.params.cursor }], nextCursor: frame.params.cursor ? null : 'fixture-next' }
         : ['thread/list', 'project/list'].includes(frame.method) ? { data: [], nextCursor: null }
@@ -99,7 +98,7 @@ async function run() {
         const call = async (method, configWriteErrors=false, commandErrors=false) => {
           const response = await fetch(url + '/codex-api/rpc', {
             method: 'POST', headers: { 'Content-Type': 'application/json', ...(configWriteErrors?{'X-Codex-Config-Write-Errors':'1'}:{}), ...(commandErrors?{'X-Codex-Command-Errors':'1'}:{}) },
-            body: JSON.stringify({ method, params: method === 'getAuthStatus' ? { includeToken: true } : { threadId: 'fixture', name: 'Native title' } }),
+            body: JSON.stringify({ method, params: method === 'account/login/start' ? { type: 'chatgpt' } : { threadId: 'fixture', name: 'Native title' } }),
           })
           return { status: response.status, body: await response.json() }
         }
@@ -117,8 +116,10 @@ async function run() {
         assert.equal(active.status, 200)
         assert.deepEqual(await call('generate-thread-title'), { status: 502, body: { error: 'Method not found' } })
         const auth = await call('getAuthStatus')
-        assert.equal(auth.status, 200)
-        assert.equal(auth.body.result.authToken, null)
+        assert.equal(auth.status, 403)
+        assert.equal(frames.some(frame => frame.method === 'getAuthStatus'), false)
+        assert.deepEqual(active.body, { result: { account: { type: 'apiKey' }, requiresOpenaiAuth: true } })
+        assert.equal((await call('accountSession/switch')).status, 403)
         assert.deepEqual(await call('thread/name/set'), { status: 200, body: { result: {} } })
         const historyRequest = async (method, params) => {
           const response = await fetch(url + '/codex-api/rpc', {

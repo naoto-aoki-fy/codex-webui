@@ -186,6 +186,7 @@ export class AppServerClient {
 
   private emitNotification(notification: { method: string; params: unknown }): void {
     this.authentication.observe(notification.method, notification.params)
+    if (notification.method === 'account/updated' || notification.method === 'account/login/completed') return
     this.recordStreamEvent(notification)
     const nThreadId = this.extractThreadIdFromParams(notification.params)
     if (nThreadId && notification.method !== 'turn/generationMetadata') {
@@ -411,7 +412,8 @@ export class AppServerClient {
     const homeToken = this.codexHome.token()
     await this.ensureInitialized()
     if (method === 'native-authentication/read') return this.authentication.read()
-    if (method === 'native-authentication/reconcile') return this.authentication.reconcile()
+    if (method === 'native-authentication/reconcile') return this.authentication.reconcile(params)
+    if (method === 'account/logout') return this.authentication.logout()
     if (method === 'account/login/start') return this.authentication.start(params)
     if (method === 'account/login/cancel') return this.authentication.cancel(params)
     if (AUTHENTICATED_WRITES.has(method)) await this.authentication.assertCanSend()

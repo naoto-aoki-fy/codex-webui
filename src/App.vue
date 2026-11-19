@@ -335,14 +335,8 @@
       <div class="settings-content">
         <section v-if="settingsLoaded" v-show="settingsCategory==='Codex account'" aria-label="Codex account">
               <AccountSettingsPanel :epoch="operationEpoch" :warnings="diagnosticWarnings"
-                :native-auth="nativeAuthentication" :ensure-native-auth="ensureNativeAuthentication"
-                :auth-available="codexAuthAvailable"
-                :refreshing="isRefreshingCodexAuth"
-                :change-blocked="isCodexAuthChangeBlocked"
-                :native-change-blocked="nativeAccountChangeBlocked"
-                :error="accountActionError"
-                @refresh="onRefreshCodexAuth"
-                @logout="onLogoutCodex"
+                :auth="backendAuthentication" :status="nativeAuthenticationStatus"
+                :change-blocked="nativeAccountChangeBlocked"
               />
         </section>
         <section v-show="settingsCategory==='General'" aria-label="General preferences">
@@ -424,10 +418,9 @@ import IconTablerX from './components/icons/IconTablerX.vue'
 import { useDesktopState } from './composables/useDesktopState'
 import { useFolderPicker } from './composables/useFolderPicker'
 import { useMobile } from './composables/useMobile'
-import { logoutCodex, getHomeDirectory, searchThreads } from './api/codexGateway'
+import { getHomeDirectory, searchThreads } from './api/codexGateway'
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
-import { getCodexAuthenticationStatus } from './api/codexGateway'
 import { normalizePathForUi } from './pathUtils.js'
 import { formatChatPageTitle, getChatFolderName, getThreadContextLabel } from './utils/chatFolderLabels'
 import { copyTextToClipboard } from './utils/clipboard'
@@ -532,7 +525,7 @@ const {
   deniedActions,
   nativeQueue,
   permissionChanges,
-  nativeAuthentication,nativeAuthenticationBlocked,nativeAuthenticationStatus,nativeAccountChangeBlocked,ensureNativeAuthentication,
+  backendAuthentication, nativeAuthenticationBlocked, nativeAuthenticationStatus, nativeAccountChangeBlocked,
   nativeDeletion,ensureNativeDeletion,
   nativeShell,ensureNativeShell,
   compaction, review,
@@ -626,9 +619,6 @@ const connectorsLoaded = ref(false)
 function openConnectorSettings() { connectorsLoaded.value = true; settingsCategory.value = 'Apps / Connectors'; isSettingsOpen.value = true }
 watch(settingsCategory, category => { if (category === 'Apps / Connectors') connectorsLoaded.value = true })
 watch(isSettingsOpen, open => { if (open) settingsLoaded.value = true })
-const accountActionError = ref('')
-const codexAuthAvailable = ref<boolean | null>(null)
-const isRefreshingCodexAuth = ref(false)
 const SEND_WITH_ENTER_KEY = 'codex-web-local.send-with-enter.v1'
 const DARK_MODE_KEY = 'codex-web-local.dark-mode.v1'
 
@@ -723,9 +713,7 @@ const isVirtualKeyboardOpen = computed(() => {
 })
 const isSelectedThreadInProgress = computed(() => !isHomeRoute.value && selectedThread.value?.inProgress === true)
 const showThreadContextBadge = computed(() => !isHomeRoute.value && !isSkillsRoute.value && selectedThreadId.value.trim().length > 0)
-const isCodexAuthChangeBlocked = computed(() =>
-  nativeAuthenticationBlocked.value || nativeAccountChangeBlocked.value,
-)
+
 
 function formatCompactTokenCount(value: number): string {
   if (!Number.isFinite(value)) return '0'
@@ -815,7 +803,6 @@ onMounted(() => {
   applyDarkMode()
   darkModeMediaQuery?.addEventListener('change', applyDarkMode)
   void initialize()
-  void loadCodexAuthStatus()
 })
 
 onUnmounted(() => {
@@ -1337,20 +1324,6 @@ function cycleChatWidth(): void {
   writeUiPreference(CHAT_WIDTH_KEY, chatWidth.value)
 }
 
-async function loadCodexAuthStatus(): Promise<void> {
-  const epoch=operationEpoch.value
-  try {
-    const status = await getCodexAuthenticationStatus()
-    if(epoch!==operationEpoch.value)return
-    if (typeof status === 'boolean') codexAuthAvailable.value = status
-  } catch (error) {
-    if(epoch!==operationEpoch.value)return
-    accountActionError.value = error instanceof Error ? error.message : 'Unable to read Codex authentication status.'
-  }
-}
-watch(operationEpoch,()=>{codexAuthAvailable.value=null;accountActionError.value=''},{flush:'sync'})
-watch(nativeAuthenticationBlocked,blocked=>{if(!blocked)void loadCodexAuthStatus()})
-
 function applyDarkMode(): void {
   const root = document.documentElement
   if (darkMode.value === 'dark') {
@@ -1454,34 +1427,6 @@ watch(isMobile, (mobile) => {
   }
 }, { immediate: true })
 
-async function onRefreshCodexAuth(): Promise<void> {
-  if (isRefreshingCodexAuth.value) return
-  isRefreshingCodexAuth.value = true
-  accountActionError.value = ''
-  try {
-    await loadCodexAuthStatus()
-    await refreshAll({ includeSelectedThreadMessages: false })
-  } catch (error) {
-    accountActionError.value = error instanceof Error ? error.message : 'Failed to refresh authentication'
-  } finally {
-    isRefreshingCodexAuth.value = false
-  }
-}
-async function onLogoutCodex(): Promise<void> {
-  if (isCodexAuthChangeBlocked.value || isRefreshingCodexAuth.value) return
-  isRefreshingCodexAuth.value = true
-  accountActionError.value = ''
-  try {
-    await logoutCodex()
-    codexAuthAvailable.value = false
-    await loadCodexAuthStatus()
-    await refreshAll({ includeSelectedThreadMessages: false })
-  } catch (error) {
-    accountActionError.value = error instanceof Error ? error.message : 'Failed to log out'
-  } finally {
-    isRefreshingCodexAuth.value = false
-  }
-}
 </script>
 
 <style scoped>
