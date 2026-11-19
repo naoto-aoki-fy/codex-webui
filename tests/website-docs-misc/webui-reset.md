@@ -38,7 +38,7 @@ newline to `.cloudflared-install-prompted` and write
 Stop all writers for both fixture homes.
 
 1. Run `pnpm reset:webui --all-profiles --shared --dry-run`. Record the standard
-   action list, including the index, upload files, and transfer member.
+   action list, including the upload files and transfer member. Keep the historical index and any scratch files byte-identical.
 2. Add `--include-legacy`. Compare both plans. Expect every standard action,
    the marker and onboarding member, and a preservation message for the provider file. Add
    `--acknowledge-legacy-data-loss` and confirm the provider file appears.

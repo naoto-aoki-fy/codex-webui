@@ -90,7 +90,7 @@ pending RPC calls; requests are not replayed automatically.
 
 Browser storage retains per-thread model and collaboration choices, drafts and
 layout preferences. Opening Home starts with no selected thread. Thread names and pins use native Codex state. Workspace UI preferences use shared global
-state; attachment-only history has an [app-owned index](docs/persistent-thread-index.md).
+state. See [native history and attachment sends](docs/native-thread-history.md).
 Persistence does not make sending messages available while disconnected.
 
 ## Bridge contracts

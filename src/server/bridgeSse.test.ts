@@ -25,7 +25,7 @@ beforeEach(() => {
     }),
     dispose: vi.fn(() => listeners.clear()),
   }
-  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v2', appServer, methodCatalog: {} }
+  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v3', appServer, methodCatalog: {} }
 })
 afterEach(() => {
   scope.__codexRemoteSharedBridge__ = previous
@@ -308,7 +308,7 @@ it('stale owner closes only its SSE after runtime replacement', async () => {
   const oldDispose = appServer.dispose
   const replacementListeners = new Set<(value: Notification) => void>()
   const replacement = {
-    version: 'external-websocket-files-v2', methodCatalog: {}, appServer: { dispose: vi.fn(), onNotification: vi.fn((fn: (value: Notification) => void) => {
+    version: 'external-websocket-files-v3', methodCatalog: {}, appServer: { dispose: vi.fn(), onNotification: vi.fn((fn: (value: Notification) => void) => {
       replacementListeners.add(fn)
       return () => replacementListeners.delete(fn)
     }) },

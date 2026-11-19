@@ -3,9 +3,8 @@
 `src/server/appServerClient.ts` owns one transport per client, monotonic RPC IDs,
 pending calls and approval handles, notification listeners, connection generations,
 reconnect, subscribed thread IDs, stream buffers,
-snapshots and earlier-page caching. Construction does not connect. The bridge's
-zero-argument `AppServerClient` subclass injects its attachment-only thread index;
-the core never imports the bridge.
+snapshots and earlier-page caching. Construction does not connect. The bridge
+uses the same client for native calls and reconnection.
 
 The bridge owns HTTP routing, archive/materialization fallback, history shaping,
 search and shared runtime leases. Middleware release is idempotent and identity-safe;

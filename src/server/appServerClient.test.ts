@@ -88,7 +88,7 @@ it('reuses the current runtime across middleware instances and disposes the acti
   const previous = scope.__codexRemoteSharedBridge__
   const client = new AppServerClient()
   const dispose = vi.spyOn(client, 'dispose')
-  const runtime = { version: 'external-websocket-files-v2', appServer: client, methodCatalog: {} }
+  const runtime = { version: 'external-websocket-files-v3', appServer: client, methodCatalog: {} }
   scope.__codexRemoteSharedBridge__ = runtime
   try {
     const first = createCodexBridgeMiddleware()
@@ -117,21 +117,21 @@ it('reuses the current runtime across middleware instances and disposes the acti
   }
 })
 
-it('uses the injected journal without recording turn metadata without creating or connecting another runtime', async () => {
-  const { AppServerClient: ClientCore } = await import('./appServerClient')
+it('forwards an attachment-only turn directly and does not use the request as historical metadata', async () => {
   const call = vi.fn(async (method: string, _params: unknown) => method === 'account/read' ? {account:{type:'chatgpt'},requiresOpenaiAuth:true} : { turn: { id: 'turn' } })
-  const threadIndex = { call: vi.fn(async (method, params, rpc) => rpc(method, params)) }
-  const client = new ClientCore({ threadIndex })
+  const client = new AppServerClient()
   const internal = client as any
   internal.ensureInitialized = vi.fn().mockResolvedValue(undefined)
   internal.call = call
   const listener = vi.fn()
   client.onNotification(listener)
   try {
-    const params = { threadId: 'thread', model: 'fixture', effort: 'high' }
+    const params = { threadId: 'thread', model: 'fixture', effort: 'high', input: [
+      { type: 'text', text: '# Files mentioned by the user:\n\n## notes.txt: /remote/notes.txt\n\n## My request for Codex:\n\n' },
+    ] }
     const result = await client.rpc('turn/start', params) as any
-    expect(threadIndex.call).toHaveBeenCalledOnce()
     expect(call.mock.calls.filter(([method])=>method==='turn/start')).toEqual([['turn/start',params]])
+    expect(call.mock.calls.some(([method]) => method === 'thread/read')).toBe(false)
     expect(result.turn).not.toHaveProperty('generationMetadata')
     expect(listener.mock.calls.every(([event])=>event.method==='native-authentication/state')).toBe(true)
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})

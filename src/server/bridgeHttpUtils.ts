@@ -37,11 +37,6 @@ export function isThreadMaterializationPendingError(error: unknown): boolean {
   return message.includes('not materialized yet') && message.includes('includeturns is unavailable before first user message')
 }
 
-export function isThreadNotFoundError(error: unknown): boolean {
-  const message = getErrorMessage(error, '').toLowerCase()
-  return message.includes('thread not found') || message.includes('no rollout found for thread id')
-}
-
 export function setJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode
   res.setHeader('Content-Type', 'application/json; charset=utf-8')

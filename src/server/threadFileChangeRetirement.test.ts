@@ -44,7 +44,7 @@ beforeEach(async () => {
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
   const pager = new RemoteHistoryPager({ rpc: async (method, params) => nativeHistoryResponse(method, params, await rpc(method, params)), getConnectionGeneration: () => 1 })
   scope.__codexRemoteSharedBridge__ = {
-    version: 'external-websocket-files-v2', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getStreamEvents: () => [], readThreadPage: pager.read.bind(pager) },
+    version: 'external-websocket-files-v3', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getStreamEvents: () => [], readThreadPage: pager.read.bind(pager) },
     methodCatalog: {},
   }
 })

@@ -36,5 +36,5 @@ verification was performed. The frontend build emitted 378.59 kB main JavaScript
 
 Pins now use native sections; automatic worktree creation and unused session
 history enrichment are removed. See [current ownership and capabilities](native-project-migration.md).
-Attachment-only intent persistence and pending-send recovery remain necessary; see
-[history ownership and recovery](persistent-thread-index.md).
+Current attachment submission and recovery are documented in
+[history ownership and recovery](native-thread-history.md).
