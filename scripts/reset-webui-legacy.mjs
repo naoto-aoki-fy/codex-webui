@@ -1,7 +1,7 @@
 import { basename, join } from 'node:path'
 import { read, readBytes } from './reset-webui-files.mjs'
 import {
-  automationRunId, hash, legacyFiles, legacyKeys, legacyTrees, parseJson, protectedLegacy, resolvedThreadIndex, telegramOutbox,
+  automationRunId, hash, legacyFiles, legacyKeys, legacyTrees, parseJson, protectedLegacy, telegramOutbox,
 } from './reset-webui-legacy-registry.mjs'
 
 const ackFlag = '--acknowledge-legacy-data-loss'
@@ -29,6 +29,7 @@ function verifiedText(path, info, limit = inspectionLimit) {
 }
 
 function planFile(plan, args, path, target) {
+  if (plan.actions.has(path)) return
   const info = plan.file(path)
   if (!info) return plan.notice('Missing', path)
   const raw = verifiedText(path, info, target.limit)
@@ -49,16 +50,12 @@ export function legacyGlobalKeys(plan, args, path, state) {
   return keys
 }
 
-export function hasThreadIndexRecovery(path, info) {
-  const raw = verifiedText(path, info)
-  return raw === undefined || !resolvedThreadIndex(raw)
-}
-
 function removeIfEmpty(plan, path, info, entries, reason) {
-  if (entries.every(name => plan.removals.has(join(path, name)))) plan.removeDirectory(path, info, reason)
+  if (entries.every(name => plan.removes(join(path, name)))) plan.removeDirectory(path, info, reason)
 }
 
 function planSidecars(plan, args, path, target, includeIdentities, topLevel = true) {
+  if (plan.actions.has(path)) return
   const info = plan.directory(path)
   if (!info) return plan.notice('Missing', path)
   plan.requireOwner(path, info)
@@ -79,6 +76,7 @@ function planSidecars(plan, args, path, target, includeIdentities, topLevel = tr
 function planPatches(plan, args) {
   const target = legacyTrees.patches
   const path = join(args.media, target.path)
+  if (plan.actions.has(path)) return
   const info = plan.directory(path)
   if (!info) return plan.notice('Missing', path)
   const entries = plan.names(path, info)
@@ -98,6 +96,8 @@ function planTree(plan, path, target, classify) {
     plan.requireOwner(folder, info)
     for (const name of plan.names(folder, info)) {
       const child = join(folder, name)
+      if (plan.removes(child)) continue
+      if (plan.actions.has(child)) return false
       const rule = classify(name, parents)
       if (rule === 'directory') {
         const directory = plan.directory(child)
@@ -155,6 +155,7 @@ function planTemporary(plan, args) {
     const target = schema ? legacyTrees.schemas : legacyTrees.search
     if (!target.match.test(name)) continue
     const path = join(args.media, name)
+    if (plan.actions.has(path)) continue
     const info = plan.directory(path)
     if (!info) throw new Error(`Changed during reset: ${JSON.stringify(path)}`)
     plan.requireOwner(path, info)
@@ -183,8 +184,9 @@ function planTemporary(plan, args) {
 
 function planOutbox(plan, args, names) {
   const target = telegramOutbox
-  const files = [target.path, ...names.filter(name => target.scratch.test(name))].map(name => join(args.home, name))
-  const locks = target.locks.map(name => join(args.home, name))
+  const files = [target.path, ...names.filter(name => target.scratch.test(name))]
+    .map(name => join(args.home, name)).filter(path => !plan.actions.has(path))
+  const locks = target.locks.map(name => join(args.home, name)).filter(path => !plan.actions.has(path))
   const verified = []
   for (const path of files) {
     const info = plan.file(path)
@@ -212,6 +214,7 @@ function planOutbox(plan, args, names) {
 function planAutomations(plan, args) {
   const target = legacyTrees.automations
   const path = join(args.home, target.path)
+  if (plan.actions.has(path)) return
   if (!plan.directory(path)) return plan.notice('Missing', path)
   const storePath = join(path, 'store.json')
   const stat = plan.file(storePath)

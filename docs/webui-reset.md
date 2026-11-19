@@ -61,7 +61,7 @@ the packaged CLI. The Vite development server can start from source.
 | Scope | Cleanup |
 | --- | --- |
 | Selected profile | `codexapp-thread-index.json` (active attachment-intent recovery with older list snapshots tolerated) and `codexapp-model-preferences.json` (active defaults, reasoning, acceptance records and usage). For `legacy` these are under the backend home. Named profiles use `codexapp-profiles/<SHA-256 of profile ID>/`. |
-| Profile global JSON | Remove `conversation-transfers-v1` (active Portable Fork records) and `codexapp-native-project-migrations-v1` (legacy, read by the upgrade guard) when receipts are complete and no legacy Project inputs require them. The root `.codex-global-state.json` stays in place, and retained top-level members keep their original JSON bytes. A named profile's copy is deleted only when every member is safely removable. Empty WebUI profile directories are then removed. |
+| Profile global JSON | Remove `conversation-transfers-v1` (Portable Fork records). Remove `codexapp-native-project-migrations-v1` when receipts are complete and no legacy Project inputs require them. The root `.codex-global-state.json` stays in place, and retained top-level members keep their original JSON bytes. A named profile's copy is deleted only when every member is safely removable. Empty WebUI profile directories are then removed. |
 | Profile scratch | Exact UUID-suffixed temporary files for the thread index and model preferences, state-writer temporaries within named profiles, and temporary files left by this reset. Exact WebUI lock directories are eligible after at least 30 seconds, when empty and all writers are stopped. |
 | Shared backend home, with `--shared` | `codexapp-upload-inventory.json`, `codexapp-uploads.jsonl`, and `webui-auth-sessions.json` plus their recognized scratch paths. The upload journal began as legacy import input and is still appended for new upload attempts. Session deletion revokes all WebUI password-login tokens for this home on restart. |
 | OS temporary directory, with `--shared` | Flat files matching the inline-media writer's `inline-image-`, `inline-file-`, and `generated-image-` names with a SHA-1 suffix in `codex-web-inline-media/`. Unrecognized entries stay. |
@@ -85,8 +85,10 @@ state changes.
 
 ## Include historical WebUI state
 
-`--include-legacy` evaluates every verified historical format in the scope
-you select. It defaults to off. A named profile keeps its own state scope.
+`--include-legacy` extends the standard reset by adding verified historical
+WebUI artifacts in the scope you select. Every standard deletion and
+modification stays in the plan. Historical cleanup defaults to off. A named
+profile keeps its own state scope.
 `--profile legacy` covers pre-profile state, `--all-profiles` also covers
 historical sidecars keyed by server identity, and `--shared` includes the
 backend's shared files and temporary directory. `--build` is independent.
@@ -97,7 +99,7 @@ pnpm reset:webui --all-profiles --shared --include-legacy --dry-run
 pnpm reset:webui --all-profiles --shared --include-legacy --execute --offline
 ```
 
-Files that may hold unique historical information require
+Additional historical targets that may hold unique information require
 `--acknowledge-legacy-data-loss`. Without it, the plan explains why those
 files or keys are kept and still includes verified disposable artifacts. Back
 up the listed files if you need their contents. Include the acknowledgement
@@ -108,13 +110,12 @@ pnpm reset:webui --all-profiles --shared --include-legacy --acknowledge-legacy-d
 pnpm reset:webui --all-profiles --shared --include-legacy --acknowledge-legacy-data-loss --execute --offline
 ```
 
-The legacy option keeps Portable Fork transcript and duplicate-prevention
-records, Project migration receipts, attachment indexes with pending or
-unreadable intents and their scratch files, global-state recovery scratch,
-and shared upload inventory, journal, and scratch. The upload journal is
-still an import source. These protections apply with the acknowledgement.
-The original reset policy in the [backend inventory](#backend-inventory)
-applies when the legacy flag is omitted.
+The [standard reset policy](#backend-inventory) governs Portable Fork records,
+eligible Project migration receipts, attachment indexes, and recognized
+profile scratch in every mode. With `--shared`, the standard plan also
+includes the upload inventory, journal, and recognized upload scratch. The
+acknowledgement applies only to additional historical targets. Ownership
+checks and filesystem preflight apply to the combined plan.
 
 ### Historical writer inventory
 
@@ -144,15 +145,14 @@ original JSON bytes of each preserved member.
 | Shared temporary, `codexui-review-patches/<timestamp>-<hex>.patch` | Interrupted Git review patch operations, `3d82d73` | Require acknowledgement and recognizable Git diff bytes. Patches can hold unique edits. |
 | Shared temporary, `codex-web-local-schema-<6 characters>/` | Generated App Server RPC catalogs, original `fbc8a66` | Remove private batches with recognized Codex-generated JSON Schemas at the root or under `v1/` and `v2/`. An unexpected file preserves the batch. |
 | Shared temporary, `codex-web-local-thread-search-<6 characters>/` | Retired zvec search collection and RocksDB ID map, `c6b4f1d` | Remove private empty batches or batches with the `thread_search` / `content_vec` manifest and recognized collection layout. An unexpected file preserves the batch. |
-| Remote, `cache/model-history/v1/<64 hex>.json` | WebUI-generated, regenerable metadata from native rollouts, `88e5bd9` and `b156a0e` | Legacy mode checks the historical execution-evidence schema, including explicitly unspecified values. Native rollout files and the parent cache namespace stay. |
+| Remote, `cache/model-history/v1/<64 hex>.json` | WebUI-generated, regenerable metadata from native rollouts, `88e5bd9` and `b156a0e` | Add verified historical execution-evidence records, including explicitly unspecified values, to the standard remote plan. Native rollout files and the parent cache namespace stay. |
 
 ### Protected historical state
 
 | Artifact | Ownership and reason to retain |
 | --- | --- |
-| Global `thread-titles`, workspace roots and labels, `project-order`, `pinned-thread-ids`, `remote-projects`, `codexapp-native-project-migrations-v1` | Mixed native and historical WebUI state. Project and pin compatibility guards still use migration inputs and receipts. See `7518a4c`, `850246b`, and `eff44c6`. |
-| Global `thread-queue-state` and `conversation-transfers-v1` | Deferred prompts may be unsent. Portable Fork uses its records for transcript display, recovery and duplicate prevention. See `30acccc` and `54f281e`. |
-| `codexapp-thread-index.json` and scratch with unresolved state, `codexapp-upload-inventory.json`, `codexapp-uploads.jsonl` and inventory scratch | Required or potentially needed for attachment submission recovery, migration and remote upload accounting. See `0d1db25` and `d021528`. |
+| Global `thread-titles`, workspace roots and labels, `project-order`, `pinned-thread-ids`, `remote-projects`, and incomplete or required Project migration receipts | Mixed native and historical WebUI state. Project and pin compatibility guards still use migration inputs and receipts. See `7518a4c`, `850246b`, and `eff44c6`. |
+| Global `thread-queue-state` | Deferred prompts may be unsent. See `30acccc`. |
 | `codex-web-uploads/f-<6 characters>/` under the old backend's temporary directory, and remote `codexapp-uploads/` | Historical and current staged attachments may be referenced in native conversations or drafts. When an old backend ran on the App Server host, the old temporary staging directory belongs to that host. See `2f1fb38` and `9b3c7d7`. |
 | `accounts.json`, `accounts/<id>/auth.json`, temporary `codexui-account-*` homes, native `auth.json` | Retired account switching and quota checks stored copies of official Codex credentials. See `696372d` and `8b90e98`. |
 | `automations/<id>/automation.toml` and `memory.md`, `pulse-today.json` | Native or unverified ownership. The former WebUI heartbeat and cron implementations used the native automation directory. The upstream Pulse feed was read-only. |
@@ -191,10 +191,9 @@ node scripts/reset-webui.mjs --remote --remote-codex-home /srv/codex \
   --execute --offline --confirm-remote app-server-host
 ```
 
-Add `--include-legacy` to both commands to verify historical cache formats
-on that host. The legacy flag preserves old staging directories and uploads
-by default. Run the backend command and App Server command directly on their
-respective hosts.
+Add `--include-legacy` to both commands to include additional verified
+historical cache formats on that host. Run the backend command and App Server
+command directly on their respective hosts.
 
 Remote mode removes WebUI cache records from `cache/model-history/v1/` when
 their names and payloads match the current rollout metadata writer. The

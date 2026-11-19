@@ -132,13 +132,6 @@ export const automationStore = json(value => fields(value, {
   }, ['id', 'automationId', 'status'])),
 }))
 
-export function resolvedThreadIndex(raw) {
-  const index = parseJson(raw)
-  return record(index) && Object.values(index).every(row => fields(row, {
-    thread: record, archived: bool, deleted: bool, firstTurnId: text,
-  }, []))
-}
-
 const file = (path, writer, purpose, validate, policy = 'acknowledge') =>
   ({ path, scope: 'shared', writer, purpose, validate, policy })
 
@@ -201,8 +194,8 @@ export const legacyTrees = {
 }
 
 export const protectedLegacy = [
-  { scope: 'profile', path: '.codex-global-state.json', writer: 'eff44c6, 3f65904, 54f281e, ab66bab^',
-    purpose: 'native workspace data, migration inputs and receipts, Portable Fork records, retired thread titles and deferred queue' },
+  { scope: 'profile', path: 'global keys thread-titles and thread-queue-state', writer: '7518a4c, ab66bab^',
+    purpose: 'mixed thread titles and potentially unsent deferred prompts' },
   { scope: 'shared', path: 'accounts.json and accounts/', writer: '696372d src/server/accountRoutes.ts',
     purpose: 'account switch metadata and official Codex credentials' },
   { scope: 'shared', path: 'automations/', writer: 'fa148d0, 1362a7e src/server/codexAppServerBridge.ts',
