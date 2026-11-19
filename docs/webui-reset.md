@@ -60,9 +60,9 @@ the packaged CLI. The Vite development server can start from source.
 
 | Scope | Cleanup |
 | --- | --- |
-| Selected profile | `codexapp-thread-index.json` (active attachment-intent recovery with older list snapshots tolerated) and `codexapp-model-preferences.json` (active defaults, reasoning, acceptance records and usage). For `legacy` these are under the backend home. Named profiles use `codexapp-profiles/<SHA-256 of profile ID>/`. |
+| Selected profile | `codexapp-model-preferences.json` (active defaults, reasoning, acceptance records and usage). For `legacy` it is under the backend home. Named profiles use `codexapp-profiles/<SHA-256 of profile ID>/`. |
 | Profile global JSON | Remove `conversation-transfers-v1` (Portable Fork records). The root `.codex-global-state.json` stays in place, and retained top-level members keep their original JSON bytes. A named profile's copy is deleted only when every member is safely removable. Empty WebUI profile directories are then removed. |
-| Profile scratch | Exact UUID-suffixed temporary files for the thread index and model preferences, state-writer temporaries within named profiles, and temporary files left by this reset. Exact WebUI lock directories are eligible after at least 30 seconds, when empty and all writers are stopped. |
+| Profile scratch | Exact UUID-suffixed temporary files for model preferences, state-writer temporaries within named profiles, and temporary files left by this reset. Exact WebUI lock directories are eligible after at least 30 seconds, when empty and all writers are stopped. |
 | Shared backend home, with `--shared` | `codexapp-upload-inventory.json`, `codexapp-uploads.jsonl`, and `webui-auth-sessions.json` plus their recognized scratch paths. The upload journal began as legacy import input and is still appended for new upload attempts. Session deletion revokes all WebUI password-login tokens for this home on restart. |
 | OS temporary directory, with `--shared` | Flat files matching the inline-media writer's `inline-image-`, `inline-file-`, and `generated-image-` names with a SHA-1 suffix in `codex-web-inline-media/`. Unrecognized entries stay. |
 | Checkout, with `--build` | `dist/`, `dist-cli/`, `output/playwright/`, `test-results/`, and root-level `*.tsbuildinfo`. Cleanup checks the Git index and refuses tracked data or nested Git worktrees. The rest of `output/`, dependencies, source, and workspace data stay. |
@@ -110,7 +110,7 @@ pnpm reset:webui --all-profiles --shared --include-legacy --acknowledge-legacy-d
 ```
 
 The [standard reset policy](#backend-inventory) governs Portable Fork records,
-attachment indexes and recognized
+model preferences and recognized
 profile scratch in every mode. With `--shared`, the standard plan also
 includes the upload inventory, journal, and recognized upload scratch. The
 acknowledgement applies only to additional historical targets. Ownership
@@ -151,6 +151,7 @@ original JSON bytes of each preserved member.
 | Artifact | Ownership and reason to retain |
 | --- | --- |
 | Global `thread-titles`, workspace roots and labels, `project-order`, `pinned-thread-ids`, `remote-projects`, and historical Project receipts | Mixed native and historical state. See `7518a4c`, `850246b`, and `eff44c6`. |
+| `codexapp-thread-index.json`, its lock and scratch files | Historical attachment intents may contain the only record of an unresolved send. |
 | Global `thread-queue-state` | Deferred prompts may be unsent. See `30acccc`. |
 | `codex-web-uploads/f-<6 characters>/` under the old backend's temporary directory, and remote `codexapp-uploads/` | Historical and current staged attachments may be referenced in native conversations or drafts. When an old backend ran on the App Server host, the old temporary staging directory belongs to that host. See `2f1fb38` and `9b3c7d7`. |
 | `accounts.json`, `accounts/<id>/auth.json`, temporary `codexui-account-*` homes, native `auth.json` | Retired account switching and quota checks stored copies of official Codex credentials. See `696372d` and `8b90e98`. |

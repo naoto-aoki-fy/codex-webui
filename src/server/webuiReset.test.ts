@@ -10,7 +10,7 @@ const backendScript = join(repository, 'scripts/reset-webui.mjs')
 const maintenance = join(repository, 'src/server/webuiMaintenance.mjs')
 const id = '1b937cf7-0751-4c14-972a-cedc95270924'
 const stateFile = '.codex-global-state.json'
-const index = 'codexapp-thread-index.json'
+const historicalIndex = 'codexapp-thread-index.json'
 const preferences = 'codexapp-model-preferences.json'
 const auth = 'webui-auth-sessions.json'
 const inventory = 'codexapp-upload-inventory.json'
@@ -76,7 +76,7 @@ describe('WebUI reset preview and validation', () => {
   it('defaults to a dry run and reports the plan without mutations', () => {
     const raw = `{"${transfer}":{"one":"secret value"},"official":true}`
     write(join(home, stateFile), raw)
-    write(join(home, index))
+    write(join(home, preferences))
     write(join(home, auth))
     const result = run(['--all-profiles', '--shared'])
     expect(result.code, result.output).toBe(0)
@@ -86,7 +86,7 @@ describe('WebUI reset preview and validation', () => {
     expect(result.output).toContain('"official"')
     expect(result.output).not.toContain('secret value')
     expect(readFileSync(join(home, stateFile), 'utf8')).toBe(raw)
-    expect(existsSync(join(home, index))).toBe(true)
+    expect(existsSync(join(home, preferences))).toBe(true)
     expect(existsSync(join(home, auth))).toBe(true)
   })
 
@@ -113,15 +113,15 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
     const protectedFiles = ['auth.json', 'config.toml', 'sessions/2026/11/19/rollout-native.jsonl', 'archived_sessions/rollout-old.jsonl',
       'state_5.sqlite', 'projects.sqlite', 'skills/custom/SKILL.md', 'AGENTS.md', '.mcp.json', 'worktree/.git',
       'codexapp-uploads/remote-file', 'cache/model-history/v1/official.bin', 'codexapp-turn-metadata/retired.jsonl',
-      `..${stateFile.slice(1)}.${id}.tmp`]
+      `..${stateFile.slice(1)}.${id}.tmp`, historicalIndex, `${historicalIndex}.${id}.tmp`]
     for (const name of protectedFiles) write(join(home, name), name)
     const native = ' "native": { "number": 9007199254740993123456, "nested": ["} , \\""] } '
     write(join(home, stateFile), `{ "${transfer}":{"x":{ "value":true }},${native},"codexapp-unknown":true,"\u0065lectron":1 }`)
     chmodSync(join(home, stateFile), 0o640)
-    const owned = [index, preferences, journal, auth, inventory, auth + '.tmp', `${index}.${id}.tmp`,
+    const owned = [preferences, journal, auth, inventory, auth + '.tmp',
       `.${preferences}.${id}.tmp`, `.${inventory}.${id}.tmp`, `.${stateFile}.webui-reset-${id}.tmp`]
     for (const name of owned) write(join(home, name))
-    const abandoned = join(home, index + '.lock')
+    const abandoned = join(home, preferences + '.lock')
     mkdirSync(abandoned)
     utimesSync(abandoned, new Date(1), new Date(1))
     const image = join(media, `generated-image-turn-item-${'f'.repeat(40)}.png`)
@@ -147,20 +147,20 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
   it('selects one profile by ID or environment, keeps shared state opt-in and removes empty owned profiles', () => {
     const a = profile(home, 'a.prod')
     const b = profile(home, 'b')
-    for (const folder of [home, a, b]) write(join(folder, index))
+    for (const folder of [home, a, b]) write(join(folder, preferences))
     json(join(a, stateFile), { [transfer]: { a: true } })
     json(join(b, stateFile), { [transfer]: { b: true }, [migration]: { connection: { completed: false } }, official: 1 })
     write(join(home, auth))
     const one = run(execute, { CODEXUI_CONNECTION_PROFILE: 'a.prod' })
     expect(one.code, one.output).toBe(0)
     expect(existsSync(a)).toBe(false)
-    expect(existsSync(join(b, index))).toBe(true)
-    expect(existsSync(join(home, index))).toBe(true)
+    expect(existsSync(join(b, preferences))).toBe(true)
+    expect(existsSync(join(home, preferences))).toBe(true)
     expect(existsSync(join(home, auth))).toBe(true)
     const all = run(['--all-profiles', ...execute])
     expect(all.code, all.output).toBe(0)
-    expect(existsSync(join(b, index))).toBe(false)
-    expect(existsSync(join(home, index))).toBe(false)
+    expect(existsSync(join(b, preferences))).toBe(false)
+    expect(existsSync(join(home, preferences))).toBe(false)
     expect(existsSync(join(home, auth))).toBe(true)
     expect(JSON.parse(readFileSync(join(b, stateFile), 'utf8'))).toEqual({ [migration]: { connection: { completed: false } }, official: 1 })
   })
@@ -194,36 +194,36 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
   it.each(['base', 'profile', 'file', 'media', 'hardlink'])('refuses unsafe %s paths before applying a plan', (which) => {
     const official = join(root, 'official')
     mkdirSync(official)
-    write(join(official, index), 'native data')
+    write(join(official, preferences), 'native data')
     if (which === 'base') symlinkSync(official, home)
     else if (which === 'profile') {
       const target = profile(home, 'linked')
       mkdirSync(dirname(target), { recursive: true })
       symlinkSync(official, target)
     } else {
-      write(join(home, preferences))
-      if (which === 'file') symlinkSync(join(official, index), join(home, index))
+      json(join(home, stateFile), { [transfer]: {} })
+      if (which === 'file') symlinkSync(join(official, preferences), join(home, preferences))
       if (which === 'media') symlinkSync(official, media)
-      if (which === 'hardlink') linkSync(join(official, index), join(home, index))
+      if (which === 'hardlink') linkSync(join(official, preferences), join(home, preferences))
     }
     const result = run(['--all-profiles', '--shared', ...execute])
     expect(result.code, result.output).toBe(1)
     expect(result.output).toMatch(/Refusing a (symbolic link|special or hard-linked file)/)
     expect(result.output).not.toContain('Deleted ')
-    expect(readFileSync(join(official, index), 'utf8')).toBe('native data')
+    expect(readFileSync(join(official, preferences), 'utf8')).toBe('native data')
   })
 
   it.each(['{oops', '{"x":1,"x":2}'])('preserves malformed or ambiguous global state %s', (raw) => {
     write(join(home, stateFile), raw)
-    write(join(home, index))
+    write(join(home, preferences))
     expect(run(execute).code).toBe(1)
-    expect(existsSync(join(home, index))).toBe(true)
+    expect(existsSync(join(home, preferences))).toBe(true)
     expect(readFileSync(join(home, stateFile), 'utf8')).toBe(raw)
   })
 
   it('refuses active-looking persistence locks', () => {
     write(join(home, preferences))
-    mkdirSync(join(home, index + '.lock'))
+    mkdirSync(join(home, preferences + '.lock'))
     for (const flags of [[], [include, acknowledge]]) {
       const result = run([...flags, ...execute])
       expect(result.code, result.output).toBe(1)
@@ -241,11 +241,11 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
         writer.once('error', reject)
         writer.once('exit', code => reject(new Error('Writer exited with code ' + code)))
       })
-      write(join(home, index))
+      write(join(home, preferences))
       const result = run(execute)
       expect(result.code, result.output).toBe(1)
       expect(result.output).toContain('server or build is running')
-      expect(existsSync(join(home, index))).toBe(true)
+      expect(existsSync(join(home, preferences))).toBe(true)
     } finally {
       const exited = new Promise(resolve => writer.once('exit', resolve))
       if (writer.kill()) await exited
@@ -279,7 +279,7 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
     write(untouched)
     write(unverified, '{"unrelated":true}')
     json(owned, { version: 1, sourcePath, modifiedAtMs: 1, turns: [{ turnId: 'turn', metadata: { model: 'm', modelSource: 'execution' } }] })
-    write(join(home, index))
+    write(join(home, preferences))
     const args = ['--remote', '--remote-codex-home', remote, '--remote-upload-root', uploadRoot]
     expect(run([...args, ...execute, '--confirm-remote', hostname() + '-wrong']).code).toBe(1)
     expect(run([...args, '--remote-upload', '../file.txt']).code).toBe(1)
@@ -294,7 +294,7 @@ describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
     const selected = run([...args, '--remote-upload', basename(upload), ...execute, '--confirm-remote', hostname()])
     expect(selected.code, selected.output).toBe(0)
     expect(existsSync(upload)).toBe(false)
-    for (const path of [unverified, sourcePath, untouched, join(home, index)]) expect(existsSync(path)).toBe(true)
+    for (const path of [unverified, sourcePath, untouched, join(home, preferences)]) expect(existsSync(path)).toBe(true)
   })
 
   it('cleans optional build outputs from its own checkout and rejects tracked content', () => {
@@ -436,8 +436,9 @@ describe.skipIf(process.platform !== 'linux')('historical WebUI reset', () => {
     const expected = `{${native},${JSON.stringify(retained).slice(1)}`
     write(path, `{${native}, "${retiredTip}": true, "thread-pinned-ids": ["old"],${portable.slice(1, -1)},${JSON.stringify(retained).slice(1)}`)
     const pending = { thread: { pending: { token: id, previous: [], text: 'payload' } } }
-    json(join(home, index), pending)
-    const scratch = join(home, `${index}.${id}.tmp`)
+    const oldIndexPath = join(home, historicalIndex)
+    json(oldIndexPath, pending)
+    const scratch = join(home, `${historicalIndex}.${id}.tmp`)
     json(scratch, pending)
     json(join(home, inventory), { records: [{ status: 'unknown' }] })
     write(join(home, journal), '{"path":"/remote/preserved"}\n')
@@ -462,7 +463,7 @@ describe.skipIf(process.platform !== 'linux')('historical WebUI reset', () => {
     write(malformed, row + '{"truncated":')
     const scope = ['--shared']
     const { standard, withLegacy, acknowledged } = comparePlans(scope)
-    const standardFiles = [join(home, index), scratch, join(home, inventory), join(home, journal), uploadScratch, uploadLock]
+    const standardFiles = [join(home, inventory), join(home, journal), uploadScratch, uploadLock]
     for (const target of standardFiles) expect(standard.get(target)?.verb, target).toBe('delete')
     expect(standard.get(path)?.keys).toEqual([transfer])
     expect(withLegacy.get(path)?.keys).toEqual([retiredTip, transfer])
@@ -473,6 +474,8 @@ describe.skipIf(process.platform !== 'linux')('historical WebUI reset', () => {
     const result = run([...scope, include, acknowledge, ...execute])
     expect(result.code, result.output).toBe(0)
     expect(readFileSync(path, 'utf8')).toBe(expected)
+    expect(readFileSync(oldIndexPath, 'utf8')).toBe(JSON.stringify(pending))
+    expect(readFileSync(scratch, 'utf8')).toBe(JSON.stringify(pending))
     for (const target of [...standardFiles, markerPath, providerPath]) expect(existsSync(target), target).toBe(false)
     for (const target of [basename(outbox), 'webui-custom-providers.json',
       'skills-sync.json']) expect(existsSync(join(home, target)), target).toBe(true)

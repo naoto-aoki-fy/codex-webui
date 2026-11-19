@@ -3,7 +3,6 @@ import {
   callRpcWithArchiveRecovery,
   isEmptyThreadReadError,
   isThreadMaterializationPendingError,
-  isThreadNotFoundError,
 } from './codexAppServerBridge'
 
 const originalCodexHome = process.env.CODEX_HOME
@@ -90,42 +89,6 @@ describe('callRpcWithArchiveRecovery', () => {
     await expect(callRpcWithArchiveRecovery(appServer, 'thread/read', { threadId: 'test-thread' })).rejects.toThrow('network failed')
   })
 
-  it('resumes and retries turn/start when a restarted app-server has not materialized the thread', async () => {
-    const calls: Array<{ method: string; params: unknown }> = []
-    let startCalls = 0
-    const appServer = {
-      async rpc(method: string, params: unknown): Promise<unknown> {
-        calls.push({ method, params })
-        if (method === 'turn/start') {
-          startCalls += 1
-          if (startCalls === 1) {
-            throw new Error('thread not found: test-thread')
-          }
-          return { turn: { id: 'turn-2' } }
-        }
-        if (method === 'thread/resume') {
-          return { thread: { id: 'test-thread', turns: [] } }
-        }
-        throw new Error(`unexpected method ${method}`)
-      },
-    }
-
-    await expect(callRpcWithArchiveRecovery(appServer, 'turn/start', {
-      threadId: 'test-thread',
-      input: [{ type: 'text', text: 'hi' }],
-    })).resolves.toEqual({ turn: { id: 'turn-2' } })
-    expect(calls).toEqual([
-      {
-        method: 'turn/start',
-        params: { threadId: 'test-thread', input: [{ type: 'text', text: 'hi' }] },
-      },
-      { method: 'thread/resume', params: { threadId: 'test-thread' } },
-      {
-        method: 'turn/start',
-        params: { threadId: 'test-thread', input: [{ type: 'text', text: 'hi' }] },
-      },
-    ])
-  })
 })
 
 it.each(['/remote/link/../root', 'C:\\work\\demo', '\\\\host\\share\\demo'])('preserves remote cwd %s without host canonicalization', async cwd => {
@@ -141,6 +104,13 @@ it('forwards native rate-limit results and failures with one RPC per read', asyn
   await expect(callRpcWithArchiveRecovery({ rpc }, 'account/rateLimits/read', null)).resolves.toBe(result)
   await expect(callRpcWithArchiveRecovery({ rpc }, 'account/rateLimits/read', null)).rejects.toBe(error)
   expect(rpc.mock.calls).toEqual([['account/rateLimits/read', null], ['account/rateLimits/read', null]])
+})
+
+it.each(['thread not found: t', 'App-server disconnected; outcome unknown'])('does not replay a failed turn start: %s', async message => {
+  const rpc = vi.fn().mockRejectedValue(new Error(message))
+  const params = { threadId: 't', input: [{ type: 'text', text: 'A user request' }] }
+  await expect(callRpcWithArchiveRecovery({ rpc }, 'turn/start', params)).rejects.toThrow(message)
+  expect(rpc.mock.calls).toEqual([['turn/start', params]])
 })
 
 describe('isEmptyThreadReadError', () => {
@@ -166,17 +136,5 @@ describe('isThreadMaterializationPendingError', () => {
   it('does not match unrelated thread read failures', () => {
     expect(isThreadMaterializationPendingError(new Error('thread read failed: permission denied'))).toBe(false)
     expect(isThreadMaterializationPendingError(new Error('not materialized yet'))).toBe(false)
-  })
-})
-
-describe('isThreadNotFoundError', () => {
-  it('matches app-server thread lookup failures after restart', () => {
-    expect(isThreadNotFoundError(new Error('thread not found: 019e2180-6ad7'))).toBe(true)
-    expect(isThreadNotFoundError(new Error('no rollout found for thread id 019e2180-6ad7'))).toBe(true)
-  })
-
-  it('does not match unrelated errors', () => {
-    expect(isThreadNotFoundError(new Error('network failed'))).toBe(false)
-    expect(isThreadNotFoundError(new Error('thread read failed: permission denied'))).toBe(false)
   })
 })

@@ -3,19 +3,19 @@ import { createModelPreferenceUsage } from './modelPreferenceUsage.js'
 import type { ModelPreferences } from '../modelPreferences.js'
 import { NativeProjects } from './nativeProjects.js'
 import { createConversationTransfers } from './conversationTransfer.js'
-import { profileStateDirectory, getConnectionProfileId } from './connectionProfile.js'
+import { getConnectionProfileId } from './connectionProfile.js'
 import { WORKFLOW_CAPABILITIES, classifyCapabilityError } from './remoteCapabilities.js'
 import { stageRemoteUpload, inspectRemoteUploads } from './remoteUploads.js'
 import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
 import { readPinnedThreadIds } from './nativeThreadPins.js'
-import { asRecord, getErrorMessage, setJson, readJsonBody, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
-export { isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
+import { asRecord, getErrorMessage, setJson, readJsonBody, isEmptyThreadReadError, isThreadMaterializationPendingError } from './bridgeHttpUtils.js'
+export { isEmptyThreadReadError, isThreadMaterializationPendingError } from './bridgeHttpUtils.js'
 import { sanitizeThreadTurnsInlinePayloads, THREAD_METHODS_WITH_TURNS } from './threadInlinePayloads.js'
 export { sanitizeThreadTurnsInlinePayloads } from './threadInlinePayloads.js'
 import appServerMethods from './appServerMethods.json'
-import { AppServerClient as AppServerClientCore, STREAM_EVENT_BUFFER_LIMIT, type StreamEventFrame } from './appServerClient.js'
-import { PersistentThreadIndex } from './persistentThreadIndex.js'
+import { AppServerClient, STREAM_EVENT_BUFFER_LIMIT, type StreamEventFrame } from './appServerClient.js'
+export { AppServerClient } from './appServerClient.js'
 import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
@@ -40,8 +40,6 @@ const API_PERF_BODY_MB_THRESHOLD_ENV_KEY = 'CODEXUI_API_PERF_BODY_MB_THRESHOLD'
 const DEFAULT_API_PERF_MS_THRESHOLD = 300
 const DEFAULT_API_PERF_BODY_MB_THRESHOLD = 1
 const MB_DIVISOR = 1024 * 1024
-
-const persistentThreadIndex = new PersistentThreadIndex(() => profileStateDirectory(getCodexHomeDir()))
 
 function readEnvValueFromFile(filePath: string, key: string): string | null {
   try {
@@ -304,18 +302,11 @@ export async function callRpcWithArchiveRecovery(
     }
     return result
   } catch (error) {
-    const paramsRecord = asRecord(params)
-    const threadId = readNonEmptyString(paramsRecord?.threadId)
-
-    if (method === 'turn/start' && threadId && isThreadNotFoundError(error)) {
-      await appServer.rpc('thread/resume', { threadId })
-      return appServer.rpc(method, params ?? null)
-    }
-
     if (method !== 'thread/archive') {
       throw error
     }
 
+    const threadId = readNonEmptyString(asRecord(params)?.threadId)
     const errorMessage = getErrorMessage(error, '')
     if (!threadId || !errorMessage.includes('no rollout found')) {
       throw error
@@ -401,13 +392,6 @@ function handleFileUpload(req: IncomingMessage, res: ServerResponse, appServer: 
   })
 }
 
-// Preserve the public zero-argument constructor and bridge-owned store instances.
-export class AppServerClient extends AppServerClientCore {
-  constructor() {
-    super({ threadIndex: persistentThreadIndex })
-  }
-}
-
 type CodexBridgeMiddleware = ((req: IncomingMessage, res: ServerResponse, next: () => void) => Promise<void>) & {
   files: ProjectFileService
   projects: NativeProjects
@@ -429,7 +413,7 @@ type SharedBridgeState = {
 }
 
 const SHARED_BRIDGE_KEY = '__codexRemoteSharedBridge__'
-const SHARED_BRIDGE_VERSION = 'external-websocket-files-v2'
+const SHARED_BRIDGE_VERSION = 'external-websocket-files-v3'
 
 function disposeSharedBridgeState(state: SharedBridgeState): void {
   if (state.retired) return

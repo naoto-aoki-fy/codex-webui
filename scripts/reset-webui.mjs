@@ -15,10 +15,8 @@ import { legacyRemoteCache, uuid } from './reset-webui-legacy-registry.mjs'
 const repo = dirname(dirname(fileURLToPath(import.meta.url)))
 const host = hostname()
 const storeTemp = file => new RegExp(`^\\.${file.replaceAll('.', '\\.')}\\.${uuid}\\.tmp$`, 'u')
-const indexTemp = new RegExp(`^codexapp-thread-index\\.json\\.${uuid}\\.tmp$`, 'u')
 const resetTemp = new RegExp(`^\\.\\.codex-global-state\\.json\\.webui-reset-${uuid}\\.tmp$`, 'u')
 const globalFile = '.codex-global-state.json'
-const threadIndex = 'codexapp-thread-index.json'
 const modelPreferences = 'codexapp-model-preferences.json'
 const inventory = 'codexapp-upload-inventory.json'
 const builds = ['dist', 'dist-cli', 'output/playwright', 'test-results']
@@ -219,17 +217,15 @@ function planProfile(plan, directory, named, group) {
   const entries = names(directory, group)
   const statePath = join(directory, globalFile)
   const finishState = planProfileState(plan, statePath, named)
-  for (const fileName of [threadIndex, modelPreferences]) {
-    removeFile(join(directory, fileName), 'profile state')
-    removeLock(join(directory, fileName + '.lock'))
-  }
+  removeFile(join(directory, modelPreferences), 'profile state')
+  removeLock(join(directory, modelPreferences + '.lock'))
   if (named) removeLock(statePath + '.lock')
   for (const name of entries) {
     const path = join(directory, name)
-    if (indexTemp.test(name) || storeTemp(modelPreferences).test(name) || resetTemp.test(name) ||
+    if (storeTemp(modelPreferences).test(name) || resetTemp.test(name) ||
       (named && storeTemp(globalFile).test(name))) {
       removeFile(path, 'WebUI persistence temporary file')
-    } else if (named && ![globalFile, globalFile + '.lock', threadIndex, threadIndex + '.lock',
+    } else if (named && ![globalFile, globalFile + '.lock',
       modelPreferences, modelPreferences + '.lock'].includes(name)) {
       notice('Preserve', path, 'unrecognized profile content')
     } else if (!named && (name === globalFile + '.lock' || storeTemp(globalFile).test(name))) {

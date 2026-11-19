@@ -18,8 +18,8 @@ not a title source. Projects use native IDs, names, roots, positions and explici
 thread associations. Pins use native sections. Required capabilities are listed in
 the [native server contract](native-project-migration.md).
 
-History pagination, attachment intent and pending-send recovery are described in
-the [history guide](persistent-thread-index.md). Inline media sanitization,
+History pagination and attachment delivery are described in
+the [history guide](native-thread-history.md). Inline media sanitization,
 Portable Fork receipts and imported transcripts remain. Historical model/reasoning
 values come from native rollouts and the persistent rollout-derived cache; see
 [generation metadata](turn-generation-metadata.md). Retired metadata stores remain

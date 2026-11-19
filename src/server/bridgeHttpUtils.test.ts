@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { describe, expect, it, vi } from 'vitest'
-import { asRecord, getErrorMessage, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError, readJsonBody, readRawBody, setJson } from './bridgeHttpUtils'
+import { asRecord, getErrorMessage, isEmptyThreadReadError, isThreadMaterializationPendingError, readJsonBody, readRawBody, setJson } from './bridgeHttpUtils'
 
 const request = (chunks: Array<string | Buffer>) => Readable.from(chunks) as unknown as IncomingMessage
 
@@ -54,8 +54,6 @@ describe('bridge error extraction', () => {
   it.each([
     [isEmptyThreadReadError, 'FAILED TO READ THREAD: rollout abc IS EMPTY', 'rollout is empty'],
     [isThreadMaterializationPendingError, 'NOT MATERIALIZED YET: includeTurns is unavailable before first user message', 'not materialized yet'],
-    [isThreadNotFoundError, 'THREAD NOT FOUND: abc', 'thread read failed'],
-    [isThreadNotFoundError, 'NO ROLLOUT FOUND FOR THREAD ID abc', 'network error'],
   ])('classifies nested errors with %s', (classify, matching, other) => {
     expect(classify({ error: { message: matching } })).toBe(true)
     for (const error of [null, {}, { message: 42 }, matching, new Error(other)]) expect(classify(error)).toBe(false)

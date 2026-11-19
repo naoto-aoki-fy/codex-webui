@@ -20,7 +20,7 @@ it.each(['ordered', 'empty', 'malformed', 'unsupported'])('adapts native remote 
     }
     throw new Error('Unexpected RPC ' + method)
   })
-  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v2', appServer: { rpc }, files: new ProjectFileService({ rpc }), methodCatalog: {} }
+  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v3', appServer: { rpc }, files: new ProjectFileService({ rpc }), methodCatalog: {} }
   const middleware = createCodexBridgeMiddleware()
   try {
     const req = Object.assign(Readable.from([JSON.stringify({ cwd: '/only-on-B', query: 'remote' })]), { method: 'POST', url: '/codex-api/composer-file-search', headers: {} }) as unknown as IncomingMessage

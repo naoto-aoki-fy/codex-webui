@@ -48,7 +48,7 @@ beforeEach(async () => {
   storeSnapshot.mockReset()
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
   scope.__codexRemoteSharedBridge__ = {
-    version: 'external-websocket-files-v2', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getStreamEvents: () => [] },
+    version: 'external-websocket-files-v3', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getStreamEvents: () => [] },
     methodCatalog: {},
   }
 })
@@ -155,7 +155,11 @@ it('rejects retired index rebuild without sending or changing session logs', asy
     preview: '', createdAt: 100, updatedAt: 200,
     turns: [{ id: 'accepted-turn', items: [{ type: 'userMessage', content: [{ type: 'text', text }] }] }],
   } } : { data: [], nextCursor: null })
+  const legacyIndex = join(home, 'codexapp-thread-index.json')
+  const original = '{"historical-thread":{"pending":{"text":"Earlier attachment intent"}}}'
+  await writeFile(legacyIndex, original)
   const rebuilt = await request('/codex-api/thread-index/rebuild', 'POST', {})
+  expect(await readFile(legacyIndex, 'utf8')).toBe(original)
   expect(rebuilt.res.statusCode).toBe(404)
   expect(rebuilt.json.error).toBe('Not found')
   expect(sqlite).not.toHaveBeenCalled()

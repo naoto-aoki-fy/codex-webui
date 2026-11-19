@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 it('delivers an explicit error reply to unsupported refresh requests without emitting success', async () => {
   const { AppServerClient } = await import('./appServerClient')
-  const client = new AppServerClient({ threadIndex: { call: vi.fn() } })
+  const client = new AppServerClient()
   const reply = vi.spyOn(client as any, 'sendServerRequestReply').mockImplementation(() => {})
   const notifications = vi.fn(); client.onNotification(notifications)
   const home = await mkdtemp(join(tmpdir(), 'unsupported-refresh-'))

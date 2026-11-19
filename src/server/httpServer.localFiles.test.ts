@@ -45,7 +45,7 @@ it('preserves file and image access and workspace selection without directory br
   await writeFile(join(root, 'literal%20name.txt'), text)
   await writeFile('C:/remote/windows.txt', text)
   const files = new ProjectFileService({ rpc: remoteRpc })
-  ;(globalThis as any).__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v2', files, appServer: { rpc: remoteRpc, onNotification: () => () => {}, dispose() {} }, methodCatalog: {} }
+  ;(globalThis as any).__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v3', files, appServer: { rpc: remoteRpc, onNotification: () => () => {}, dispose() {} }, methodCatalog: {} }
   const production = createServer()
   // Load the real dev configuration so both route implementations are exercised.
   const { createServer: createViteServer } = await import('vite')

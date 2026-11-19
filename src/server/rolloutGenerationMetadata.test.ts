@@ -106,11 +106,13 @@ it.each(['fs/readFile', 'fs/getMetadata', 'fs/createDirectory', 'fs/writeFile'])
 
 it('updates only requested exact turn IDs through existing notifications, including older pages', async () => {
   const f = fixture()
-  const instance = new AppServerClient({ threadIndex: { call: async (m, p) => m === 'thread/turns/list'
-    ? { data: [{ id: p.cursor === 'older' ? 'old' : 'new', items: [] }, { id: 'unrelated', items: [] }] }
-    : { thread: { id: 't', path, turns: [{ id: 'new', items: [] }] } } } })
+  const instance = new AppServerClient()
   vi.spyOn(instance as any, 'ensureInitialized').mockResolvedValue(undefined)
-  vi.spyOn(instance as any, 'callObserved').mockImplementation((m: any, p: any) => f.rpc(m, p))
+  vi.spyOn(instance as any, 'callObserved').mockImplementation(async (method: any, params: any) => {
+    if (method === 'thread/turns/list') return { data: [{ id: params.cursor === 'older' ? 'old' : 'new', items: [] }, { id: 'unrelated', items: [] }] }
+    if (method === 'thread/read' && params.includeTurns) return { thread: { id: 't', path, turns: [{ id: 'new', items: [] }] } }
+    return f.rpc(method, params)
+  })
   const invalidate = vi.spyOn((instance as any).historyPager, 'invalidate')
   const notify = vi.fn(); instance.onNotification(notify)
   try {

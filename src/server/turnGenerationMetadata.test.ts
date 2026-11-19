@@ -29,9 +29,13 @@ it('does not record request or notification settings, read legacy sidecars, or c
   await writeFile(join(dir, 'legacy.jsonl'), legacy)
   const wire = vi.fn(async (method: string) => method === 'turn/start' ? { turn: { id: 'same' } }
     : { thread: { id: method === 'thread/fork' ? 'fork' : 'source', turns: [{ id: 'same', items: [{ type: 'agentMessage', text: 'retained' }] }] } })
-  const client = new AppServerClient({ threadIndex: { call: (m) => wire(m) } })
+  const client = new AppServerClient()
   vi.spyOn(client as any, 'ensureInitialized').mockResolvedValue(undefined)
-  vi.spyOn(client as any, 'call').mockImplementation(async (...args: unknown[]) => args[0]==='account/read' ? {account:{type:'chatgpt'},requiresOpenaiAuth:true} : { thread: {} })
+  vi.spyOn(client as any, 'call').mockImplementation(async (method: unknown) => {
+    if (method === 'account/read') return { account: { type: 'chatgpt' }, requiresOpenaiAuth: true }
+    if (method === 'turn/start' || method === 'thread/fork') return wire(method)
+    return { thread: {} }
+  })
   const listener = vi.fn(); client.onNotification(listener)
   try {
     expect(await client.rpc('turn/start', { threadId: 'source', model: 'selected', effort: 'high' })).toEqual({ turn: { id: 'same' } })

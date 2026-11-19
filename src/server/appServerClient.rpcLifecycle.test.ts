@@ -33,9 +33,7 @@ const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve()
 
 it.each(['disconnect', 'replacement'] as const)('isolates stale replies and never replays on %s', async cause => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-  const client = new AppServerClient({
-    threadIndex: { call: async (method: string, params: unknown, rpc: (method: string, params: unknown) => Promise<unknown>) => rpc(method, params) }
-  } as any)
+  const client = new AppServerClient()
   const internal = client as any
   try {
     const a = client.rpc('test/unanswered', {})
@@ -86,7 +84,7 @@ it.each(['disconnect', 'replacement'] as const)('isolates stale replies and neve
 
 
 it('retains connection metadata and structured RPC errors, and clears metadata on disconnect', async () => {
-  const client = new AppServerClient({ threadIndex: { call: (method, params, rpc) => rpc(method, params) } })
+  const client = new AppServerClient()
   try {
     const call = client.rpc('fs/readFile', { path: '/remote/file' })
     const rejected = expect(call).rejects.toMatchObject({ message: 'Permission denied', code: -32600, data: { path: '/remote/file' } })
@@ -103,7 +101,7 @@ it('retains connection metadata and structured RPC errors, and clears metadata o
 
 it('expires ordinary calls without replay or cancelling a silent remote command', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const client = new AppServerClient()
   try {
     const ordinary = client.rpc('fs/readFile', { path: '/B/file' })
     const expired = expect(ordinary).rejects.toThrow('outcome unknown')
@@ -121,7 +119,7 @@ it('expires ordinary calls without replay or cancelling a silent remote command'
 })
 
 it('a missing restored thread never blocks independent RPCs or healthy subscriptions', async () => {
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const client = new AppServerClient()
   try {
     const internal = client as any
     internal.subscribedThreads.add('missing')
@@ -144,7 +142,7 @@ it('a missing restored thread never blocks independent RPCs or healthy subscript
 it('coalesces automatic reconnects and never sends an old approval to a reused wire ID', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const client = new AppServerClient()
   try {
     const first = client.rpc('test/read', {})
     await flush()
@@ -171,7 +169,7 @@ it('coalesces automatic reconnects and never sends an old approval to a reused w
 })
 
 it.each(['tunnel', 'server restart'])('restores one subscription per thread after %s without replaying in-flight turns', async () => {
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const client = new AppServerClient()
   try {
     const resume = client.rpc('thread/resume', { threadId: 'running' })
     await flush()
@@ -201,7 +199,7 @@ it.each(['tunnel', 'server restart'])('restores one subscription per thread afte
 
 it('bounds silent resume attempts while healthy threads and unrelated calls recover', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const client = new AppServerClient()
   try {
     const internal = client as any
     for (const id of ['silent', 'b', 'c']) internal.subscribedThreads.add(id)
@@ -231,7 +229,7 @@ it('bounds silent resume attempts while healthy threads and unrelated calls reco
 
 it.each([false, true])('recovers a failed restored subscription (persistent=%s) and delivers notifications', async persistent => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const client = new AppServerClient()
   const events: Array<{ method: string; params: any }> = []
   client.onNotification(event => events.push(event))
   try {
@@ -276,7 +274,7 @@ it.each([false, true])('recovers a failed restored subscription (persistent=%s) 
 it.each([{}, { codexHome: 'relative' }])('falls back to thread/config discovery for unusable handshake metadata %j', async metadata => {
   wire.metadata = metadata
   vi.stubEnv('CODEX_HOME', '/webui/state')
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const client = new AppServerClient()
   try {
     const read = client.rpc('thread/read', { threadId: 't', includeTurns: false })
     await flush()
@@ -313,7 +311,7 @@ it('waits for the handshake on the first upload and makes zero discovery config 
   vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '')
   wire.holdHandshake = true
   wire.autoFs = true
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const client = new AppServerClient()
   try {
     const upload = stageRemoteUpload(client, 'test.txt', Buffer.from('test'), state)
     const concurrentHome = client.resolveCodexHome()
@@ -330,7 +328,7 @@ it('waits for the handshake on the first upload and makes zero discovery config 
 
 it('applies handshake home before internal reads and subscription recovery, and replaces it on reconnect', async () => {
   wire.metadata = { codexHome: '/server/first' }
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const client = new AppServerClient()
   const internal = client as any
   try {
     const read = internal.call('thread/read', { threadId: 't', includeTurns: false })
@@ -358,7 +356,7 @@ it('applies handshake home before internal reads and subscription recovery, and 
 
 it('rejects obsolete initialization and cannot seed the replacement cache from its response', async () => {
   wire.holdHandshake = true
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const client = new AppServerClient()
   try {
     const stale = client.resolveCodexHome()
     const rejected = expect(stale).rejects.toThrow('reset')

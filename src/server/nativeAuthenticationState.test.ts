@@ -5,7 +5,7 @@ function fixture() {
   let account: unknown = null
   let requiresOpenaiAuth = true
   let userId='user-1',workspaceId='workspace-1'
-  const client = new AppServerClient({ threadIndex: { call: (m, p, rpc) => rpc(m, p) } })
+  const client = new AppServerClient()
   vi.spyOn(client as any, 'ensureInitialized').mockResolvedValue(undefined)
   const wire = vi.spyOn(client as any, 'call').mockImplementation(async (method: unknown) => {
     if (method === 'account/read') return { account, requiresOpenaiAuth }
@@ -95,28 +95,18 @@ it('isolates independent connection contexts/profiles', async () => {
   } finally { first.client.dispose(); second.client.dispose(); vi.unstubAllEnvs() }
 })
 
-it('invalidates account evidence and prevents stale reads or delayed indexed writes from authorizing sends', async () => {
+it('invalidates account evidence and prevents stale reads from authorizing sends', async () => {
   const f = fixture(); f.signIn()
   try {
     await snapshot(f)
-    let release!: () => void
-    ;(f.client as any).dependencies.threadIndex.call = async (m: string, p: unknown, rpc: any) => {
-      await new Promise<void>(r => release = r)
-      return rpc(m, p)
-    }
-    const sending = f.rpc('turn/start')
-    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
-    f.emit('account/updated', { authMode: 'chatgpt' }); release()
-    await expect(sending).rejects.toThrow('checking')
-    expect(f.wire.mock.calls.some(([m]) => m === 'turn/start')).toBe(false)
-    await reconcile(f)
     let finish!: (value: unknown) => void
     f.wire.mockImplementationOnce(() => new Promise(r => finish = r))
     f.emit('account/updated')
     const reading = snapshot(f)
     await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
     f.emit('account/updated'); finish({ account: { type: 'chatgpt' }, requiresOpenaiAuth: true })
-    expect(await reading).toMatchObject({ phase: 'checking' });await vi.waitFor(()=>expect(f.peek().phase).toBe('ready'))
+    expect(await reading).toMatchObject({ phase: 'checking' })
+    await vi.waitFor(() => expect(f.peek().phase).toBe('ready'))
   } finally { f.client.dispose() }
 })
 

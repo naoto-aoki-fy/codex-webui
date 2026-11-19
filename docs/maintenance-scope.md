@@ -37,9 +37,9 @@ Immutable wiki raw material remains untouched.
 | 23 | DirectoryHub renamed SkillsMcpHub, including import and navigation test; styling classes are preserved. |
 | 24 | The service worker and its retirement script were removed. Online navigation and assets use ordinary HTTP caching. |
 | 25 | Project and pin reads use native Projects and thread sections. Earlier local records and receipts stay in storage. |
-| 26 | Already simplified before this scope: no list snapshots, names, timestamps or archive writes. PersistentThreadIndex retains durable intent, uncertain-response reconciliation, duplicate prevention, profile isolation, locking and atomic writes. Unknown historical fields and disk paths are preserved. |
+| 26 | Native thread state owns attachment history. The local attachment journal and restart reconciliation were removed. Existing index files stay in place. |
 | 27 | Account rate-limit reads pass through the native response and ordinary RPC errors. A server that cannot decode a quota response cannot supply a fresh snapshot. |
-| 28 | Dependencies remain used by runtime, tests, scripts or generation. No unrelated upgrade/lockfile churn. proper-lockfile protects send recovery; Codex supplies pinned generation, Playwright supplies acceptance and zstd supplies rollout tests. |
+| 28 | The remaining dependencies support runtime APIs, builds and verification. proper-lockfile protects current WebUI state stores. Codex supplies pinned generation, Playwright supplies acceptance and zstd supplies rollout tests. |
 
 ## Permanent product boundaries
 

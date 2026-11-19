@@ -9,12 +9,6 @@ import { randomInt } from 'node:crypto'
 import { AppServerWebSocketClient, positiveEnv } from './appServerWebSocketClient.js'
 import { asRecord } from './bridgeHttpUtils.js'
 
-export interface AppServerClientDependencies {
-  threadIndex: {
-    call(method: string, params: Record<string, unknown>, rpc: (method: string, params: unknown) => Promise<unknown>): Promise<unknown>
-  }
-}
-
 function readNonEmptyString(value: unknown): string {
   return typeof value === 'string' && value.trim().length > 0 ? value : ''
 }
@@ -63,7 +57,6 @@ export type StreamEventFrame = {
 
 export class AppServerClient {
   readonly capabilities = new RemoteCapabilities()
-  constructor(private readonly dependencies: AppServerClientDependencies) {}
 
   getAuthenticationDiagnostics() { return this.authentication.diagnosticSnapshot() }
 
@@ -430,50 +423,42 @@ export class AppServerClient {
     if (method === 'account/login/start') return this.authentication.start(params)
     if (method === 'account/login/cancel') return this.authentication.cancel(params)
     if (AUTHENTICATED_WRITES.has(method)) await this.authentication.assertCanSend()
-    const guardedCall = (m: string, p: unknown) => {
-      if (AUTHENTICATED_WRITES.has(m)) this.authentication.assertReady()
-      return this.call(m, p)
-    }
     if (method === 'thread/generationMetadata/refresh') {
       this.recoverRolloutMetadata(readNonEmptyString(asRecord(params)?.threadId), null, true)
       return {}
     }
-    if (method !== 'turn/start') {
-      const resumeId = readNonEmptyString(asRecord(params)?.threadId)
-      const joiningBackgroundRecovery = method === 'thread/resume' && asRecord(params)?.excludeTurns !== true
-        && asRecord(this.recovery.parameters(resumeId))?.excludeTurns === true
-      let result = method === 'thread/resume'
-        ? await this.recovery.request(readNonEmptyString(asRecord(params)?.threadId), params)
-        : method === 'thread/list' ? await this.call(method, params)
-        : await this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, guardedCall)
-      if (joiningBackgroundRecovery) result = await this.call('thread/read', { threadId: resumeId, includeTurns: true })
-      if (method === 'thread/read') this.codexHome.observeThreadRead(result, homeToken)
-      const record = asRecord(result)
-      if (method === 'thread/turns/list' && Array.isArray(record?.data)) {
-        if (record.data.length && asRecord(params)?.itemsView !== 'notLoaded') this.recoverRolloutMetadata(resumeId, record.data)
-      }
-      const thread = asRecord(record?.thread)
-      if (thread && typeof thread.id === 'string' && Array.isArray(thread.turns)) {
-        if (thread.turns.length && ['thread/read', 'thread/resume', 'thread/fork'].includes(method)) this.recoverRolloutMetadata(thread.id, thread.turns)
-      }
-      if (method === 'thread/revert') {
-        this.snapshotEpoch = {}
-        const id = readNonEmptyString(asRecord(params)?.threadId)
-        this.lastThreadReadSnapshotByThreadId.delete(id)
-        this.streamEventsByThreadId.delete(id)
-        this.historyPager.invalidate(id)
-      }
-      if (['thread/start', 'thread/resume', 'thread/fork'].includes(method)) {
-        const id = readNonEmptyString(asRecord(asRecord(result)?.thread)?.id)
-        if (id) this.subscribedThreads.add(id)
-      }
-      if (method === 'thread/archive' || method === 'thread/unsubscribe') {
-        const id = readNonEmptyString(asRecord(params)?.threadId)
-        this.subscribedThreads.delete(id)
-      }
-      return result
+    const resumeId = readNonEmptyString(asRecord(params)?.threadId)
+    const joiningBackgroundRecovery = method === 'thread/resume' && asRecord(params)?.excludeTurns !== true
+      && asRecord(this.recovery.parameters(resumeId))?.excludeTurns === true
+    let result = method === 'thread/resume'
+      ? await this.recovery.request(resumeId, params)
+      : await this.call(method, params)
+    if (joiningBackgroundRecovery) result = await this.call('thread/read', { threadId: resumeId, includeTurns: true })
+    if (method === 'thread/read') this.codexHome.observeThreadRead(result, homeToken)
+    const record = asRecord(result)
+    if (method === 'thread/turns/list' && Array.isArray(record?.data)) {
+      if (record.data.length && asRecord(params)?.itemsView !== 'notLoaded') this.recoverRolloutMetadata(resumeId, record.data)
     }
-    return this.dependencies.threadIndex.call(method, asRecord(params) ?? {}, guardedCall)
+    const thread = asRecord(record?.thread)
+    if (thread && typeof thread.id === 'string' && Array.isArray(thread.turns)) {
+      if (thread.turns.length && ['thread/read', 'thread/resume', 'thread/fork'].includes(method)) this.recoverRolloutMetadata(thread.id, thread.turns)
+    }
+    if (method === 'thread/revert') {
+      this.snapshotEpoch = {}
+      const id = readNonEmptyString(asRecord(params)?.threadId)
+      this.lastThreadReadSnapshotByThreadId.delete(id)
+      this.streamEventsByThreadId.delete(id)
+      this.historyPager.invalidate(id)
+    }
+    if (['thread/start', 'thread/resume', 'thread/fork'].includes(method)) {
+      const id = readNonEmptyString(asRecord(asRecord(result)?.thread)?.id)
+      if (id) this.subscribedThreads.add(id)
+    }
+    if (method === 'thread/archive' || method === 'thread/unsubscribe') {
+      const id = readNonEmptyString(asRecord(params)?.threadId)
+      this.subscribedThreads.delete(id)
+    }
+    return result
   }
 
   onNotification(listener: (value: { method: string; params: unknown }) => void): () => void {
