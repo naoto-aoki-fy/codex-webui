@@ -14,7 +14,9 @@ async function queueBoundaries(browser) {
     const { createNativeQueue } = await import('/src/composables/nativeQueue.ts')
     const records = await import('/src/utils/browserTransactionalRecords.ts')
     const receipts = await import('/src/utils/queueSubmissionReceipts.ts')
-    const key = 'codex-web-local.queue-submissions.v1'
+    const profile = await import('/src/utils/browserConnectionProfile.ts')
+    profile.setInitialConnectionProfile('persistence-acceptance')
+    const key = profile.profileStorageKey('codex-web-local.queue-submissions.v1')
     const results = []
     const assert = (condition, message) => { if (!condition) throw new Error(message) }
     for (const mode of ['commit', 'abort-after-success', 'quota', 'request-error', 'wrong-client', 'clear-failure']) {

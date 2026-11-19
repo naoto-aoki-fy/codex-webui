@@ -19,6 +19,7 @@ On A, provide a tunnel in another terminal, then start the built application:
 ```sh
 ssh -N -L 127.0.0.1:14500:127.0.0.1:4500 user@machine-b
 CODEXUI_REMOTE_INITIAL_DIRECTORY=/home/user/projects \
+CODEXUI_REMOTE_UPLOAD_DIR=/home/user/webui-attachments \
   node dist-cli/index.js --host 127.0.0.1 --port 5900 \
   --app-server-url ws://127.0.0.1:14500 --connection-profile machine-b --no-open
 ```
@@ -32,7 +33,7 @@ Codex WebUI never reads A's auth.json to answer it.
 `--host 127.0.0.1` binds HTTP to loopback. `--host 0.0.0.0` intentionally enables
 LAN access (the existing default). Optional `--password <password>` protection
 still applies. For development use
-`CODEXUI_APP_SERVER_URL=ws://127.0.0.1:14500 pnpm run dev --host 127.0.0.1 --port 4173`.
+`CODEXUI_CONNECTION_PROFILE=machine-b CODEXUI_APP_SERVER_URL=ws://127.0.0.1:14500 pnpm run dev --host 127.0.0.1 --port 4173`.
 Endpoint precedence: CLI, CODEXUI_APP_SERVER_URL, ws://127.0.0.1:4500.
 Browser `/codex-api/ws` is a separate connection from the upstream transport.
 
@@ -65,19 +66,13 @@ Otherwise the picker uses a saved workspace. Without either,
 enter an absolute remote workspace path. Neither A's home nor B's CODEX_HOME is
 assumed to be B's user home.
 
-A retains UI preferences, web authentication sessions, presentation assets and
-application caches locally. `CODEX_HOME` on A names A's application state directory;
-it does not select B's home, credentials or project files. Choose an explicit
-`--connection-profile <id>` / `CODEXUI_CONNECTION_PROFILE` when changing machines,
-even when the forwarding URL is unchanged. Restart A to switch profile and repoint
-the tunnel; do not repoint a running profile at another host. The default `legacy`
-profile uses the backend home for its state. Named profiles use separate hashed
-subdirectories. Native project and workspace records belong to the connected
-App Server. Browser appearance and WebUI password sessions remain shared across
-profiles.
-See [profile storage and upload controls](connection-profiles-uploads.md). These are not remote project
-files. Generated inline images use `/codex-app-asset?id=...`; remote attachments
-and project images use the remote image proxy.
+A stores WebUI preferences, password sessions, presentation assets and caches
+in its OS application directories. Every backend launch requires
+`--connection-profile <id>` or `CODEXUI_CONNECTION_PROFILE`. This ID selects
+the storage namespace. Use the same ID with the same App Server and restart
+with a different ID and endpoint when changing servers. Native Projects and
+workspace records belong to the connected App Server. See
+[storage and upload configuration](connection-profiles-uploads.md).
 
 ## Uploads and transfer limits
 
@@ -87,18 +82,14 @@ B before HTTP success returns. The returned path is used for both previews
 attachment. A timeout may still have created a file on B; it is never retried.
 
 Uploads have a 20 MiB file limit (21 MiB total multipart request limit) and UUID
-names. The dedicated staging area is `<remote CODEX_HOME>/codexapp-uploads`, or
-`<CODEXUI_REMOTE_UPLOAD_DIR>/codexapp-uploads` when explicitly configured on A.
-The latter is an absolute path on B, useful when initialization metadata is
-unavailable. A's temporary directory is never used for remote uploads.
+names. Set `CODEXUI_REMOTE_UPLOAD_DIR` on A to an absolute path on B outside its
+Codex home. The dedicated staging area is
+`<CODEXUI_REMOTE_UPLOAD_DIR>/codexapp-uploads/<sha256(ID)>/`.
 
 Retention is **indefinite**, including abandoned and unknown-outcome uploads.
-A reserves attempted bytes in a locked, atomically replaced shared inventory before
-writing on B and also appends its local intent journal. The existing inventory
-file under the backend's state directory records tracked attempts.
-`CODEXUI_UPLOAD_CAPACITY_BYTES` defaults to 1073741824 (1 GiB) and is shared across
-all profiles in that directory. Failed writes retain their reservations. Legacy
-journal entries with unknown sizes remain outside the byte total.
+A reserves attempted bytes in a locked inventory and appends an intent journal
+in the same ID's WebUI data directory. `CODEXUI_UPLOAD_CAPACITY_BYTES` defaults to
+1073741824 (1 GiB) per ID. Failed and ambiguous writes retain their reservations.
 
 Automatic deletion is disabled. Follow the
 [operator-assisted audit procedure](connection-profiles-uploads.md#conservative-cleanup)
@@ -154,12 +145,11 @@ or shutdown; late responses cannot complete obsolete work. These fixed defaults
 are exported as `RECOVERY_DEFAULTS`, rather than configurable environment options.
 An RPC timeout releases the client but does not prove remote cancellation.
 
+Before mounting, the browser reads the backend's App Server ID from
+`GET /codex-api/connection-profile`. Drafts and per-thread preferences use that ID.
 Browser WS and SSE readiness include a process-scoped `backendInstanceId` and
-`connectionProfile`. A changed profile reloads the document once to discard old
-remote caches and callbacks. Thread selection, per-thread context and drafts are
-namespaced by profile; returning restores that profile's drafts. Legacy browser
-keys remain exclusively legacy. The `connection-profile` URL hint prevents reload
-loops when browser storage is blocked. Theme/language remain global. A new
+`connectionProfile`. A changed ID causes a document reload so the browser
+can load the selected App Server's state. Theme and language remain global. A new
 instance invalidates browser subscription flags: selected and running threads
 resume, while idle cached threads resume when opened. An ordinary browser socket
 reconnect retains subscription flags and refreshes selected history only.

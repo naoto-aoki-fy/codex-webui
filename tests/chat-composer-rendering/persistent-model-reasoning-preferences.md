@@ -21,13 +21,13 @@
 #### Rollback/Cleanup
 
 - Delete disposable threads and restore the original provider/model/appearance.
-- For backend preference cleanup, stop the disposable backend and restore its profile-scoped `codexapp-model-preferences.json` backup.
+- For backend preference cleanup, stop the disposable backend and restore its profile-scoped `model-preferences.json` backup.
 
 ### Backend model preferences, accepted usage
 
 #### Prerequisites/Setup
 
-- Use a disposable `CODEX_HOME` and Connection Profile with an independently managed external app-server and two available models. Back up its `codexapp-model-preferences.json` if present.
+- Use disposable WebUI storage and an explicit App Server ID with an independently managed external app-server and two available models. Back up its `model-preferences.json` if present.
 - Open two separate browser profiles/devices against the same backend. Keep credentials out of screenshots and fixtures.
 - Start with no backend preference file. Keep an existing thread with its own model and mode.
 

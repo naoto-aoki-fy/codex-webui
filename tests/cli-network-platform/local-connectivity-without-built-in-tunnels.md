@@ -7,9 +7,9 @@ Build with `pnpm run build`. Use a disposable `CODEX_HOME` for runtime checks. N
 1. Run `node scripts/test-local-connectivity.cjs`. It starts the packaged CLI on a requested ephemeral port, verifies HTTP frontend/API routing, WebSocket `ready` plus ping/pong, and repeats through an independent local HTTP/WebSocket reverse proxy.
 2. Run `node scripts/test-password-auth.cjs` for default access and password-protected HTTP/WebSocket access. Confirm no install-prompt marker is created.
 3. Inspect `node dist-cli/index.js --help`. The retired `--tunnel` and `--no-tunnel` arguments should be rejected. Normal port, browser, login, sandbox, approval and project options remain.
-4. Start with `CODEX_HOME=<disposable-home> node dist-cli/index.js --port 5900 --no-open`. Confirm local/network URLs appear without a tunnel URL, QR code, download, install prompt or tunnel process. Repeat with a pre-existing `.cloudflared-install-prompted` marker and confirm its bytes remain unchanged.
+4. Start with `CODEX_HOME=<disposable-home> node dist-cli/index.js --connection-profile fixture --port 5900 --no-open`. Confirm local/network URLs appear without a tunnel URL, QR code, download, install prompt or tunnel process. Repeat with a pre-existing `.cloudflared-install-prompted` marker and confirm its bytes remain unchanged.
 5. If a private-network or externally managed reverse proxy deployment is available, connect through it and verify HTTP and WebSocket upgrades. The app does not configure or terminate that external service.
-6. Stop the CLI with SIGTERM and confirm it exits normally. For development, `pnpm run dev --host 127.0.0.1 --port 4173` retains the normal Vite host/port controls.
+6. Stop the CLI with SIGTERM and confirm it exits normally. For development, `CODEXUI_CONNECTION_PROFILE=fixture pnpm run dev --host 127.0.0.1 --port 4173` retains the normal Vite host/port controls.
 
 #### Expected
 The app runs directly with existing HTTP/WebSocket/auth behavior and port selection. It does not probe, download, install, start, stop or print connection QR codes for Cloudflare Tunnel. The dedicated QR dependencies are absent. Previously installed binaries/markers and other user files remain untouched. Cloudflare Skills/plugins, unrelated CDN resources, and external proxies remain independent features.

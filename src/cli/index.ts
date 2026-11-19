@@ -101,7 +101,6 @@ async function addProjectOnly(projectPath: string): Promise<void> {
 }
 
 async function startServer(options: {
-  connectionProfile?: string
   appServerUrl?: string
   host: string
   port: string
@@ -109,8 +108,6 @@ async function startServer(options: {
   open: boolean
   projectPath?: string
 }) {
-  if (options.connectionProfile) process.env.CODEXUI_CONNECTION_PROFILE = options.connectionProfile
-  getConnectionProfileId()
   process.env.CODEXUI_APP_SERVER_URL = resolveAppServerUrl(options.appServerUrl)
   holdWebuiWriterLease()
   const password = typeof options.password === 'string' ? options.password : undefined
@@ -182,7 +179,7 @@ program
   .option('--no-password', 'disable password protection (default)')
   .option('--open', 'open browser on startup', true)
   .option('--no-open', 'do not open browser on startup')
-  .option('--connection-profile <id>', 'stable remote machine identity (env CODEXUI_CONNECTION_PROFILE; default legacy)')
+  .option('--connection-profile <id>', 'required App Server ID (env CODEXUI_CONNECTION_PROFILE)')
   .option('--app-server-url <url>', 'external Codex app-server URL (ws://, wss://, unix:///path.sock)')
   .action(async (
     projectPath: string | undefined,
@@ -196,7 +193,7 @@ program
       openProject?: string
     },
   ) => {
-    if (opts.connectionProfile) process.env.CODEXUI_CONNECTION_PROFILE = opts.connectionProfile
+    if (opts.connectionProfile !== undefined) process.env.CODEXUI_CONNECTION_PROFILE = opts.connectionProfile
     getConnectionProfileId()
     const rawArgv = process.argv.slice(2)
     const openProjectFlagIndex = rawArgv.findIndex((arg) => arg === '--open-project' || arg.startsWith('--open-project='))

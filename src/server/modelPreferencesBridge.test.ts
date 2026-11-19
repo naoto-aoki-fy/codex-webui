@@ -1,20 +1,17 @@
 import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createCodexBridgeMiddleware } from './codexAppServerBridge'
 import { modelPreferencesPath } from './modelPreferencesStore'
 
 const scope = globalThis as typeof globalThis & { __codexRemoteSharedBridge__?: unknown }
-let previous: unknown, home: string
+let previous: unknown
 let bridge: ReturnType<typeof createCodexBridgeMiddleware>
 const rpc = vi.fn()
 beforeEach(async () => {
-  home = await mkdtemp(join(tmpdir(), 'model-preference-bridge-'))
-  vi.stubEnv('CODEX_HOME', home); vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'legacy')
   previous = scope.__codexRemoteSharedBridge__
   rpc.mockReset().mockImplementation(async (method: string) => method === 'turn/start' ? { turn: { id: 'accepted' } }
     : { thread: { id: 't', modelProvider: 'openai' }, model: 'A', reasoningEffort: 'low' })
@@ -23,7 +20,7 @@ beforeEach(async () => {
   }
   bridge = createCodexBridgeMiddleware()
 })
-afterEach(async () => { bridge.dispose(); scope.__codexRemoteSharedBridge__ = previous; vi.restoreAllMocks(); vi.unstubAllEnvs(); await rm(home, { recursive: true, force: true }) })
+afterEach(() => { bridge.dispose(); scope.__codexRemoteSharedBridge__ = previous; vi.restoreAllMocks() })
 async function request(method: string, params: unknown = null) {
   const req = Object.assign(Readable.from([JSON.stringify({ method, params })]), { method: 'POST', url: '/codex-api/rpc', headers: {} })
   let body = ''
@@ -38,7 +35,7 @@ it('serves profile-scoped preferences without contacting the external server and
   try {
     expect((await request('model-preferences/read')).result.preferred).toBeNull()
     const updated = await request('model-preferences/update', { preferred })
-    expect(updated.result.connectionProfile).toBe('legacy')
+    expect(updated.result.connectionProfile).toBe('unit-test')
     expect(updated.result.preferred).toEqual(preferred)
     expect(updated.result.modelUsage).toEqual({})
     expect(a).toHaveBeenCalledWith(expect.objectContaining({ method: 'model-preferences/changed', params: updated.result }))
@@ -69,6 +66,7 @@ it('keeps turn acceptance successful when persistence fails and reports the fail
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
   try {
     await request('thread/resume', { threadId: 't' })
+    await mkdir(dirname(modelPreferencesPath()), { recursive: true })
     await writeFile(modelPreferencesPath(), '{"schemaVersion":2}')
     const result = await request('turn/start', { threadId: 't', model: 'A', effort: 'high' })
     expect(result.status).toBe(200)

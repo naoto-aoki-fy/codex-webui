@@ -9,6 +9,10 @@ async function setup(page, handle = () => undefined, openTools = true) {
  page.on('pageerror',e=>errors.push(e.message))
  await page.route('**/codex-api/**',async route=>{
   const url=new URL(route.request().url()); let body={};try{body=route.request().postDataJSON()||{}}catch{}
+  if (url.pathname === '/codex-api/connection-profile') {
+   const profile = await handle(body, page, url)
+   return route.fulfill(profile ?? { json: { connectionProfile: 'approved-fixture' } })
+  }
   calls.push({path:url.pathname,...body})
   const custom=await handle(body,page,url)
   if(custom) return route.fulfill(custom)

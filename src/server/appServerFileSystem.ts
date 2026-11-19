@@ -1,14 +1,10 @@
-import { posix, win32 } from 'node:path'
+import { projectPath } from './webuiStorage.mjs'
+export { projectPath } from './webuiStorage.mjs'
 import type { AppServerClient } from './appServerClient.js'
 import type { FsReadDirectoryResponse } from './protocol/0.167.2/v2/FsReadDirectoryResponse.js'
 import type { FsGetMetadataResponse } from './protocol/0.167.2/v2/FsGetMetadataResponse.js'
 import type { FsReadFileResponse } from './protocol/0.167.2/v2/FsReadFileResponse.js'
 
-
-// Choose lexical path rules from the remote path, never the Web host OS.
-export function projectPath(path: string) {
-  return /^[a-z]:[\\/]/iu.test(path) || path.startsWith('\\\\') || /^\/\/[^/]+\/[^/]+/u.test(path) ? win32 : posix
-}
 
 export const FILE_CACHE_MAX_BYTES = 16 * 1024 * 1024
 export const FILE_CACHE_MAX_ENTRIES = 32

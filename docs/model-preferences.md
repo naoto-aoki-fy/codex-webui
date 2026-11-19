@@ -1,11 +1,8 @@
 # Backend model preferences
 
-Global composer preferences live in `codexapp-model-preferences.json` under the
-backend's profile-scoped `CODEX_HOME`. The legacy profile uses `CODEX_HOME`
-directly; named Connection Profiles use the existing hashed
-`codexapp-profiles/<hash>/` directory. This is WebUI state on the backend host,
-independent of the external Codex app-server's filesystem and native config.
-No database or credentials are required to read preferences.
+Composer defaults and usage history live in
+`app-servers/<sha256(ID)>/model-preferences.json` under the backend's OS
+persistent data directory. See [App Server IDs and storage](connection-profiles-uploads.md).
 
 ## State and defaults
 

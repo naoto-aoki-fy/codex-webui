@@ -3,7 +3,7 @@
 Prerequisites: build with `pnpm run build`; start Codex independently with
 `codex app-server --listen ws://127.0.0.1:4500`. The App Server owns paths and credentials; no shared CODEX_HOME is required.
 
-1. Start `node dist-cli/index.js --app-server-url ws://127.0.0.1:4500`.
+1. Start `node dist-cli/index.js --connection-profile fixture --app-server-url ws://127.0.0.1:4500`.
 2. List/read threads, create and resume a thread, send a turn, interrupt a turn,
    and accept/reject a tool approval. Expect correlated replies and one stream.
 3. Stop the external server while a turn runs. Expect an actionable connection
@@ -50,7 +50,7 @@ Prerequisites: install dependencies; use the independent Codex server setup abov
 for live notifications. Automated connection/cleanup checks need no credentials:
 `pnpm exec vitest run src/server/browserNotificationTransport.test.ts src/api/codexRpcClient.notifications.test.ts`.
 
-1. Start development with `CODEXUI_APP_SERVER_URL=ws://127.0.0.1:4500 pnpm run dev`
+1. Start development with `CODEXUI_CONNECTION_PROFILE=fixture CODEXUI_APP_SERVER_URL=ws://127.0.0.1:4500 pnpm run dev`
    and repeat against the built production CLI. Connect to `/codex-api/ws` using a
    WebSocket client. Expect one JSON `ready` frame with `{ok:true,backendInstanceId:"..."}` and `atIso`.
 2. Trigger a turn in another client. Expect unchanged notification methods, params
@@ -90,7 +90,7 @@ a production build, and matching server/backend users and paths. Use a short
 unused socket path, such as `/tmp/codex-uds-test.sock`.
 
 1. Run `codex app-server --listen unix:///tmp/codex-uds-test.sock` independently.
-2. Run `node dist-cli/index.js --app-server-url unix:///tmp/codex-uds-test.sock`.
+2. Run `node dist-cli/index.js --connection-profile fixture --app-server-url unix:///tmp/codex-uds-test.sock`.
    List/read threads, send a streaming turn, and accept/reject an approval.
    Expect the same replies, notifications, and approval behavior as TCP.
 3. Stop the external server. Expect pending operations to fail. Restart it and

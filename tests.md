@@ -4,6 +4,10 @@ This file is the manual test index. Detailed regression and feature verification
 
 Current automated commands and isolation boundaries: [development guide](docs/development.md#verification).
 Live acceptance: [external server](tests/website-docs-misc/external-app-server.md).
+Backend startup for manual checks requires an explicit App Server ID. Set
+`CODEXUI_CONNECTION_PROFILE` in the shell before running older test commands.
+See [storage and upload setup](docs/connection-profiles-uploads.md).
+
 Files marked historical preserve former behavior and are not current acceptance criteria.
 
 ## Architecture

@@ -1,6 +1,6 @@
 # Codex WebUI
 
-A browser interface for the official Codex app-server, hosted on Windows or Linux.
+A browser interface for the official Codex app-server, hosted on Windows, macOS or Linux.
 Desktop and mobile browsers (including Android and iOS) can connect to the host.
 
 Distinguishing features include non-destructive Fork and Revert, Portable Fork
@@ -18,13 +18,17 @@ pnpm run build
 # Separate terminal on the App Server host:
 codex app-server --listen ws://127.0.0.1:4500
 # Web backend:
-node dist-cli/index.js --app-server-url ws://127.0.0.1:4500
+node dist-cli/index.js --connection-profile workstation --app-server-url ws://127.0.0.1:4500
 ```
 
 Open the printed URL (default: `http://localhost:5900`). If the port is occupied,
 the CLI tries the next available port. Authentication and runtime defaults belong
 to the external server. Unix sockets (`unix:///absolute/path.sock`) are also supported
 on Linux/macOS. See the [connection guide](docs/external-app-server.md).
+
+Choose a unique App Server ID and reuse it when reconnecting to that server.
+For attachments, set `CODEXUI_REMOTE_UPLOAD_DIR` to a dedicated absolute path on
+the App Server host. See [storage and upload configuration](docs/connection-profiles-uploads.md).
 
 Password protection is disabled by default. Use `--password <pass>` to enable it,
 and configure a private network or external reverse proxy for remote access.
@@ -33,7 +37,7 @@ and configure a private network or external reverse proxy for remote access.
 
 - [Usage, configuration, mobile access, and troubleshooting](docs/usage.md)
 - [Local development and optional HTTPS](docs/development.md)
-- [Reset WebUI state and add verified historical cleanup with `--include-legacy`](docs/webui-reset.md)
+- [Reset WebUI state](docs/webui-reset.md)
 - [Implementation and feature status](PROJECT_SPEC.md)
 - [Supported Codex capabilities](docs/native-project-migration.md)
 - [Maintenance scope](docs/maintenance-scope.md) · [Open items](docs/maintenance/open-items.md)

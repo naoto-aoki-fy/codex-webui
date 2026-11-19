@@ -4,7 +4,7 @@ Product guarantees: [CAP-003 Historical Response Metadata](product-requirements.
 This document owns current model/effort recovery implementation details.
 
 Codex-generated rollout JSONL is the source of historical model and reasoning
-metadata. Parsed results are persistently cached on the App Server host. The
+metadata. Parsed results are cached on the WebUI backend per App Server ID. The
 application no longer records settings from turn submissions, RPC responses, or
 notifications into a separate persistent metadata store. It no longer copies
 metadata between source and forked conversations.
@@ -17,8 +17,8 @@ metadata between source and forked conversations.
 2. The reader calls `thread/read` with `includeTurns: false` to resolve the native
    rollout path, checks that it is a normalized absolute path under the resolved
    Codex home's `sessions/YYYY/MM/DD/` or `archived_sessions/`, and calls `fs/getMetadata`.
-3. It reads `<remote CODEX_HOME>/cache/model-history/v1/<sha256(threadId)>.json`
-   through `fs/readFile`. Version 1, source path, positive modification timestamp,
+3. It reads `app-servers/<sha256(ID)>/model-history/v1/<sha256(threadId)>.json`
+   under the WebUI cache directory. Version 1, source path, positive modification timestamp,
    exact turn IDs and execution provenance must validate before reuse.
 4. On a miss or changed timestamp it reads the rollout through `fs/readFile` and
    parses complete `turn_context` rows. Only exact `payload.turn_id` values are
@@ -26,8 +26,8 @@ metadata between source and forked conversations.
    means unspecified, and `none` is a real effort value. Conflicting duplicates
    suppress the conflicting field. A second source stat prevents caching a
    snapshot observed changing during the read.
-5. `fs/createDirectory` and `fs/writeFile` persist only the compact parsed cache.
-   Original rollouts are never written, deleted or modified. Unknown timestamps
+5. The WebUI backend atomically replaces its compact cache file. The App Server
+   rollout is read-only. Unknown timestamps
    cannot validate or persist a cache. Explicit refresh bypasses cached data.
 6. The client emits `turn/generationMetadata` only for requested exact turn IDs.
    `useDesktopState` merges this evidence into history/live messages; the V2
@@ -64,7 +64,7 @@ turn IDs and 512 characters per field. No session traversal, per-message RPC,
 source-to-fork history read, synchronous filesystem work or new request fanout is
 introduced. Native metadata-only pagination does not trigger rollout recovery.
 
-The fixture verifies seven cold RPCs and three warm/restarted RPCs, with exactly
+The fixture verifies four cold RPCs and two warm/restarted RPCs, with exactly
 one source transfer across cold plus restart. It also covers append invalidation,
 explicit refresh, changing-source rejection, read failures, malformed records,
 thread isolation, revert-shaped replacement data and rejection of request-derived
@@ -95,6 +95,7 @@ when a thread response wins a race with configuration discovery. Reconnection or
 profile changes clear the cache, apply the new connection's initialization
 metadata, and retire in-flight results. Initialization metadata is applied before
 normal and internal thread reads, including subscription recovery.
-Uploads share this resolver unless `CODEXUI_REMOTE_UPLOAD_DIR` explicitly overrides
-the destination. WebUI-local state storage remains separate. See the
+Uploads use the explicit App Server upload root and check any home already
+observed at initialization or during an existing thread read. They never trigger
+`config/read` for this check. See the
 [discovery checks](../tests/website-docs-misc/codex-home-discovery.md).

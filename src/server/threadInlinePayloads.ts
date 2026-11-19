@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, stat, writeFile } from 'node:fs/promises'
-import { inlineMediaDirectory } from './appAssets.js'
-import { join, basename } from 'node:path'
+import { inlineAssetUrl, inlineMediaDirectory } from './appAssets.js'
+import { join } from 'node:path'
 
 export const THREAD_METHODS_WITH_TURNS = new Set(['thread/read', 'thread/resume', 'thread/fork'])
 
@@ -143,10 +143,6 @@ async function persistInlineDataUrlToLocalFile(dataUrl: string, baseName: string
   return filePath
 }
 
-function toLocalImageProxyUrl(path: string): string {
-  return `/codex-app-asset?id=${encodeURIComponent(basename(path))}`
-}
-
 const INLINE_IMAGE_FIELD_NAMES = new Set([
   'b64_json',
   'image',
@@ -184,7 +180,7 @@ async function sanitizeInlineImageString(
   )
   if (!localUrl) return { value, changed: false }
 
-  return { value: toLocalImageProxyUrl(localUrl), changed: true }
+  return { value: inlineAssetUrl(localUrl), changed: true }
 }
 
 async function sanitizeInlineUserContentBlock(
@@ -201,10 +197,10 @@ async function sanitizeInlineUserContentBlock(
     if (localUrl) {
       const nextRecord = { ...record }
       if (typeof record.url === 'string') {
-        nextRecord.url = toLocalImageProxyUrl(localUrl)
+        nextRecord.url = inlineAssetUrl(localUrl)
       }
       if (typeof record.image_url === 'string') {
-        nextRecord.image_url = toLocalImageProxyUrl(localUrl)
+        nextRecord.image_url = inlineAssetUrl(localUrl)
       }
       return {
         ...nextRecord,
@@ -232,7 +228,7 @@ async function sanitizeInlineUserContentBlock(
         return {
           ...record,
           type: 'imageView',
-          path: toLocalImageProxyUrl(localUrl),
+          path: inlineAssetUrl(localUrl),
         }
       }
     }
@@ -248,7 +244,7 @@ async function sanitizeInlineUserContentBlock(
     if (localUrl) {
       return {
         type: 'text',
-        text: `File attachment: ${toLocalImageProxyUrl(localUrl)}`,
+        text: `File attachment: ${inlineAssetUrl(localUrl)}`,
       }
     }
     const target = toAttachmentLinkTarget(record, `inline-file/${context.turnId}/${context.itemId}/${String(context.blockIndex)}`)

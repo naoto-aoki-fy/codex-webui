@@ -10,6 +10,10 @@ async function fixture(context) {
   const threads = ['a', 'b'].map(id => ({ id, name: `Persistence ${id}`, cwd: '/remote/project', preview: `Conversation ${id}`, createdAt: 1, updatedAt: 1, status: { type: 'idle' } }))
   await context.route('**/codex-api/**', async route => {
     const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/connection-profile')) {
+      const connectionProfile = route.request().headers()['x-fixture-profile'] || 'browser-fixture'
+      return route.fulfill({ json: { connectionProfile } })
+    }
     let body = {}; try { body = route.request().postDataJSON() || {} } catch {}
     calls.push(body)
     let result = {}
@@ -28,9 +32,10 @@ async function fixture(context) {
   await context.routeWebSocket('**/codex-api/ws', ws => { setTimeout(() => ws.send(JSON.stringify({ method: 'ready', params: { backendInstanceId: 'fixture' } })), 50) })
   return { errors, calls }
 }
-async function open(context, thread = 'a', profile = 'legacy') {
+async function open(context, thread = 'a', profile = 'browser-fixture') {
   const page = await context.newPage()
-  await page.goto(`${base}/?connection-profile=${profile}#/thread/${thread}`)
+  await page.setExtraHTTPHeaders({ 'x-fixture-profile': profile })
+  await page.goto(`${base}/#/thread/${thread}`)
   await page.locator('.thread-composer-input').waitFor()
   return page
 }
@@ -53,7 +58,7 @@ async function concurrency(browser, fallback) {
   assert.equal(await a.locator('.thread-composer-input').inputValue(), 'a own draft')
   assert.equal(await b.locator('.thread-composer-input').inputValue(), 'b own draft')
   assert(a.url().endsWith('/a')); assert(b.url().endsWith('/b'))
-  await b.goto(`${base}/?connection-profile=legacy#/thread/a`)
+  await b.goto(`${base}/#/thread/a`)
   await Promise.all([a.locator('.thread-composer-input').fill('same thread A'), b.locator('.thread-composer-input').fill('same thread B')])
   await Promise.all([a.reload(), b.reload()])
   assert.equal(await a.locator('.thread-composer-input').inputValue(), 'same thread A')
@@ -90,7 +95,7 @@ async function concurrency(browser, fallback) {
   assert.equal(Object.keys(await moduleCall(a, 'queueSubmissionReceipts', 'readQueueSubmissionReceipts')).length, 15)
 
   for (const key of ['selected-model-by-context.v2', 'collaboration-mode-by-context.v2']) {
-    const root = `codex-web-local.${key}`
+    const root = await moduleCall(a, 'browserConnectionProfile', 'profileStorageKey', [`codex-web-local.${key}`])
     const valueA = key.startsWith('selected-model') ? 'provider-model:["fixture","B"]' : 'plan'
     const valueB = key.startsWith('selected-model') ? 'provider-model:["fixture","A"]' : 'plan'
     await Promise.all([moduleCall(a, 'browserPreferenceRecords', 'savePreferenceRecords', [root, { a: valueA }, {}]), moduleCall(b, 'browserPreferenceRecords', 'savePreferenceRecords', [root, { b: valueB }, {}])])
@@ -127,7 +132,7 @@ async function concurrency(browser, fallback) {
       }
     }
   }
-  await a.goto(`${base}/?connection-profile=legacy#/`)
+  await a.goto(`${base}/#/`)
   assert(a.url().endsWith('#/'))
   assert.equal(await a.locator('.thread-composer-input').inputValue(), '')
   assert.deepEqual(observed.errors, [])
@@ -162,9 +167,12 @@ async function focusedUI(browser) {
   await a.locator('.thread-composer-input').fill('unsaved after quota; keep in memory')
   await a.getByRole('alert').filter({ hasText: 'copy it before closing' }).waitFor()
   assert.deepEqual(await a.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.includes('thread-draft.')))), before)
-  await a.getByRole('button', { name: 'Recover saved drafts', exact: true }).click()
-  await a.getByRole('button', { name: 'Recover copy: other tab recoverable draft', exact: true }).first().click()
-  await a.getByRole('alert').filter({ hasText: 'Could not preserve the current draft' }).waitFor()
+  await a.getByRole('button', { name: 'Settings', exact: true }).click()
+  const settings = a.getByRole('dialog', { name: 'Settings', exact: true })
+  await settings.getByRole('button', { name: /^General/ }).click()
+  await settings.getByRole('button', { name: /^Recover saved drafts/ }).click()
+  await settings.getByRole('button', { name: 'Recover copy: other tab recoverable draft', exact: true }).first().click()
+  await settings.getByRole('alert').filter({ hasText: 'Could not preserve the current draft' }).waitFor()
   assert.equal(await a.locator('.thread-composer-input').inputValue(), 'unsaved after quota; keep in memory')
   assert.deepEqual(await a.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.includes('thread-draft.')))), before)
   for (const theme of ['light', 'dark']) {
@@ -174,6 +182,8 @@ async function focusedUI(browser) {
     await a.screenshot({ path: screenshot, fullPage: true })
     console.log(JSON.stringify({ url: a.url(), viewport: '1440x1000', theme, screenshot, result: 'visible quota and archive refusal; live draft and all saved snapshots retained' }))
   }
+  await a.keyboard.press('Escape')
+  await settings.waitFor({ state: 'hidden' })
   await a.evaluate(() => { Storage.prototype.setItem = window.restoreAcceptanceStorage })
   await a.locator('.thread-composer-input').fill('saved after quota recovered')
   await a.waitForFunction(() => Object.entries(localStorage).some(([key, value]) => key.includes('thread-draft.v2.') && value.includes('saved after quota recovered')))

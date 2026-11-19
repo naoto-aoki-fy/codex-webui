@@ -1,10 +1,12 @@
 import { mkdir, writeFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { expect, it, vi } from 'vitest'
-import { inlineAssetPath, inlineMediaDirectory } from './appAssets'
+import { afterEach, expect, it, vi } from 'vitest'
+import { inlineAssetPath, inlineAssetUrl, inlineMediaDirectory } from './appAssets'
 import { createLocalFileMiddleware } from './localFileHttp'
 import { ProjectFileService } from './appServerFileSystem'
+
+afterEach(() => vi.unstubAllEnvs())
 
 it('serves only explicit Web-owned assets and never falls back for project paths', async () => {
   const id = `asset-${crypto.randomUUID()}.svg`
@@ -18,9 +20,13 @@ it('serves only explicit Web-owned assets and never falls back for project paths
     server.listen(0, '127.0.0.1')
     await once(server, 'listening')
     const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
-    const response = await fetch(base + '/codex-app-asset?id=' + id)
+    const response = await fetch(base + inlineAssetUrl(path))
     expect(response.headers.get('content-type')).toContain('image/svg+xml')
     expect(await response.text()).toBe('<svg/>')
+    const oldUrl = inlineAssetUrl(path)
+    vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'other')
+    expect((await fetch(base + oldUrl)).status).toBe(404)
+    vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'unit-test')
     expect(rpc).not.toHaveBeenCalled()
     expect((await fetch(base + '/codex-app-asset?id=..%2Fsecret')).status).toBe(400)
     expect((await fetch(base + '/codex-local-image?path=' + encodeURIComponent(path))).status).toBe(404)

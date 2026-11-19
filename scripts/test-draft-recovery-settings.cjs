@@ -12,7 +12,8 @@ const payload = text => ({ text, imageUrls: ['data:image/gif;base64,R0lGODlhAQAB
 const reports = []
 
 async function setupRecovery(page) {
-  const fixture = await setup(page, body => {
+  const fixture = await setup(page, (body, _page, url) => {
+    if (url.pathname.endsWith('/connection-profile')) return { json: { connectionProfile: 'recovery-A' } }
     if (body.method === 'account/read') return { json: { result: { account: { type: 'apiKey' }, requiresOpenaiAuth: false } } }
     if (body.method === 'native-authentication/read') return { json: { result: { phase: 'ready', blocking: false, revision: 1 } } }
   }, false)
@@ -46,7 +47,6 @@ async function main() {
         const context = await browser.newContext({ viewport: { width, height } })
         const page = await context.newPage()
         await page.addInitScript(({ legacyKey, forkKey, siblingKey, source }) => {
-          localStorage.setItem('codex-web-local.connection-profile.v1', 'recovery-A')
           localStorage.setItem(legacyKey, JSON.stringify(source))
           localStorage.setItem(forkKey, JSON.stringify('Legacy fork recovery'))
           localStorage.setItem(siblingKey, JSON.stringify({ ...source, text: 'Other tab source' }))

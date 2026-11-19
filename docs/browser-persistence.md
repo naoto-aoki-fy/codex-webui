@@ -1,8 +1,9 @@
 # Browser persistence audit and ownership
 
-Keys below omit `codex-web-local.`. Profile-scoped keys use the original key for
-`legacy`, and `codex-profile.<encoded profile>.<original key>` for named profiles.
-The active profile is fixed for the document; switching profiles reloads it.
+Keys below omit `codex-web-local.`. Connection-dependent keys use
+`codex-profile.<encoded App Server ID>.<original key>`. The browser gets the ID
+from the backend before mounting and reloads the document when the backend
+reports a different ID. Earlier unscoped keys remain in the browser.
 No unknown keys are reset. This inventory covers production browser code, not test
 fixtures or server-side files. Source paths are relative to `src/`.
 

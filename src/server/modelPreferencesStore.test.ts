@@ -1,14 +1,12 @@
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ModelPreferencesStore, modelPreferencesPath } from './modelPreferencesStore'
 import { preferenceModelKey as key } from '../modelPreferences'
 import { createModelPreferenceUsage } from './modelPreferenceUsage'
 
-let home: string
-beforeEach(async () => { home = await mkdtemp(join(tmpdir(), 'model-preferences-')); vi.stubEnv('CODEX_HOME', home); vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'legacy') })
-afterEach(async () => { vi.useRealTimers(); vi.unstubAllEnvs(); await rm(home, { recursive: true, force: true }) })
+beforeEach(async () => { await mkdir(dirname(modelPreferencesPath()), { recursive: true }) })
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs() })
 const settings = (modelId = 'A', providerId = 'openai') => ({ providerId, modelId, reasoningEffort: 'high', collaborationMode: 'plan' as const })
 
 it('persists accepted settings/counts/UTC timestamps across store recreation without counting selections', async () => {
@@ -54,7 +52,7 @@ it('isolates connection profiles and provider/model identities including IDs con
   vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'other')
   expect((await store.read()).preferred).toBeNull()
   await store.recordUsage(settings('other'), 't', '1')
-  vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'legacy')
+  vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'unit-test')
   expect((await store.read()).lastUsed?.modelId).toBe('c')
 })
 

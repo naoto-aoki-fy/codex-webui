@@ -1,5 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
 
+async function useProfile(id: string) {
+  const { setInitialConnectionProfile } = await import('./browserConnectionProfile')
+  setInitialConnectionProfile(id)
+}
 const payload = (text: string) => ({ text, imageUrls: ['data:image/png;base64,abc'], fileAttachments: [{ label: 'a', path: '/a', fsPath: '/a' }], skills: [{ name: 's', path: '/s' }], apps: [{ id: 'app', name: 'App' }] })
 function storage(data = new Map<string, string>()) {
   return { data, get length() { return data.size }, key: (i: number) => [...data.keys()][i] ?? null, getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => { data.set(k, v) }, removeItem: (k: string) => { data.delete(k) } }
@@ -10,11 +14,13 @@ it('isolates duplicated session identities, reloads, clearing, profiles and all 
   const local = storage(), sessionA = storage()
   const win = (session: ReturnType<typeof storage>, profile = 'legacy') => ({ localStorage: local, sessionStorage: session, location: { href: `http://fixture/?connection-profile=${profile}` } })
   vi.stubGlobal('window', win(sessionA))
+  await useProfile('legacy')
   const a = await import('./composerDraftStorage')
   a.persistDraftForThread('same', payload('a'))
   a.persistDraftForThread('different', payload('other conversation'))
   const sessionB = storage(new Map(sessionA.data)) // browser Duplicate Tab
   vi.resetModules(); vi.stubGlobal('window', win(sessionB))
+  await useProfile('legacy')
   const b = await import('./composerDraftStorage')
   expect(b.loadPersistedDraftForThread('same')).toEqual(payload('a'))
   await Promise.all([
@@ -28,13 +34,16 @@ it('isolates duplicated session identities, reloads, clearing, profiles and all 
   vi.stubGlobal('window', win(sessionB))
   expect(b.loadPersistedDraftForThread('same')).toEqual(payload('b edited'))
   vi.resetModules()
+  await useProfile('legacy')
   const reloadedB = await import('./composerDraftStorage')
   expect(reloadedB.loadPersistedDraftForThread('same')).toEqual(payload('b edited'))
   expect(reloadedB.recoverableDrafts('different')[0]?.draft).toEqual(payload('other conversation'))
   vi.resetModules(); vi.stubGlobal('window', win(sessionA))
+  await useProfile('legacy')
   const reloadedA = await import('./composerDraftStorage')
   expect(reloadedA.loadPersistedDraftForThread('same')?.text).toBe('')
   vi.resetModules(); vi.stubGlobal('window', win(storage(), 'remote'))
+  await useProfile('remote')
   const remote = await import('./composerDraftStorage')
   expect(remote.loadPersistedDraftForThread('same')).toBeNull()
   expect(remote.recoverableDrafts('same')).toEqual([])
@@ -55,7 +64,7 @@ it('keeps dotted thread IDs, archived drafts and explicit historical recovery se
   const local = storage(), session = storage()
   vi.stubGlobal('window', { localStorage: local, sessionStorage: session })
   const drafts = await import('./composerDraftStorage')
-  local.setItem('codex-web-local.thread-draft.v1.a', JSON.stringify(payload('legacy')))
+  local.setItem('codex-unbound.codex-web-local.thread-draft.v1.a', JSON.stringify(payload('legacy')))
   drafts.persistDraftForThread('a', { text: '', imageUrls: [], fileAttachments: [], skills: [] })
   drafts.persistDraftForThread('a.b', payload('other thread'))
   expect(drafts.archiveDraftBeforeRecovery('a', payload('archived'))).toBe(true)
@@ -64,7 +73,7 @@ it('keeps dotted thread IDs, archived drafts and explicit historical recovery se
   vi.stubGlobal('window', { localStorage: local, sessionStorage: storage() })
   const fresh = await import('./composerDraftStorage')
   expect(fresh.loadPersistedDraftForThread('a')).toBeNull()
-  expect(local.getItem('codex-web-local.thread-draft.v1.a')).toBe(JSON.stringify(payload('legacy')))
+  expect(local.getItem('codex-unbound.codex-web-local.thread-draft.v1.a')).toBe(JSON.stringify(payload('legacy')))
   expect(fresh.recoverableDrafts('a.b')[0]?.draft.text).toBe('other thread')
 })
 
@@ -72,10 +81,12 @@ it('recovers a copy into this writer without altering another tab or profile, in
   const local = storage(), sessionA = storage(), sessionB = storage()
   const win = (session: ReturnType<typeof storage>, profile = 'remote-A') => ({ localStorage: local, sessionStorage: session, location: { href: `http://fixture/?connection-profile=${profile}` } })
   vi.stubGlobal('window', win(sessionA))
+  await useProfile('remote-A')
   const a = await import('./composerDraftStorage')
   a.persistDraftForThread('same', payload('tab A'))
   const originalA = new Map(local.data)
   vi.resetModules(); vi.stubGlobal('window', win(sessionB))
+  await useProfile('remote-A')
   const b = await import('./composerDraftStorage')
   b.persistDraftForThread('same', payload('tab B'))
   local.setItem('codex-profile.remote-A.codex-web-local.thread-fork-recovery.v1.same', JSON.stringify(payload('fork legacy')))

@@ -1,56 +1,27 @@
-# WebUI reset
+# WebUI reset with OS storage and App Server IDs
 
-Prerequisites. Use a disposable Linux state directory, temporary directory, and
-browser profile. Set `CODEX_HOME` and `TMPDIR` for the WebUI and reset to these
-directories. Start the WebUI against a disposable App Server. Set a WebUI
-password, sign in, change a WebUI setting, and save an unsent draft. Put
-sentinels in `$CODEX_HOME/config.toml` and an unrelated Local Storage key.
-Record their contents.
+Use a disposable XDG storage tree on Linux, an empty browser profile, and a
+separate disposable Codex home. Start and stop the backend with IDs `one` and
+`two` after creating model preferences, inline previews, and, if available,
+Portable Fork records. Stage an upload per ID with an explicit disposable upload
+root on the App Server. Seed the old Codex home with WebUI and native sentinels.
 
-1. Run `pnpm reset:webui --all-profiles --shared --dry-run`. Confirm the local
-   hostname, paths, and individual WebUI entries show up in the plan.
-   Confirm the backend's session file and both sentinels still exist.
-2. Run `pnpm reset:webui --all-profiles --shared --execute --offline` while the
-   disposable backend is running. It should refuse to make changes.
-3. Close the app tab and stop the backend. Run the same execution command.
-   Confirm the reported WebUI session file was deleted and the configuration
-   sentinel was preserved. Rerun and check that it reports zero actions.
-4. Restart the backend and follow the browser steps in the
-   [reset guide](../../docs/webui-reset.md#clear-browser-state). Open a fresh
-   tab. Confirm the old password session no longer authorizes access, the
-   changed WebUI setting is at its default, and the unsent draft is absent.
-   Confirm the unrelated Local Storage sentinel remains and a native test
-   conversation is still readable after signing in.
+1. Run `pnpm reset:webui --profile one --shared`. Expect a dry run that names
+   ID one's state and caches and the global session store. The plan excludes
+   upload ledgers, the second ID, the App Server, and the Codex-home sentinels.
+2. With every writer stopped, run
+   `pnpm reset:webui --profile one --execute --offline`. Restart and check that
+   ID one has fresh backend state, the other ID is unchanged, and both IDs'
+   upload inventories and journals still exist. The shared login still works.
+3. Stop the backend and run
+   `pnpm reset:webui --all-profiles --shared --execute --offline`. Confirm both
+   IDs now have fresh backend state and the WebUI requests password login.
+   Browser storage and Codex-home sentinels still exist.
+4. For the separate App Server-host cleanup, preview one exact disposable
+   filename with `--remote --profile one --remote-upload-root <absolute-root>
+   --remote-upload <filename>`. Execute with `--execute --offline
+   --confirm-remote <hostname>`. Confirm other files and IDs are preserved,
+   and the WebUI's accounting is still intact.
 
-Cleanup. Stop the disposable backend and App Server, remove the disposable
-test directories, and discard the test browser profile.
-
-## Historical WebUI state
-
-Prerequisites. Use disposable backend and App Server homes and a disposable
-temporary directory. In the backend home, write `1712345678901` plus a
-newline to `.cloudflared-install-prompted` and write
-`{"enabled":true,"apiKey":"fixture","model":"old"}` to
-`webui-free-mode.json`. Put a native sentinel alongside
-`conversation-transfers-v1` and `first-launch-plugins-card-dismissed` in
-`.codex-global-state.json`. Also create `codexapp-thread-index.json`,
-`codexapp-upload-inventory.json`, and `codexapp-uploads.jsonl`.
-Stop all writers for both fixture homes.
-
-1. Run `pnpm reset:webui --all-profiles --shared --dry-run`. Record the standard
-   action list, including the upload files and transfer member. Keep the historical index and any scratch files byte-identical.
-2. Add `--include-legacy`. Compare both plans. Expect every standard action,
-   the marker and onboarding member, and a preservation message for the provider file. Add
-   `--acknowledge-legacy-data-loss` and confirm the provider file appears.
-3. Run the acknowledged command with `--execute --offline` in place of
-   `--dry-run`. Expect the combined plan to be applied and the native sentinel
-   to retain its bytes. Repeat and expect zero filesystem actions.
-4. On the separate App Server host, preview
-   `node scripts/reset-webui.mjs --remote --remote-codex-home /path/to/fixture --include-legacy --dry-run`.
-   Expect only verified rollout caches in the plan unless an existing
-   explicit upload selection was supplied. Keep old staging and native
-   attachments. Repeat for the browser profile using the
-   [historical browser inventory](../../docs/webui-reset.md#clear-browser-state).
-
-Cleanup. Remove the disposable fixture homes and temporary directories, and
-discard the disposable browser profile.
+Cleanup: remove the disposable directories and browser profile. To retain
+saved backend state when testing, stop after the dry-run steps.

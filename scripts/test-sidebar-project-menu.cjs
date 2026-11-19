@@ -47,6 +47,7 @@ async function main() {
       // Keep a silent fixture socket open to avoid real notification traffic.
       await page.routeWebSocket('**/codex-api/ws', () => {})
       await page.route('**/codex-api/**', route => {
+        if (route.request().url().endsWith('/codex-api/connection-profile')) return route.fulfill({ json: { connectionProfile: 'browser-fixture' } })
         if (!route.request().url().endsWith('/thread-pins')) {
           errors.push('Unexpected API request: ' + route.request().url())
           return route.abort()

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import WebSocket from 'ws'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, writeFile, mkdir, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -9,6 +9,9 @@ import { promisify } from 'node:util'
 import { resolveAppServerUrl } from './appServerWebSocketClient'
 import { listNativeProjects } from '../nativeProjects'
 import { RolloutGenerationMetadata, parseRolloutMetadata } from './rolloutGenerationMetadata'
+import { getCodexGlobalStatePath } from './codexGlobalState'
+import { profileStorageDirectory } from './connectionProfile'
+import { storageNames } from './webuiStorage.mjs'
 import { createConversationTransfers } from './conversationTransfer'
 import { normalizeThreadMessagesV2 } from '../api/normalizers/v2'
 
@@ -16,8 +19,6 @@ import { normalizeThreadMessagesV2 } from '../api/normalizers/v2'
 it.skipIf(process.env.CODEX_MAINTENANCE_LIVE !== '1')('accepts native Projects, fork/revert, transfer and persistent rollout cache on the live server', async () => {
   const home = process.env.MAINTENANCE_STATE_HOME || await mkdtemp(join(tmpdir(), 'maintenance-live-'))
   await mkdir(home, { recursive: true })
-  const previousHome = process.env.CODEX_HOME
-  process.env.CODEX_HOME = home
   const tag = 'maintenance-' + randomUUID()
   const root = '/tmp/codexapp-' + tag
   const ws = new WebSocket(resolveAppServerUrl())
@@ -99,9 +100,9 @@ it.skipIf(process.env.CODEX_MAINTENANCE_LIVE !== '1')('accepts native Projects, 
     const restarted = new RolloutGenerationMetadata(cacheClient)
     expect(await restarted.recover(sourceId)).toEqual(cold)
     expect(sourceReads()).toBe(reads)
-    const cacheWrite = calls.find(c => c.method === 'fs/writeFile' && c.params.path.includes('/cache/model-history/v1/'))!
-    expect(cacheWrite).toBeTruthy()
-    const stored = JSON.parse(Buffer.from((await rpc('fs/readFile', { path: cacheWrite.params.path })).dataBase64, 'base64').toString())
+    const cachePath = join(profileStorageDirectory('cache'), storageNames.rolloutCache, 'v1',
+      createHash('sha256').update(sourceId).digest('hex') + '.json')
+    const stored = JSON.parse(await readFile(cachePath, 'utf8'))
     expect(stored.turns).toHaveLength(2)
     const bundle = join(home, 'cache-restart-bundle')
     const restartFixture = join(home, 'cache-restart-fixture.json')
@@ -167,9 +168,8 @@ it.skipIf(process.env.CODEX_MAINTENANCE_LIVE !== '1')('accepts native Projects, 
         }
       }
     }
-    // Cache machinery has never written an original rollout or legacy store.
-    expect(calls.filter(c => c.method === 'fs/writeFile').every(c => c.params.path.includes('/cache/model-history/v1/'))).toBe(true)
-    expect((await readFile(join(home, '.codex-global-state.json'), 'utf8')).includes('codexapp-turn-metadata')).toBe(false)
+    expect(calls.filter(c => c.method === 'fs/writeFile')).toEqual([])
+    expect((await readFile(getCodexGlobalStatePath(), 'utf8')).includes('codexapp-turn-metadata')).toBe(false)
   } finally {
     for (const threadId of threads) await rpc('thread/archive', { threadId }).catch(error => { report.cleanupError = String(error) })
     for (const projectId of projects) await rpc('project/delete', { projectId }).catch(error => { report.cleanupError = String(error) })
@@ -180,7 +180,5 @@ it.skipIf(process.env.CODEX_MAINTENANCE_LIVE !== '1')('accepts native Projects, 
     report.cleanup = { archivedTestThreads: threads.size, deletedTestProjects: projects.size, existingProjectOrderUnchanged: true }
     await mkdir(resolve('output/playwright'), { recursive: true }); await writeFile(output, JSON.stringify(report, null, 2))
     ws.close()
-    if (previousHome === undefined) delete process.env.CODEX_HOME
-    else process.env.CODEX_HOME = previousHome
   }
 }, 240_000)

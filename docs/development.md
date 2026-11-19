@@ -5,7 +5,7 @@ fork/revert, conversation transfer or historical response metadata.
 
 First start `codex app-server --listen ws://127.0.0.1:4500` independently on the host that owns
 the repositories and Codex login. The web backend can use a separate host and SSH tunnel. See [connection details](external-app-server.md).
-Development honors `CODEXUI_APP_SERVER_URL` and preserves `CODEX_HOME`.
+Development requires `CODEXUI_CONNECTION_PROFILE` and honors `CODEXUI_APP_SERVER_URL`. See the [storage layout](connection-profiles-uploads.md).
 
 Use Node.js 22 for development/CI (the runtime minimum in package.json is separate).
 Enable Corepack (`corepack enable`), then use the exact pnpm version in
@@ -19,7 +19,7 @@ Normal HTTP development needs no TLS
 credentials:
 
 ```sh
-pnpm run dev --host 127.0.0.1 --port 4173
+CODEXUI_CONNECTION_PROFILE=local-dev pnpm run dev --host 127.0.0.1 --port 4173
 ```
 
 Production builds use `pnpm run build` and do not read development certificates.
@@ -45,7 +45,7 @@ chmod 700 .cert
   -keyout .cert/localhost-key.pem -out .cert/localhost-cert.pem \
   -subj '/CN=localhost' \
   -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1')
-pnpm run dev --config vite.config.https.ts --port 4173
+CODEXUI_CONNECTION_PROFILE=local-dev pnpm run dev --config vite.config.https.ts --port 4173
 ```
 
 Open `https://127.0.0.1:4173`. This self-signed certificate is not automatically
@@ -59,12 +59,13 @@ outside the repository. Set **both** environment variables in the shell before
 starting Vite (these are server-only variables, without a `VITE_` prefix):
 
 ```sh
+CODEXUI_CONNECTION_PROFILE=local-dev \
 DEV_HTTPS_KEY_PATH=/absolute/path/local-key.pem \
 DEV_HTTPS_CERT_PATH=/absolute/path/local-cert.pem \
   pnpm run dev --config vite.config.https.ts --port 4173
 ```
 
-PowerShell users can set `$env:DEV_HTTPS_KEY_PATH` and
+PowerShell users can set `$env:CODEXUI_CONNECTION_PROFILE`, `$env:DEV_HTTPS_KEY_PATH` and
 `$env:DEV_HTTPS_CERT_PATH` before running the same dev command. Relative paths
 resolve from the working directory. Missing or unreadable credentials fail with
 setup instructions; HTTPS never silently falls back to HTTP. Restart Vite after
@@ -151,6 +152,7 @@ Rebuild the base image after changes to its Dockerfile:
 
 ```sh
 docker build -t codexapp-fast-test-base:latest -f scripts/docker-fast-test-base.Dockerfile .
+CODEXUI_CONNECTION_PROFILE=docker-fixture \
 CODEXUI_APP_SERVER_URL=ws://host.docker.internal:4500 scripts/run-docker-fast-test.sh
 ```
 

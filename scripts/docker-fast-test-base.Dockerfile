@@ -8,8 +8,7 @@ RUN apt-get update \
     sqlite3 \
   && rm -rf /var/lib/apt/lists/*
 
-ENV CODEX_HOME=/codex-home
-RUN mkdir -p /codex-home /projects
+RUN mkdir -p /webui-storage
 
 WORKDIR /repo
 EXPOSE 4191

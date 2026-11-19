@@ -1,17 +1,28 @@
 const assert = require('node:assert/strict')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { once } = require('node:events')
 const { createServer } = require('node:http')
-const { mkdtempSync, rmSync } = require('node:fs')
+const { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } = require('node:fs')
 const { tmpdir } = require('node:os')
 const { join } = require('node:path')
 const { WebSocketServer, WebSocket } = require('ws')
+const { fixtureWebuiStorage } = require('./fixture-webui-storage.cjs')
 
 async function run() {
   const unix = process.env.CODEXAPP_FIXTURE_TRANSPORT === 'unix'
   if (unix && process.platform === 'win32') throw new Error('Unix fixture requires Linux/macOS')
-  const directory = unix ? mkdtempSync(join(tmpdir(), 'uds-fixture-')) : null
-  const path = directory ? join(directory, 'codex.sock') : null
+  const directory = mkdtempSync(join(tmpdir(), 'webui-app-server-fixture-'))
+  const path = unix ? join(directory, 'codex.sock') : null
+  const { profileDirectoryName, resolveWebuiStorage } = await import('../src/server/webuiStorage.mjs')
+  const storageEnv = fixtureWebuiStorage(directory, 'fixture-vite')
+  const oldFiles = {
+    'config.toml': '# native sentinel',
+    '.codex-global-state.json': '{"legacy":true}',
+    'codexapp-model-preferences.json': '{"schemaVersion":1,"preferred":{"modelId":"old"}}',
+  }
+  mkdirSync(storageEnv.CODEX_HOME)
+  for (const [name, raw] of Object.entries(oldFiles)) writeFileSync(join(storageEnv.CODEX_HOME, name), raw)
+  const files = new Map()
   const http = createServer()
   const server = new WebSocketServer({ server: http })
   if (path) http.listen(path)
@@ -41,7 +52,9 @@ async function run() {
         assert.equal(frame.params.modelProvider, 'fixture-provider')
         assert.equal(frame.params.includeHidden, true)
       }
-      const result = frame.method === 'thread/name/set' ? {}
+      if (frame.method === 'fs/writeFile') files.set(frame.params.path, Buffer.from(frame.params.dataBase64, 'base64'))
+      const result = frame.method === 'initialize' ? { codexHome: '/fixture/core' }
+        : frame.method === 'thread/name/set' ? {}
         : frame.method === 'account/read' ? { account: { type: 'apiKey', apiKey: 'fixture-secret' }, requiresOpenaiAuth: true, authToken: 'fixture-secret' }
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
         : frame.method === 'model/list' ? { data: [{ id: frame.params.cursor ? 'fixture-hidden' : 'fixture-model', hidden: Boolean(frame.params.cursor), isDefault: !frame.params.cursor }], nextCursor: frame.params.cursor ? null : 'fixture-next' }
@@ -54,13 +67,26 @@ async function run() {
     })
   })
   try {
-    for (const dev of [false, true]) {
+    for (const [command, args] of [[process.execPath, ['dist-cli/index.js', '--no-open']], ['pnpm', ['run', 'dev']]]) {
+      const missing = spawnSync(command, args, {
+        env: { ...process.env, ...storageEnv, CODEXUI_CONNECTION_PROFILE: '' },
+        encoding: 'utf8', timeout: 20_000,
+      })
+      assert.notEqual(missing.status, 0)
+      assert.match(missing.stderr, /App Server ID is required/)
+      console.log('PASS', command === 'pnpm' ? 'pnpm run dev' : 'built CLI', 'rejects startup without an ID')
+    }
+    for (const dev of [false, true, false]) {
+      const profile = dev ? 'fixture-vite' : 'fixture-cli'
       const port = dev ? 4199 : 4198
       // Codex is absent on this host; CLI precedence deliberately overrides a refused env URL.
       const child = spawn(dev ? 'pnpm' : process.execPath, dev
         ? ['run', 'dev', '--host', '127.0.0.1', '--port', String(port)]
-        : ['dist-cli/index.js', '--host', '127.0.0.1', '--port', String(port), '--no-open', '--app-server-url', endpoint], {
-        env: { ...process.env, CODEXUI_APP_SERVER_URL: dev ? endpoint : 'ws://127.0.0.1:1' },
+        : ['dist-cli/index.js', '--host', '127.0.0.1', '--port', String(port), '--no-open', '--app-server-url', endpoint, '--connection-profile', profile], {
+        env: {
+          ...process.env, ...storageEnv, CODEXUI_APP_SERVER_URL: dev ? endpoint : 'ws://127.0.0.1:1',
+          CODEXUI_REMOTE_UPLOAD_DIR: '/fixture/attachments',
+        },
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
       })
@@ -102,6 +128,39 @@ async function run() {
           })
           return { status: response.status, body: await response.json() }
         }
+        const profileResponse = await fetch(url + '/codex-api/connection-profile')
+        assert.equal(profileResponse.headers.get('cache-control'), 'no-store')
+        assert.deepEqual(await profileResponse.json(), { connectionProfile: profile })
+        const preferences = async (kind, params) => {
+          const response = await fetch(url + '/codex-api/rpc', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ method: 'model-preferences/' + kind, params }),
+          })
+          assert.equal(response.status, 200)
+          return (await response.json()).result
+        }
+        const hasPreviousState = !dev && files.size > 0
+        const preferred = { providerId: 'fixture-provider', modelId: profile, reasoningEffort: 'high', collaborationMode: 'default' }
+        assert.deepEqual((await preferences('read')).preferred, hasPreviousState ? preferred : null)
+        assert.equal(connections, before, 'profile bootstrap and preferences do not contact the App Server')
+        await preferences('update', { preferred })
+        const attachment = new FormData()
+        attachment.set('file', new Blob([profile]), 'profile.txt')
+        const uploadResponse = await fetch(url + '/codex-api/upload-file', { method: 'POST', body: attachment })
+        const { path: uploaded, error } = await uploadResponse.json()
+        assert.equal(uploadResponse.status, 200, error)
+        const hash = profileDirectoryName(profile)
+        assert(uploaded.startsWith('/fixture/attachments/codexapp-uploads/' + hash + '/'))
+        assert.equal(files.get(uploaded).toString(), profile)
+        const { data } = resolveWebuiStorage({ ...process.env, ...storageEnv }, process.platform, storageEnv.HOME)
+        const ledger = JSON.parse(readFileSync(join(data, 'app-servers', hash, 'uploads', 'inventory.json'), 'utf8'))
+        assert.equal(ledger.records.length, hasPreviousState ? 2 : 1)
+        assert(ledger.records.every(record => record.path.startsWith('/fixture/attachments/codexapp-uploads/' + hash + '/')))
+        assert.deepEqual(readdirSync(storageEnv.CODEX_HOME).sort(), Object.keys(oldFiles).sort())
+        for (const [name, raw] of Object.entries(oldFiles)) {
+          assert.equal(readFileSync(join(storageEnv.CODEX_HOME, name), 'utf8'), raw)
+        }
+        console.log('PASS', profile, hasPreviousState ? 'reuses' : 'initializes', 'preferences and upload accounting with an untouched Codex home')
         const [unknown, active] = await Promise.all([call('maintenance/unknown'), call('account/read')])
         assert.equal(unknown.status, 502)
         assert.deepEqual(unknown.body, { error: 'Method not found' })
@@ -190,12 +249,12 @@ async function run() {
     assert(!frames.some(f => f.method === 'model/providerCatalog'))
     assert(frames.filter(f=>f.method==='command/exec').every(f=>!f.params?.command),'Command error-contract fixtures never execute commands')
     assert.equal(frames.filter(f => f.method === 'initialize').length, connections)
-    console.log('PASS initialization count:', connections, '; independent fixture listener survives both shutdowns')
+    console.log('PASS initialization count:', connections, '; independent fixture listener survives every shutdown')
   } finally {
     for (const socket of server.clients) socket.terminate()
     await new Promise(resolve => server.close(resolve))
     await new Promise(resolve => http.close(resolve))
-    if (directory) rmSync(directory, { recursive: true, force: true })
+    rmSync(directory, { recursive: true, force: true })
   }
 }
 run().catch(error => { console.error(error); process.exitCode = 1 })

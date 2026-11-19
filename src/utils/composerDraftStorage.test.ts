@@ -9,6 +9,7 @@ it('preserves attachment and skill drafts within their connection profile', asyn
     setItem: (key: string, value: string) => storage.set(key, value),
     removeItem: (key: string) => storage.delete(key),
   } })
+  ;(await import('./browserConnectionProfile')).setInitialConnectionProfile('remote-A')
   const { persistDraftForThread, loadPersistedDraftForThread } = await import('./composerDraftStorage')
   const draft = { text: 'Draft', imageUrls: ['data:image/png;base64,abc'], fileAttachments: [{ label: 'a', path: '/a', fsPath: '/a' }], skills: [{ name: 'skill', path: '/skill/SKILL.md' }] }
   persistDraftForThread('thread', draft)

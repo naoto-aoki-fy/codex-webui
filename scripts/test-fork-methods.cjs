@@ -47,6 +47,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   const destinationProvider = sameProvider ? composerProvider : defaultProvider
   const destinationDefault = destinationProvider === 'P' ? 'A' : 'C'
   await page.route('**/codex-api/**', async route => {
+    if (route.request().url().endsWith('/codex-api/connection-profile')) return route.fulfill({ json: { connectionProfile: 'browser-fixture' } })
     const request = route.request()
     if (request.url().includes('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': mock\n\n' })
     if (request.url().endsWith('/thread-pins')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: { threadIds: [] } }) })

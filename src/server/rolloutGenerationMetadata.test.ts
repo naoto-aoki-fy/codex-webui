@@ -1,8 +1,16 @@
-import { expect, it, vi } from 'vitest'
-import { RolloutGenerationMetadata, parseRolloutMetadata, rolloutCacheLocation } from './rolloutGenerationMetadata'
+import { afterEach, expect, it, vi } from 'vitest'
+import { RolloutGenerationMetadata, parseRolloutMetadata, rolloutSourcePath } from './rolloutGenerationMetadata'
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { profileStorageDirectory } from './connectionProfile'
+import { storageNames } from './webuiStorage.mjs'
 import { AppServerClient } from './appServerClient'
 import { mergeGenerationMetadata } from '../turnGenerationMetadata'
 
+afterEach(() => vi.unstubAllEnvs())
+const cacheDirectory = () => join(profileStorageDirectory('cache'), storageNames.rolloutCache, 'v1')
+const cachePath = (id = 't') => join(cacheDirectory(), createHash('sha256').update(id).digest('hex') + '.json')
 const path = '/remote/.codex/sessions/2026/11/14/rollout-test.jsonl'
 const context = (turn_id: string, fields: object) => JSON.stringify({ type: 'turn_context', timestamp: '2026-11-14T00:00:00Z', payload: { turn_id, ...fields } }) + '\n'
 const execution = (model: string, effort?: string | null) => ({ model, modelSource: 'execution', ...(effort !== undefined ? { effort, effortSource: 'execution' } : {}) })
@@ -12,8 +20,6 @@ function fixture() {
   const rpc = vi.fn(async (method: string, params: any): Promise<any> => {
     if (method === 'thread/read') return { thread: { id: 't', path } }
     if (method === 'fs/getMetadata') return { isFile: true, modifiedAtMs: stamp }
-    if (method === 'fs/createDirectory') return {}
-    if (method === 'fs/writeFile') { files.set(params.path, Buffer.from(params.dataBase64, 'base64').toString()); return {} }
     if (method === 'fs/readFile') {
       if (!files.has(params.path)) throw new Error('ENOENT')
       return { dataBase64: Buffer.from(files.get(params.path)!).toString('base64') }
@@ -36,11 +42,11 @@ it('parses exact IDs, missing/null/none, malformed and interrupted records; supp
 })
 
 it('validates remote POSIX/Windows paths and initialization home without local HOME', () => {
-  expect(rolloutCacheLocation(path, '/remote/.codex')).toBe('/remote/.codex/cache/model-history/v1')
-  expect(rolloutCacheLocation('C:\\Codex\\sessions\\2026\\11\\14\\rollout-x.jsonl', 'C:\\Codex')).toBe('C:\\Codex\\cache\\model-history\\v1')
-  for (const bad of [null, 1, 'relative.jsonl', '/tmp/x.jsonl', '/x/../remote/.codex/sessions/2026/11/14/rollout-x.jsonl', 'file://' + path]) expect(rolloutCacheLocation(bad)).toBeUndefined()
-  expect(rolloutCacheLocation(path, '/different')).toBeUndefined()
-  expect(rolloutCacheLocation('/custom/archived_sessions/rollout-x.jsonl', '/custom')).toBe('/custom/cache/model-history/v1')
+  expect(rolloutSourcePath(path, '/remote/.codex')).toBe(path)
+  expect(rolloutSourcePath('C:\\Codex\\sessions\\2026\\11\\14\\rollout-x.jsonl', 'C:\\Codex')).toBe('C:\\Codex\\sessions\\2026\\11\\14\\rollout-x.jsonl')
+  for (const bad of [null, 1, 'relative.jsonl', '/tmp/x.jsonl', '/x/../remote/.codex/sessions/2026/11/14/rollout-x.jsonl', 'file://' + path]) expect(rolloutSourcePath(bad, '/remote/.codex')).toBeUndefined()
+  expect(rolloutSourcePath(path, '/different')).toBeUndefined()
+  expect(rolloutSourcePath('/custom/archived_sessions/rollout-x.jsonl', '/custom')).toBe('/custom/archived_sessions/rollout-x.jsonl')
 })
 
 it('coalesces concurrent requests, caches minimal evidence, and survives backend restart with no source transfer', async () => {
@@ -49,15 +55,17 @@ it('coalesces concurrent requests, caches minimal evidence, and survives backend
   const [a, b] = await Promise.all([f.service.recover('t'), f.service.recover('t')])
   expect(a).toEqual(b)
   expect(sourceReads(f)).toBe(1)
-  expect(f.rpc).toHaveBeenCalledTimes(7)
+  expect(f.rpc).toHaveBeenCalledTimes(4)
   const restarted = new RolloutGenerationMetadata(f.client)
   expect(await restarted.recover('t')).toEqual(a)
   expect(sourceReads(f)).toBe(1)
-  expect(f.rpc).toHaveBeenCalledTimes(10)
-  const cache = [...f.files].find(([key]) => key !== path)!
-  expect(cache[0]).toMatch(/\/cache\/model-history\/v1\/[a-f0-9]{64}\.json$/)
-  expect(Object.keys(JSON.parse(cache[1]))).toEqual(['version', 'sourcePath', 'modifiedAtMs', 'turns'])
-  console.log(`Rollout fixture audit: cold+restart=${(performance.now() - start).toFixed(2)}ms; source=${Buffer.byteLength(f.files.get(path)!)} bytes; cache=${Buffer.byteLength(cache[1])} bytes; source reads=1; RPCs=${f.rpc.mock.calls.length}`)
+  expect(f.rpc).toHaveBeenCalledTimes(6)
+  const cache = await readFile(cachePath(), 'utf8')
+  expect(Object.keys(JSON.parse(cache))).toEqual(['version', 'sourcePath', 'modifiedAtMs', 'turns'])
+  expect(f.rpc.mock.calls.map(([method]) => method)).toEqual([
+    'thread/read', 'fs/getMetadata', 'fs/readFile', 'fs/getMetadata', 'thread/read', 'fs/getMetadata',
+  ])
+  console.log(`Rollout fixture audit: cold+restart=${(performance.now() - start).toFixed(2)}ms; source=${Buffer.byteLength(f.files.get(path)!)} bytes; cache=${Buffer.byteLength(cache)} bytes; source reads=1; RPCs=${f.rpc.mock.calls.length}`)
 })
 
 it('invalidates appended sources, explicit refresh, schema and path changes', async () => {
@@ -67,9 +75,9 @@ it('invalidates appended sources, explicit refresh, schema and path changes', as
   expect((await f.service.recover('t')).get('third')).toEqual(execution('C', null))
   expect(sourceReads(f)).toBe(2)
   await f.service.recover('t', true); expect(sourceReads(f)).toBe(3)
-  const key = [...f.files.keys()].find(key => key !== path)!
+  const key = cachePath()
   for (const field of [{ version: 2 }, { sourcePath: '/wrong' }]) {
-    f.files.set(key, JSON.stringify({ ...JSON.parse(f.files.get(key)!), ...field }))
+    await writeFile(key, JSON.stringify({ ...JSON.parse(await readFile(key, 'utf8')), ...field }))
     await f.service.recover('t')
   }
   expect(sourceReads(f)).toBe(5)
@@ -84,7 +92,7 @@ it('does not publish changing-source snapshots or retired connection results', a
       return result
     })
     expect((await f.service.recover('t')).size).toBe(0)
-    expect(f.rpc.mock.calls.some(([m]) => m === 'fs/writeFile')).toBe(false)
+    await expect(stat(cachePath())).rejects.toMatchObject({ code: 'ENOENT' })
   }
 })
 
@@ -94,14 +102,21 @@ it('unknown mtimes never validate or persist cache', async () => {
   expect((await f.service.recover('t')).size).toBe(2)
   await f.service.recover('t')
   expect(sourceReads(f)).toBe(2)
-  expect(f.rpc.mock.calls.some(([m]) => m === 'fs/writeFile')).toBe(false)
+  await expect(stat(cachePath())).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
-it.each(['fs/readFile', 'fs/getMetadata', 'fs/createDirectory', 'fs/writeFile'])('isolates unsupported/denied %s failures', async method => {
+it.each(['fs/readFile', 'fs/getMetadata'])('isolates unsupported/denied %s failures', async method => {
   const f = fixture(), original = f.rpc.getMockImplementation()!
   f.rpc.mockImplementation((m, p) => m === method ? Promise.reject(Object.assign(new Error('denied or unsupported'), { code: -32601 })) : original(m, p))
-  const data = await f.service.recover('t')
-  expect(data.size).toBe(method === 'fs/readFile' || method === 'fs/getMetadata' ? 0 : 2)
+  expect((await f.service.recover('t')).size).toBe(0)
+})
+
+it('recovers evidence even when the local cache cannot be written', async () => {
+  const f = fixture()
+  await mkdir(cacheDirectory(), { recursive: true })
+  await mkdir(cachePath())
+  expect((await f.service.recover('t')).get('old')).toEqual(execution('A', 'high'))
+  expect(await readdir(cacheDirectory())).toHaveLength(1)
 })
 
 it('updates only requested exact turn IDs through existing notifications, including older pages', async () => {
@@ -131,7 +146,7 @@ it('rejects oversized transfers before decoding and does not touch original file
   f.rpc.mockImplementation((m, p) => m === 'fs/readFile' && p.path === path
     ? Promise.resolve({ dataBase64: 'A'.repeat(24 * 1024 * 1024) }) : original(m, p))
   expect((await f.service.recover('t')).size).toBe(0)
-  expect(f.rpc.mock.calls.some(([m]) => m === 'fs/writeFile')).toBe(false)
+  await expect(stat(cachePath())).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
 it('does not reuse persistent data across different remote homes', async () => {
@@ -158,17 +173,29 @@ it('does not leak metadata between source, native fork and unrelated threads wit
   f.files.set(forkPath, 'malformed\n' + context('old', {})); f.change()
   expect(await f.service.recover('fork')).toEqual(new Map())
   expect((await f.service.recover('t')).get('old')).toEqual(execution('A', 'high'))
-  expect([...f.files.keys()].filter(key => key.endsWith('.json'))).toHaveLength(3)
+  expect(await readdir(cacheDirectory())).toHaveLength(3)
   expect(f.files.get(path)).toContain('"model":"A"')
 })
 
 it('discards request-derived values inserted into a rollout cache and rebuilds from the source', async () => {
   const f = fixture()
   await f.service.recover('t')
-  const key = [...f.files.keys()].find(key => key !== path)!
-  const cached = JSON.parse(f.files.get(key)!)
+  const key = cachePath()
+  const cached = JSON.parse(await readFile(key, 'utf8'))
   cached.turns[0].metadata = { model: 'request-only', modelSource: 'submitted' }
-  f.files.set(key, JSON.stringify(cached))
+  await writeFile(key, JSON.stringify(cached))
+  expect((await new RolloutGenerationMetadata(f.client).recover('t')).get('old')).toEqual(execution('A', 'high'))
+  expect(sourceReads(f)).toBe(2)
+})
+
+it('isolates cached evidence for identical thread IDs, source paths and mtimes on different App Servers', async () => {
+  const f = fixture()
+  await f.service.recover('t')
+  vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'other')
+  f.files.set(path, context('old', { model: 'different' }))
+  expect((await new RolloutGenerationMetadata(f.client).recover('t')).get('old')).toEqual(execution('different'))
+  expect(sourceReads(f)).toBe(2)
+  vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'unit-test')
   expect((await new RolloutGenerationMetadata(f.client).recover('t')).get('old')).toEqual(execution('A', 'high'))
   expect(sourceReads(f)).toBe(2)
 })

@@ -30,10 +30,10 @@ vi.mock('../api/codexGateway', async importOriginal => ({
   getPendingServerRequests: vi.fn(async () => []),
   subscribeCodexNotifications: vi.fn((cb: (n: RpcNotification) => void) => { streams.add(cb); return () => streams.delete(cb) }),
 }))
-const homeModelKey = 'codex-web-local.selected-model-by-context.v2.__new-thread-provider__%3A%3Acodex'
+const homeModelKey = 'codex-unbound.codex-web-local.selected-model-by-context.v2.__new-thread-provider__%3A%3Acodex'
 const homeExplicitModelKey = 'codex-web-local.explicit-model-contexts.v2.__new-thread-provider__%3A%3Acodex'
-const homeModeKey = 'codex-web-local.collaboration-mode-by-context.v2.__new-thread__'
-const existingModelKey = 'codex-web-local.selected-model-by-context.v2.existing'
+const homeModeKey = 'codex-unbound.codex-web-local.collaboration-mode-by-context.v2.__new-thread__'
+const existingModelKey = 'codex-unbound.codex-web-local.selected-model-by-context.v2.existing'
 const effortKey = 'codex-web-local.reasoning-by-provider-model.v1'
 const usageKey = 'codex-web-local.model-usage-order.v1'
 let local: Map<string, string>, backend: ModelPreferences
@@ -94,7 +94,7 @@ it('stores Home choices only on the backend and leaves prior browser entries unt
   expect(local).toEqual(original)
   expect(local.has(homeExplicitModelKey)).toBe(false)
   state.setSelectedCollaborationModeForThread('existing', 'plan')
-  expect(local.get('codex-web-local.collaboration-mode-by-context.v2.existing')).toBe('"plan"')
+  expect(local.get('codex-unbound.codex-web-local.collaboration-mode-by-context.v2.existing')).toBe('"plan"')
   expect(local.get(homeModeKey)).toBe(original.get(homeModeKey))
 })
 

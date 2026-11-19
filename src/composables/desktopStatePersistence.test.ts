@@ -23,7 +23,7 @@ describe('desktop persistence', () => {
   })
 
   it('reads and clears independent current model choices and ignores old maps', () => {
-    const base = 'codex-web-local.selected-model-by-context.v2.'
+    const base = 'codex-unbound.codex-web-local.selected-model-by-context.v2.'
     const legacy = 'codex-web-local.selected-model-by-context.v1'
     const mock = storage({
       [legacy]: '{"old":"model"}',
@@ -41,7 +41,7 @@ describe('desktop persistence', () => {
   })
 
   it('keeps context-specific collaboration preferences', () => {
-    const base = 'codex-web-local.collaboration-mode-by-context.v2.'
+    const base = 'codex-unbound.codex-web-local.collaboration-mode-by-context.v2.'
     storage({ [base + 't']: '"plan"', [base + 'other']: '"default"' })
     const state = persistence.loadSelectedCollaborationModeMap()
     expect(persistence.readSelectedCollaborationMode(state, 't')).toBe('plan')
@@ -73,8 +73,8 @@ describe('desktop persistence', () => {
   it('keeps malformed and unsupported values harmless for forgiving loaders', () => {
     for (const raw of ['{', 'null', '42', 'true', '[]', '""']) {
       storage({
-        'codex-web-local.selected-model-by-context.v2.t': raw,
-        'codex-web-local.collaboration-mode-by-context.v2.t': raw,
+        'codex-unbound.codex-web-local.selected-model-by-context.v2.t': raw,
+        'codex-unbound.codex-web-local.collaboration-mode-by-context.v2.t': raw,
       })
       for (const load of forgivingLoaders) expect(Object.keys(load())).toEqual([])
     }

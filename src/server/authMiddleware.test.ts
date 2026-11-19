@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage } from 'node:http'
@@ -43,7 +43,7 @@ describe('password authentication without IP bypass', () => {
     expect(auth.isRequestAuthorized(request(ip, 'portal_session=invalid'))).toBe(false)
   })
 
-  it('rejects wrong passwords and accepts login cookies for HTTP and WebSocket authorization', () => {
+  it('rejects wrong passwords and accepts login cookies across App Server IDs', async () => {
     const auth = createAuthSession('secret')
     for (const password of ['wrong', 'secret']) {
       const req = request('127.0.0.1')
@@ -58,13 +58,16 @@ describe('password authentication without IP bypass', () => {
         expect(res.setHeader).not.toHaveBeenCalled()
         continue
       }
+      await vi.waitFor(() => expect(res.json).toHaveBeenCalledWith({ ok: true }))
       const cookie = vi.mocked(res.setHeader).mock.calls[0]![1] as string
       const authenticated = request('100.64.0.1', cookie.split(';')[0])
       const next = vi.fn()
       auth.middleware(authenticated, response(), next)
       expect(next).toHaveBeenCalledOnce()
       expect(auth.isRequestAuthorized(authenticated)).toBe(true)
+      vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'another-server')
       expect(createAuthSession('secret').isRequestAuthorized(authenticated)).toBe(true)
+      expect(existsSync(join(home, 'webui-auth-sessions.json'))).toBe(false)
     }
   })
 })
