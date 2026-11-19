@@ -161,17 +161,6 @@ it('rejects retired index rebuild without sending or changing session logs', asy
   await expectPreservedFiles()
 })
 
-it('rejects legacy workspace PUT without reading its body or changing state', async () => {
-  const statePath = join(home, '.codex-global-state.json')
-  const raw = JSON.stringify({ unknown: { preserved: true } })
-  await writeFile(statePath, raw)
-  const response = await request('/codex-api/workspace-roots-state', 'PUT', { order: [project] })
-  expect(response.res.statusCode).toBe(409)
-  expect(response.json).toEqual({ error: 'Workspace updates have changed. Reload this tab before editing projects.' })
-  expect(await readFile(statePath, 'utf8')).toBe(raw)
-  expect(rpc).not.toHaveBeenCalled()
-})
-
 it('rejects all legacy path mutations without rewriting registry fields', async () => {
   const statePath = join(home, '.codex-global-state.json')
   const raw = JSON.stringify({ 'electron-saved-workspace-roots': [project], 'remote-projects': [{ id: 'remote', future: { keep: true } }], unknown: true })

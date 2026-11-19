@@ -13,7 +13,7 @@
 
 #### Expected Results
 - Thread loading, notifications, generic review RPC, and read-only file browsing work. Bundled metadata is advisory, not capability negotiation.
-- Compatibility HTTP endpoints listed in [the bridge contracts](../../PROJECT_SPEC.md#bridge-contracts) remain registered.
+- HTTP endpoints listed in [the bridge contracts](../../PROJECT_SPEC.md#bridge-contracts) remain registered.
 
 #### Rollback/Cleanup
 - Remove test messages and resolve any outstanding runtime request.

@@ -26,6 +26,22 @@ async function request(path: string, method = 'GET') {
   await createCodexBridgeMiddleware()(req, res, next)
   return { res, next, body }
 }
+it.each([
+  ['POST', '/codex-api/accounts/login/start'],
+  ['POST', '/codex-api/accounts/login/complete'],
+  ['GET', '/codex-api/meta/notifications'],
+  ['PUT', '/codex-api/workspace-roots-state'],
+])('handles removed %s %s through the API 404 handler', async (method, path) => {
+  const authPath = join(home, 'auth.json')
+  await writeFile(authPath, 'Existing credential bytes')
+  const { res, next, body } = await request(path, method)
+  expect(res.statusCode).toBe(404)
+  expect(next).not.toHaveBeenCalled()
+  expect(JSON.parse(body)).toEqual({ error: 'Not found' })
+  expect(rpc).not.toHaveBeenCalled()
+  expect(await readFile(authPath, 'utf8')).toBe('Existing credential bytes')
+})
+
 it.each([['GET', 'status'], ['GET', 'connectors'], ['GET', 'connector'], ['POST', 'link'], ['POST', 'login'], ['POST', 'install']])('does not handle removed %s Composio %s route', async (method, suffix) => {
   const { next, body } = await request(`/codex-api/composio/${suffix}`, method)
   expect(next).not.toHaveBeenCalled()

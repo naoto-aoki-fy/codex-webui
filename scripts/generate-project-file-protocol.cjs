@@ -45,6 +45,6 @@ try {
     }
   }
   removeStale(target)
-  const methods = name => [...new Set([...readFileSync(join(temp, name + '.ts'), 'utf8').matchAll(/"method": "([^"]+)"/g)].map(match => match[1]))].sort()
-  writeFileSync(join(process.cwd(), 'src/server/appServerMethods.json'), JSON.stringify({ methods: methods('ClientRequest'), notifications: methods('ServerNotification') }, null, 2) + '\n')
+  const methods = [...new Set([...readFileSync(join(temp, 'ClientRequest.ts'), 'utf8').matchAll(/"method": "([^"]+)"/g)].map(match => match[1]))].sort()
+  writeFileSync(join(process.cwd(), 'src/server/appServerMethods.json'), JSON.stringify({ methods }, null, 2) + '\n')
 } finally { rmSync(temp, { recursive: true, force: true }) }

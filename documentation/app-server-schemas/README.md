@@ -9,8 +9,8 @@ catalog or the server version.
 Run `pnpm run generate:project-file-protocol` after installing the locked dev
 dependencies. The script checks `codex --version`, runs `codex app-server
 generate-ts --experimental --out <temporary-directory>`, discovers handwritten TypeScript/Vue imports and copies their transitive dependency closure into
-`src/server/protocol/0.167.2/`, and extracts sorted method and notification names
-from `ClientRequest.ts` and `ServerNotification.ts` into
+`src/server/protocol/0.167.2/`, and extracts sorted RPC method names
+from `ClientRequest.ts` into
 `src/server/appServerMethods.json`. Run it twice and compare diffs to verify
 reproducibility, then run typecheck, unit tests and build. Stale generated TypeScript outside that closure is removed; the method catalog still comes from the full upstream schema.
 
