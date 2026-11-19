@@ -27,4 +27,3 @@ Return to the [manual test index](../../tests.md).
 - [Missing Codex CLI chat error](missing-codex-cli-chat-error.md)
 - [Feature: Default runtime uses workspace-write sandbox with on-request approvals](default-runtime-uses-workspace-write-sandbox-with-on-request-approvals.md)
 - [Feature: Default runtime uses unrestricted sandbox and no approvals](default-runtime-uses-unrestricted-sandbox-and-no-approvals.md)
-- [Feature: npm run dev exports unrestricted runtime defaults](npm-run-dev-exports-unrestricted-runtime-defaults.md)
