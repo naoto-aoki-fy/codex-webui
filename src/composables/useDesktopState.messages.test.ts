@@ -64,7 +64,7 @@ const thread: UiThread = {
 }
 const oldDetail: ResumedThread = {
   model: 'gpt-5.5', modelProvider: '', messages: [oldUser],
-  inProgress: false, activeTurnId: '', hasMoreOlder: false, turnIndexByTurnId: { 'turn-1': 0 },
+  inProgress: false, activeTurnId: '', olderCursor: null, turnIndexByTurnId: { 'turn-1': 0 },
 }
 const completedDetail: ResumedThread = {
   ...oldDetail, messages: [oldUser, nextUser, reply], turnIndexByTurnId: { 'turn-1': 0, 'turn-2': 1 },
@@ -1189,7 +1189,7 @@ describe('async request and lifecycle characterization (current behavior)', () =
   })
 
   it.each(['ensure', 'select'] as const)('reloads cleared history through %s after stop/restart without duplicate reads', async (method) => {
-    gateway.resumeThread.mockResolvedValueOnce({ ...oldDetail, hasMoreOlder: true })
+    gateway.resumeThread.mockResolvedValueOnce({ ...oldDetail, olderCursor: 'older' })
     const state = await loadState()
     expect(state.messages.value).toEqual(oldDetail.messages)
     expect(state.hasMoreOlderMessages.value).toBe(true)
@@ -1497,7 +1497,7 @@ describe('lifecycle generation ownership across restart', () => {
 
   it.each(['success', 'failure'] as const)('ignores obsolete older-history %s during a new pagination request', async (outcome) => {
     gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], labels: {}, active: [], projectOrder: [] })
-    gateway.resumeThread.mockResolvedValueOnce({ ...oldDetail, hasMoreOlder: true })
+    gateway.resumeThread.mockResolvedValueOnce({ ...oldDetail, olderCursor: 'older' })
     const state = await loadState()
     const oldPage = deferred<unknown>()
     const freshPage = deferred<unknown>()
@@ -1505,19 +1505,19 @@ describe('lifecycle generation ownership across restart', () => {
     const old = state.loadOlderMessages().catch((error: Error) => error.message)
     state.stopPolling()
     state.startPolling()
-    gateway.getThreadDetail.mockResolvedValueOnce({ ...completedDetail, hasMoreOlder: true })
+    gateway.getThreadDetail.mockResolvedValueOnce({ ...completedDetail, olderCursor: 'older' })
     await state.ensureThreadMessagesLoaded(thread.id)
     const fresh = state.loadOlderMessages()
     expect(state.isLoadingOlderMessages.value).toBe(true)
     expect(state.isLoadingMessages.value).toBe(false)
-    if (outcome === 'success') oldPage.resolve({ messages: [oldUser], hasMoreOlder: false, turnIndexByTurnId: {} })
+    if (outcome === 'success') oldPage.resolve({ messages: [oldUser], olderCursor: null, turnIndexByTurnId: {} })
     else oldPage.reject(new Error('old pagination failure'))
     await old
     expect(state.isLoadingOlderMessages.value).toBe(true)
     expect(state.isLoadingMessages.value).toBe(false)
     expect(state.hasMoreOlderMessages.value).toBe(true)
     expect(state.error.value).toBe('')
-    freshPage.resolve({ messages: [], hasMoreOlder: false, turnIndexByTurnId: {} })
+    freshPage.resolve({ messages: [], olderCursor: null, turnIndexByTurnId: {} })
     await fresh
     expect(state.isLoadingOlderMessages.value).toBe(false)
     expect(state.hasMoreOlderMessages.value).toBe(false)
@@ -1921,7 +1921,7 @@ it.each(['selected', 'navigated', 'disposed'] as const)('coordinates obsolete co
 describe('history refresh and pruning interleavings', () => {
   const recent = { ...oldUser, turnId: 'recent', turnIndex: 10 }
   const earlier = { ...oldUser, id: 'earlier-user', turnId: 'earlier', turnIndex: 9 }
-  const recentDetail = { ...oldDetail, messages: [recent], hasMoreOlder: true, turnIndexByTurnId: { recent: 10 } }
+  const recentDetail = { ...oldDetail, messages: [recent], olderCursor: 'older', turnIndexByTurnId: { recent: 10 } }
 
   for (const order of ['page-first', 'detail-first'] as const) {
     const test = it
@@ -1935,7 +1935,7 @@ describe('history refresh and pruning interleavings', () => {
       const paging = state.loadOlderMessages()
       const refreshing = state.loadMessages(thread.id, { force: true })
       const resolvePage = async () => {
-        page.resolve({ messages: [earlier], hasMoreOlder: false, turnIndexByTurnId: { earlier: 9 } })
+        page.resolve({ messages: [earlier], olderCursor: null, turnIndexByTurnId: { earlier: 9 } })
         await paging
       }
       const resolveDetail = async () => { detail.resolve(recentDetail); await refreshing }
@@ -1952,7 +1952,7 @@ describe('history refresh and pruning interleavings', () => {
     gateway.resumeThread.mockResolvedValueOnce(recentDetail)
     const state = await loadState()
     const detail = deferred<ResumedThread>()
-    gateway.getOlderThreadMessages.mockResolvedValueOnce({ messages: [], hasMoreOlder: false, turnIndexByTurnId: {} })
+    gateway.getOlderThreadMessages.mockResolvedValueOnce({ messages: [], olderCursor: null, turnIndexByTurnId: {} })
     gateway.getThreadDetail.mockReturnValueOnce(detail.promise)
     const refreshing = state.loadMessages(thread.id, { force: true })
     await state.loadOlderMessages()
@@ -1973,7 +1973,7 @@ describe('history refresh and pruning interleavings', () => {
     state.primeSelectedThread('another-thread')
     gateway.getThreadGroupsPage.mockResolvedValue({ groups: [], nextCursor: null })
     await state.archiveThreadById(thread.id)
-    pending.resolve(kind === 'detail' ? recentDetail : { messages: [earlier], hasMoreOlder: false, turnIndexByTurnId: { earlier: 9 } })
+    pending.resolve(kind === 'detail' ? recentDetail : { messages: [earlier], olderCursor: null, turnIndexByTurnId: { earlier: 9 } })
     await loading
     state.primeSelectedThread(thread.id)
     expect(state.messages.value).toEqual([])
@@ -2316,15 +2316,13 @@ describe('conversation model and fresh fork provider selection', () => {
     await state.sendMessageToSelectedThread('continue with confirmed provider')
     expect(gateway.startThreadTurn.mock.calls[0]?.[3]).toBe(key('Q', 'C'))
   })
-  it.each(['full', 'response'])('publishes a %s transfer only after import and submits the next explicit message once', async (entry) => {
+  it('publishes a transfer only after import and submits the next explicit message once', async () => {
     setupCatalog()
     const state = createState()
     await state.loadMessages(thread.id)
     const pending = deferred<any>()
     gateway.createConversationTransfer.mockReturnValueOnce(pending.promise)
-    const result = entry === 'full'
-      ? state.forkThreadById(thread.id, 'snapshot', key('Q', 'C'))
-      : state.forkThreadFromTurn(thread.id, 0, 'snapshot', key('Q', 'C'))
+    const result = state.forkThreadById(thread.id, 'snapshot', key('Q', 'C'))
     expect(state.selectedThreadId.value).not.toBe('imported')
     expect(gateway.startThreadTurn).not.toHaveBeenCalled()
     expect(await state.forkThreadById(thread.id, 'snapshot', key('Q', 'C'))).toBe('')
@@ -2365,15 +2363,15 @@ describe('conversation model and fresh fork provider selection', () => {
     const pending = deferred<any>()
     const forkApi = entry === 'full' ? gateway.forkThread : gateway.forkThreadFromResponse
     forkApi.mockReturnValueOnce(pending.promise)
-    const cutoff = entry === 'response' ? 0 : undefined
-    const creating = state.forkNativeThreadById(thread.id, cutoff, entry === 'response' ? 'turn-1' : undefined)
+    const cutoff = entry === 'response' ? 'turn-1' : undefined
+    const creating = state.forkNativeThreadById(thread.id, cutoff)
     expect(await state.forkNativeThreadById(thread.id, cutoff)).toBe('')
     expect(state.selectedThreadId.value).toBe(thread.id)
     expect(gateway.startThreadTurn).not.toHaveBeenCalled()
     pending.resolve({ ...oldDetail, threadId: 'native', cwd: thread.cwd, model: 'A', modelProvider: 'P' })
     expect(await creating).toBe('native')
     if (entry === 'full') expect(forkApi).toHaveBeenCalledExactlyOnceWith(thread.id)
-    else expect(forkApi).toHaveBeenCalledExactlyOnceWith(thread.id, 0, 'turn-1')
+    else expect(forkApi).toHaveBeenCalledExactlyOnceWith(thread.id, 'turn-1')
     expect(state.readModelIdForThread('native')).toBe(key('P', 'A'))
     expect(state.modelSelectionNotice.value).not.toContain('Fresh fork')
     expect(state.messages.value.some(message => message.id.startsWith('imported-') || message.id.startsWith('import-status-'))).toBe(false)
@@ -2397,7 +2395,7 @@ describe('conversation model and fresh fork provider selection', () => {
     await state.loadMessages(thread.id)
     const forkApi = entry === 'full' ? gateway.forkThread : gateway.forkThreadFromResponse
     forkApi.mockRejectedValueOnce(new Error('Method not found: thread/fork'))
-    expect(await state.forkNativeThreadById(thread.id, entry === 'response' ? 0 : undefined)).toBe('')
+    expect(await state.forkNativeThreadById(thread.id, entry === 'response' ? 'turn-1' : undefined)).toBe('')
     expect(state.selectedThreadId.value).toBe(thread.id)
     expect(state.error.value).toContain('Native Fork failed')
     expect(state.error.value).toContain('No Portable Transfer was attempted')
@@ -2413,7 +2411,7 @@ describe('conversation model and fresh fork provider selection', () => {
     await state.loadMessages(thread.id)
     gateway.createConversationTransfer.mockRejectedValueOnce(new Error('Import failed'))
     expect(await state.forkThreadById(thread.id, 'snapshot', key('Q', 'C'))).toBe('')
-    expect(await state.forkNativeThreadById(thread.id, -2)).toBe('')
+    expect(await state.forkNativeThreadById(thread.id, '')).toBe('')
     expect(state.error.value).toContain('no native turn boundary')
     expect(gateway.forkThreadFromResponse).not.toHaveBeenCalled()
     gateway.forkThread.mockResolvedValueOnce({ ...oldDetail, threadId: 'native', cwd: thread.cwd, model: 'A', modelProvider: 'P' })

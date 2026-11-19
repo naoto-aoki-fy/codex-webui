@@ -25,7 +25,7 @@ function transfer(composerModel = modelSelectionKey('P', 'model')) {
   const controller = createAppTransferDialog({
     messages: computed(() => []), selectedThreadId: ref('source'), desktopError: ref(''),
     composerSelectedModelId: computed(() => composerSelection.value),
-    forkThreadById, forkThreadFromTurn: vi.fn(async () => 'destination'), forkNativeThreadById: vi.fn(async () => 'native'),
+    forkThreadById, forkNativeThreadById: vi.fn(async () => 'native'),
     router: { push }, isMobile: ref(false), setSidebarCollapsed: vi.fn(),
   })
   return { controller, composerSelection, forkThreadById, push }
@@ -69,7 +69,7 @@ it('preserves manual provider choices without changing the composer on cancellat
   expect(composerSelection.value).toBe(modelSelectionKey('A', 'model'))
   expect(cancelConversationTransfer).toHaveBeenCalledExactlyOnceWith('snapshot')
   composerSelection.value = modelSelectionKey('B', 'model')
-  await controller.openTransferPicker('source', 0)
+  await controller.openTransferPicker('source', { turnId: 'turn-0' })
   expect(controller.transferProvider.value).toBe('B')
 })
 it('captures the composer provider when opening, before history preparation finishes (CAP-002)', async () => {

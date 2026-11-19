@@ -923,7 +923,7 @@ describe('response fork publication', () => {
     let finish!: (value: unknown) => void
     gatewayMocks.createConversationTransfer.mockImplementation(() => new Promise(resolve => { finish = resolve }))
     const state = useDesktopState()
-    const pending = state.forkThreadFromTurn('source', 2, 'snapshot', 'selected-model')
+    const pending = state.forkThreadById('source', 'snapshot', 'selected-model')
     await vi.waitFor(() => expect(gatewayMocks.createConversationTransfer).toHaveBeenCalledWith('snapshot', 'selected-model'))
     expect(state.selectedThreadId.value).not.toBe('fork')
     finish({ threadId: 'fork', cwd: '', model: '', warnings: [], messages: [], hasMoreOlder: true, turnIndexByTurnId: {} })

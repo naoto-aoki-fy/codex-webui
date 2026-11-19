@@ -7,7 +7,6 @@ import {
   normalizeThreadIdFromPayload,
   normalizeThreadModelFromPayload,
   normalizeThreadModelProviderFromPayload,
-  readThreadTurnStartIndex,
   readThreadTurnOutcomes,
 } from './threadMetadata'
 import { normalizeThreadMessagesV2, readActiveTurnIdFromResponse } from './v2'
@@ -80,20 +79,10 @@ describe('thread response metadata', () => {
     expect(buildTurnIndexByTurnId(payload)).not.toBe(buildTurnIndexByTurnId(payload))
   })
 
-  it.each([
-    [undefined, 0], [null, 0], ['12', 0], [-3.5, 0], [3.9, 3],
-    [NaN, NaN], [Infinity, Infinity], [-Infinity, 0],
-  ])('preserves numeric start-index behavior for %s', (raw, expected) => {
-    expect(readThreadTurnStartIndex(response({ threadTurnStartIndex: raw }))).toBe(expected)
-  })
-
-  it('keeps null/undefined start-index fallbacks and required-thread lookup errors', () => {
-    for (const payload of [null, undefined]) {
-      expect(readThreadTurnStartIndex(response(payload))).toBe(0)
+  it('requires a thread for turn lookups', () => {
+    for (const payload of [null, undefined, {}]) {
       expect(() => buildTurnIndexByTurnId(response(payload))).toThrow(TypeError)
     }
-    expect(() => buildTurnIndexByTurnId(response({}))).toThrow(TypeError)
-    expect(buildTurnIndexByTurnId(response({ thread: { turns: [{ id: 'x' }] } }), NaN).x).toBeNaN()
   })
 
   it('retains v2 trimmed active IDs and message indices alongside raw lookup keys', () => {
@@ -110,26 +99,31 @@ describe('thread response metadata', () => {
 
   it('preserves detail and pagination transformations through the gateway', async () => {
     const result = {
-      model: ' model ', modelProvider: ' ', threadTurnStartIndex: 8.9,
+      model: ' model ', modelProvider: ' ', olderCursor: 'opaque',
       thread: { id: 'thread', modelProvider: ' nested ', turns: [
         { id: ' active ', status: 'inProgress', items: [{ id: 'msg', type: 'agentMessage', text: 'hello' }] },
       ] },
     }
-    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
-      result, startTurnIndex: 12.9, hasMoreOlder: true,
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => new Response(JSON.stringify({
+      result: JSON.parse(String(init?.body)).method === 'thread/read'
+        ? result : { data: result.thread.turns, nextCursor: 'earlier' },
     }), { headers: { 'Content-Type': 'application/json' } }))
     vi.stubGlobal('fetch', fetcher)
     await expect(getThreadDetail('thread')).resolves.toMatchObject({
       model: 'model', modelProvider: 'nested', activeTurnId: 'active', inProgress: true,
-      hasMoreOlder: true, turnIndexByTurnId: { ' active ': 8 },
-      messages: [{ turnId: 'active', turnIndex: 8 }],
+      olderCursor: 'opaque', turnIndexByTurnId: { ' active ': 0 },
+      messages: [{ turnId: 'active', turnIndex: 0 }],
     })
-    await expect(getOlderThreadMessages('thread', 'before', 5)).resolves.toMatchObject({
-      startTurnIndex: 12, activeTurnId: 'active', inProgress: true, hasMoreOlder: true,
-      turnIndexByTurnId: { ' active ': 12 }, messages: [{ turnIndex: 12 }],
+    await expect(getOlderThreadMessages('thread', 'opaque', 5)).resolves.toMatchObject({
+      olderCursor: 'earlier',
+      turnIndexByTurnId: { ' active ': -1 }, messages: [{ turnIndex: -1 }],
     })
     expect(fetcher).toHaveBeenCalledTimes(2)
-    expect(fetcher.mock.calls[1]?.[0]).toBe('/codex-api/thread-turn-page?threadId=thread&beforeTurnId=before&limit=5')
+    expect(fetcher.mock.calls[1]?.[0]).toBe('/codex-api/rpc')
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
+      method: 'thread/turns/list',
+      params: { threadId: 'thread', cursor: 'opaque', sortDirection: 'desc', itemsView: 'full', limit: 5 },
+    })
   })
 
   it('preserves start-thread return metadata through the gateway', async () => {

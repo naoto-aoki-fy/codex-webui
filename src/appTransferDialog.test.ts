@@ -18,7 +18,6 @@ function setup() {
     selectedThreadId: ref('source'),
     composerSelectedModelId: computed(() => 'provider-model:["P","source-model"]'),
     forkThreadById: vi.fn(async () => 'destination'),
-    forkThreadFromTurn: vi.fn(async () => 'destination'),
     forkNativeThreadById: vi.fn(async () => 'native'),
     desktopError: ref(''), router: { push: vi.fn(async () => undefined) },
     isMobile: ref(false), setSidebarCollapsed: vi.fn(),
@@ -35,7 +34,7 @@ describe('Portable Fork and Revert provider dialog', () => {
   it('prepares an explicit exclusive user target and uses the existing provider defaults once', async () => {
     const { dialog, deps } = setup()
     await dialog.openTransferPicker('source', undefined, target)
-    expect(gateway.prepare).toHaveBeenCalledExactlyOnceWith('source', undefined, undefined, target)
+    expect(gateway.prepare).toHaveBeenCalledExactlyOnceWith('source', undefined, target)
     expect(dialog.transferPicker.value?.revertTarget).toEqual(target)
     dialog.transferProvider.value = 'Q'
     let finish!: (id: string) => void
@@ -49,7 +48,6 @@ describe('Portable Fork and Revert provider dialog', () => {
     await pending
     expect(deps.router.push).toHaveBeenCalledExactlyOnceWith({ name: 'thread', params: { threadId: 'destination' } })
     expect(deps.forkNativeThreadById).not.toHaveBeenCalled()
-    expect(deps.forkThreadFromTurn).not.toHaveBeenCalled()
     expect(gateway.prepare).toHaveBeenCalledTimes(1)
   })
   it('cancels without creating anything, including cancellation during preparation', async () => {
@@ -81,11 +79,11 @@ describe('Portable Fork and Revert provider dialog', () => {
   })
   it('leaves assistant cutoffs inclusive and native actions independent', async () => {
     const { dialog, deps } = setup()
-    await dialog.onForkThreadFromMessage({ threadId: 'source', turnIndex: 4, method: 'portable' })
-    expect(gateway.prepare).toHaveBeenCalledExactlyOnceWith('source', 4, undefined, undefined)
+    await dialog.onForkThreadFromMessage({ threadId: 'source', target: { turnId: 'turn-4' }, method: 'portable' })
+    expect(gateway.prepare).toHaveBeenCalledExactlyOnceWith('source', { turnId: 'turn-4' }, undefined)
     await dialog.cancelTransferPicker()
-    await dialog.onForkThreadFromMessage({ threadId: 'source', turnIndex: 4, method: 'native' })
-    expect(deps.forkNativeThreadById).toHaveBeenCalledExactlyOnceWith('source', 4, undefined)
+    await dialog.onForkThreadFromMessage({ threadId: 'source', target: { turnId: 'turn-4' }, method: 'native' })
+    expect(deps.forkNativeThreadById).toHaveBeenCalledExactlyOnceWith('source', 'turn-4')
     expect(gateway.prepare).toHaveBeenCalledTimes(1)
   })
 })

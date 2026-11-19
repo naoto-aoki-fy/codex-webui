@@ -63,7 +63,6 @@ most 16 queued threads. Bounds remain 16 MiB per source, 2 MiB per cache, 10,000
 turn IDs and 512 characters per field. No session traversal, per-message RPC,
 source-to-fork history read, synchronous filesystem work or new request fanout is
 introduced. Native metadata-only pagination does not trigger rollout recovery.
-Notifications do not invalidate the history index merely to update labels.
 
 The fixture verifies seven cold RPCs and three warm/restarted RPCs, with exactly
 one source transfer across cold plus restart. It also covers append invalidation,

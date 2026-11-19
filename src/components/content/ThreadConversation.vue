@@ -717,7 +717,7 @@
                 </button>
                 <ForkSplitButton v-if="showForkResponseButton(message)" :key="`${activeThreadId}:${message.id}`"
                   aria-label="Fork thread from this response" :disabled="isForkDisabled"
-                  :native-available="forkableTurnIndexByAnchorId[message.id] >= 0"
+                  :native-available="showNativeForkButton(message)"
                   @fork="forkResponse(message.id, $event)" />
                 <button
                   v-if="showCopyResponseButton(message)"
@@ -1096,7 +1096,7 @@ function getCommandsForWorked(messages: UiMessage[], workedIndex: number): UiMes
 const props = defineProps<ConversationProps>()
 
 const emit = defineEmits<{
-  forkThread: [payload: { threadId: string; turnIndex: number; method: ForkMethod }]
+  forkThread: [payload: { threadId: string; target: import('../../types/codex').ResponseForkTarget; method: ForkMethod }]
   rollback: [payload: { threadId: string; turnId: string; operation: import('../../types/codex').RevertOperation; messageId?: string }]
   implementPlan: [payload: { turnId: string }]
 }>()
@@ -1132,7 +1132,7 @@ const {
   copiedUserMessageId,
   copiedPlanId,
   copyPlan,
-  forkableTurnIndexByAnchorId,
+  showNativeForkButton,
   showCopyResponseButton,
   showForkResponseButton,
   copyUserMessage,

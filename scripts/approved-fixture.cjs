@@ -14,7 +14,7 @@ async function setup(page, handle = () => undefined, openTools = true) {
   if(custom) return route.fulfill(custom)
   let result={}
   if(body.method==='thread/list') result={data:[thread],nextCursor:null}
-  if(body.method==='thread/resume'||body.method==='thread/read') result={thread:{...thread,turns:[{id:'t',status:'completed',items}]},threadTurnStartIndex:0,model:'fixture-model',modelProvider:'fixture'}
+  if(body.method==='thread/resume'||body.method==='thread/read') result={thread:{...thread,turns:[{id:'t',status:'completed',items}]},model:'fixture-model',modelProvider:'fixture'}
   if(body.method==='modelProvider/list')result={data:[{id:'fixture',isDefault:true}]}
   if(body.method==='model/list')result={data:[{id:'fixture-model',model:'fixture-model',isDefault:true}],nextCursor:null}
   if(body.method==='config/read')result={config:{model:'fixture-model',model_provider:'fixture'}}

@@ -59,7 +59,8 @@ verifies unavailable/unknown states and provider switching; gateway tests assert
 Fast/default request parameters and rejection without RPC for unknown support.
 Live Codex turns, migration, auth and reconnect were not exercised in a real home.
 
-Executed validation commands:
+Executed validation commands for this historical change (some fixtures were later retired).
+For current history verification, see [native thread history](native-thread-history.md).
 
 ```sh
 pnpm exec vitest run src/composables/useDesktopState.test.ts src/composables/useDesktopState.messages.test.ts src/server/composerFileSearch.test.ts src/server/codexCredentials.test.ts src/server/workspaceRootsStore.test.ts

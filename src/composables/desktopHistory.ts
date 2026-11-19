@@ -19,7 +19,7 @@ function omitKey<TValue>(record: Record<string, TValue>, key: string): Record<st
     return next;
 }
 type HistoryReadOwner = {
-    olderPageBoundary?: string;
+    olderCursor?: string | null;
 };
 type FileAttachment = {
     label: string;
@@ -111,15 +111,6 @@ export function createDesktopHistory(deps: {
     }
     const lastMessageLoadAtByThreadId = new Map<string, number>();
     const lastMessageLoadFailureAtByThreadId = new Map<string, number>();
-    function getFirstPersistedTurnId(threadId: string): string {
-        const persisted = persistedMessagesByThreadId.value[threadId] ?? [];
-        for (const message of persisted) {
-            const turnId = message.turnId?.trim() ?? '';
-            if (turnId)
-                return turnId;
-        }
-        return '';
-    }
     async function loadMessages(threadId: string, options: {
         silent?: boolean;
         force?: boolean;
@@ -194,29 +185,38 @@ export function createDesktopHistory(deps: {
                         [threadId]: true,
                     };
                 }
-                const { messages: nextMessages, inProgress, activeTurnId, turnIndexByTurnId } = detail;
+                const { inProgress, activeTurnId } = detail;
                 const previousPersisted = persistedMessagesByThreadId.value[threadId] ?? [];
-                const firstFreshIndex = nextMessages.reduce((first, message) => Math.min(first, message.turnId ? message.turnIndex ?? Infinity : Infinity), Infinity);
-                // A capped detail snapshot cannot invalidate history preceding its range.
-                // Empty snapshots still retain their existing replacement semantics.
-                const earlierMessages = Number.isFinite(firstFreshIndex)
-                    ? previousPersisted.filter(message => typeof message.turnIndex === 'number' && message.turnIndex < firstFreshIndex)
-                    : [];
-                const retainsOlderPage = earlierMessages.length > 0 || Boolean(owner.olderPageBoundary && nextMessages.some(message => message.turnId === owner.olderPageBoundary));
-                if (!retainsOlderPage)
-                    delete owner.olderPageBoundary;
-                const earlierIndices = retainsOlderPage ? Object.fromEntries(Object.entries(deps.turnIndexByTurnIdByThreadId.value[threadId] ?? {}).filter(([, index]) => index < firstFreshIndex)) : {};
+                const previousIndices = deps.turnIndexByTurnIdByThreadId.value[threadId] ?? {};
+                const freshEntries = Object.entries(detail.turnIndexByTurnId);
+                const anchor = freshEntries.find(([id]) => Object.prototype.hasOwnProperty.call(previousIndices, id));
+                const offset = anchor ? previousIndices[anchor[0]]! - anchor[1] : 0;
+                const turnIndexByTurnId = Object.fromEntries(freshEntries.map(([id, index]) => [id, index + offset]));
+                const nextMessages = offset ? detail.messages.map(message => message.turnId && typeof message.turnIndex === 'number'
+                    ? { ...message, turnIndex: message.turnIndex + offset }
+                    : message) : detail.messages;
+                const firstFreshIndex = freshEntries.reduce((first, [, index]) => Math.min(first, index + offset), Infinity);
+                // Relative positions are rebased on an overlapping native turn. A
+                // disjoint or exhausted refresh starts a new pagination range.
+                const earlierIndices = anchor && detail.olderCursor
+                    ? Object.fromEntries(Object.entries(previousIndices).filter(([, index]) => index < firstFreshIndex))
+                    : {};
+                const retainsOlderPage = Object.keys(earlierIndices).length > 0;
+                if (!retainsOlderPage && !(anchor && owner.olderCursor === null)) owner.olderCursor = detail.olderCursor;
                 hasMoreOlderMessagesByThreadId.value = {
                     ...hasMoreOlderMessagesByThreadId.value,
-                    [threadId]: retainsOlderPage ? hasMoreOlderMessagesByThreadId.value[threadId] === true : detail.hasMoreOlder === true,
+                    [threadId]: Boolean(owner.olderCursor),
                 };
                 deps.markThreadMessagesPersisted(threadId, nextMessages);
                 deps.replaceTurnIndexLookupForThread(threadId, { ...earlierIndices, ...turnIndexByTurnId });
                 deps.rebindLiveFileChangeTurnIndices(threadId);
-                const mergedMessages = mergeMessages(previousPersisted, nextMessages, {
+                const earlierMessages = previousPersisted.filter(message => message.turnId && Object.prototype.hasOwnProperty.call(earlierIndices, message.turnId));
+                const isImported = (message: UiMessage) => message.importMetadata || message.id === `import-status-${threadId}`;
+                const imported = nextMessages.filter(isImported);
+                const latest = nextMessages.filter(message => !isImported(message));
+                deps.setPersistedMessagesForThread(threadId, mergeMessages(previousPersisted, [...imported, ...earlierMessages, ...latest], {
                     preserveMissing: options.silent === true || hasOptimisticUserMessages(previousPersisted),
-                });
-                deps.setPersistedMessagesForThread(threadId, mergeMessages(earlierMessages, mergedMessages, { preserveMissing: true }));
+                }));
                 const previousLiveAgent = deps.liveAgentMessagesByThreadId.value[threadId] ?? [];
                 const nextLiveAgent = removeRedundantLiveAgentMessages(previousLiveAgent, nextMessages, {
                     preferSnapshotOnMismatch: reconnectingThreadHistory.has(threadId),
@@ -287,30 +287,26 @@ export function createDesktopHistory(deps: {
         const isCurrent = () => generation === deps.lifecycleGeneration && historyReadOwnerByThreadId.get(threadId) === owner;
         if (loadingOlderMessagesByThreadId.value[threadId] === true)
             return;
-        if (hasMoreOlderMessagesByThreadId.value[threadId] !== true)
-            return;
-        const beforeTurnId = getFirstPersistedTurnId(threadId);
-        if (!beforeTurnId) {
-            hasMoreOlderMessagesByThreadId.value = {
-                ...hasMoreOlderMessagesByThreadId.value,
-                [threadId]: false,
-            };
-            return;
-        }
+        const cursor = owner.olderCursor;
+        if (!cursor) return;
+        const previousIndices = deps.turnIndexByTurnIdByThreadId.value[threadId] ?? {};
+        const firstIndex = Object.values(previousIndices).reduce((first, index) => Math.min(first, index), Infinity);
         loadingOlderMessagesByThreadId.value = {
             ...loadingOlderMessagesByThreadId.value,
             [threadId]: true,
         };
         try {
-            const page = await getOlderThreadMessages(threadId, beforeTurnId);
+            const page = await getOlderThreadMessages(threadId, cursor, 10, Number.isFinite(firstIndex) ? firstIndex : 0);
             if (!isCurrent())
                 return;
             const previousPersisted = persistedMessagesByThreadId.value[threadId] ?? [];
-            if (!previousPersisted.some(message => message.turnId === beforeTurnId))
-                return;
-            const mergedMessages = mergeMessages(page.messages, previousPersisted, { preserveMissing: true });
-            deps.setPersistedMessagesForThread(threadId, mergedMessages);
-            owner.olderPageBoundary = getFirstPersistedTurnId(threadId) || beforeTurnId;
+            if (owner.olderCursor !== cursor) return;
+            const isImported = (message: UiMessage) => message.importMetadata || message.id === `import-status-${threadId}`;
+            const imported = previousPersisted.filter(isImported);
+            const current = previousPersisted.filter(message => !isImported(message));
+            const mergedMessages = mergeMessages(page.messages, current, { preserveMissing: true });
+            deps.setPersistedMessagesForThread(threadId, [...imported, ...mergedMessages]);
+            owner.olderCursor = page.olderCursor;
             deps.replaceTurnIndexLookupForThread(threadId, {
                 ...(deps.turnIndexByTurnIdByThreadId.value[threadId] ?? {}),
                 ...page.turnIndexByTurnId,
@@ -318,7 +314,7 @@ export function createDesktopHistory(deps: {
             deps.rebindLiveFileChangeTurnIndices(threadId);
             hasMoreOlderMessagesByThreadId.value = {
                 ...hasMoreOlderMessagesByThreadId.value,
-                [threadId]: page.hasMoreOlder,
+                [threadId]: Boolean(owner.olderCursor),
             };
         }
         catch (loadError) {

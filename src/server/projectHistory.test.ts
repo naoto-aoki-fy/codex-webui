@@ -1,3 +1,4 @@
+import { nativeHistoryResponse } from './testFixtures/nativeHistory'
 import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
@@ -48,7 +49,7 @@ beforeEach(async () => {
   storeSnapshot.mockReset()
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
   scope.__codexRemoteSharedBridge__ = {
-    version: 'external-websocket-files-v3', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getStreamEvents: () => [] },
+    version: 'external-websocket-files-v4', appServer: { rpc: async (method: string, params: unknown) => nativeHistoryResponse(method, params, await rpc(method, params)), getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getStreamEvents: () => [] },
     methodCatalog: {},
   }
 })
@@ -178,11 +179,14 @@ it('rejects all legacy path mutations without rewriting registry fields', async 
   expect(rpc).not.toHaveBeenCalled()
 })
 
-it('rejects an adapter missing native pagination without fetching full history', async () => {
-  const response = await request('/codex-api/thread-turn-page?threadId=historical-thread')
-  expect(response.res.statusCode).toBe(500)
-  expect(response.json.error).toContain('Native history pagination is required')
-  expect(rpc).not.toHaveBeenCalled()
+it('keeps native pagination errors visible without fetching full history', async () => {
+  rpc.mockResolvedValueOnce({ thread: { id: 'historical-thread', turns: [] } })
+    .mockRejectedValueOnce(Object.assign(new Error('Method not found'), { code: -32601 }))
+  const response = await request('/codex-api/rpc', 'POST', { method: 'thread/read', params: { threadId: 'historical-thread', includeTurns: true } })
+  expect(response.res.statusCode).toBe(502)
+  expect(response.json.error).toContain('thread/turns/list')
+  expect(rpc.mock.calls.map(([method]) => method)).toEqual(['thread/read', 'thread/turns/list'])
+  expect(rpc.mock.calls[0]?.[1]).toMatchObject({ includeTurns: false })
 })
 
 it('loads native Projects and pins independently of historical state without changing it', async () => {

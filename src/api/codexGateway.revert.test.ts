@@ -28,3 +28,16 @@ it('uses beforeTurnId and accepts an empty revert response without normalizing h
   })
   expect(fetch).toHaveBeenCalledTimes(1)
 })
+
+it('validates an older persisted turn using the opaque cursor without loading message bodies', async () => {
+  const fetch = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ result: { thread: { historyMode: 'paginated', ephemeral: false, status: { type: 'idle' } } } })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ result: { data: [{ id: 'recent' }], nextCursor: 'opaque-oldest' } })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ result: { data: [{ id: 'target' }], nextCursor: null } })))
+  vi.stubGlobal('fetch', fetch)
+  await expect(validateThreadRevert('persisted', 'target')).resolves.toBeUndefined()
+  expect(fetch.mock.calls.slice(1).map(([, init]) => JSON.parse(init.body))).toEqual([
+    { method: 'thread/turns/list', params: { threadId: 'persisted', cursor: null, limit: 100, itemsView: 'notLoaded', sortDirection: 'desc' } },
+    { method: 'thread/turns/list', params: { threadId: 'persisted', cursor: 'opaque-oldest', limit: 100, itemsView: 'notLoaded', sortDirection: 'desc' } },
+  ])
+})

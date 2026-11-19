@@ -1,3 +1,4 @@
+import type { TurnsPage } from '../server/protocol/0.167.2/v2/TurnsPage'
 import { readThreadTurnOutcomes, type ThreadTurnOutcomes } from './normalizers/threadMetadata'
 import {threadSecurity} from './threadSecurity'
 import { fastModeAvailability, modelSelectionKey, parseModelSelection } from './modelCapabilities'
@@ -9,7 +10,6 @@ import { normalizeDirectoryMcpServer, type DirectoryMcpServerStatus } from './no
 export type { DirectoryMcpServerStatus } from './normalizers/directoryMcp'
 import {
   buildTurnIndexByTurnId,
-  readThreadTurnStartIndex,
   normalizeThreadIdFromPayload,
   normalizeThreadCwdFromPayload,
   normalizeThreadModelFromPayload,
@@ -155,10 +155,7 @@ type ThreadGroupsPage = {
 
 type ThreadTurnPage = {
   messages: UiMessage[]
-  inProgress: boolean
-  activeTurnId: string
-  hasMoreOlder: boolean
-  startTurnIndex: number
+  olderCursor: string | null
   turnIndexByTurnId: ThreadTurnIndexById
 }
 
@@ -194,15 +191,14 @@ async function getThreadDetailV2(threadId: string): Promise<{
   messages: UiMessage[]
   inProgress: boolean
   activeTurnId: string
-  hasMoreOlder: boolean
+  olderCursor: string | null
   turnIndexByTurnId: ThreadTurnIndexById
 }> {
   const payload = await callRpc<ThreadReadResponse>('thread/read', {
     threadId,
     includeTurns: true,
   })
-  const startTurnIndex = readThreadTurnStartIndex(payload)
-  const normalized = normalizeThreadMessagesV2(payload, startTurnIndex)
+  const normalized = normalizeThreadMessagesV2(payload)
   return {
     model: normalizeThreadModelFromPayload(payload),
     modelProvider: normalizeThreadModelProviderFromPayload(payload),
@@ -211,39 +207,23 @@ async function getThreadDetailV2(threadId: string): Promise<{
     turnOutcomes: readThreadTurnOutcomes(payload),
     inProgress: readThreadInProgressFromResponse(payload),
     activeTurnId: readActiveTurnIdFromResponse(payload),
-    hasMoreOlder: startTurnIndex > 0,
-    turnIndexByTurnId: buildTurnIndexByTurnId(payload, startTurnIndex),
+    olderCursor: readOlderCursor(payload),
+    turnIndexByTurnId: buildTurnIndexByTurnId(payload),
   }
 }
 
-async function getOlderThreadMessagesV2(threadId: string, beforeTurnId: string, limit = 10): Promise<ThreadTurnPage> {
-  const params = new URLSearchParams({
-    threadId,
-    beforeTurnId,
-    limit: String(limit),
-  })
-  const response = await fetch(`/codex-api/thread-turn-page?${params.toString()}`)
-  if (!response.ok) {
-    throw new Error(`Older thread page request failed with ${response.status}`)
-  }
-  const payload = await response.json() as {
-    result?: ThreadReadResponse
-    hasMoreOlder?: unknown
-    startTurnIndex?: unknown
-  }
-  if (!payload.result) {
-    throw new Error('Older thread page response did not include a thread result')
-  }
-  const startTurnIndex = Math.max(0, Math.floor(typeof payload.startTurnIndex === 'number' ? payload.startTurnIndex : 0))
+function readOlderCursor(payload: unknown): string | null {
+  const cursor = (payload as { olderCursor?: unknown } | null)?.olderCursor
+  return typeof cursor === 'string' && cursor ? cursor : null
+}
 
-  return {
-    messages: normalizeThreadMessagesV2(payload.result, startTurnIndex),
-    inProgress: readThreadInProgressFromResponse(payload.result),
-    activeTurnId: readActiveTurnIdFromResponse(payload.result),
-    hasMoreOlder: payload.hasMoreOlder === true,
-    startTurnIndex,
-    turnIndexByTurnId: buildTurnIndexByTurnId(payload.result, startTurnIndex),
+async function readTurnsPage(threadId: string, cursor: string, limit: number, itemsView: 'full' | 'notLoaded') {
+  const page = await callRpc<TurnsPage>('thread/turns/list', { threadId, cursor: cursor || null, limit, itemsView, sortDirection: 'desc' })
+  if (!Array.isArray(page?.data) || (page.nextCursor != null && typeof page.nextCursor !== 'string')) {
+    throw new Error('Invalid native history page')
   }
+  if (page.nextCursor === cursor) throw new Error('Native history repeated a cursor. Refresh the conversation.')
+  return page
 }
 
 export async function getThreadGroupsPage(
@@ -288,7 +268,7 @@ export async function getThreadDetail(threadId: string): Promise<{
   messages: UiMessage[]
   inProgress: boolean
   activeTurnId: string
-  hasMoreOlder: boolean
+  olderCursor: string | null
   turnIndexByTurnId: ThreadTurnIndexById
 }> {
   try {
@@ -298,11 +278,18 @@ export async function getThreadDetail(threadId: string): Promise<{
   }
 }
 
-export async function getOlderThreadMessages(threadId: string, beforeTurnId: string, limit?: number): Promise<ThreadTurnPage> {
+export async function getOlderThreadMessages(threadId: string, cursor: string, limit = 10, endTurnIndex = 0): Promise<ThreadTurnPage> {
   try {
-    return await getOlderThreadMessagesV2(threadId, beforeTurnId, limit)
+    const page = await readTurnsPage(threadId, cursor, limit, 'full')
+    const payload = { thread: { id: threadId, turns: [...page.data].reverse() } } as ThreadReadResponse
+    const baseTurnIndex = endTurnIndex - page.data.length
+    return {
+      messages: normalizeThreadMessagesV2(payload, baseTurnIndex),
+      olderCursor: page.nextCursor ?? null,
+      turnIndexByTurnId: buildTurnIndexByTurnId(payload, baseTurnIndex),
+    }
   } catch (error) {
-    throw normalizeCodexApiError(error, `Failed to load earlier messages for thread ${threadId}`, 'thread/read')
+    throw normalizeCodexApiError(error, `Failed to load earlier messages for thread ${threadId}`, 'thread/turns/list')
   }
 }
 
@@ -351,7 +338,7 @@ export type ResumedThread = {
   messages: UiMessage[]
   inProgress: boolean
   activeTurnId: string
-  hasMoreOlder: boolean
+  olderCursor: string | null
   turnIndexByTurnId: ThreadTurnIndexById
 }
 
@@ -369,8 +356,7 @@ export async function resumeThread(threadId: string): Promise<ResumedThread> {
 
   const promise = (async () => {
     const payload = await callRpc<ThreadResumeResponse>('thread/resume', { threadId })
-    const startTurnIndex = readThreadTurnStartIndex(payload)
-    const messages = normalizeThreadMessagesV2(payload, startTurnIndex)
+    const messages = normalizeThreadMessagesV2(payload)
     return {
       security: threadSecurity(payload),
       model: normalizeThreadModelFromPayload(payload),
@@ -379,8 +365,8 @@ export async function resumeThread(threadId: string): Promise<ResumedThread> {
       turnOutcomes: readThreadTurnOutcomes(payload),
       inProgress: readThreadInProgressFromResponse(payload),
       activeTurnId: readActiveTurnIdFromResponse(payload),
-      hasMoreOlder: startTurnIndex > 0,
-      turnIndexByTurnId: buildTurnIndexByTurnId(payload, startTurnIndex),
+      olderCursor: readOlderCursor(payload),
+      turnIndexByTurnId: buildTurnIndexByTurnId(payload),
     }
   })()
 
@@ -419,8 +405,7 @@ export async function renameThread(threadId: string, threadName: string): Promis
   await callRpc('thread/name/set', { threadId, name: threadName })
 }
 
-/** Resume/materialization notifications can retire an index immediately after a
- * fork. Retry only that read-only snapshot race, once; never replay a mutation. */
+// A revert or reconnect can retire a snapshot while its native page is being read.
 export async function getThreadDetailForRevert(threadId: string): Promise<ResumedThread> {
   try { return await getThreadDetail(threadId) }
   catch (cause) {
@@ -429,7 +414,7 @@ export async function getThreadDetailForRevert(threadId: string): Promise<Resume
   }
 }
 
-// Resume also ensures the thread is loaded before any filesystem mutation.
+// Resume ensures the thread is loaded before the revert mutation.
 export async function validateThreadRevert(threadId: string, beforeTurnId: string): Promise<void> {
   const payload = await callRpc<{ thread: { historyMode?: string; ephemeral?: boolean; status?: { type?: string } } }>(
     'thread/resume', { threadId, excludeTurns: true },
@@ -441,19 +426,17 @@ export async function validateThreadRevert(threadId: string, beforeTurnId: strin
   if (thread.status?.type === 'active' || thread.status?.type === 'inProgress') {
     throw new Error('Stop the active turn before editing history.')
   }
-  // Check the target against durable history before restoring files.
-  const detail = await getThreadDetailForRevert(threadId)
-  let page = detail
-  let found = page.messages.some(message => message.turnId === beforeTurnId)
-  while (!found && page.hasMoreOlder) {
-    const boundary = page.messages.find(message => message.turnId)?.turnId
-    if (!boundary) break
-    const older = await getOlderThreadMessages(threadId, boundary)
-    if (!older.messages.length || older.messages[0]?.turnId === boundary) break
-    page = { ...detail, ...older }
-    found = page.messages.some(message => message.turnId === beforeTurnId)
-  }
-  if (!found) throw new Error('The selected turn is no longer available. Refresh the thread.')
+  // Confirm the persisted ID with native metadata pages before sending a mutation.
+  let cursor: string | null = null
+  const seen = new Set<string>()
+  do {
+    const page: TurnsPage = await readTurnsPage(threadId, cursor ?? '', 100, 'notLoaded')
+    if (page.data.some(turn => turn.id === beforeTurnId)) return
+    cursor = page.nextCursor
+    if (cursor && seen.has(cursor)) throw new Error('Native history repeated a cursor. Refresh the conversation.')
+    if (cursor) seen.add(cursor)
+  } while (cursor)
+  throw new Error('The selected turn is no longer available. Refresh the thread.')
 }
 
 export async function revertThreadHistory(threadId: string, beforeTurnId: string): Promise<void> {
@@ -507,32 +490,22 @@ export async function startThread(cwd?: string, model?: string, modelProvider?: 
   }
 }
 
-export async function forkThreadFromResponse(threadId: string, turnIndex: number, expectedTurnId?: string): Promise<ForkedThread & {
-  hasMoreOlder: boolean
-  turnIndexByTurnId: ThreadTurnIndexById
-}> {
-  const payload = await callRpc<ThreadForkResponse & { forkCutoff?: { sourceThreadId: string; turnIndex: number; turnId: string; turnCount: number } }>('thread/fork-at-response', {
-    threadId, forkFromTurnIndex: turnIndex, persistExtendedHistory: true,
-    ...(expectedTurnId ? { expectedTurnId } : {}),
+export async function forkThreadFromResponse(threadId: string, turnId: string): Promise<ForkedThread> {
+  const payload = await callRpc<ThreadForkResponse & { forkCutoff?: { sourceThreadId: string; turnId: string } }>('thread/fork-at-response', {
+    threadId, turnId, persistExtendedHistory: true,
   })
-  if (payload.forkCutoff?.sourceThreadId !== threadId
-    || payload.forkCutoff.turnIndex !== turnIndex
-    || payload.forkCutoff.turnCount !== turnIndex + 1
-    || !payload.forkCutoff.turnId) {
+  if (payload.forkCutoff?.sourceThreadId !== threadId || payload.forkCutoff.turnId !== turnId) {
     throw new Error('Backend did not verify the response fork cutoff; update the web backend')
   }
   const id = normalizeThreadIdFromPayload(payload)
   if (!id) throw new Error('thread/fork did not return a thread id')
-  const start = readThreadTurnStartIndex(payload)
   return {
     threadId: id,
     projectId: payload.thread.projectId,
     cwd: normalizeThreadCwdFromPayload(payload),
     model: normalizeThreadModelFromPayload(payload),
     modelProvider: normalizeThreadModelProviderFromPayload(payload),
-    messages: normalizeThreadMessagesV2(payload, start),
-    hasMoreOlder: start > 0,
-    turnIndexByTurnId: buildTurnIndexByTurnId(payload, start),
+    messages: normalizeThreadMessagesV2(payload),
   }
 }
 
@@ -562,7 +535,7 @@ export async function forkThread(
         cwd: normalizeThreadCwdFromPayload(payload),
         model: normalizeThreadModelFromPayload(payload),
         modelProvider: normalizeThreadModelProviderFromPayload(payload),
-        messages: normalizeThreadMessagesV2(payload, readThreadTurnStartIndex(payload)),
+        messages: normalizeThreadMessagesV2(payload),
       }
     } catch (error) {
       throw normalizeCodexApiError(error, `Failed to fork thread ${threadId}`, 'thread/fork')
@@ -1277,8 +1250,8 @@ export async function markNativeThreadRead(threadId: string, expectedRevision: s
   return result.readState
 }
 
-export async function prepareConversationTransfer(threadId: string, turnIndex?: number, turnId?: string, revertTarget?: import('../types/codex').PortableRevertTarget): Promise<{ id: string; warnings: string[]; messageCount: number; sourceModelProvider?: string }> {
-  return callRpc('conversation-transfer/prepare', { threadId, turnIndex, turnId, ...(revertTarget ? { revertTarget } : {}) })
+export async function prepareConversationTransfer(threadId: string, target?: import('../types/codex').ResponseForkTarget, revertTarget?: import('../types/codex').PortableRevertTarget): Promise<{ id: string; warnings: string[]; messageCount: number; sourceModelProvider?: string }> {
+  return callRpc('conversation-transfer/prepare', { threadId, target, revertTarget })
 }
 export async function cancelConversationTransfer(id: string): Promise<void> {
   await callRpc('conversation-transfer/cancel', { id })

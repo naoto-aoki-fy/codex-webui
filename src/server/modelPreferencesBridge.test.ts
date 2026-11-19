@@ -19,7 +19,7 @@ beforeEach(async () => {
   rpc.mockReset().mockImplementation(async (method: string) => method === 'turn/start' ? { turn: { id: 'accepted' } }
     : { thread: { id: 't', modelProvider: 'openai' }, model: 'A', reasoningEffort: 'low' })
   scope.__codexRemoteSharedBridge__ = {
-    version: 'external-websocket-files-v3', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: vi.fn(), getStreamEvents: () => [], onNotification: () => () => {}, dispose: vi.fn() }, methodCatalog: {},
+    version: 'external-websocket-files-v4', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: vi.fn(), getStreamEvents: () => [], onNotification: () => () => {}, dispose: vi.fn() }, methodCatalog: {},
   }
   bridge = createCodexBridgeMiddleware()
 })

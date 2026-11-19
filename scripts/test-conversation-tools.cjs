@@ -24,7 +24,7 @@ const { resolve } = require('node:path')
    let result={}, payload, status=200
    if(body.method==='thread/list') result=body.params.archived ? {data: body.params.cursor ? [rejected] : restored ? [] : [archived],nextCursor:body.params.cursor||restored ? null : 'archive-cursor'} : {data:restored?[thread,archived]:[thread],nextCursor:null}
    if(body.method==='thread/unarchive') { if(body.params.threadId==='archived-b'){status=502;payload={error:'Restore rejected by fixture'}} else {restored=true;result={thread:archived}} }
-   if(body.method==='thread/resume'||body.method==='thread/read') result={thread:{...thread,turns:[turn('latest','Latest **Markdown**\n```ts\nconst answer = 42\n```')]},threadTurnStartIndex:1,model:'current-model',modelProvider:'fixture',importedTranscript:prefix,importStage:'ready'}
+   if(body.method==='thread/resume'||body.method==='thread/read') result={thread:{...thread,turns:[turn('latest','Latest **Markdown**\n```ts\nconst answer = 42\n```')]},olderCursor:'earlier',model:'current-model',modelProvider:'fixture',importedTranscript:prefix,importStage:'ready'}
    if(body.method==='modelProvider/list')result={data:[{id:'fixture',isDefault:true}]}
    if(body.method==='model/list')result={data:[{id:'current-model',model:'current-model',isDefault:true}],nextCursor:null}
    if(body.method==='config/read')result={config:{model:'current-model',model_provider:'fixture'}}
@@ -59,10 +59,10 @@ const { resolve } = require('node:path')
    await page.goto('http://127.0.0.1:4173/#/thread/tools-fixture')
    await page.getByText('Latest Markdown',{exact:false}).first().waitFor()
    await openSidebar()
-   if(process.env.TOOLS_STARTUP_ONLY){await page.waitForTimeout(1500);const metrics=await page.locator('.conversation-list').evaluate(el=>({top:el.scrollTop,height:el.clientHeight,scrollHeight:el.scrollHeight}));evidence.push({viewport,olderPages:calls.filter(c=>c.path.endsWith('/thread-turn-page')).length,metrics});console.log(JSON.stringify(evidence.at(-1)));continue}
+   if(process.env.TOOLS_STARTUP_ONLY){await page.waitForTimeout(1500);const metrics=await page.locator('.conversation-list').evaluate(el=>({top:el.scrollTop,height:el.clientHeight,scrollHeight:el.scrollHeight}));evidence.push({viewport,olderPages:calls.filter(c=>c.method==='thread/turns/list').length,metrics});console.log(JSON.stringify(evidence.at(-1)));continue}
    assert.equal(calls.filter(c=>c.params?.archived===true).length,0)
    assert.equal(calls.filter(c=>c.method==='account/usage/read').length,0)
-   assert.equal(calls.filter(c=>c.path.endsWith('/thread-turn-page')).length,0)
+   assert.equal(calls.filter(c=>c.method==='thread/turns/list').length,0)
    await page.locator('.archive-browser summary').click()
    await page.getByRole('button',{name:'Restore Archived original',exact:true}).waitFor()
    await page.getByRole('button',{name:'Load more archived conversations'}).click()
@@ -80,7 +80,7 @@ const { resolve } = require('node:path')
    await page.getByRole('button',{name:'Copy chat',exact:true}).click()
    const chat = await page.evaluate(()=>navigator.clipboard.readText())
    assert.ok(chat.includes('Latest **Markdown**'))
-   assert.equal(calls.filter(c=>c.path.endsWith('/thread-turn-page')).length,0)
+   assert.equal(calls.filter(c=>c.method==='thread/turns/list').length,0)
    await page.getByRole('button',{name:'Settings',exact:true}).click()
    await page.locator('.account-usage summary').click()
    assert.equal(calls.filter(c=>c.method==='account/usage/read').length,0)

@@ -1602,7 +1602,7 @@ export function useDesktopState() {
   }
 
   function setTurnIndexForThread(threadId: string, turnId: string, turnIndex: number): void {
-    if (!threadId || !turnId || !Number.isInteger(turnIndex) || turnIndex < 0) return
+    if (!threadId || !turnId || !Number.isInteger(turnIndex)) return
     const previous = turnIndexByTurnIdByThreadId.value[threadId] ?? {}
     if (previous[turnId] === turnIndex) return
     turnIndexByTurnIdByThreadId.value = {
@@ -2652,17 +2652,17 @@ export function useDesktopState() {
   }
 
   const pendingNativeForks = new Set<string>()
-  async function forkNativeThreadById(threadId: string, turnIndex?: number, expectedTurnId?: string): Promise<string> {
+  async function forkNativeThreadById(threadId: string, turnId?: string): Promise<string> {
     const sourceId = threadId.trim()
     if (!sourceId) return ''
     if (hasPendingNativeAction(sourceId)) { error.value = 'Wait for the native conversation action to finish before forking.'; return '' }
-    if (turnIndex !== undefined && (!Number.isSafeInteger(turnIndex) || turnIndex < 0)) {
+    if (turnId !== undefined && !turnId.trim()) {
       error.value = 'This imported response has no native turn boundary. Use Portable Transfer for this response.'
       return ''
     }
-    const key = JSON.stringify([sourceId, turnIndex])
+    const key = JSON.stringify([sourceId, turnId])
     if (pendingNativeForks.has(key)) return ''
-    if (turnIndex !== undefined && inProgressById.value[sourceId] === true) {
+    if (turnId !== undefined && inProgressById.value[sourceId] === true) {
       error.value = 'Finish the current turn before forking from a response.'
       return ''
     }
@@ -2670,9 +2670,9 @@ export function useDesktopState() {
     try {
       error.value = ''
       // No model/provider overrides: preserve the server-managed source state.
-      const result = turnIndex === undefined
+      const result = turnId === undefined
         ? await forkThread(sourceId)
-        : await forkThreadFromResponse(sourceId, turnIndex, expectedTurnId)
+        : await forkThreadFromResponse(sourceId, turnId)
       const source = flattenThreads(sourceGroups.value).find(row => row.id === sourceId)
       insertOptimisticThread(result.threadId, result.cwd || source?.cwd || '', toForkedThreadTitle(source?.title || 'Forked conversation'), result.projectId)
       setThreadModelId(result.threadId, result.model || readModelIdForThread(sourceId), result.modelProvider)
@@ -2683,7 +2683,7 @@ export function useDesktopState() {
       await history.loadMessages(result.threadId)
       return result.threadId
     } catch (cause) {
-      error.value = `Native Fork failed: ${cause instanceof Error ? cause.message : String(cause)}. The connected app-server must support thread/fork${turnIndex === undefined ? '' : ' with lastTurnId'}. No Portable Transfer was attempted. If the outcome is uncertain, inspect the thread list before starting another fork.`
+      error.value = `Native Fork failed: ${cause instanceof Error ? cause.message : String(cause)}. The connected app-server must support thread/fork${turnId === undefined ? '' : ' with lastTurnId'}. No Portable Transfer was attempted. If the outcome is uncertain, inspect the thread list before starting another fork.`
       return ''
     } finally { pendingNativeForks.delete(key) }
   }
@@ -2715,10 +2715,6 @@ export function useDesktopState() {
   async function forkThreadById(threadId: string, transferId = '', modelId = ''): Promise<string> {
     return completeConversationTransfer(threadId, transferId, modelId)
   }
-  async function forkThreadFromTurn(threadId: string, _turnIndex: number, transferId = '', modelId = ''): Promise<string> {
-    return completeConversationTransfer(threadId, transferId, modelId)
-  }
-
   async function executeThreadRevert(sourceThreadId: string, turnId: string, operation: 'revert' | 'fork-and-revert'): Promise<string> {
     let threadId = sourceThreadId
     if (!threadId) return ''
@@ -2766,7 +2762,8 @@ export function useDesktopState() {
       if (history.historyReadOwnerByThreadId.get(threadId) !== owner) return ''
       setPersistedMessagesForThread(threadId, detail.messages)
       turnIndexByTurnIdByThreadId.value = { ...turnIndexByTurnIdByThreadId.value, [threadId]: detail.turnIndexByTurnId }
-      history.hasMoreOlderMessagesByThreadId.value = { ...history.hasMoreOlderMessagesByThreadId.value, [threadId]: detail.hasMoreOlder }
+      owner.olderCursor = detail.olderCursor
+      history.hasMoreOlderMessagesByThreadId.value = { ...history.hasMoreOlderMessagesByThreadId.value, [threadId]: Boolean(owner.olderCursor) }
       history.loadedMessagesByThreadId.value = { ...history.loadedMessagesByThreadId.value, [threadId]: true }
       if (operation === 'fork-and-revert' && selectionGeneration === originalSelectionGeneration && selectedThreadId.value === originalSelection && originalSelection === sourceThreadId) {
         setSelectedThreadId(threadId)
@@ -2977,7 +2974,6 @@ export function useDesktopState() {
     renameThreadById,
     forkThreadById,
     forkNativeThreadById,
-    forkThreadFromTurn,
     executeThreadRevert,
 
     sendMessageToSelectedThread: (...args: Parameters<typeof turns.sendMessageToSelectedThread>) => {

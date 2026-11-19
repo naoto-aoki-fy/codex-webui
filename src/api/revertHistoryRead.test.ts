@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { getThreadDetailForRevert, startThread } from './codexGateway'
 afterEach(() => vi.unstubAllGlobals())
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status })
-it('retries a materialization/index race once using only read requests against the same ID', async () => {
+it('retries a snapshot epoch race once using only read requests against the same ID', async () => {
   const fetch = vi.fn().mockResolvedValueOnce(response({ error: 'History changed while loading. Refresh the thread.' }, 502))
     .mockResolvedValueOnce(response({ result: { thread: { id: 'fork', turns: [{ id: 'kept', status: 'completed', items: [{ type: 'agentMessage', id: 'answer', text: 'native content' }] }] } } }))
   vi.stubGlobal('fetch', fetch)

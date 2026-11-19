@@ -1,15 +1,14 @@
 # Remote transfer budgets and fixture benchmark
 
-Run `pnpm exec vitest run src/server/remoteTransfers.benchmark.test.ts --reporter=verbose --disableConsoleIntercept`. This is a credential-free in-process transport fixture with a synthetic 2 ms delay per RPC, **not a real WAN benchmark**. Results vary by CPU and scheduling. The baseline models the historical uncached file/full-history transfer path; this benchmark does not claim all intermediate releases lacked history coalescing.
+Run `pnpm exec vitest run src/server/remoteTransfers.benchmark.test.ts --reporter=verbose --disableConsoleIntercept`. This is a credential-free in-process transport fixture with a synthetic 2 ms delay per RPC, **not a real WAN benchmark**. Results vary by CPU and scheduling. The baseline models uncached file reads.
 
 Representative run (Node on Linux):
 
 | Fixture | Baseline RPCs / response bytes / elapsed | Result RPCs / response bytes / elapsed |
 | --- | --- | --- |
 | 8 MiB file, five sequential accesses | 10 / 55,924,575 / 244.1 ms | 6 / 11,185,259 / 55.0 ms |
-| 1,000 turns with 4 KiB items, recent + three older pages | 4 / 16,715,704 / 63.0 ms | 6 / 241,227 / 16.4 ms |
 
-Afterward the file cache retains 8,388,608 bytes and one entry; history retains a 23,927-byte index and one entry. These are explicit cache occupancy measurements, not process RSS. Peak Base64 decoding/JSON allocations and live WAN latency have not been measured.
+Afterward the file cache retains 8,388,608 bytes and one entry. These are explicit cache occupancy measurements, not process RSS. Peak Base64 decoding/JSON allocations and live WAN latency have not been measured.
 
 ## Supported protocol and boundaries
 
@@ -23,12 +22,20 @@ node_modules/.bin/codex app-server generate-json-schema --experimental --out /tm
 
 File reads coalesce up to 64 distinct active reads, with explicit retryable busy errors above that limit. The cache is bounded to 16 MiB / 32 entries and a two-second TTL; larger files are not retained. Every HTTP access fetches metadata, and a changed timestamp invalidates cached bytes. Unknown/zero modification timestamps disable byte reuse. Timestamp-preserving edits can remain cached for at most two seconds. Disconnect changes the generation, clears cached/pending ownership and rejects late responses; each client instance belongs to one explicit profile. Remote images require browser revalidation to prevent a reused path URL retaining another profile's image.
 
-`thread/turns/list` really exists in the pinned experimental schema. Native history reads use metadata-only `thread/read`, an `itemsView: notLoaded` index scan, and `itemsView: full` pages. The index scan is necessary because upstream pages have neither total turn count nor absolute turn indices, while the UI's fork controls require exact positions. This costs additional requests but avoids transporting every conversation item's body. Concurrent identical history pages coalesce, with at most 16 active page reads. Older pages continue with actual opaque cursors; arbitrary boundaries seek with metadata-only pages. There is no invented cursor or local-slicing claim of native pagination.
+## Native history request budget
 
-Index and arbitrary-boundary seek work is bounded to 100 pages of at most 1,000 turns and 16 MiB, with at most 16 concurrent/retained thread indexes. Exceeding a budget produces an actionable error. Indexes expire after two seconds and invalidate on thread notifications, recovery and disconnect; stale work stops before additional requests. Only explicit JSON-RPC `-32601` enables the legacy fallback; timeouts, permissions and malformed responses remain errors. Legacy full-history fallback coalesces reads with a 30-second cache, bounded to 16 entries / 32 MiB aggregate; fallback snapshots have the same count and byte bounds. Content-bearing native pages trigger optional rollout-cache recovery; no runtime metadata sidecar enrichment remains.
+The bridge requests thread metadata and one ten-turn content page on open.
+Each earlier page takes a single `thread/turns/list` call. The CLI and dev
+transport fixture verifies the opaque cursor and two content-page requests.
+Historical response metadata recovery can make separate metadata and filesystem
+requests. Normal
+history loads have no metadata scan or WebUI page cache. Revert may page through
+turn IDs to validate an explicit cutoff. Portable Fork and native response fork
+verification may transfer complete source history.
 
-Direct `thread/resume` and fork/revert validation paths can still hydrate full history. Servers without native turn pagination use full upstream transfers and local history slicing. No mutation is retried by these caches. Reconnecting clears ownership; cached data never crosses a client generation or explicit profile.
+## Live measurement
 
-## Live measurement still required
-
-On disposable two-host data, record B-side RPC counts and bytes, A-side request latency and RSS while opening an 8 MiB file repeatedly, sending conditional/HEAD/Range requests, and paging a long thread. Confirm actual server response formats and method availability. Repeat after editing files, adding turns, reconnecting, and restarting A with another profile using the same forwarding URL. Do not present fixture timings as WAN evidence.
+The fixture does not measure WAN latency, the App Server's own history work or
+process memory. For a two-host measurement, record App Server RPC counts and
+bytes, WebUI response latency and memory, and repeat after editing files, adding
+turns, reconnecting and switching connection profiles.

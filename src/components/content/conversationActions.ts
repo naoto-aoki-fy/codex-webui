@@ -1,6 +1,6 @@
 import type { ComputedRef } from 'vue';
 import { computed, ref } from 'vue';
-import type { ForkMethod, RevertOperation, UiMessage } from '../../types/codex';
+import type { ForkMethod, ResponseForkTarget, RevertOperation, UiMessage } from '../../types/codex';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { isCopyableAssistantMessage, type TurnFileChangeSummary } from '../../utils/conversationFileChanges';
 import type { ConversationPlan } from '../../utils/conversationPlan';
@@ -63,7 +63,7 @@ export function createConversationActions(deps: {
     buildFileChangeCopyText: (summary: TurnFileChangeSummary | null) => string;
     emit: ((evt: "forkThread", payload: {
         threadId: string;
-        turnIndex: number;
+        target: ResponseForkTarget;
         method: ForkMethod;
     }) => void) & ((evt: "rollback", payload: {
         threadId: string;
@@ -135,7 +135,7 @@ export function createConversationActions(deps: {
             const content = buildCopyableMessageContent(message);
             if (!content)
                 continue;
-            const responseKey = typeof message.turnIndex === 'number'
+            const responseKey = !message.importMetadata && typeof message.turnIndex === 'number'
                 ? `turn:${message.turnIndex}`
                 : `message:${message.id}`;
             const existing = groupedResponses.get(responseKey);
@@ -167,37 +167,27 @@ export function createConversationActions(deps: {
         }
         return next;
     });
-    const forkableTurnIndexByAnchorId = computed<Record<string, number>>(() => {
-        const groupedTurns = new Map<string, {
-            anchorMessageId: string;
-            turnIndex: number;
-        }>();
+    const forkTargetByAnchorId = computed(() => {
+        const groupedTurns = new Map<string, { messageId: string; target: ResponseForkTarget }>();
         for (const message of deps.props.messages) {
-            if (!isCopyableAssistantMessage(message) || typeof message.turnIndex !== 'number')
-                continue;
-            const responseKey = `turn:${message.turnIndex}`;
-            const existing = groupedTurns.get(responseKey);
-            if (existing) {
-                existing.anchorMessageId = message.id;
-                existing.turnIndex = message.turnIndex;
-                continue;
+            if (!isCopyableAssistantMessage(message)) continue;
+            if (message.turnId) {
+                groupedTurns.set(`turn:${message.turnId}`, { messageId: message.id, target: { turnId: message.turnId } });
+            } else if (message.importMetadata && typeof message.turnIndex === 'number') {
+                groupedTurns.set(`imported:${message.id}`, { messageId: message.id, target: { importedMessageIndex: -message.turnIndex - 1 } });
             }
-            groupedTurns.set(responseKey, {
-                anchorMessageId: message.id,
-                turnIndex: message.turnIndex,
-            });
         }
-        const next: Record<string, number> = {};
-        for (const groupedTurn of groupedTurns.values()) {
-            next[groupedTurn.anchorMessageId] = groupedTurn.turnIndex;
-        }
-        return next;
+        return Object.fromEntries([...groupedTurns.values()].map(({ messageId, target }) => [messageId, target]));
     });
+    function showNativeForkButton(message: UiMessage): boolean {
+        const target = forkTargetByAnchorId.value[message.id];
+        return !!target && 'turnId' in target;
+    }
     function showCopyResponseButton(message: UiMessage): boolean {
         return typeof copyableResponseContentByAnchorId.value[message.id] === 'string';
     }
     function showForkResponseButton(message: UiMessage): boolean {
-        return typeof forkableTurnIndexByAnchorId.value[message.id] === 'number';
+        return Boolean(forkTargetByAnchorId.value[message.id]);
     }
     async function copyUserMessage(message: UiMessage): Promise<void> {
         const generation = deps.threadGeneration;
@@ -245,15 +235,15 @@ export function createConversationActions(deps: {
         }, 1800);
     }
     function forkResponse(anchorMessageId: string, method: ForkMethod = 'native'): void {
-        const turnIndex = forkableTurnIndexByAnchorId.value[anchorMessageId];
-        if (deps.props.isForkDisabled || typeof turnIndex !== 'number' || (method === 'native' && turnIndex < 0))
+        const target = forkTargetByAnchorId.value[anchorMessageId];
+        if (deps.props.isForkDisabled || !target || (method === 'native' && !('turnId' in target)))
             return;
         if (!deps.props.activeThreadId)
             return;
         deps.emit('forkThread', {
             method,
             threadId: deps.props.activeThreadId,
-            turnIndex,
+            target,
         });
     }
     const editableTurnIdByMessageId = computed<Record<string, string>>(() => {
@@ -290,7 +280,7 @@ set copiedUserMessageResetTimer(value) { copiedUserMessageResetTimer = value; },
 get copiedPlanResetTimer() { return copiedPlanResetTimer; },
 set copiedPlanResetTimer(value) { copiedPlanResetTimer = value; },
 copyPlan,
-forkableTurnIndexByAnchorId,
+showNativeForkButton,
 showCopyResponseButton,
 showForkResponseButton,
 copyUserMessage,

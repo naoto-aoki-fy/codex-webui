@@ -1,4 +1,3 @@
-import { RemoteHistoryPager } from './remoteHistoryPager'
 import { nativeHistoryResponse } from './testFixtures/nativeHistory'
 import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
@@ -36,9 +35,8 @@ beforeEach(async () => {
   snapshot = null
   events = []
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
-  const pager = new RemoteHistoryPager({ rpc: async (method, params) => nativeHistoryResponse(method, params, await rpc(method, params)), getConnectionGeneration: () => 1 })
   scope.__codexRemoteSharedBridge__ = {
-    version: 'external-websocket-files-v3', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getLastThreadReadSnapshot: () => snapshot, getStreamEvents: () => events, readThreadPage: pager.read.bind(pager) },
+    version: 'external-websocket-files-v4', appServer: { rpc: async (method: string, params: unknown) => nativeHistoryResponse(method, params, await rpc(method, params)), getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getLastThreadReadSnapshot: () => snapshot, getStreamEvents: () => events },
     methodCatalog: {},
   }
 })
@@ -86,10 +84,13 @@ it('keeps normal history and earlier-history pagination available', async () => 
   const initial = await request('/codex-api/rpc', 'POST', { method: 'thread/read', params: { threadId: 'historical-thread', includeTurns: true } })
   expect(initial.res.statusCode).toBe(200)
   expect(initial.json.result.thread.turns.map((t: { id: string }) => t.id)).toEqual(turns.slice(5).map(t => t.id))
-  const older = await request('/codex-api/thread-turn-page?threadId=historical-thread&beforeTurnId=t5&limit=10')
+  const older = await request('/codex-api/rpc', 'POST', { method: 'thread/turns/list', params: { threadId: 'historical-thread', cursor: 'cursor-10', limit: 10, sortDirection: 'desc', itemsView: 'full' } })
   expect(older.res.statusCode).toBe(200)
-  expect(older.json.result.thread.turns).toEqual(turns.slice(0, 5))
-  expect(older.json.hasMoreOlder).toBe(false)
+  expect(initial.json.result.olderCursor).toBe('cursor-10')
+  expect(older.json.result.data).toEqual(turns.slice(0, 5).reverse())
+  expect(older.json.result.nextCursor).toBeNull()
+  expect(rpc.mock.calls.map(([method]) => method)).toEqual(['thread/read', 'thread/turns/list', 'thread/turns/list'])
+  expect(rpc.mock.calls[0]?.[1]).toMatchObject({ includeTurns: false })
 })
 
 it('returns the saved snapshot after a recognized empty rollout read failure', async () => {
@@ -108,8 +109,8 @@ it('preserves buffered turn errors in normal and earlier-page reads', async () =
   events = ['t0', 't14'].map(turnId => ({ method: 'error', params: { turnId, error: { message: 'buffered failure' } }, atIso: new Date().toISOString() }))
   rpc.mockResolvedValue({ thread: { id: 'historical-thread', turns: Array.from({ length: 15 }, (_, i) => ({ id: `t${i}`, items: [] })) } })
   const normal = await request('/codex-api/rpc', 'POST', { method: 'thread/read', params: { threadId: 'historical-thread', includeTurns: true } })
-  const older = await request('/codex-api/thread-turn-page?threadId=historical-thread&beforeTurnId=t5&limit=10')
-  for (const turn of [normal.json.result.thread.turns.at(-1), older.json.result.thread.turns[0]]) {
+  const older = await request('/codex-api/rpc', 'POST', { method: 'thread/turns/list', params: { threadId: 'historical-thread', cursor: 'cursor-10', limit: 10, sortDirection: 'desc', itemsView: 'full' } })
+  for (const turn of [normal.json.result.thread.turns.at(-1), older.json.result.data.at(-1)]) {
     expect(turn.status).toBe('failed')
     expect(turn.error.message).toBe('buffered failure')
   }
@@ -128,8 +129,8 @@ it.each(['normal', 'earlier'])('preserves timestamps, execution metadata, skills
   ] } })
   const response = mode === 'normal'
     ? await request('/codex-api/rpc', 'POST', { method: 'thread/read', params: { threadId: 'historical-thread', includeTurns: true } })
-    : await request('/codex-api/thread-turn-page?threadId=historical-thread&beforeTurnId=t2&limit=10')
-  const turn = response.json.result.thread.turns[0]
+    : await request('/codex-api/rpc', 'POST', { method: 'thread/turns/list', params: { threadId: 'historical-thread', cursor: 'cursor-1', limit: 10, sortDirection: 'desc', itemsView: 'full' } })
+  const turn = mode === 'normal' ? response.json.result.thread.turns[0] : response.json.result.data[0]
   expect(turn).not.toHaveProperty('submittedAt')
   expect(turn).not.toHaveProperty('generationMetadata')
   expect(turn.items[0].content).not.toContainEqual({ type: 'skill', name: 'test-skill', path: '/tmp/test/SKILL.md' })
@@ -188,8 +189,7 @@ it('truncates a response fork before pagination and snapshot caching', async () 
   const turns = Array.from({ length: 25 }, (_, i) => ({ id: `turn-${i}`, items: [] }))
   rpc.mockImplementation(async (method, params) => {
     if (method === 'thread/fork') {
-      expect(params).not.toHaveProperty('forkFromTurnIndex')
-      expect(params).toMatchObject({ lastTurnId: 'turn-14' })
+      expect(params).toEqual({ threadId: 'source', lastTurnId: 'turn-14' })
       return { model: 'fixture', thread: { id: 'fork-cutoff-test', turns: turns.slice(0, 15) } }
     }
     if (method === 'thread/read' && (params as Record<string, unknown>).threadId === 'fork-cutoff-test') {
@@ -198,11 +198,10 @@ it('truncates a response fork before pagination and snapshot caching', async () 
     return { thread: { id: 'source', turns } }
   })
   const response = await request('/codex-api/rpc', 'POST', {
-    method: 'thread/fork-at-response', params: { threadId: 'source', forkFromTurnIndex: 14 },
+    method: 'thread/fork-at-response', params: { threadId: 'source', turnId: 'turn-14' },
   })
   expect(response.res.statusCode).toBe(200)
   expect(response.json.result.thread.turns).toEqual(turns.slice(5, 15))
-  expect(response.json.result.threadTurnStartIndex).toBe(5)
   expect(response.json.result.model).toBe('fixture')
   expect(storeSnapshot).toHaveBeenCalledWith('fork-cutoff-test', response.json.result)
 })
@@ -220,27 +219,4 @@ it('preserves RPC body validation, malformed JSON mapping, and success envelopes
   const valid = await request('/codex-api/rpc', 'POST', { method: 'model/list', params: {} })
   expect(valid.res.statusCode).toBe(200)
   expect(valid.json).toEqual({ result: { data: ['fixture'] } })
-})
-
-it('shares the native metadata index across pagination cursors and invalidates it on notifications', async () => {
-  const client = new AppServerClient()
-  const snapshot = { thread: { id: 'cursor-cache', turns: Array.from({ length: 8 }, (_, i) => ({ id: `t${i}`, items: [] })) } }
-  const read = vi.spyOn(client, 'rpc').mockImplementation(async (method, params) => nativeHistoryResponse(method, params, snapshot))
-  ;(scope.__codexRemoteSharedBridge__ as any).appServer.readThreadPage = client.readThreadPage.bind(client)
-  try {
-    const [first, second] = await Promise.all([
-      request('/codex-api/thread-turn-page?threadId=cursor-cache&beforeTurnId=t6&limit=2'),
-      request('/codex-api/thread-turn-page?threadId=cursor-cache&beforeTurnId=t4&limit=3'),
-    ])
-    expect(first.json.result.thread.turns.map((t: any) => t.id)).toEqual(['t4', 't5'])
-    expect(second.json.result.thread.turns.map((t: any) => t.id)).toEqual(['t1', 't2', 't3'])
-    expect(first.json).toMatchObject({ startTurnIndex: 4, hasMoreOlder: true })
-    expect(second.json).toMatchObject({ startTurnIndex: 1, hasMoreOlder: true })
-    expect(read.mock.calls.filter(([method]) => method === 'thread/read')).toEqual([['thread/read', { threadId: 'cursor-cache', includeTurns: false }]])
-    expect(read.mock.calls.filter(([method, params]) => method === 'thread/turns/list' && (params as any).itemsView === 'full')).toHaveLength(2)
-    ;(client as any).emitNotification({ method: 'item/completed', params: { threadId: 'cursor-cache', turnId: 't7', item: { id: 'item' } } })
-    await request('/codex-api/thread-turn-page?threadId=cursor-cache&beforeTurnId=t2&limit=2')
-    expect(read.mock.calls.filter(([method]) => method === 'thread/read')).toHaveLength(2)
-    expect(read.mock.calls.some(([, params]) => (params as any).includeTurns === true)).toBe(false)
-  } finally { client.dispose() }
 })

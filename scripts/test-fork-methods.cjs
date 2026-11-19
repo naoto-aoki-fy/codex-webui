@@ -25,13 +25,14 @@ const source = { id: 'source', name: 'Fork methods source', preview: 'Fork metho
 }
 const mutations = new Set(['conversation-transfer/create', 'thread/fork', 'thread/fork-at-response', 'thread/start', 'thread/inject_items', 'turn/start'])
 
-async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false, importedOnly = false, sameProvider = false, providers = ['P', 'Q'], composerProvider = 'P' } = {}) {
+async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false, importedOnly = false, sameProvider = false, providers = ['P', 'Q'], composerProvider = 'P', longHistory = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   const calls = []
   const conversation = { ...structuredClone(source), modelProvider: composerProvider }
+  if (longHistory) conversation.turns = Array.from({ length: 15 }, (_, n) => sourceTurn(n))
   if (importedOnly) conversation.turns = []
   const importedPrefix = textTranscript([sourceTurn(0)], composerProvider)
   const preparations = []
@@ -61,6 +62,16 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     let result = {}
     if (rpc === 'thread/list') result = { data: [conversation, ...[...destinations.values()].map(row => row.thread)], nextCursor: null }
     if (rpc === 'thread/read' || rpc === 'thread/resume') result = destinations.get(params.threadId) || { thread: conversation, model: 'A', modelProvider: composerProvider, ...(importedOnly ? { importedTranscript: importedPrefix, importStage: 'ready' } : {}) }
+    if (longHistory && ['thread/read', 'thread/resume'].includes(rpc) && params.threadId === 'source') {
+      result = { ...result, thread: { ...conversation, turns: conversation.turns.slice(-10) }, olderCursor: 'opaque-older' }
+    }
+    if (rpc === 'thread/turns/list') {
+      assert.equal(params.threadId, 'source')
+      assert.equal(params.cursor, 'opaque-older')
+      assert.equal(params.itemsView, 'full')
+      assert.equal(params.sortDirection, 'desc')
+      result = { data: conversation.turns.slice(0, -10).reverse(), nextCursor: null }
+    }
     if (rpc === 'modelProvider/list') result = { data: providers.map(id => ({ id, displayName: providerLabel(id), isDefault: id === 'P' })) }
     if (rpc === 'model/list') result = { data: params.modelProvider !== 'P'
       ? [{ id: 'A', displayName: 'Alternate', priority: 9 }, { id: 'C', displayName: 'C', priority: 0, isDefault: true }, { id: 'D', displayName: 'D', priority: 1 }]
@@ -74,7 +85,16 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (rpc === 'threadSection/list') result = { data: [] }
     if (rpc === 'conversation-transfer/prepare') {
       if (prepareFails) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'History exceeds the 8 MiB transfer request limit. No thread was created.' }) })
-      const turns = structuredClone(params.revertTarget ? conversation.turns.slice(0, conversation.turns.findIndex(turn => turn.id === params.revertTarget.turnId)) : importedOnly ? [sourceTurn(0)] : params.turnIndex === undefined ? conversation.turns : conversation.turns.slice(0, params.turnIndex + 1))
+      let turns = conversation.turns
+      if (params.revertTarget) turns = turns.slice(0, turns.findIndex(turn => turn.id === params.revertTarget.turnId))
+      else if (importedOnly) {
+        assert.deepEqual(params.target, { importedMessageIndex: 1 })
+        turns = [sourceTurn(0)]
+      } else if (params.target) {
+        assert.deepEqual(params.target, { turnId: 't0' })
+        turns = turns.slice(0, turns.findIndex(turn => turn.id === params.target.turnId) + 1)
+      }
+      turns = structuredClone(turns)
       if (entry === 'revert') assert.deepEqual(params.revertTarget, { turnId: 't1', messageId: 'u1' })
       const id = `snapshot-${++snapshotNumber}`
       snapshots.set(id, turns)
@@ -89,11 +109,13 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       }
       assert.equal(params.modelProvider, undefined)
       assert.equal(params.model, undefined)
-      const turns = rpc === 'thread/fork' ? conversation.turns : conversation.turns.slice(0, params.forkFromTurnIndex + 1)
+      if (rpc === 'thread/fork-at-response') assert.equal(params.turnId, 't0')
+      const turns = rpc === 'thread/fork' ? conversation.turns : conversation.turns.slice(0, conversation.turns.findIndex(turn => turn.id === params.turnId) + 1)
       const destination = { thread: { ...conversation, id: 'native', turns }, model: 'A', modelProvider: 'P' }
       destinations.set('native', destination)
-      result = { ...destination, forkCutoff: { sourceThreadId: 'source', turnIndex: params.forkFromTurnIndex,
-        turnId: turns.at(-1).id, turnCount: turns.length } }
+      result = rpc === 'thread/fork-at-response'
+        ? { ...destination, forkCutoff: { sourceThreadId: 'source', turnId: turns.at(-1).id } }
+        : destination
     }
     if (rpc === 'conversation-transfer/create') {
       assert.equal(params.modelProvider, destinationProvider)
@@ -169,6 +191,15 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     assert.equal(await page.getByRole('button', { name: 'Create conversation', exact: true }).isEnabled(), true)
   }
   await page.goto(`${baseUrl}/#/thread/source`)
+  if (longHistory) {
+    await page.getByText('Original answer 14', { exact: true }).waitFor()
+    assert.equal(await page.getByText('Original answer 0', { exact: true }).count(), 0)
+    await page.getByRole('button', { name: 'Load earlier messages', exact: true }).click()
+    await page.getByText('Original answer 0', { exact: true }).waitFor()
+    assert.equal(await page.getByText('Original answer 5', { exact: true }).count(), 1)
+    assert.equal(calls.filter(call => call.method === 'thread/turns/list').length, 1)
+    assert.equal(await page.getByRole('button', { name: 'Load earlier messages', exact: true }).count(), 0)
+  }
   await page.getByText('Original answer 0', { exact: true }).waitFor()
   const composerModelLabel = composerProvider === 'P' ? 'A' : 'Alternate'
   await page.getByRole('button', { name: composerModelLabel, exact: true }).click()
@@ -187,7 +218,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   for (const theme of ['light', 'dark']) {
     await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme)
     await page.waitForTimeout(2200)
-    await page.screenshot({ path: resolve(output, `fork-split-${entry}-${importedOnly ? 'imported' : 'source'}-${theme}.png`) })
+    await page.screenshot({ path: resolve(output, `fork-split-${entry}-${longHistory ? 'older-page' : importedOnly ? 'imported' : 'source'}-${theme}.png`) })
     const menuBackground = await options.locator('.composer-dropdown-menu').evaluate(el => getComputedStyle(el).backgroundColor)
     assert.notEqual(menuBackground, 'rgba(0, 0, 0, 0)')
     if (theme === 'dark') assert.notEqual(menuBackground, 'rgb(255, 255, 255)')
@@ -272,7 +303,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   for (const theme of ['light', 'dark']) {
     await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme)
     await page.waitForTimeout(2200)
-    await page.screenshot({ path: resolve(output, `fork-messages-${entry}-${effectiveMethod}-${theme}.png`) })
+    await page.screenshot({ path: resolve(output, `fork-messages-${entry}-${longHistory ? 'older-page-' : ''}${effectiveMethod}-${theme}.png`) })
   }
   if (entry === 'revert') {
     assert.equal(await page.locator('textarea').inputValue(), 'Original question 1', 'restored draft survives reload')
@@ -324,7 +355,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   assert.equal(sends[0].params.model, continuationModel)
   assert.equal(calls.filter(call => ['thread/start', 'thread/inject_items'].includes(call.method)).length, 0, 'portable creation is mocked at the backend service boundary')
   assert.deepEqual(errors, [])
-  const report = { entry, method, prepareFails, nativeFails, pendingPreparation, importedOnly, sameProvider, providers, composerProvider, initialProvider, destinationProvider, url: page.url(), viewport: { width: 1280, height: 900 },
+  const report = { entry, method, prepareFails, nativeFails, pendingPreparation, importedOnly, sameProvider, longHistory, providers, composerProvider, initialProvider, destinationProvider, url: page.url(), viewport: { width: 1280, height: 900 },
     creationCalls, explicitSends: sends.length, importMetadataAfterReload: !!resumed.importedTranscript, displayPrefixes: false, assertions: 'passed' }
   await context.close()
   return report
@@ -341,6 +372,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     for (const providers of [['P'], ['P', 'Q', 'R'], ['R', 'P', 'Q']]) cases.push(['response', 'portable', { providers }])
     cases.push(['full', 'portable', { composerProvider: 'Q' }], ['response', 'portable', { composerProvider: 'Q' }])
     cases.push(['revert', 'portable'], ['revert', 'portable', { pendingPreparation: true }])
+    cases.push(['response', 'native', { longHistory: true }], ['response', 'portable', { longHistory: true }])
     const selected = process.env.FORK_TEST_CASES?.split(',').map(Number)
     for (const [index, args] of cases.entries()) {
       if (selected && !selected.includes(index)) continue

@@ -27,7 +27,7 @@ describe('portable conversation transfer', () => {
     source.turns[20]!.items[0]!.content = [{ type: 'text', text: '  Revise **this**\n```ts\nx()\n```  ' }]
     const before = structuredClone(source)
     rpc.mockResolvedValueOnce({ thread: source })
-    const prepared = await transfers.prepare('source', undefined, undefined, { turnId: 'turn-20', messageId: 'u-20' })
+    const prepared = await transfers.prepare('source', undefined, { turnId: 'turn-20', messageId: 'u-20' })
     expect(prepared.messageCount).toBe(40)
     // Later source changes cannot alter either part of the prepared snapshot.
     source.turns[20]!.items[0]!.content[0]!.text = 'changed later'
@@ -51,16 +51,16 @@ describe('portable conversation transfer', () => {
   })
   it('creates a draft-only destination at the first user turn without injecting or generating', async () => {
     const rpc = server(), transfers = createConversationTransfers(rpc)
-    const prepared = await transfers.prepare('source', undefined, undefined, { turnId: 'turn-0', messageId: 'u-0' })
+    const prepared = await transfers.prepare('source', undefined, { turnId: 'turn-0', messageId: 'u-0' })
     expect(prepared.messageCount).toBe(0)
     await expect(transfers.create(prepared.id, 'model', 'provider')).resolves.toMatchObject({ draftText: 'question 0' })
     expect(rpc.mock.calls.map(call => call[0])).toEqual(['thread/read', 'thread/start'])
   })
   it('preserves an existing imported prefix exactly once before a native user cutoff', async () => {
     const rpc = server(), transfers = createConversationTransfers(rpc)
-    const first = await transfers.prepare('source', 0)
+    const first = await transfers.prepare('source', { turnId: 'turn-0' })
     await transfers.create(first.id, 'model', 'provider')
-    const prepared = await transfers.prepare('destination', undefined, undefined, { turnId: 'turn-1', messageId: 'u-1' })
+    const prepared = await transfers.prepare('destination', undefined, { turnId: 'turn-1', messageId: 'u-1' })
     expect(prepared.messageCount).toBe(4)
     expect((await transfers.status(prepared.id)).draftText).toBe('question 1')
   })
@@ -70,20 +70,20 @@ describe('portable conversation transfer', () => {
     { turnId: 'turn-1', messageId: 'a-1' },
   ])('rejects a stale or non-user revert target before creation: %j', async target => {
     const rpc = server()
-    await expect(createConversationTransfers(rpc).prepare('source', undefined, undefined, target)).rejects.toThrow('no longer available')
+    await expect(createConversationTransfers(rpc).prepare('source', undefined, target)).rejects.toThrow('no longer available')
     expect(rpc.mock.calls.map(call => call[0])).toEqual(['thread/read'])
     expect(disk.state).toEqual({})
   })
   it('cancels a revert snapshot without creating a destination or retaining a draft', async () => {
     const rpc = server(), transfers = createConversationTransfers(rpc)
-    const prepared = await transfers.prepare('source', undefined, undefined, { turnId: 'turn-1', messageId: 'u-1' })
+    const prepared = await transfers.prepare('source', undefined, { turnId: 'turn-1', messageId: 'u-1' })
     await transfers.cancel(prepared.id)
     await expect(transfers.status(prepared.id)).rejects.toThrow('not found')
     expect(rpc.mock.calls.map(call => call[0])).toEqual(['thread/read'])
   })
   it.each(['thread/start', 'thread/inject_items'])('fences ambiguous Portable Fork and Revert %s outcomes across reopening', async failedMethod => {
     const rpc = server(), transfers = createConversationTransfers(rpc)
-    const prepared = await transfers.prepare('source', undefined, undefined, { turnId: 'turn-1', messageId: 'u-1' })
+    const prepared = await transfers.prepare('source', undefined, { turnId: 'turn-1', messageId: 'u-1' })
     rpc.mockImplementation(async (method, params) => {
       if (method === failedMethod) throw new Error('timeout: acknowledgement lost')
       if (method === 'thread/start') return { thread: { id: 'destination' }, model: params.model, modelProvider: params.modelProvider }
@@ -156,7 +156,7 @@ describe('portable conversation transfer', () => {
     ] }, turn(2)]
     rpc.mockImplementationOnce(async () => ({ thread: { cwd: '/workspace', turns: sourceTurns } }))
     const transfers = createConversationTransfers(rpc)
-    const prepared = await transfers.prepare('source', 1, 'turn-1')
+    const prepared = await transfers.prepare('source', { turnId: 'turn-1' })
     expect(prepared.warnings).toEqual([])
     expect(prepared.messageCount).toBe(4)
     await transfers.create(prepared.id, 'model', 'provider')
@@ -171,7 +171,7 @@ describe('portable conversation transfer', () => {
     await reopened.assertReady('destination')
     expect(rpc.mock.calls).toHaveLength(readOnlyCalls)
     rpc.mockImplementationOnce(async () => ({ thread: { cwd: '/workspace', turns: [] } }))
-    const next = await reopened.prepare('destination', -4)
+    const next = await reopened.prepare('destination', { importedMessageIndex: 3 })
     expect(next.messageCount).toBe(4)
     expect(next.warnings).toEqual([])
   })
@@ -186,7 +186,7 @@ describe('portable conversation transfer', () => {
   })
   it.each([undefined, 12])('imports the complete stable prefix (%s), persists presentation and never reinjects on resume', async cutoff => {
     const rpc = server(); const transfers = createConversationTransfers(rpc)
-    const prepared = await transfers.prepare('source', cutoff)
+    const prepared = await transfers.prepare('source', cutoff === undefined ? undefined : { turnId: 'turn-' + cutoff })
     rpc.mockImplementationOnce(async () => ({ thread: { id: 'destination' }, model: 'model', modelProvider: 'provider' }))
     await transfers.create(prepared.id, 'model', 'provider')
     expect(rpc.mock.calls.map(c => c[0])).toEqual(['thread/read', 'thread/start', 'thread/inject_items'])
@@ -210,7 +210,7 @@ describe('portable conversation transfer', () => {
   })
   it('does not decorate or impose import guards on an independently native-forked thread', async () => {
     const rpc = server(); const transfers = createConversationTransfers(rpc)
-    const prepared = await transfers.prepare('source', 0)
+    const prepared = await transfers.prepare('source', { turnId: 'turn-0' })
     await transfers.create(prepared.id, 'model', 'provider')
     const payload = { thread: { id: 'native-fork', turns: [turn(0)] } }
     const reopened = createConversationTransfers(rpc)
@@ -222,15 +222,15 @@ describe('portable conversation transfer', () => {
   })
   it('imports an existing imported prefix exactly once', async () => {
     const rpc = server(); const transfers = createConversationTransfers(rpc)
-    const first = await transfers.prepare('source', 0)
+    const first = await transfers.prepare('source', { turnId: 'turn-0' })
     await transfers.create(first.id, 'model', 'provider')
     const stored = Object.values(disk.state['conversation-transfers-v1'] as Record<string, any>)[0]!
     stored.warnings = ['Legacy omission notice']
     stored.messages.push({ role: 'tool', text: 'SECRET', source: 'source' }, { role: 'assistant', text: '', source: 'source' })
-    const second = await transfers.prepare('destination', 0)
+    const second = await transfers.prepare('destination', { turnId: 'turn-0' })
     expect(second.warnings).toEqual([])
     expect(second.messageCount).toBe(4)
-    const response = await transfers.prepare('destination', -2)
+    const response = await transfers.prepare('destination', { importedMessageIndex: 1 })
     expect(response.messageCount).toBe(2)
   })
   it.each(['unsupported method thread/inject_items', 'timeout: acknowledgement lost'])('fences duplicate creation and uncertain injection: %s', async message => {
@@ -253,7 +253,7 @@ describe('portable conversation transfer', () => {
   })
   it('never injects into or decorates the source if start returns its identity', async () => {
     const rpc = server(), transfers = createConversationTransfers(rpc)
-    const prepared = await transfers.prepare('source', undefined, undefined, { turnId: 'turn-1', messageId: 'u-1' })
+    const prepared = await transfers.prepare('source', undefined, { turnId: 'turn-1', messageId: 'u-1' })
     rpc.mockResolvedValueOnce({ thread: { id: 'source' }, model: 'model', modelProvider: 'provider' })
     await expect(transfers.create(prepared.id, 'model', 'provider')).rejects.toThrow('separate destination')
     await transfers.assertReady('source')
@@ -277,7 +277,7 @@ describe('portable conversation transfer', () => {
     await expect(transfers.prepare('source')).rejects.toThrow('8 MiB')
     rpc.mockResolvedValueOnce({ thread: { cwd: '/workspace', status: { type: 'active' }, turns: [turn(0)] } })
     await expect(transfers.prepare('source')).rejects.toThrow('Finish or stop')
-    await expect(transfers.prepare('source', 0, 'stale-turn')).rejects.toThrow('Source history changed')
+    await expect(transfers.prepare('source', { turnId: 'stale-turn' })).rejects.toThrow('Source history changed')
     expect(rpc.mock.calls.every(c => c[0] === 'thread/read')).toBe(true)
   })
 })

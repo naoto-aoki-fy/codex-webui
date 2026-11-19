@@ -11,7 +11,7 @@ function deferred<T>() {
 function payload(version: string) {
   return { thread: { id: 'created', model: version, turns: [{ id: version, status: version === 'before' ? 'inProgress' : 'completed', items: [{ id: version, type: 'agentMessage', text: version }] }] } }
 }
-const response = (version: string) => new Response(JSON.stringify({ result: { ...payload(version), forkCutoff: { sourceThreadId: 'A', turnIndex: 0, turnId: 'cutoff', turnCount: 1 } } }))
+const response = (version: string) => new Response(JSON.stringify({ result: { ...payload(version), forkCutoff: { sourceThreadId: 'A', turnId: 'turn-0' } } }))
 const invalidates = (name: string) => name === 'rollback' || name === 'turn start'
 const mutations = [
   ['archive', (id: string) => archiveThread(id), 'thread/archive'],
@@ -20,7 +20,7 @@ const mutations = [
   ['turn start', (id: string) => startThreadTurn(id, 'next'), 'turn/start'],
   ['fork', (id: string) => forkThread(id), 'thread/fork'],
   ['fork with options', (id: string) => forkThread(id, '/workspace', 'model'), 'thread/fork'],
-  ['response fork', (id: string) => forkThreadFromResponse(id, 0), 'thread/fork-at-response'],
+  ['response fork', (id: string) => forkThreadFromResponse(id, 'turn-0'), 'thread/fork-at-response'],
   ['thread start', (_id: string) => startThread('/workspace'), 'thread/start'],
 ] as const
 
