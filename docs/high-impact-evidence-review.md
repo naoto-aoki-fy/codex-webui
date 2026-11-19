@@ -1,7 +1,7 @@
 # High-impact acceptance evidence review
 
 Subsequent [finalization](implementation-finalization.md) operationally withholds the deletion mutation in the UI and controller. The analysis below describes the reviewed revision; its formerly available deletion submission is historical, not current behavior.
-Standalone command controls described here were later removed from WebUI.
+Standalone command controls and the account guard described here were later removed from WebUI. See [current account controls](native-authentication-state.md).
 
 Review began on clean `main` at actual revision
 `5ff6df5597e670f0f382b1b69bc70c736fe2c36c`. There was no merge or rebase in
@@ -149,7 +149,7 @@ Concrete defects corrected in `5fcf321`:
   return a cached idle snapshot to `thread/read {includeTurns:false}`. Ordinary
   history's empty-rollout fallback is preserved. The integration fixture models
   a cached idle read followed by a native failure and checks both paths.
-- [Authentication controller](../src/composables/nativeAuthentication.ts#L53)
+- The former authentication controller
   invalidates preparation, start preflight, delayed inspection and account data
   on **every** account-update event, including idle/starting/settling states.
   A later account-update event also retires evidence from an earlier matching
@@ -178,7 +178,7 @@ require an externally quiescent designated server for live acceptance, or a nati
 admission mechanism before promising that guarantee. Storage removal/failure or
 changes that occur while the client is absent cannot be recovered from a marker.
 
-Relevant tests in [nativeAuthentication.test.ts](../src/composables/nativeAuthentication.test.ts):
+The former authentication-controller tests covered:
 
 - `requires signed-out auth policy and a complete bounded idle inventory without resuming/reading histories`.
 - `rejects incomplete/malformed idle inventories instead of inferring no active work`.

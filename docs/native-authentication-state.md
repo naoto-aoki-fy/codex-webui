@@ -1,39 +1,26 @@
-# Native account and submission safety
+# Native Codex account controls
 
-The App Server owns authentication and credentials. WebUI uses native
-`account/read` with refresh disabled, `account/login/start` for ChatGPT browser
-or device-code sign-in, `account/login/cancel` for an identified login, and
-`account/logout`. The App Server enforces its login policy. WebUI checks loaded
-conversation activity once before starting sign-in, using metadata-only reads.
-Use the Codex host for native API-key or externally managed credentials.
+The Codex App Server manages authentication, credentials and workspace selection.
+WebUI sends turns, steering requests and conversation operations to the App Server
+through the usual RPC bridge. The App Server decides whether to accept each request
+and returns authentication failures through the normal RPC error path. A native
+account change takes effect according to the App Server's policy. WebUI does not
+wait for account verification or require acknowledgment of the new account.
 
-WebUI returns only account type, email, plan and workspace display name. The
-initiating browser receives the native authorization link or device code in
-memory until completion or disconnect. WebUI rejects the old token-returning RPC
-and browser access to native session switching and external token management.
+Open **Settings → Codex account** to read native account details on demand.
+The read uses `account/read` with token refresh disabled and exposes only
+display metadata. Managed ChatGPT browser and device-code sign-in use
+`account/login/start`. Explicit sign-in checks loaded conversation activity before
+requesting the native challenge. Cancel uses `account/login/cancel` with the
+attempt's login ID. Logout uses `account/logout`. The App Server enforces its
+sign-in policy and owns the account across browsers.
 
-## Backend submission guard
-
-The App Server's account read describes the currently visible account. It does
-not identify an incomplete login, confirm a lost logout response, or identify
-whether a ChatGPT workspace changed behind the same display name. The in-memory
-guard in `src/server/nativeAuthenticationState.ts` uses native login IDs and
-completion notifications, plus native session identity when available, to cover
-those cases. It checks chat, steer, deferred queue writes and review at dispatch.
-Uncertain writes are never replayed. Verified sends add no account RPCs.
-
-The browser consumes the guard's single status projection through
-`native-authentication/read` and `native-authentication/state`. That projection
-includes the display-safe fields from the guard's existing native read, avoiding
-a separate browser account read. `native-authentication/reconcile` remains for
-explicit acknowledgment of the current guard revision after an unresolved
-operation or workspace change. The server checks fresh evidence before allowing
-submission and retires an acknowledgment if the connection or account changes
-during verification. No WebUI credential or authentication state is saved to disk.
-
-An outstanding native login ID is held for the backend lifetime, including browser
-reloads. After a backend restart, complete or cancel the original flow on the App
-Server host. Independent native clients can still change accounts, and upstream
-does not provide an atomic activity lock across clients.
+The initiating browser holds the authorization link or device code in memory
+until completion, cancellation or disconnect. If a browser reload or connection
+loss discards those controls, finish the original sign-in using its authorization
+page or manage it on the App Server host. WebUI never replays an account mutation.
+Use the Codex host for API-key or externally managed credentials. The old
+token-returning RPC, native session switching and browser-managed token access
+are blocked. The WebUI password is separate from Codex authentication.
 
 See the [account acceptance test](../tests/accounts-feedback-observability/accounts-panel-codex-login-callback-modal.md).

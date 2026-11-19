@@ -491,6 +491,8 @@ Native queue IDs remain opaque correlation strings, not credentials.
 
 ### 29 — PARTIAL, native managed ChatGPT sign-in
 
+This section records the original implementation. See [current account controls](native-authentication-state.md) for the sign-in flow and submission behavior after the WebUI guard was removed.
+
 The official `account_processor.rs` implements browser/device-code start,
 ID-specific cancellation, completion notification, AuthManager reload and account
 updates. Login URLs use `open_browser: false`; tokens remain native-owned. This

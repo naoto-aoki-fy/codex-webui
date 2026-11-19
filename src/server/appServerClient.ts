@@ -1,4 +1,3 @@
-import { NativeAuthenticationStateMachine, AUTHENTICATED_WRITES } from './nativeAuthenticationState.js'
 import { CodexHomeResolver } from './codexHomeResolver.js'
 import { getConnectionProfileId } from './connectionProfile.js'
 import { SubscriptionRecovery } from './subscriptionRecovery.js'
@@ -72,11 +71,6 @@ export type StreamEventFrame = {
 
 export class AppServerClient {
   getInitializationMetadata() { return this.transport.getInitializationMetadata() }
-
-  private readonly authentication = new NativeAuthenticationStateMachine(
-    (method, params) => this.call(method, params),
-    state => this.emitNotification({ method: 'native-authentication/state', params: state }),
-  )
 
   private connectionGeneration = 0
   private readonly codexHome = new CodexHomeResolver(
@@ -184,7 +178,6 @@ export class AppServerClient {
   private connectionState: 'connected' | 'disconnected' | undefined
   private transport = new AppServerWebSocketClient((frame) => this.handleLine(frame), () => {
     this.connectionState = 'disconnected'
-    this.authentication.disconnect()
     this.connectionGeneration++
     this.codexHome.reset()
     this.uploadUserHome = undefined
@@ -248,8 +241,6 @@ export class AppServerClient {
   }
 
   private emitNotification(notification: { method: string; params: unknown }): void {
-    this.authentication.observe(notification.method, notification.params)
-    if (notification.method === 'account/updated' || notification.method === 'account/login/completed') return
     this.recordStreamEvent(notification)
     const nThreadId = this.extractThreadIdFromParams(notification.params)
     if (nThreadId && notification.method !== 'turn/generationMetadata') {
@@ -419,9 +410,6 @@ export class AppServerClient {
     if (expectedGeneration !== undefined && expectedGeneration !== this.connectionGeneration) {
       throw new Error(uploadConnectionChanged)
     }
-    // No await between this guard and the wire write: initialization may yield
-    // while another browser starts login or an account notification arrives.
-    if (AUTHENTICATED_WRITES.has(method)) this.authentication.assertReady()
     const id = this.nextId++
 
     return new Promise((resolve, reject) => {
@@ -474,12 +462,6 @@ export class AppServerClient {
   async rpc(method: string, params: unknown): Promise<unknown> {
     const homeToken = this.codexHome.token()
     await this.ensureInitialized()
-    if (method === 'native-authentication/read') return this.authentication.read()
-    if (method === 'native-authentication/reconcile') return this.authentication.reconcile(params)
-    if (method === 'account/logout') return this.authentication.logout()
-    if (method === 'account/login/start') return this.authentication.start(params)
-    if (method === 'account/login/cancel') return this.authentication.cancel(params)
-    if (AUTHENTICATED_WRITES.has(method)) await this.authentication.assertCanSend()
     if (method === 'thread/generationMetadata/refresh') {
       this.recoverRolloutMetadata(readNonEmptyString(asRecord(params)?.threadId), null, true)
       return {}
@@ -583,7 +565,6 @@ export class AppServerClient {
   }
   dispose(): void {
     this.disposed = true
-    this.authentication.dispose()
     this.recovery.cancel()
     if (this.retryTimer) clearTimeout(this.retryTimer)
     this.retryTimer = null

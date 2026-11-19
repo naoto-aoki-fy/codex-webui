@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { CodexApiError } from '../api/codexErrors';
 import { getThreadDetail, interruptThreadTurn, resumeThread, startThread, startThreadTurn } from '../api/codexGateway';
 import { modelSelectionKey, parseModelSelection } from '../api/modelCapabilities';
+import { nativeWriteRejected } from '../api/nativeWriteOutcome';
 import type { CollaborationModeKind, ReasoningEffort, SpeedMode, UiMessage } from '../types/codex';
 import { createDesktopApprovals } from './desktopApprovals';
 import { createDesktopHistory } from './desktopHistory';
@@ -378,7 +379,7 @@ export function createDesktopTurns(deps: {
                 throw unknownError;
             const ambiguous = unknownError instanceof Error && /disconnected|outcome unknown/i.test(unknownError.message)
                 || unknownError instanceof CodexApiError && (['network_error', 'invalid_response'].includes(unknownError.code) || (unknownError.status ?? 0) >= 500);
-            if (generation === deps.lifecycleGeneration && submissionAttempted && !submissionAccepted && ambiguous) {
+            if (submissionAttempted && !submissionAccepted && ambiguous && !nativeWriteRejected(unknownError)) {
                 unknownOutcomeByThreadId.value = { ...unknownOutcomeByThreadId.value, [threadId]: true };
             }
             throw unknownError;

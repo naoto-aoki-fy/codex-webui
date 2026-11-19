@@ -1,26 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { createBackendAuthentication } from '../../composables/backendAuthentication'
+import type { createAccountSettings } from '../../composables/accountSettings'
 import type { LoginMethod } from '../../api/nativeAuthentication'
 import ComposerDropdown from '../content/ComposerDropdown.vue'
 import AccountUsage from './AccountUsage.vue'
 
 const props = defineProps<{
   epoch: number
-  auth: ReturnType<typeof createBackendAuthentication>
-  status: string
+  auth: ReturnType<typeof createAccountSettings>
   changeBlocked?: boolean
 }>()
 
-const state = computed(() => props.auth.state.value)
-const busy = computed(() => props.auth.busy.value || state.value.phase === 'checking')
+const account = computed(() => props.auth.status.value?.account)
+const busy = computed(() => props.auth.busy.value || props.auth.loading.value)
 const method = ref<LoginMethod>('chatgpt')
 const confirmed = ref(false)
-const canAcknowledge = computed(() =>
-  (state.value.phase === 'reconciliation' || state.value.phase === 'unknown')
-  && state.value.account !== undefined && !state.value.loginId,
-)
-watch(() => state.value.revision, () => { confirmed.value = false })
+watch([account, props.auth.challenge], () => { confirmed.value = false })
 </script>
 
 <template>
@@ -32,15 +27,21 @@ watch(() => state.value.revision, () => { confirmed.value = false })
       </button>
     </div>
     <p class="sidebar-settings-account-empty" role="status">
-      {{ status || (state.account ? 'Signed in to Codex' : 'Authentication is managed by the App Server.') }}
+      {{ account ? 'Signed in to Codex' : auth.loading.value ? 'Loading account details…' : 'Authentication is managed by the App Server.' }}
     </p>
-    <div v-if="state.account" class="sidebar-settings-account-empty">
-      <p>{{ state.account.email || state.account.type }}</p>
-      <p v-if="state.account.workspaceName">{{ state.account.workspaceName }}</p>
-      <p v-if="state.account.planType">{{ state.account.planType }}</p>
+    <div v-if="account" class="sidebar-settings-account-empty">
+      <p>{{ account.email || account.type }}</p>
+      <p v-if="account.workspaceName">{{ account.workspaceName }}</p>
+      <p v-if="account.planType">{{ account.planType }}</p>
     </div>
-    <div v-if="auth.error.value" class="sidebar-settings-account-error" role="alert">{{ auth.error.value }}</div>
-    <div v-if="state.phase === 'signedOut'" class="feature-panel native-authentication">
+    <div v-if="auth.readError.value" class="sidebar-settings-account-error" role="alert">{{ auth.readError.value }}</div>
+    <div v-if="auth.actionError.value" class="sidebar-settings-account-error" role="alert">{{ auth.actionError.value }}</div>
+    <div v-if="auth.challenge.value" class="feature-panel native-authentication">
+      <a :href="auth.challenge.value.url" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open native sign-in page</a>
+      <p v-if="auth.challenge.value.code">Device code <code>{{ auth.challenge.value.code }}</code></p>
+      <button type="button" :disabled="busy" @click="auth.cancelLogin">Cancel native sign-in</button>
+    </div>
+    <div v-else-if="auth.status.value?.requiresOpenaiAuth && account === null" class="feature-panel native-authentication">
       <ComposerDropdown v-model="method" :options="[
         { value: 'chatgpt', label: 'ChatGPT browser sign-in' },
         { value: 'chatgptDeviceCode', label: 'ChatGPT device-code sign-in' },
@@ -50,22 +51,7 @@ watch(() => state.value.revision, () => { confirmed.value = false })
         Start native sign-in
       </button>
     </div>
-    <div v-if="auth.challenge.value || state.loginId || canAcknowledge" class="feature-panel native-authentication">
-      <div v-if="auth.challenge.value">
-        <a :href="auth.challenge.value.url" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open native sign-in page</a>
-        <p v-if="auth.challenge.value.code">Device code <code>{{ auth.challenge.value.code }}</code></p>
-      </div>
-      <button v-if="state.loginId" type="button" :disabled="busy || state.phase === 'disconnected'" @click="auth.cancelLogin">
-        Cancel native sign-in
-      </button>
-      <template v-if="canAcknowledge">
-        <label><input v-model="confirmed" type="checkbox" :disabled="busy || changeBlocked"> I confirm this account and workspace.</label>
-        <button type="button" :disabled="!confirmed || busy || changeBlocked" @click="auth.acknowledge">
-          Use this account
-        </button>
-      </template>
-    </div>
-    <div v-if="state.phase === 'ready' && state.account" class="sidebar-settings-account-login">
+    <div v-else-if="account" class="sidebar-settings-account-login">
       <button class="sidebar-settings-account-login-button" type="button" :disabled="busy || changeBlocked" @click="auth.logout">
         Logout
       </button>

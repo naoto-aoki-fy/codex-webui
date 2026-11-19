@@ -15,9 +15,7 @@ async function setupRecovery(page) {
   const fixture = await setup(page, (body, _page, url) => {
     if (url.pathname.endsWith('/connection-profile')) return { json: { connectionProfile: 'recovery-A' } }
     if (body.method === 'account/read') return { json: { result: { account: { type: 'apiKey' }, requiresOpenaiAuth: false } } }
-    if (body.method === 'native-authentication/read') return { json: { result: { phase: 'ready', blocking: false, revision: 1 } } }
   }, false)
-  fixture.emit('native-authentication/state', { phase: 'ready', blocking: false, revision: 1 })
   return fixture
 }
 async function openSettings(page) {

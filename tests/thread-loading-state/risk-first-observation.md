@@ -95,7 +95,7 @@ Performance: one native write, existing native settings event and no history
 reload for completion; one explicit requirements read, no additional connection,
 polling or startup calls. Live permission-effect verification NOT RUN.
 
-### Native managed ChatGPT sign-in and automatic account verification
+### Native managed ChatGPT sign-in
 
 Use the [account controls acceptance test](../accounts-feedback-observability/accounts-panel-codex-login-callback-modal.md).
 The state and wire guarantees are described in the [native account guide](../../docs/native-authentication-state.md).

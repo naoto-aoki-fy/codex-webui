@@ -1,25 +1,32 @@
-# Native Codex account controls and submission safety
+# Native Codex account controls and submission
 
-Use a disposable App Server and account, or run the credential-free
-`scripts/test-risk-native-authentication.cjs` fixture against the current dev
-server on port 4173. Use light and dark themes.
+Use a disposable, independently managed App Server and account, or run
+`PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-native-authentication.cjs`
+against this checkout's dev server on `http://127.0.0.1:4173`. The script uses
+intercepted native responses. Record the Codex version for a live run. Check light
+and dark themes at 1280×900, 375×812 and 768×1024.
 
-1. In a signed-out account, open Settings → Codex account. Choose ChatGPT browser
-   sign-in, confirm, and start. The UI shows the native authorization link and
-   pauses sends. Reload, open Settings and cancel the identified attempt. Expect
-   no repeated login and no authorization link from the previous document.
-2. Repeat using device-code sign-in. Complete the matching login and verify the
-   dialog displays the account and workspace. An unrelated completion does not
-   enable sends. The link and code disappear on acknowledgment.
-3. Change only the native workspace ID. The composer blocks and the current
-   account needs explicit confirmation. Review the status, confirm this account
-   and workspace, then send one test chat after verification.
-4. While idle, click Logout. Expect one native logout, signed-out status, and
-   disabled submission. A lost response keeps the guard closed until verified
-   and explicitly acknowledged.
-5. Inspect the Network log. Opening Settings adds no account or login-policy
-   requests. The legacy token RPC returns forbidden. Native account and login
-   replies expose only display metadata or the sign-in challenge.
+1. Start signed out and open a test conversation. Submit a prompt before opening
+   Settings. Expect one native turn request and a visible native authentication
+   error if the server rejects it. Expect no account read or verification status
+   during startup or submission.
+2. Open Settings → Codex account. Expect an on-demand display-only account read.
+   Choose ChatGPT browser sign-in, confirm and start. Expect a native authorization
+   link. Close Settings and submit again while sign-in is pending. Expect one
+   native request and the App Server's response. Reopen Settings and cancel.
+   Expect one native cancellation with the original login ID and the link to clear.
+3. Start device-code sign-in. Expect the native link and code. A completion for a
+   different login leaves both visible. A matching failed completion clears them
+   and displays the native error. Retry deliberately and complete the matching
+   login successfully. Expect the display name and signed-in account.
+4. While idle, click Logout. Expect one native logout and a signed-out account.
+   Close Settings, disconnect and reconnect, then submit again. Expect no
+   verification read or replay and a new native request on submission. A failed
+   login or logout RPC should display its error in Account settings.
+5. Use the bridge fixture to verify that legacy token/session RPCs are blocked
+   and that account and login replies expose only display metadata or the native
+   sign-in challenge. Browser fixture screenshots appear under
+   `output/playwright/native-account-<width>-<theme>.png`.
 
-Cancel any remaining fixture sign-in, discard the disposable browser context,
-and restore the original theme. Use disposable credentials for live testing.
+Cancel any remaining disposable sign-in, close the browser context and restore
+the original theme. Stop only disposable live test processes.

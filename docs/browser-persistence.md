@@ -38,7 +38,6 @@ The rows below describe earlier revisions. For current storage owners, see the
 | `thread-view-mode.v1`: project/chronological | same sidebar owners | global | UI preference; scalar last-writer wins. |
 | `collapsed-projects.v1`: project → boolean | `SidebarThreadTree.vue` | global/project | UI preference; whole-map last-writer may lose unrelated expansion changes. |
 | `sidebar-section-expansion.v1`: `{pinned,projects}` booleans | `SidebarThreadTree.vue` | global | UI preference; whole-record last-writer may lose unrelated expansion changes. |
-| `native-authentication-pending.v1`: obsolete latch | Previously cleared during startup | legacy + named profiles | Backend state now owns authentication readiness. |
 
 There is no production IndexedDB, sessionStorage, document.cookie API, or OPFS
 usage before this change. A server-issued authentication cookie is inventoried
