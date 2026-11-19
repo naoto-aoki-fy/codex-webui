@@ -10,7 +10,6 @@ export type ModelPreferences = {
   schemaVersion: 1
   connectionProfile?: string
   revision: number
-  initialized: boolean
   preferred: ModelSettings | null
   lastUsed: ModelSettings | null
   reasoningByModel: Record<string, string>
@@ -21,16 +20,10 @@ export type ModelPreferences = {
 export const preferenceModelKey = (providerId: string, modelId: string): string => JSON.stringify([providerId, modelId])
 
 export function emptyModelPreferences(): ModelPreferences {
-  return { schemaVersion: 1, revision: 0, initialized: false, preferred: null, lastUsed: null, reasoningByModel: {}, modelUsage: {} }
+  return { schemaVersion: 1, revision: 0, preferred: null, lastUsed: null, reasoningByModel: {}, modelUsage: {} }
 }
 
 export type ModelPreferenceUpdate = {
   preferred?: ModelSettings
   reasoning?: { providerId: string; modelId: string; effort: string }
-}
-
-export type LegacyModelPreferences = {
-  preferred?: ModelSettings
-  reasoningByModel?: Record<string, string>
-  // Legacy selection order is not evidence of accepted turns; never invent counts or dates.
 }

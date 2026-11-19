@@ -9,7 +9,7 @@ No database or credentials are required to read preferences.
 
 ## State and defaults
 
-Schema version 1 stores a monotonic revision, an initialization marker,
+Schema version 1 stores a monotonic revision,
 `preferred` settings, `lastUsed` settings, per-provider/model reasoning choices,
 and model usage entries. Settings contain provider ID, model ID, reasoning effort
 (including an explicitly unspecified empty string), and collaboration mode.
@@ -18,9 +18,9 @@ including IDs containing `/`. Entries also include the two IDs explicitly.
 
 `lastUsed` means the last successfully acknowledged `turn/start`, not the last
 selector interaction or a completed response. New conversations restore it ahead
-of an unused `preferred` choice. Before the first accepted turn, migrated or
-explicitly selected `preferred` settings supply the default. An unsent explicit
-Home selection remains responsive in that browser; it does not increment usage.
+of an unused `preferred` choice. Before the first accepted turn, explicitly
+selected `preferred` settings supply the default. An unsent Home selection
+remains responsive in that browser and leaves usage counts unchanged.
 Per-model effort changes are saved as individual patches. An accepted turn saves
 the effective submitted effort and mode alongside the model.
 
@@ -49,7 +49,6 @@ Methods use the existing authenticated `POST /codex-api/rpc` envelope:
 | --- | --- | --- |
 | `model-preferences/read` | none | Current versioned snapshot and Connection Profile |
 | `model-preferences/update` | `{ preferred?: ModelSettings, reasoning?: { providerId, modelId, effort } }` | Snapshot after field patches |
-| `model-preferences/migrate` | `{ preferred?, reasoningByModel? }` | First initialization, or unchanged authoritative snapshot |
 | `turn/start` | Existing native turn parameters | Existing turn result; backend records usage after acknowledgment |
 
 There is deliberately no browser-callable counter increment: acceptance of
@@ -94,30 +93,13 @@ can leave that turn absent from usage history; there is no durable acceptance
 outbox or cross-service transaction. Connection outages also cannot establish
 acceptance for turns with an unknown outcome, so those are not counted here.
 
-## Browser migration
-
-The browser captures legacy model and reasoning entries as migration input, not
-active global state. The backend profile is checked before migration. Old
-unqualified model IDs and the legacy `codex` reasoning namespace are bound to the
-configured provider when evidence is available. Unresolvable model identities are
-not guessed: migration reports an error and leaves the browser backup and backend
-initialization available for a later retry or accepted turn. Existing local entries remain available as migration backups; later
-thread-map saves omit global defaults once the backend is initialized.
-
-Migration checks `initialized` while holding the same file lock. Only the first
-initializer can seed settings; every later browser receives the authoritative
-snapshot. Even an empty migration marks initialization, so stale local data cannot
-be imported later. Legacy MRU arrays represented selections, so they do not create
-fictional usage counts or timestamps. Named profiles do not import unscoped
-legacy reasoning entries. Failed hydration never authorizes a preference write.
-
 ## Performance audit
 
-Steady-state startup adds one preference read, coalesced across concurrent callers;
-a new profile adds one migration request. Legacy migration may additionally read
-config to resolve unqualified provider identity. Ordinary model refresh/navigation
-does not reread persisted preferences. Reconnects read once per concurrent refresh
-window. Each explicit global choice or effort patch adds one write; an accepted
+Steady-state startup adds one preference read, coalesced across concurrent callers.
+Fresh profiles also use that single read and display catalog defaults until
+preferences are set. Ordinary model refresh and navigation use the loaded
+snapshot. Reconnects read once per concurrent refresh window. Each explicit
+global choice or effort patch adds one write. An accepted
 turn writes within its existing RPC and broadcasts once without a follow-up HTTP
 request per browser. Preference notifications do not schedule thread/history reads.
 
@@ -134,7 +116,7 @@ provider latency and multi-device network timings are not measured by fixture te
 
 Automated coverage includes storage recreation/restart, concurrent clients, profile
 and provider isolation, exact UTC counts/timestamps, duplicate recording, missing
-and corrupt files, future schemas, migration races, frontend restoration and
+and corrupt files, future schemas, frontend restoration and
 Home/thread isolation, notification ordering, pending writes, reconnects, and
 accepted-turn persistence failures. The full unit suite also exercises protected
 fork/transfer and historical generation-metadata behavior.

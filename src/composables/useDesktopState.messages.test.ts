@@ -1716,7 +1716,7 @@ describe('shared catalog ownership and deferred submission characterization', ()
         const request = JSON.parse(init.body as string)
         // Preference hydration/writes are independent of the exactly-once turn frame.
         if (request.method.startsWith('model-preferences/')) return Promise.resolve(new Response(JSON.stringify({ result: {
-          schemaVersion: 1, revision: 1, initialized: true, preferred: null, lastUsed: null, reasoningByModel: {}, modelUsage: {},
+          schemaVersion: 1, revision: 1, preferred: null, lastUsed: null, reasoningByModel: {}, modelUsage: {},
         } })))
         requests.push(request)
         return submitted.promise

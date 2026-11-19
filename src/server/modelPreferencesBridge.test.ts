@@ -36,7 +36,7 @@ const preferred = { providerId: 'openai', modelId: 'A', reasoningEffort: 'high',
 it('serves profile-scoped preferences without contacting the external server and broadcasts updates to both clients', async () => {
   const a = vi.fn(), b = vi.fn(), offA = bridge.subscribeNotifications(a), offB = bridge.subscribeNotifications(b)
   try {
-    expect((await request('model-preferences/read')).result.initialized).toBe(false)
+    expect((await request('model-preferences/read')).result.preferred).toBeNull()
     const updated = await request('model-preferences/update', { preferred })
     expect(updated.result.connectionProfile).toBe('legacy')
     expect(updated.result.preferred).toEqual(preferred)
@@ -44,7 +44,7 @@ it('serves profile-scoped preferences without contacting the external server and
     expect(a).toHaveBeenCalledWith(expect.objectContaining({ method: 'model-preferences/changed', params: updated.result }))
     expect(b).toHaveBeenCalledWith(expect.objectContaining({ params: updated.result }))
     expect(rpc).not.toHaveBeenCalled()
-    expect((await request('model-preferences/migrate', { preferred: { ...preferred, modelId: 'stale' } })).result.preferred).toEqual(preferred)
+    expect((await request('model-preferences/read')).result.preferred).toEqual(preferred)
   } finally { offA(); offB() }
 })
 

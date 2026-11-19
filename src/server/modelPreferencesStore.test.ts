@@ -38,19 +38,6 @@ it('serializes concurrent clients and field patches without losing increments or
   expect(await b.read()).toEqual(state)
 })
 
-it('claims migration once, atomically, without fabricating usage from browser selection order', async () => {
-  const store = new ModelPreferencesStore()
-  const results = await Promise.all([
-    store.migrate({ preferred: settings('A'), modelUsage: { fake: { usageCount: 200 } } }),
-    new ModelPreferencesStore().migrate({ preferred: settings('B') }),
-  ])
-  expect(results[0]).toEqual(results[1])
-  expect(results[0]?.preferred).toEqual(settings('A'))
-  expect(results[0]?.modelUsage).toEqual({})
-  await store.recordUsage(settings('C'), 't', '1')
-  expect((await store.migrate({ preferred: settings('stale') })).lastUsed).toEqual(settings('C'))
-})
-
 it('keeps last successful settings distinct from an unused preference change', async () => {
   const store = new ModelPreferencesStore()
   await store.recordUsage(settings('A'), 't', '1')
@@ -65,7 +52,7 @@ it('isolates connection profiles and provider/model identities including IDs con
   await store.recordUsage(settings('c', 'a/b'), 't', '2')
   expect(Object.keys((await store.read()).modelUsage)).toHaveLength(2)
   vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'other')
-  expect((await store.read()).initialized).toBe(false)
+  expect((await store.read()).preferred).toBeNull()
   await store.recordUsage(settings('other'), 't', '1')
   vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'legacy')
   expect((await store.read()).lastUsed?.modelId).toBe('c')
@@ -73,7 +60,7 @@ it('isolates connection profiles and provider/model identities including IDs con
 
 it.each(['{invalid', 'null', '[]', '{"schemaVersion":1,"preferred":{},"modelUsage":{"bad":{}}}'])('recovers missing/corrupt data safely: %s', async raw => {
   const store = new ModelPreferencesStore()
-  expect((await store.read()).initialized).toBe(false)
+  expect((await store.read()).preferred).toBeNull()
   await writeFile(modelPreferencesPath(), raw)
   expect((await store.read()).lastUsed).toBeNull()
   await store.recordUsage(settings(), 't', '1')
@@ -88,7 +75,7 @@ it('preserves future schemas and rejects invalid writes without corrupting valid
   expect(await readFile(modelPreferencesPath(), 'utf8')).toContain('"future":true')
   await writeFile(modelPreferencesPath(), '{}')
   await expect(store.update({ preferred: { modelId: 'A' } })).rejects.toThrow('Invalid')
-  expect((await store.read()).initialized).toBe(false)
+  expect((await store.read()).preferred).toBeNull()
 })
 
 it('records accepted effective request settings exactly once, including collaboration mode overrides', async () => {

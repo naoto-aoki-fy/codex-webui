@@ -1,10 +1,10 @@
 import { ref } from 'vue'
 import { reloadForConnectionProfile } from '../utils/browserConnectionProfile'
 import { rpcCall } from '../api/codexRpcClient'
-import { emptyModelPreferences, preferenceModelKey, type LegacyModelPreferences, type ModelPreferences, type ModelPreferenceUpdate } from '../modelPreferences'
+import { emptyModelPreferences, preferenceModelKey, type ModelPreferences, type ModelPreferenceUpdate } from '../modelPreferences'
 
 /** One snapshot and one in-flight hydration per desktop lifecycle; notifications carry revisions. */
-export function createBackendModelPreferences(legacy: () => LegacyModelPreferences | Promise<LegacyModelPreferences>, apply: (state: ModelPreferences) => void) {
+export function createBackendModelPreferences(apply: (state: ModelPreferences) => void) {
   const state = ref(emptyModelPreferences())
   const loading = ref(false)
   const error = ref('')
@@ -33,11 +33,9 @@ export function createBackendModelPreferences(legacy: () => LegacyModelPreferenc
     const owner = lifecycle
     refreshPromise = (async () => {
       try {
-        let next = await rpcCall<ModelPreferences>('model-preferences/read')
+        const next = await rpcCall<ModelPreferences>('model-preferences/read')
         if (disposed || owner !== lifecycle) return
         if (next.connectionProfile && reloadForConnectionProfile(next.connectionProfile)) { disposed = true; return }
-        if (!next.initialized) next = await rpcCall<ModelPreferences>('model-preferences/migrate', await legacy())
-        if (disposed || owner !== lifecycle) return
         observe(next)
         hydrated = true
         error.value = ''
@@ -47,12 +45,15 @@ export function createBackendModelPreferences(legacy: () => LegacyModelPreferenc
     })()
     return refreshPromise
   }
+  async function ensureHydrated() {
+    if (!hydrated) await refresh()
+  }
   function update(patch: ModelPreferenceUpdate) {
     const owner = lifecycle
     pending.add(patch)
     writes = writes.then(async () => {
       if (disposed || owner !== lifecycle) return
-      if (!hydrated) await refresh()
+      await ensureHydrated()
       if (disposed || owner !== lifecycle) return
       // Never write on a failed hydration: that could mask authoritative saved data.
       if (!hydrated) throw new Error('Model preferences are unavailable; reconnect before saving changes')
@@ -68,7 +69,7 @@ export function createBackendModelPreferences(legacy: () => LegacyModelPreferenc
     return writes
   }
   return {
-    state, loading, error, observe, refresh, update, settled: () => writes,
+    state, loading, error, observe, refresh, ensureHydrated, update, settled: () => writes,
     resume: () => { disposed = false },
     dispose: () => { disposed = true; lifecycle++; refreshPromise = null; pending.clear(); loading.value = false; hydrated = false },
   }
