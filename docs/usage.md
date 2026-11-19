@@ -2,8 +2,16 @@
 
 Build and startup commands are in the [README](../README.md#quick-start).
 Start Codex independently; see the [connection guide](external-app-server.md) for
-endpoint precedence, SSH tunnels, remote path ownership and compatibility flags.
+endpoint precedence, SSH tunnels, remote path ownership and supported capabilities.
 For development and verification use the [development guide](development.md).
+
+## WebUI version upgrades
+
+WebUI uses the current storage formats and leaves retired settings and files in
+place. Automatic upgrades from older WebUI formats are unsupported. Use
+**Settings → General → Draft Recovery** to recover saved drafts from earlier
+releases, including drafts restored by Fork and Revert. See the
+[browser storage guide](browser-persistence.md#draft-ownership-after-changes).
 
 ## Browser access
 

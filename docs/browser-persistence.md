@@ -57,6 +57,11 @@ is unaffected. Legacy profile data must never be imported into a named profile.
 Older open application versions cannot cooperate with a new persistence protocol;
 retained legacy inputs must not be destructively consumed.
 
+Current releases leave retired browser records in place. Home model, reasoning
+and collaboration preferences come from the profile's backend store. Browser
+model and mode records apply to individual threads. Explicit draft recovery
+can still copy historical drafts that contain unsent user content.
+
 ## Draft ownership after changes
 
 Drafts use profile-scoped `thread-draft.v2.<encoded thread>.<tab ID>.<writer ID>`

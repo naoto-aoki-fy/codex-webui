@@ -28,7 +28,7 @@ import { groupThreadsByProject, UNASSIGNED_PROJECT } from '../utils/desktopProje
 import type { Project } from '../server/protocol/0.167.2/v2/Project'
 import { clientMessageId } from '../utils/clientMessageId'
 import { readPlanUpdate, asRecord, readString, readNumber, readThreadTokenUsageUpdate, extractThreadIdFromNotification, readTurnErrorMessage, readNotificationErrorState, readTurnActivity, liveReasoningMessageId, readReasoningStartedItemId, readReasoningDelta, readReasoningSectionBreakMessageId, readReasoningCompletedId, readAgentMessageStartedId, readAgentMessageDelta, readAgentMessageCompleted, readCompletedImageView, readCommandOutputDelta, isAgentContentEvent, type TurnActivityState } from './desktopNotificationReaders'
-import { NEW_THREAD_MODEL_CONTEXT, normalizeStoredModelId, createStringKeyedRecord, cloneStringKeyedRecord, omitStringKeyedRecordKey, pruneThreadContextStateMap, isNewThreadContextId, toThreadContextId, loadSelectedModelMap, readSelectedModel, saveSelectedModelMap, loadSelectedCollaborationModeMap, readSelectedCollaborationMode, writeSelectedCollaborationModeForContext, saveSelectedCollaborationModeMap } from './desktopStatePersistence'
+import { NEW_THREAD_MODEL_CONTEXT, normalizeStoredModelId, createStringKeyedRecord, cloneStringKeyedRecord, omitStringKeyedRecordKey, pruneThreadContextStateMap, isNewThreadContextId, toThreadContextId, loadSelectedModelMap, saveSelectedModelMap, loadSelectedCollaborationModeMap, readSelectedCollaborationMode, writeSelectedCollaborationModeForContext, saveSelectedCollaborationModeMap } from './desktopStatePersistence'
 import { areStringArraysEqual, areMessageArraysEqual, normalizeMessageText, isOptimisticUserMessage, upsertMessage } from '../utils/desktopMessageReconciliation'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { formatTurnDuration, parseIsoTimestamp } from '../utils/turnTiming'
@@ -216,7 +216,7 @@ export function useDesktopState() {
   const storedModelMap = loadSelectedModelMap()
   const storedCollaborationMap = loadSelectedCollaborationModeMap()
   const selectedCollaborationModeByContext = ref<Record<string, CollaborationModeKind>>(
-    Object.fromEntries(Object.entries(storedCollaborationMap).filter(([key]) => key !== '__new-thread__')),
+    { ...storedCollaborationMap },
   )
   const selectedModelIdByContext = ref<Record<string, string>>(Object.fromEntries(
     Object.entries(storedModelMap).filter(([key]) => !key.startsWith('__new-thread')),
@@ -261,9 +261,10 @@ export function useDesktopState() {
 
   let savedThreadModelMap = storedModelMap
   let savedCollaborationMap = storedCollaborationMap
-  function saveCollaborationMap(map: Record<string, CollaborationModeKind>): void {
+  function saveThreadCollaborationModes(): void {
+    const map = Object.fromEntries(Object.entries(selectedCollaborationModeByContext.value).filter(([id]) => !isNewThreadContextId(id)))
     saveSelectedCollaborationModeMap(map, savedCollaborationMap)
-    savedCollaborationMap = { ...map }
+    savedCollaborationMap = map
   }
 
   function saveThreadModelChoice(context: string, model: string): void {
@@ -615,7 +616,7 @@ export function useDesktopState() {
     // Shared preferences may update; navigation and draft payloads never do.
     selectedModelIdByContext.value = { ...Object.fromEntries(Object.entries(selectedModelIdByContext.value).filter(([key]) => key.startsWith('__new-thread'))),
       ...Object.fromEntries(Object.entries(models).filter(([key]) => !key.startsWith('__new-thread'))) }
-    selectedCollaborationModeByContext.value = { ...Object.fromEntries(Object.entries(modes).filter(([key]) => key !== '__new-thread__')),
+    selectedCollaborationModeByContext.value = { ...modes,
       ...(selectedCollaborationModeByContext.value['__new-thread__'] ? { '__new-thread__': selectedCollaborationModeByContext.value['__new-thread__'] } : {}) }
     savedThreadModelMap = models
     savedCollaborationMap = modes
@@ -654,7 +655,7 @@ export function useDesktopState() {
     const contextId = isNewThreadContextId(toThreadContextId(threadId)) ? NEW_THREAD_MODEL_CONTEXT : toThreadContextId(threadId)
     const automatic = automaticModelByContext.value[contextId]
     if (automatic !== undefined) return automatic
-    return normalizeStoredModelId(selectedModelIdByContext.value[contextId]) || readSelectedModel(selectedModelIdByContext.value, threadId).trim()
+    return normalizeStoredModelId(selectedModelIdByContext.value[contextId])
   }
 
   function ensureAvailableModelIds(...modelIds: string[]): void {
@@ -690,9 +691,11 @@ export function useDesktopState() {
     const currentProvider = effectiveThreadProviders.get(threadId) || resolveSelectionProvider(readModelIdForThread(threadId))
     const requestedProvider = resolveSelectionProvider(requested, currentProvider)
     const model = modelSelectionKey(requestedProvider, parseModelSelection(requested).model)
-    const context = isNewThreadContextId(toThreadContextId(threadId)) ? NEW_THREAD_MODEL_CONTEXT : toThreadContextId(threadId)
+    const threadContext = toThreadContextId(threadId)
+    const isNewThread = isNewThreadContextId(threadContext)
+    const context = isNewThread ? NEW_THREAD_MODEL_CONTEXT : threadContext
     const next = cloneStringKeyedRecord(selectedModelIdByContext.value)
-    if (!isNewThreadContextId(toThreadContextId(threadId)) && (!currentProvider || !requestedProvider || currentProvider !== requestedProvider)) {
+    if (!isNewThread && (!currentProvider || !requestedProvider || currentProvider !== requestedProvider)) {
       blockedProviderContext.value = threadId
       error.value = currentProvider && requestedProvider
         ? 'Fork this conversation with Portable Transfer to use a different model provider.'
@@ -703,16 +706,20 @@ export function useDesktopState() {
     if (error.value === blockedProviderNotice.value) error.value = ''
     blockedProviderContext.value = ''
     blockedProviderNotice.value = ''
-    explicitModelContexts.add(context)
     ++modelRefreshVersion
     automaticModelByContext.value = omitStringKeyedRecordKey(automaticModelByContext.value, context)
-    if (model) { next[context] = model; if (isNewThreadContextId(toThreadContextId(threadId))) next[NEW_THREAD_MODEL_CONTEXT] = model }
+    if (model) next[context] = model
     else delete next[context]
     selectedModelIdByContext.value = next
     ensureAvailableModelIds(model)
-    saveThreadModelChoice(context, model)
-    persistExplicitModelContexts()
-    if (isNewThreadContextId(toThreadContextId(threadId))) { newThreadModelEdited = true; saveGlobalChoice(threadId) }
+    if (isNewThread) {
+      newThreadModelEdited = true
+      saveGlobalChoice(threadId)
+    } else {
+      explicitModelContexts.add(context)
+      saveThreadModelChoice(context, model)
+      persistExplicitModelContexts()
+    }
   }
 
   function setSelectedModelId(modelId: string): void {
@@ -794,8 +801,12 @@ export function useDesktopState() {
       contextId,
       nextMode,
     )
-    if (isNewThreadContextId(contextId)) { newThreadModeEdited = true; saveGlobalChoice('') }
-    saveCollaborationMap(Object.fromEntries(Object.entries(selectedCollaborationModeByContext.value).filter(([key]) => key !== '__new-thread__')))
+    if (isNewThreadContextId(contextId)) {
+      newThreadModeEdited = true
+      saveGlobalChoice('')
+    } else {
+      saveThreadCollaborationModes()
+    }
   }
 
   function setSelectedCollaborationModeForThread(threadId: string, mode: CollaborationModeKind): void {
@@ -808,8 +819,12 @@ export function useDesktopState() {
     if (threadId.trim() === selectedThreadId.value) {
       selectedCollaborationMode.value = nextMode
     }
-    if (isNewThreadContextId(toThreadContextId(threadId))) { newThreadModeEdited = true; saveGlobalChoice(threadId) }
-    saveCollaborationMap(Object.fromEntries(Object.entries(selectedCollaborationModeByContext.value).filter(([key]) => key !== '__new-thread__')))
+    if (isNewThreadContextId(toThreadContextId(threadId))) {
+      newThreadModeEdited = true
+      saveGlobalChoice(threadId)
+    } else {
+      saveThreadCollaborationModes()
+    }
   }
 
   function setCodexRateLimit(nextSnapshot: UiRateLimitSnapshot | null): void {
@@ -820,18 +835,15 @@ export function useDesktopState() {
     return findReasoningModel(readModelIdForThread(threadId))
   }
 
-  function reasoningPreferenceKey(threadId: string): string {
-    const selection = parseModelSelection(readModelIdForThread(threadId))
-    return JSON.stringify([selection.provider || 'codex', selection.model])
-  }
-
   function readReasoningEffortForThread(threadId: string): ReasoningEffort | '' {
     const last = backendPreferences.state.value.lastUsed
-    const selection = parseModelSelection(readModelIdForThread(threadId))
+    const modelId = readModelIdForThread(threadId)
+    const { model } = parseModelSelection(modelId)
+    const provider = resolveSelectionProvider(modelId)
     const saved = isNewThreadContextId(toThreadContextId(threadId)) && !newThreadModelEdited && !newThreadEffortEdited
-      && last?.providerId === selection.provider && last?.modelId === selection.model
-      ? last.reasoningEffort : reasoningByModel.value[reasoningPreferenceKey(threadId)]
-    return resolveReasoningEffort(reasoningModelForThread(threadId), saved)
+      && last?.providerId === provider && last?.modelId === model
+      ? last.reasoningEffort : reasoningByModel.value[preferenceModelKey(provider, model)]
+    return resolveReasoningEffort(findReasoningModel(modelId), saved)
   }
 
   function readReasoningOptionsForThread(threadId: string) {
@@ -845,13 +857,13 @@ export function useDesktopState() {
     if (!modelId) return
     const resolved = resolveReasoningEffort(reasoningModelForThread(threadId), effort)
     if (!resolved) return
-    if (reasoningByModel.value[reasoningPreferenceKey(threadId)] === resolved) return
-    if (isNewThreadContextId(toThreadContextId(threadId))) newThreadEffortEdited = true
-    reasoningByModel.value[reasoningPreferenceKey(threadId)] = resolved
-    const selection = parseModelSelection(modelId)
+    const { model } = parseModelSelection(modelId)
     const provider = resolveSelectionProvider(modelId)
-    if (provider) void backendPreferences.update({ reasoning: { providerId: provider, modelId: selection.model, effort: resolved } })
-
+    const key = preferenceModelKey(provider, model)
+    if (reasoningByModel.value[key] === resolved) return
+    if (isNewThreadContextId(toThreadContextId(threadId))) newThreadEffortEdited = true
+    reasoningByModel.value[key] = resolved
+    if (provider) void backendPreferences.update({ reasoning: { providerId: provider, modelId: model, effort: resolved } })
   }
 
   async function updateSelectedSpeedMode(mode: SpeedMode): Promise<void> {
@@ -934,15 +946,6 @@ export function useDesktopState() {
       }
       publication.publish(catalog.models.map(entry => entry.modelProvider === defaultProvider && config.model
         ? { ...entry, providerDefaultModel: config.model } : entry))
-      if (defaultProvider) {
-        for (const entry of catalog.models) {
-          if (entry.modelProvider !== defaultProvider) continue
-          const id = entry.id?.trim() || entry.model?.trim() || ''
-          const key = JSON.stringify([defaultProvider, id])
-          const legacy = reasoningByModel.value[JSON.stringify(['codex', id])]
-          if (!(key in reasoningByModel.value) && legacy) reasoningByModel.value[key] = legacy
-        }
-      }
       selectedSpeedMode.value = config.speedMode
     } catch (error) {
       if (generation !== connection.lifecycleGeneration) return
@@ -2651,8 +2654,6 @@ export function useDesktopState() {
       const source = flattenThreads(sourceGroups.value).find(row => row.id === sourceId)
       insertOptimisticThread(result.threadId, result.cwd || source?.cwd || '', toForkedThreadTitle(source?.title || 'Forked conversation'), result.projectId)
       setThreadModelId(result.threadId, result.model || readModelIdForThread(sourceId), result.modelProvider)
-      // Native forks are ordinary existing threads; the
-      // legacy send-time provider-switch workaround must not run for these IDs.
       setSelectedThreadId(result.threadId)
       await loadThreads()
       await history.loadMessages(result.threadId)
