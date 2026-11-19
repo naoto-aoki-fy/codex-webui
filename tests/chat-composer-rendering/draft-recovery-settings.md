@@ -17,8 +17,8 @@ saved under `output/playwright/draft-recovery-*`.
 
 ## Placement, discovery and empty state
 
-1. With saved drafts from another tab and legacy v1 records, type a new current
-   draft. The composer must contain no **Recover saved drafts** entry or recovery
+1. With saved drafts from another tab and legacy v1 records, open the conversation
+   in a fresh tab. Confirm the composer starts empty, then type a new draft. The composer must contain no **Recover saved drafts** entry or recovery
    empty state. Actual persistence-failure warnings must remain visible.
 2. Open **Settings**. **General** shows the available draft count. Choose
    **General → Draft Recovery → Recover saved drafts (N)**. The list includes

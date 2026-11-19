@@ -18,7 +18,7 @@ async function queueBoundaries(browser) {
     const results = []
     const assert = (condition, message) => { if (!condition) throw new Error(message) }
     for (const mode of ['commit', 'abort-after-success', 'quota', 'request-error', 'wrong-client', 'clear-failure']) {
-      await records.updateBrowserRecord(key, () => ({}), () => ({}))
+      await records.updateBrowserRecord(key, {}, () => ({}))
       const nativePut = IDBObjectStore.prototype.put, nativeTransaction = IDBDatabase.prototype.transaction
       const events = [], scope = effectScope(), selected = ref('boundary-thread'), epoch = ref(0)
       let rpcCount = 0, sentClient = '', delayedReply

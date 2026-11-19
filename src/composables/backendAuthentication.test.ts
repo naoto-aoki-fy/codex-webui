@@ -1,7 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { createBackendAuthentication } from './backendAuthentication'
 import { rpcCall } from '../api/codexRpcClient'
-import { removeLegacyNativeAuthenticationPending } from '../utils/legacyNativeAuthenticationStorage'
 vi.mock('../api/codexRpcClient', () => ({ rpcCall: vi.fn() }))
 afterEach(() => vi.unstubAllGlobals())
 const ready = { phase: 'ready', blocking: false, revision: 2 } as const
@@ -29,20 +28,6 @@ it('fails closed on unavailable or malformed state and retires disposed reads', 
   vi.mocked(rpcCall).mockImplementationOnce(() => new Promise(r => resolve = r) as any)
   const refresh = browser.refresh(); browser.dispose(); resolve(ready); await refresh
   expect(browser.blocking.value).toBe(true)
-})
-it('removes stale legacy/profile latches without affecting unrelated settings or sending', async () => {
-  const legacy = 'codex-web-local.native-authentication-pending.v1'
-  const entries = new Map([[legacy,'1'],[`codex-profile.other.${legacy}`,'1'],['theme','dark'],['draft','keep'],['other.native-authentication-pending.v1','keep']])
-  vi.stubGlobal('window', { localStorage: { get length() { return entries.size }, key: (i: number) => [...entries.keys()][i] ?? null,
-    getItem: (k: string) => entries.get(k) ?? null, removeItem: (k: string) => entries.delete(k) } })
-  removeLegacyNativeAuthenticationPending()
-  expect([...entries]).toEqual([['theme','dark'],['draft','keep'],['other.native-authentication-pending.v1','keep']])
-  const browser = createBackendAuthentication(); vi.mocked(rpcCall).mockResolvedValue(ready)
-  await browser.refresh(); expect(browser.blocking.value).toBe(false)
-})
-it('ignores inaccessible browser storage', () => {
-  vi.stubGlobal('window', { get localStorage() { throw new Error('restricted') } })
-  expect(removeLegacyNativeAuthenticationPending).not.toThrow()
 })
 it('hydrates checking state on reload and invalidates caches before publishing newer readiness',async()=>{
  const order:string[]=[],browser=createBackendAuthentication(()=>order.push(`invalidate:${browser.state.value.phase}`))

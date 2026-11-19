@@ -18,13 +18,14 @@ it('preserves attachment and skill drafts within their connection profile', asyn
   expect(loadPersistedDraftForThread('other')).toBeNull()
 })
 
-it('reads the existing fork recovery key and tolerates unavailable storage', async () => {
+it('exposes historical fork drafts only in explicit recovery and tolerates unavailable storage', async () => {
   vi.stubGlobal('window', { location: { href: 'http://fixture/' }, localStorage: {
     getItem: (key: string) => key.includes('thread-fork-recovery') ? JSON.stringify('Restored prompt') : null,
   } })
   const drafts = await import('./composerDraftStorage')
   const { loadPersistedDraftForThread } = drafts
-  expect(loadPersistedDraftForThread('thread')?.text).toBe('Restored prompt')
+  expect(loadPersistedDraftForThread('thread')).toBeNull()
+  expect(drafts.recoverableDrafts('thread').map(({ draft }) => draft.text)).toEqual(['Restored prompt'])
   vi.stubGlobal('window', { get localStorage() { throw new Error('Unavailable') } })
   expect(loadPersistedDraftForThread('thread')).toBeNull()
   expect(drafts.draftStorageError).toContain('Existing saved drafts were not removed')

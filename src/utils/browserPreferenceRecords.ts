@@ -1,8 +1,6 @@
-/** Independent keys avoid whole-map lost updates without async preference APIs.
- * Empty strings are tombstones overriding retained legacy migration inputs.
- */
-export function readPreferenceRecords(base: string, legacy: Record<string, string>): Record<string, string> {
-  const result = Object.assign(Object.create(null), legacy) as Record<string, string>
+/** Independent keys keep simultaneous edits to different contexts separate. */
+export function readPreferenceRecords(base: string): Record<string, string> {
+  const result = Object.create(null) as Record<string, string>
   try {
     const storage = window.localStorage
     const prefix = `${base}.`
@@ -12,13 +10,10 @@ export function readPreferenceRecords(base: string, legacy: Record<string, strin
       try {
         const id = decodeURIComponent(key.slice(prefix.length))
         const value: unknown = JSON.parse(storage.getItem(key) || 'null')
-        if (typeof value === 'string') {
-          if (value) result[id] = value
-          else delete result[id]
-        }
+        if (typeof value === 'string' && value) result[id] = value
       } catch { /* A damaged entry does not hide other preferences. */ }
     }
-  } catch { /* Legacy fallback when storage is unavailable. */ }
+  } catch { /* Preferences are optional when storage is unavailable. */ }
   return result
 }
 

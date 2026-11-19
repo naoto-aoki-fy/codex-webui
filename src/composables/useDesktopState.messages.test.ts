@@ -10,6 +10,7 @@ vi.mock('./backendAuthentication', async importOriginal => {
   } }
 })
 import { useDesktopState } from './useDesktopState'
+import { loadSelectedModelMap } from './desktopStatePersistence'
 import { reasoningCatalog } from '../api/codexGateway'
 import type { ResumedThread, RpcNotification } from '../api/codexGateway'
 import type { UiMessage, UiThread } from '../types/codex'
@@ -1724,7 +1725,7 @@ describe('shared catalog ownership and deferred submission characterization', ()
       gateway.resumeThread.mockReturnValueOnce(resumed.promise)
       const key = (model: string) => `provider-model:${JSON.stringify(['openai', model])}`
       reasoningCatalog.value = [...a, ...b].map(model => ({ ...model, modelProvider: 'openai' }))
-      window.localStorage.setItem('codex-web-local.selected-model-by-context.v1', JSON.stringify({ [thread.id]: key('A') }))
+      window.localStorage.setItem(`codex-web-local.selected-model-by-context.v2.${encodeURIComponent(thread.id)}`, JSON.stringify(key('A')))
       const state = createState()
       state.setSelectedModelIdForThread(thread.id, 'A')
       state.setSelectedReasoningEffort('high', thread.id)
@@ -1796,7 +1797,7 @@ describe('new-thread preference context across deferred creation', () => {
         if (request.method === 'config/read') return Promise.resolve(new Response(JSON.stringify({ result: { config: { model: 'A' } } })))
         return submitted.promise
       }))
-      window.localStorage.setItem('codex-web-local.selected-model-by-context.v1', JSON.stringify({ [thread.id]: 'A' }))
+      window.localStorage.setItem(`codex-web-local.selected-model-by-context.v2.${encodeURIComponent(thread.id)}`, JSON.stringify('A'))
       const state = createState()
       state.setSelectedModelIdForThread(thread.id, 'A')
       state.setSelectedReasoningEffort('high', thread.id)
@@ -1816,7 +1817,7 @@ describe('new-thread preference context across deferred creation', () => {
       if (changeSelection) state.primeSelectedThread('other-thread')
       if (dispose) state.stopPolling()
       const beforeCompletionSelection = state.selectedThreadId.value
-      const savedModels = JSON.parse(window.localStorage.getItem('codex-web-local.selected-model-by-context.v1')!)
+      const savedModels = loadSelectedModelMap()
       const gatewayModel = creationModel.trim() || 'B'
       const model = gatewayModel
       const effort = model === 'D' ? 'high' : 'medium'
@@ -1840,7 +1841,7 @@ describe('new-thread preference context across deferred creation', () => {
       expect(window.localStorage.getItem(effortKey)).toBe(savedEfforts)
       expect(state.readReasoningEffortForThread(thread.id)).toBe('high')
       expect(state.readReasoningEffortForThread('__new-thread__')).toBe(changeDefault ? 'high' : 'medium')
-      const finalModels = JSON.parse(window.localStorage.getItem('codex-web-local.selected-model-by-context.v1')!)
+      const finalModels = loadSelectedModelMap()
       for (const [key, value] of Object.entries(savedModels)) expect(finalModels[key]).toBe(value)
       if (dispose) {
         expect(finalModels).toEqual(savedModels)

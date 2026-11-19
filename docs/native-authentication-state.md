@@ -104,8 +104,8 @@ a versioned backend snapshot. Older hydration responses and inspection results c
 overwrite newer verified state. All browsers apply this policy independently before
 enabling their composers; a browser inconsistency still cannot bypass backend guards.
 
-Authentication flags remain absent from localStorage. Startup migration deletes only
-the obsolete legacy/profile pending keys; unrelated preferences and drafts survive.
+Backend state drives the authentication gate. Obsolete browser pending keys stay
+in storage and have no effect on the gate.
 
 ## Diagnostics and explicit recovery
 
@@ -129,7 +129,7 @@ Automated regressions cover unchanged updates, coalesced bursts, superseding eve
 hydration/inspection ordering, automatic matching completion, pending ownership,
 changed user/workspace, signed-out/failed/ambiguous evidence, shared browsers,
 independent contexts, disconnects, final dispatch guards, cancellation races,
-completion before acknowledgment, restart limitations and legacy-key migration.
+completion before acknowledgment, restart limitations and ignored legacy keys.
 
 The CJS browser fixture `scripts/test-risk-native-authentication.cjs` runs the production
 state machine with simulated protocol responses and the real built UI. It exercises

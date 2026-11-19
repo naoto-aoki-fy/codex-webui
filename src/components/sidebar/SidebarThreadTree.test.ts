@@ -107,7 +107,8 @@ it('keeps Projects and Threads visible with stored section collapse preferences'
   const legacyKey = 'codex-web-local.sidebar-section-expansion.v1'
   const expansionKey = 'codex-web-local.sidebar-section-expansion.v2'
   const storage = new Map([
-    [legacyKey, JSON.stringify({ projects: false, pinned: false })],
+    [legacyKey, JSON.stringify({ projects: false, pinned: true })],
+    [`${expansionKey}.pinned`, JSON.stringify('0')],
     [`${expansionKey}.projects`, JSON.stringify('0')],
   ])
   vi.stubGlobal('window', {
@@ -237,7 +238,7 @@ it('persists folder mode and isolates collapse and Show more from a matching nat
   const projectKey = projectGroupKey(folderKey)
   const storage = new Map([
     [modeKey, 'project'],
-    ['codex-web-local.collapsed-projects.v1', JSON.stringify({ [folderKey]: true })],
+    [`codex-web-local.collapsed-projects.v2.${encodeURIComponent(folderKey)}`, JSON.stringify('1')],
   ])
   const listeners = new Set<(event: { key: string }) => void>()
   vi.stubGlobal('window', {

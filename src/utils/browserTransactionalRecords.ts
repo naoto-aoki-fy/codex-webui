@@ -12,8 +12,7 @@ function database(): Promise<IDBDatabase> {
   })
 }
 
-export async function readBrowserRecord<T>(name: string, legacy: () => T): Promise<T> {
-  if (typeof window === 'undefined') return legacy()
+export async function readBrowserRecord<T>(name: string, initial: T): Promise<T> {
   const db = await database()
   return new Promise<T>((resolve, reject) => {
     const tx = db.transaction('records', 'readonly')
@@ -21,12 +20,11 @@ export async function readBrowserRecord<T>(name: string, legacy: () => T): Promi
     tx.oncomplete = () => { db.close(); resolve(result) }
     tx.onabort = tx.onerror = () => { db.close(); reject(tx.error || new Error('Browser recovery read failed')) }
     const read = tx.objectStore('records').get(name)
-    read.onsuccess = () => { try { result = read.result === undefined ? legacy() : read.result } catch (error) { tx.abort(); reject(error) } }
+    read.onsuccess = () => { result = read.result === undefined ? initial : read.result }
   })
 }
 
-export async function updateBrowserRecord<T>(name: string, legacy: () => T, change: (current: T) => T): Promise<T> {
-  if (typeof window === 'undefined') return change(legacy())
+export async function updateBrowserRecord<T>(name: string, initial: T, change: (current: T) => T): Promise<T> {
   const db = await database()
   return new Promise<T>((resolve, reject) => {
     const tx = db.transaction('records', 'readwrite', { durability: 'strict' })
@@ -35,7 +33,7 @@ export async function updateBrowserRecord<T>(name: string, legacy: () => T, chan
     tx.onabort = tx.onerror = () => { db.close(); reject(tx.error || new Error('Browser recovery write failed')) }
     const store = tx.objectStore('records'), read = store.get(name)
     read.onsuccess = () => {
-      try { next = change(read.result === undefined ? legacy() : read.result); store.put(next, name) }
+      try { next = change(read.result === undefined ? initial : read.result); store.put(next, name) }
       catch (error) { tx.abort(); reject(error) }
     }
   })

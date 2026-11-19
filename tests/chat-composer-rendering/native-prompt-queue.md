@@ -88,7 +88,9 @@ matching independently managed App Server. Keep draft text distinct.
    The other thread's receipt must remain intact. No automatic replay is allowed.
 4. Repeat with `navigator.locks` unavailable (the same IndexedDB transaction path).
 5. Make IndexedDB unavailable or force transaction writes to fail. Queue add must fail before RPC
-   and preserve the draft. Corrupt existing receipts must also block add.
+   and preserve the draft. Corrupt existing IndexedDB receipts must also block add.
+6. In an isolated fixture, seed a receipt only in localStorage and reload. The
+   current queue reads IndexedDB only. Confirm the localStorage bytes stay intact.
 
 Cleanup: Inspect queue/history before removing disposable receipts or threads.
 Never infer non-execution from an absent queue entry.

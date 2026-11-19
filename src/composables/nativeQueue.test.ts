@@ -1,24 +1,31 @@
 import {effectScope,ref} from 'vue'
-import {afterEach,expect,it,vi} from 'vitest'
+import {beforeEach,expect,it,vi} from 'vitest'
 import {createNativeQueue} from './nativeQueue'
 import {queueEntry,queuePage,queuedInput} from '../api/nativeQueue'
 
 // These controller tests mock the atomic-storage boundary; the browser fixture
 // exercises actual IndexedDB serialization across independent documents.
+const storage = vi.hoisted(() => ({ records: new Map<string, unknown>(), rejectWrites: false }))
 vi.mock('../utils/browserTransactionalRecords', () => {
- let tail: Promise<unknown> = Promise.resolve()
- return {
-  readBrowserRecord: async (_name: string, legacy: () => unknown) => legacy(),
-  updateBrowserRecord: (name: string, legacy: () => unknown, action: (value: any) => unknown) => {
-   const result = tail.then(() => { const next = action(legacy()); if(typeof window!=='undefined')window.localStorage.setItem(name, JSON.stringify(next)); return next })
-   tail = result.catch(() => {}); return result
+  let tail: Promise<unknown> = Promise.resolve()
+  return {
+    readBrowserRecord: async (name: string, initial: unknown) => structuredClone(storage.records.get(name) ?? initial),
+    updateBrowserRecord: (name: string, initial: unknown, change: (value: unknown) => unknown) => {
+      const result = tail.then(() => {
+        if (storage.rejectWrites) throw new Error('storage unavailable')
+        const next = change(structuredClone(storage.records.get(name) ?? initial))
+        storage.records.set(name, structuredClone(next))
+        return next
+      })
+      tail = result.catch(() => {})
+      return result
+    },
   }
- }
 })
 function setup(request:(method:string,params:any)=>Promise<any>){const selected=ref('t'),epoch=ref(0),scope=effectScope();const owner=scope.run(()=>createNativeQueue({selected,epoch,ready:()=>true,blocked:()=>false},request as any))!;return {owner,selected,epoch,stop:()=>scope.stop()}}
 const payload={text:'queued text',imageUrls:[],fileAttachments:[],skills:[]}
 const queued=(clientId='c')=>({id:'q',clientUserMessageId:clientId,input:[{type:'text',text:'queued text'}]})
-afterEach(()=>vi.unstubAllGlobals())
+beforeEach(() => { storage.records.clear(); storage.rejectWrites = false })
 it('requires an observed supported list, sends structured input once and validates native acknowledgment',async()=>{
  let resolve:(v:any)=>void=()=>{};let sent:any
  const request=vi.fn(async(method,params)=>{if(method==='thread/queue/list')return {data:[],nextCursor:null};sent=params;return new Promise(r=>resolve=r)})
@@ -71,9 +78,6 @@ it('treats numeric internal errors after queue writes as uncertain rather than r
  const {owner,stop}=setup(request);await owner.refresh();await expect(owner.add(payload)).rejects.toThrow();expect(owner.uncertain.value).toContain('unknown');await expect(owner.add(payload)).rejects.toThrow('Read');expect(request.mock.calls.filter(c=>c[0]==='thread/queue/add')).toHaveLength(1);stop()
 })
 it('retains a lost-acknowledgment registration guard across owner recreation and reconnect',async()=>{
- const storage=new Map<string,string>()
- vi.stubGlobal('navigator',{locks:{request:async (_name:string,action:()=>unknown)=>action()}})
- vi.stubGlobal('window',{localStorage:{getItem:(key:string)=>storage.get(key)??null,setItem:(key:string,value:string)=>storage.set(key,value)}})
  let persisted:any[]=[],clientId=''
  const request=vi.fn(async(method,params)=>{
   if(method==='thread/queue/list')return {data:persisted,nextCursor:null}
@@ -81,7 +85,7 @@ it('retains a lost-acknowledgment registration guard across owner recreation and
   throw new Error('remote enqueue committed; HTTP reply lost')
  })
  const first=setup(request);await first.owner.refresh();await expect(first.owner.add(payload)).rejects.toThrow('reply lost');first.stop()
- expect([...storage.values()].join('')).not.toContain(payload.text)
+ expect(JSON.stringify([...storage.records.values()])).not.toContain(payload.text)
  const reopened=setup(request);await reopened.owner.refresh();expect(reopened.owner.rows.value[0]?.clientId).toBe(clientId)
  await expect(reopened.owner.add(payload)).rejects.toThrow('Read');reopened.epoch.value++;await reopened.owner.refresh();await expect(reopened.owner.add(payload)).rejects.toThrow('Read')
  expect(request.mock.calls.filter(([method])=>method==='thread/queue/add')).toHaveLength(1)
@@ -90,8 +94,7 @@ it('retains a lost-acknowledgment registration guard across owner recreation and
  await reopened.owner.acknowledgeUnknown();expect(reopened.owner.status.value).toContain('can duplicate execution');reopened.stop()
 })
 it('fails before enqueue when a reload recovery marker cannot be stored',async()=>{
- vi.stubGlobal('navigator',{locks:{request:async (_name:string,action:()=>unknown)=>action()}})
- vi.stubGlobal('window',{localStorage:{getItem:()=>null,setItem:()=>{throw new Error('storage unavailable')}}})
+ storage.rejectWrites = true
  const request=vi.fn(async()=>({data:[],nextCursor:null})),f=setup(request);await f.owner.refresh()
  await expect(f.owner.add(payload)).rejects.toThrow('storage unavailable');expect(request).toHaveBeenCalledTimes(1);f.stop()
 })
