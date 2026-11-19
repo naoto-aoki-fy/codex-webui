@@ -15,7 +15,6 @@ Return to the [manual test index](../../tests.md).
 | [Feature: Website describes the current Codex web application](github-website-redesign-openclaw-inspired-design-web-demo-link.md) |
 | [Inline code with asterisks does not leak formatting](inline-code-with-asterisks-does-not-leak-formatting.md) |
 | [Codex app-server memories default and opt-out](codex-app-server-memories-default-and-opt-out.md) |
-| [Browser access and retirement of offline caching](cache-first-hashed-assets.md) |
 | [External app-server connection](external-app-server.md) |
 | [Connected Codex home discovery](codex-home-discovery.md) |
 | [Shared local file HTTP operations](shared-local-file-http.md) |

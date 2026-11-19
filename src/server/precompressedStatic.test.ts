@@ -22,7 +22,6 @@ beforeAll(async () => {
   await mkdir(join(root, '.vite'), { recursive: true })
   await writeFile(join(root, 'assets/app-Abcd123_.js'), 'const built = true;'.repeat(100))
   await writeFile(join(root, 'assets/manual-Abcd123_.js'), 'const manual = true;')
-  await writeFile(join(root, 'sw.js'), '// retirement worker')
   await writeFile(join(root, '.vite/manifest.json'), JSON.stringify({
     'index.html': { file: 'assets/app-Abcd123_.js' },
     publicScript: { file: 'app.js' },
@@ -113,7 +112,7 @@ it.each(['identity', 'gzip', 'zstd'])('caches only build-generated JavaScript wi
   expect(fresh.headers['cache-control']).toBe(response.headers['cache-control'])
   const otherEncoding = encoding === 'identity' ? 'gzip' : 'identity'
   expect((await get(otherEncoding, path, 'GET', { 'If-None-Match': response.headers.etag })).status).toBe(200)
-  for (const path of ['/app.js', '/sw.js', '/assets/manual-Abcd123_.js', '/legacy/app-Abcd123_.js', '/plain.txt']) {
+  for (const path of ['/app.js', '/assets/manual-Abcd123_.js', '/legacy/app-Abcd123_.js', '/plain.txt']) {
     expect((await get(encoding, path)).headers['cache-control']).toBe('public, max-age=0')
   }
   for (const path of ['/', '/index.html', '/thread/example', '/missing-Abcd123_.js']) {

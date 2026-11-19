@@ -35,7 +35,7 @@ Immutable wiki raw material remains untouched.
 | 21 | Standalone scripts are retained documented diagnostics/live harnesses. Added credential-free intercepted UI acceptance. No script is deleted solely for lacking a package entry. |
 | 22 | Generator derives actual handwritten consumer dependency closure, removes stale generated TS and retains the full method catalog. Pin and runtime policy are unchanged. |
 | 23 | DirectoryHub renamed SkillsMcpHub, including import and navigation test; styling classes are preserved. |
-| 24 | Intentionally retain minimal sw.js. Older registrations require the same URL to clear only codexweb-shell/assets caches and unregister. Both server entry points have fixture coverage. Removal requires an explicit support policy excluding old registrations. |
+| 24 | The service worker and its retirement script were removed. Online navigation and assets use ordinary HTTP caching. |
 | 25 | Intentionally retain read-only Project receipts and independent pin guards. Native records do not prove legacy migration completion. Removal requires real completion/support evidence; no cutoff or receipts are fabricated. |
 | 26 | Already simplified before this scope: no list snapshots, names, timestamps or archive writes. PersistentThreadIndex retains durable intent, uncertain-response reconciliation, duplicate prevention, profile isolation, locking and atomic writes. Unknown historical fields and disk paths are preserved. |
 | 27 | Account rate-limit reads pass through the native response and ordinary RPC errors. A server that cannot decode a quota response cannot supply a fresh snapshot. |

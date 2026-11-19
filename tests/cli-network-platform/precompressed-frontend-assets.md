@@ -25,7 +25,7 @@ fall back to ordinary revalidation. Vite development serving is unchanged.
    gzip encoding and `Vary: Accept-Encoding`. Repeat with zstd and identity;
    expect the same caching policy and the selected encoding (none for identity).
 2. Request `/`, `/index.html` and `/thread/example`. Expect `Cache-Control: no-cache`.
-   Request `/sw.js` and any unversioned public JavaScript; expect
+   For unversioned public JavaScript, expect
    `public, max-age=0`, without immutable. Non-JavaScript policies remain unchanged.
 3. Repeat a hashed request with its ETag in `If-None-Match`; expect 304 and the
    immutable policy. HEAD must have the GET headers with no response body.
@@ -33,7 +33,6 @@ fall back to ordinary revalidation. Vite development serving is unchanged.
    JavaScript should come from HTTP cache without revalidation; HTML revalidates.
    Change application JavaScript, rebuild and deploy the complete matching build.
    Reload: HTML references a new filename and the updated JavaScript downloads.
-   No new Service Worker registration or Cache Storage should appear.
 5. Exercise API, authentication and local-file routes; expect their existing
    behavior and cache policies. Run `pnpm exec vitest run src/server/precompressedStatic.test.ts`
    for automated policy, encoding, validator and route-isolation coverage.
@@ -50,4 +49,4 @@ asset requests entirely. This manual browser check measures reload behavior;
 automated HTTP tests check policy, not a browser's internal cache.
 
 Cleanup: stop the test server and remove temporary response files; restore any
-source edits made for the deployment test and rebuild. Keep the retirement worker.
+source edits made for the deployment test and rebuild.
