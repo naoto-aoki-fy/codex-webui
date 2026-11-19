@@ -100,6 +100,9 @@ function options() {
       throw new Error('Remote options require --remote')
     }
     args.home = safeBase(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex'), 'backend Codex home')
+    if (args.build && builds.some(name => inside(join(repo, name), args.home))) {
+      throw new Error(`Codex home overlaps a build cleanup target: ${quote(args.home)}`)
+    }
     args.profile ??= process.env.CODEXUI_CONNECTION_PROFILE?.trim() || 'legacy'
     if (!args['all-profiles'] && !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/u.test(args.profile)) {
       throw new Error('Invalid connection profile ID')

@@ -73,6 +73,13 @@ describe('WebUI reset preview and validation', () => {
     expect(run(['--dry-run', ...execute]).output).toContain('Choose either')
     expect(run(['--remote', '--shared']).output).toContain('separate commands')
   })
+
+  it.each([[], ['--include-legacy']])('refuses build cleanup with the Codex home in a build directory (%j)', (...flags) => {
+    const result = run(['--build', ...flags], { CODEX_HOME: join(repository, 'dist', 'native-home') })
+    expect(result.code).toBe(1)
+    expect(result.output).toContain('Codex home overlaps a build cleanup target')
+    expect(result.output).not.toContain('Would delete')
+  })
 })
 
 describe.skipIf(process.platform !== 'linux')('WebUI reset execution', () => {
