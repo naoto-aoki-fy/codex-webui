@@ -31,6 +31,11 @@ store. Shared updates do not replace explicit choices in existing conversations
 or another browser's actively edited Home draft. Starting a new conversation or returning to Home adopts the shared default. Home resolves its
 collaboration mode separately from the sidebar-selected thread.
 
+Each reasoning preference applies to its exact provider/model pair, including
+when multiple providers advertise the same model ID. A selection made while the
+provider is unknown can be held in memory until the next preference snapshot.
+Current WebUI versions leave retired browser Home preferences untouched.
+
 Unavailable saved Home models/providers use the catalog/config fallback and show
 a notice; refreshing the catalog restores a saved model if it returns. Fallbacks
 do not rewrite saved preferences. Existing threads retain their provider guard;

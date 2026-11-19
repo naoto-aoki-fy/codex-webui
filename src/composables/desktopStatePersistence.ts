@@ -43,11 +43,7 @@ export function pruneThreadContextStateMap<T>(
   let changed = false
   const next = createStringKeyedRecord<T>()
   for (const [contextId, value] of Object.entries(stateMap)) {
-    if (
-      contextId === NEW_THREAD_COLLABORATION_MODE_CONTEXT
-      || contextId.startsWith('__new-thread-provider__::') // Preserve new-thread preferences independently of thread pruning.
-      || threadIds.has(contextId)
-    ) {
+    if (contextId === NEW_THREAD_MODEL_CONTEXT || threadIds.has(contextId)) {
       next[contextId] = value
       continue
     }
@@ -69,23 +65,15 @@ export function loadSelectedModelMap(): Record<string, string> {
   return readPreferenceRecords(profileStorageKey('codex-web-local.selected-model-by-context.v2'))
 }
 
-export function readSelectedModel(
-  state: Record<string, string>,
-  threadId: string,
-): string {
-  const contextId = toThreadContextId(threadId)
-  const contextModelId = normalizeStoredModelId(state[contextId])
-  if (contextModelId) return contextModelId
-  return normalizeStoredModelId(state[NEW_THREAD_COLLABORATION_MODE_CONTEXT])
-}
-
 export function saveSelectedModelMap(state: Record<string, string>, previous: Record<string, string> = {}): void {
   savePreferenceRecords(profileStorageKey('codex-web-local.selected-model-by-context.v2'), state, previous)
 }
 
 export function loadSelectedCollaborationModeMap(): Record<string, CollaborationModeKind> {
   const values = readPreferenceRecords(profileStorageKey('codex-web-local.collaboration-mode-by-context.v2'))
-  return Object.fromEntries(Object.entries(values).filter(([, value]) => value === 'plan')) as Record<string, CollaborationModeKind>
+  return Object.fromEntries(Object.entries(values).filter(([id, value]) => (
+    !isNewThreadContextId(id) && value === 'plan'
+  ))) as Record<string, CollaborationModeKind>
 }
 
 export function readSelectedCollaborationMode(

@@ -35,8 +35,8 @@ describe('desktop persistence', () => {
     const state = persistence.loadSelectedModelMap()
     expect(Object.getPrototypeOf(state)).toBeNull()
     expect(state).toEqual({ ['__proto__']: 'safe', t: ' m ' })
-    expect(persistence.readSelectedModel(state, ' t ')).toBe('m')
     persistence.saveSelectedModelMap({}, state)
+    expect(mock.getItem(base + 't')).toBe('""')
     expect(mock.getItem(legacy)).toBe('{"old":"model"}')
   })
 
@@ -98,15 +98,14 @@ describe('desktop persistence', () => {
     expect(mock.setItem).not.toHaveBeenCalled()
   })
 
-  it('preserves record identity and legacy contexts while pruning', () => {
+  it('preserves record identity and the current Home model context while pruning', () => {
     const state = persistence.createStringKeyedRecord<string>()
     state.t = 'model'
-    state['__new-thread__'] = 'default'
-    state['__new-thread-provider__::legacy'] = 'legacy'
+    state[persistence.NEW_THREAD_MODEL_CONTEXT] = 'default'
     expect(persistence.pruneThreadContextStateMap(state, new Set(['t']))).toBe(state)
     const pruned = persistence.pruneThreadContextStateMap(state, new Set())
     expect(Object.getPrototypeOf(pruned)).toBeNull()
-    expect(Object.keys(pruned)).toEqual(['__new-thread__', '__new-thread-provider__::legacy'])
+    expect(Object.keys(pruned)).toEqual([persistence.NEW_THREAD_MODEL_CONTEXT])
     expect(state.t).toBe('model')
   })
 

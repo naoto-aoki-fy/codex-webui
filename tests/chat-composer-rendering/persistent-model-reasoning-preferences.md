@@ -12,7 +12,7 @@
 2. Submit a turn using B/`medium` and wait for acceptance. Reload the page and restart the WebUI backend. Home displays B/`medium`; switching to A restores `high`. A selector-only change must not replace the last accepted default on reload.
 3. Select A/`high` in an existing thread. Open Home and select B/`medium`, then revisit the existing thread. Its model remains A and its effort is `high`; Home retains B/`medium`, including after reload.
 4. While a different thread remains selected in the sidebar, change Home's model and effort. Home's options/value match the model shown in Home, and the first message sent uses those settings.
-5. Select an identical model ID under each provider with different efforts. Switch providers and reload. Each provider restores its own model and effort without adopting the other provider's preference.
+5. Select an identical model ID under each provider with different efforts. If the fixture has providers `codex` and `openai`, configure `openai` as its default, save a supported effort on `codex`, then switch to `openai` before saving its own effort. It uses its capability default. After saving different efforts on each provider, switch and reload. Each provider restores its own effort.
 6. Stop the disposable backend, clear its saved per-model reasoning values, then restart it and reload. Each model without accepted or preferred settings uses its capability default. Repeat with malformed JSON and unsupported saved effort values. The UI remains usable and resolves a supported default; metadata refresh does not overwrite stored values.
 7. Temporarily remove a saved model from the available catalog. Refresh model metadata: a usable fallback appears, but saved model/effort preferences stay intact. Restore the catalog and refresh: the saved model/effort return.
 8. Navigate unrelated threads and refresh model metadata. A catalog display fallback may appear while a saved unavailable choice remains preserved. On an unsupported-model turn error, the selected model and saved per-model effort remain unchanged until explicitly selected in the UI.
@@ -68,6 +68,12 @@ browser preferences. Use a profile with two valid models in the same provider.
    must not appear after reload. Counts are unavailable until server observation.
 5. Reload with corrupt or unavailable browser storage: preferences use defaults or
    backend settings; the app must still boot. No unknown keys may be removed.
+6. Seed `codex-web-local.collaboration-mode-by-context.v2.__new-thread__` with
+   the JSON string `"plan"` in the default profile. With the backend configured
+   for Default mode, reload Home, then select another model and switch to Plan.
+   Confirm Home initially uses Default, subsequent choices appear in the backend
+   preference snapshot, and the seeded entry retains its original bytes. Change
+   an existing thread's mode and reload to confirm that thread still restores it.
 
 Cleanup: Remove only disposable context records and threads, restoring legacy
 fixtures if modified. No backend accepted-usage data needs to be fabricated.

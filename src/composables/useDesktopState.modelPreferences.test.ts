@@ -30,7 +30,9 @@ vi.mock('../api/codexGateway', async importOriginal => ({
   getPendingServerRequests: vi.fn(async () => []),
   subscribeCodexNotifications: vi.fn((cb: (n: RpcNotification) => void) => { streams.add(cb); return () => streams.delete(cb) }),
 }))
-const modelKey = 'codex-web-local.selected-model-by-context.v1'
+const homeModelKey = 'codex-web-local.selected-model-by-context.v2.__new-thread-provider__%3A%3Acodex'
+const homeExplicitModelKey = 'codex-web-local.explicit-model-contexts.v2.__new-thread-provider__%3A%3Acodex'
+const homeModeKey = 'codex-web-local.collaboration-mode-by-context.v2.__new-thread__'
 const existingModelKey = 'codex-web-local.selected-model-by-context.v2.existing'
 const effortKey = 'codex-web-local.reasoning-by-provider-model.v1'
 const usageKey = 'codex-web-local.model-usage-order.v1'
@@ -68,7 +70,7 @@ afterEach(async () => {
 
 it('restores the last accepted model, effort and collaboration mode in a fresh browser over stale local preferences', async () => {
   backend = { ...backend, revision: 4, lastUsed: settings(), preferred: settings('A') }
-  local.set(modelKey, JSON.stringify({ '__new-thread-provider__::codex': key('openai', 'A') }))
+  local.set(homeModelKey, JSON.stringify(key('openai', 'A')))
   local.set(effortKey, JSON.stringify({ '["openai","B"]': 'medium' }))
   const state = create(), displayed = computed(() => state.readModelIdForThread(''))
   await state.refreshAll(options)
@@ -76,6 +78,24 @@ it('restores the last accepted model, effort and collaboration mode in a fresh b
   expect(state.readReasoningEffortForThread('')).toBe('high')
   expect(state.readCollaborationModeForThread('').toString()).toBe('plan')
   expect(vi.mocked(rpcCall).mock.calls.map(([m]) => m)).toEqual(['model-preferences/read'])
+})
+
+it('stores Home choices only on the backend and leaves prior browser entries untouched', async () => {
+  local.set(homeModelKey, JSON.stringify(key('openai', 'B')))
+  local.set(homeModeKey, JSON.stringify('plan'))
+  const original = new Map(local)
+  const state = create(); await state.refreshAll(options)
+  expect(state.readModelIdForThread('')).toBe(key('openai', 'A'))
+  expect(state.readCollaborationModeForThread('')).toBe('default')
+  state.setSelectedModelIdForThread('', key('openai', 'B'))
+  state.setSelectedCollaborationModeForThread('', 'plan')
+  await state.settleModelPreferenceWrites()
+  expect(backend.preferred).toMatchObject({ providerId: 'openai', modelId: 'B', collaborationMode: 'plan' })
+  expect(local).toEqual(original)
+  expect(local.has(homeExplicitModelKey)).toBe(false)
+  state.setSelectedCollaborationModeForThread('existing', 'plan')
+  expect(local.get('codex-web-local.collaboration-mode-by-context.v2.existing')).toBe('"plan"')
+  expect(local.get(homeModeKey)).toBe(original.get(homeModeKey))
 })
 
 it('synchronizes two live sessions through revisioned notifications with no polling', async () => {
@@ -117,7 +137,7 @@ it('keeps the full catalog, orders accepted usage, and never records usage on se
   state.setSelectedModelIdForThread('', key('openai', 'A')); await state.settleModelPreferenceWrites()
   expect(Object.values(backend.modelUsage)).toHaveLength(1)
   expect(local.has(usageKey)).toBe(false)
-  expect(local.get(modelKey)).toBeUndefined()
+  expect(local.size).toBe(0)
 })
 
 it('restores an unavailable saved provider/model when it returns without replacing the saved preference', async () => {
@@ -191,18 +211,19 @@ it('does not reorder usage or write browser state on rejected submissions', asyn
 
 it('isolates remembered reasoning for duplicate model IDs across providers', async () => {
   const models = [
-    { id: 'same', modelProvider: 'cloud', supportedReasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' },
-    { id: 'same', modelProvider: 'local', supportedReasoningEfforts: ['medium'], defaultReasoningEffort: 'medium' },
+    { id: 'same', modelProvider: 'codex', supportedReasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' },
+    { id: 'same', modelProvider: 'openai', supportedReasoningEfforts: ['medium', 'high'], defaultReasoningEffort: 'medium' },
   ]
   reasoningCatalog.value = models
-  vi.mocked(getAvailableModelIds).mockResolvedValue({ ids: [key('cloud', 'same'), key('local', 'same')], models })
+  vi.mocked(getAvailableModelIds).mockResolvedValue({ ids: [key('codex', 'same'), key('openai', 'same')], models })
   const state = create(); await state.refreshAll(options)
-  state.setSelectedModelIdForThread('', key('cloud', 'same')); state.setSelectedReasoningEffort('high', '')
-  state.setSelectedModelIdForThread('', key('local', 'same')); await state.settleModelPreferenceWrites()
+  state.setSelectedModelIdForThread('', key('codex', 'same')); state.setSelectedReasoningEffort('high', '')
+  state.setSelectedModelIdForThread('', key('openai', 'same')); await state.settleModelPreferenceWrites()
   const reopened = create(); await reopened.refreshAll(options)
-  expect(reopened.readModelIdForThread('')).toBe(key('local', 'same'))
+  expect(reopened.readModelIdForThread('')).toBe(key('openai', 'same'))
   expect(reopened.readReasoningEffortForThread('')).toBe('medium')
-  reopened.setSelectedModelIdForThread('', key('cloud', 'same'))
+  expect(backend.reasoningByModel).toEqual({ [preferenceModelKey('codex', 'same')]: 'high' })
+  reopened.setSelectedModelIdForThread('', key('codex', 'same'))
   expect(reopened.readReasoningEffortForThread('')).toBe('high')
 })
 
