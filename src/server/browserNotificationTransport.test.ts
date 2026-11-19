@@ -23,7 +23,7 @@ it('sends ready first, forwards unchanged frames only while open, and cleans up 
   let listener!: (value: typeof notification) => void
   const unsubscribe = vi.fn()
   const dispose = connectBrowserNotifications(ws as unknown as WebSocket, (fn) => { listener = fn; return unsubscribe })
-  expect(JSON.parse(ws.send.mock.calls[0]![0])).toEqual({ method: 'ready', params: { ok: true, backendInstanceId, connectionProfile: 'legacy' }, atIso: expect.any(String) })
+  expect(JSON.parse(ws.send.mock.calls[0]![0])).toEqual({ method: 'ready', params: { ok: true, backendInstanceId, connectionProfile: 'unit-test' }, atIso: expect.any(String) })
   listener(notification)
   expect(ws.send).toHaveBeenLastCalledWith(JSON.stringify(notification))
   for (const state of [WebSocket.CONNECTING, WebSocket.CLOSING, WebSocket.CLOSED]) {
@@ -52,7 +52,7 @@ async function connect(url: string, options?: { headers: Record<string, string> 
   const ws = new WebSocket(url, options)
   cleanup.push(() => { ws.terminate() })
   const [frame] = await once(ws, 'message')
-  expect(JSON.parse(String(frame))).toEqual({ method: 'ready', params: { ok: true, backendInstanceId, connectionProfile: 'legacy' }, atIso: expect.any(String) })
+  expect(JSON.parse(String(frame))).toEqual({ method: 'ready', params: { ok: true, backendInstanceId, connectionProfile: 'unit-test' }, atIso: expect.any(String) })
   return ws
 }
 

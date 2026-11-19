@@ -4,13 +4,13 @@ Prerequisites: an independently managed POSIX Codex App Server with matching
 credentials and filesystem, Project, pagination, inject-items and revert APIs.
 Record its initialization version. The test creates small real model turns using
 its default provider; never use an existing user conversation as the source.
-Use a disposable local application home: the harness writes local Portable Fork records there.
+The harness isolates WebUI state and caches and writes build fixtures under a disposable artifacts directory.
 
 Setup and actions:
 1. Inspect any listener on 4173 and its cwd. Start this checkout there with a new
-   temporary local CODEX_HOME; leave the independently managed Codex server and
-   the persistent 5173 server alone. Use that same temporary path as
-   MAINTENANCE_STATE_HOME below. Install Chromium in a writable temporary browser
+   temporary OS WebUI storage directory and a dedicated App Server ID. Keep the
+   independently managed Codex server and the persistent 5173 server running.
+   Set `MAINTENANCE_STATE_HOME` below to a separate temporary artifacts directory. Install Chromium in a writable temporary browser
    cache if necessary (`PLAYWRIGHT_BROWSERS_PATH=/tmp/codexapp-playwright pnpm exec
    playwright install chromium`).
 2. Run:
@@ -18,7 +18,7 @@ Setup and actions:
    ```sh
    PLAYWRIGHT_BROWSERS_PATH=/tmp/codexapp-playwright \
    CODEX_MAINTENANCE_LIVE=1 \
-   MAINTENANCE_STATE_HOME=/tmp/<disposable-application-home> \
+   MAINTENANCE_STATE_HOME=/tmp/<disposable-artifacts-directory> \
    MAINTENANCE_BROWSER_BASE_URL=http://127.0.0.1:4173 \
    pnpm exec vitest run src/server/maintenance.live.test.ts
    ```

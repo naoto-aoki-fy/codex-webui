@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { join, basename } from 'node:path'
-import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { inlineAssetUrl, inlineMediaDirectory, resolveInlineAssetPath } from './appAssets'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   sanitizeThreadTurnsInlinePayloads,
@@ -22,7 +22,7 @@ afterEach(() => {
 function localImagePathFromProxyUrl(value: string): string {
   const parsed = new URL(value, 'http://localhost')
   expect(parsed.pathname).toBe('/codex-app-asset')
-  const imagePath = join(tmpdir(), 'codex-web-inline-media', parsed.searchParams.get('id') ?? '')
+  const imagePath = resolveInlineAssetPath(parsed.searchParams.get('id') ?? '')!
   expect(imagePath).toBeTruthy()
   return imagePath ?? ''
 }
@@ -251,8 +251,8 @@ describe('inline payload compatibility contracts', () => {
     const result = await sanitize(input, method)
     const changed = result.thread.turns[0].items[0] as typeof item
     const hash = createHash('sha1').update(Buffer.from(pngBase64, 'base64')).digest('hex')
-    const path = join(tmpdir(), 'codex-web-inline-media', `inline-image-contract-turn-contract-item-images-0-${hash}.png`)
-    expect(changed.nested.images[0][0]).toBe(`/codex-app-asset?id=${encodeURIComponent(basename(path))}`)
+    const path = join(inlineMediaDirectory(), `inline-image-contract-turn-contract-item-images-0-${hash}.png`)
+    expect(changed.nested.images[0][0]).toBe(inlineAssetUrl(path))
     expect(await readFile(path)).toEqual(Buffer.from(pngBase64, 'base64'))
     const firstStat = await stat(path)
     expect(await sanitize(input, method)).toEqual(result)
@@ -283,7 +283,7 @@ describe('inline payload compatibility contracts', () => {
     const item = result.thread.turns[0].items[0]
     const hash = createHash('sha1').update(Buffer.from(pngBase64, 'base64')).digest('hex')
     expect(item.type).toBe('imageView')
-    expect(item.path).toBe(`/codex-app-asset?id=generated-image-contract-turn-generated-contract-${hash}${ext}`)
+    expect(item.path).toBe(inlineAssetUrl(`generated-image-contract-turn-generated-contract-${hash}${ext}`))
     expect(item.result).toBe(pngBase64)
   })
 

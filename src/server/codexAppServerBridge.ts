@@ -15,7 +15,6 @@ import { AppServerClient, STREAM_EVENT_BUFFER_LIMIT, type StreamEventFrame } fro
 export { AppServerClient } from './appServerClient.js'
 import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { publicAccountStatus } from './publicAccount.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
@@ -365,11 +364,6 @@ export async function callRpcWithArchiveRecovery(
   }
 }
 
-function getCodexHomeDir(): string {
-  const codexHome = process.env.CODEX_HOME?.trim()
-  return codexHome && codexHome.length > 0 ? codexHome : join(homedir(), '.codex')
-}
-
 function handleFileUpload(req: IncomingMessage, res: ServerResponse, appServer: AppServerClient): void {
   const chunks: Buffer[] = []
   let size = 0
@@ -413,7 +407,7 @@ function handleFileUpload(req: IncomingMessage, res: ServerResponse, appServer: 
         break
       }
       if (!fileData) { setJson(res, 400, { error: 'No file in request' }); return }
-      const destPath = await stageRemoteUpload(appServer, fileName, fileData, getCodexHomeDir())
+      const destPath = await stageRemoteUpload(appServer, fileName, fileData)
       setJson(res, 200, { path: destPath })
     } catch (err) {
       setJson(res, 500, { error: getErrorMessage(err, 'Upload failed') })
@@ -476,6 +470,7 @@ function getSharedBridgeState(): SharedBridgeState {
 }
 
 export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
+  const connectionProfile = getConnectionProfileId()
   const sharedState = getSharedBridgeState()
   sharedState.owners = (sharedState.owners ?? 0) + 1
   let released = false
@@ -487,7 +482,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   const preferenceErrorListeners = sharedState.preferenceErrorListeners ??= new Set()
   const publishPreferences = (state: ModelPreferences) => {
     for (const listener of preferenceListeners) {
-      try { listener({ ...state, connectionProfile: getConnectionProfileId() }) } catch { /* A closed browser must not fail a committed update. */ }
+      try { listener({ ...state, connectionProfile }) } catch { /* A closed browser must not fail a committed update. */ }
     }
   }
   const transfers = createConversationTransfers((method, params) => appServer.rpc(method, params))
@@ -542,6 +537,12 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
       const url = new URL(req.url, 'http://localhost')
 
+      if (req.method === 'GET' && url.pathname === '/codex-api/connection-profile') {
+        res.setHeader('Cache-Control', 'no-store')
+        setJson(res, 200, { connectionProfile })
+        return
+      }
+
       if (await handleSkillsRoutes(req, res, url, { appServer, readJsonBody })) {
         return
       }
@@ -570,7 +571,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
             : null
           if (!result) { setJson(res, 400, { error: 'Unknown model preferences method' }); return }
           if (body.method !== 'model-preferences/read') publishPreferences(result)
-          setJson(res, 200, { result: { ...result, connectionProfile: getConnectionProfileId() } })
+          setJson(res, 200, { result: { ...result, connectionProfile } })
           return
         }
 

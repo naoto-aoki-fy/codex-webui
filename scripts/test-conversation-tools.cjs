@@ -18,6 +18,7 @@ const { resolve } = require('node:path')
   const turn = (id, text) => ({id,status:'completed',error:null,submittedAt:'2026-11-01T00:00:00Z',completedAt:'2026-11-01T00:01:00Z',generationMetadata:{model:'historical-fixture',modelSource:'execution',effort:'none',effortSource:'execution'},items:[{type:'userMessage',id:id+'u',content:[{type:'text',text:'Prompt '+id}]},{type:'agentMessage',id:id+'a',text}]})
   const prefix=[{role:'user',text:'Portable prefix unique',source:'fixture'},{role:'assistant',text:'Imported answer',source:'fixture'}]
   await page.route('**/codex-api/**', async route => {
+   if (route.request().url().endsWith('/codex-api/connection-profile')) return route.fulfill({ json: { connectionProfile: 'browser-fixture' } })
    const url=new URL(route.request().url()); let body={}; try{body=route.request().postDataJSON()||{}}catch{}
    calls.push({path:url.pathname,method:body.method,params:body.params})
    let result={}, payload, status=200

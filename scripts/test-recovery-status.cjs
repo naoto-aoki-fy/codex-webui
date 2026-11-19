@@ -20,6 +20,7 @@ const fs = require('node:fs')
       }, theme)
       const thread = { id: 'recovery-fixture', cwd: '/remote/disposable', preview: 'Recovery fixture', createdAt: 1, updatedAt: 1, status: { type: 'idle' }, turns: [] }
       await page.route('**/codex-api/**', async route => {
+        if (route.request().url().endsWith('/codex-api/connection-profile')) return route.fulfill({ json: { connectionProfile: 'browser-fixture' } })
         const path = new URL(route.request().url()).pathname
         if (path.endsWith('/rpc')) {
           const { method } = route.request().postDataJSON()

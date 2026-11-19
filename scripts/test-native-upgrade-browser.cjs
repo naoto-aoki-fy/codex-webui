@@ -6,6 +6,7 @@ const assert = require('node:assert/strict')
  const thread = {id:'cleanup-fixture',name:'Cleanup fixture',cwd:'/fixture',projectId:'p',preview:'fixture',createdAt:1,updatedAt:1,status:{type:'idle'},turns:[]}
  const models = [{id:'arbitrary',model:'arbitrary',isDefault:true,serviceTiers:[{id:'fast'}]}, {id:'unsupported',model:'unsupported',serviceTiers:[]}, {id:'unknown',model:'unknown'}]
  await page.route('**/codex-api/**', async route => {
+  if (route.request().url().endsWith('/codex-api/connection-profile')) return route.fulfill({ json: { connectionProfile: 'browser-fixture' } })
   const url = new URL(route.request().url()); let body={}
   try {body=route.request().postDataJSON()||{}}catch{}
   let result = {}

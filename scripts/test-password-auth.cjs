@@ -1,3 +1,4 @@
+const { fixtureWebuiStorage } = require('./fixture-webui-storage.cjs')
 const assert = require('node:assert/strict')
 const { spawn } = require('node:child_process')
 const { once } = require('node:events')
@@ -31,7 +32,7 @@ async function run(label, flags, protectedMode) {
   await new Promise(resolve => probe.close(resolve))
   const home = mkdtempSync(join(tmpdir(), 'codex-password-smoke-'))
   const child = spawn(process.execPath, ['dist-cli/index.js', '--port', port, '--no-open', ...flags], {
-    env: { ...process.env, CODEX_HOME: home, CODEXUI_CODEX_COMMAND: '/bin/true' },
+    env: { ...process.env, ...fixtureWebuiStorage(home, 'password-smoke'), CODEX_HOME: home },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let log = ''

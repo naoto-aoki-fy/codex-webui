@@ -24,21 +24,13 @@ fault injection. No authenticated two-host server verification is claimed.
 | R8 | Implemented and fixture verified | Explicit named machine identity partitions workspace/presentation/thread metadata/index state; legacy remains exclusively legacy with locked atomic persistence. Same forwarding URL profile tests preserve separate roots. Browser remote state and drafts are profile scoped. | Restart A when switching machine/profile; do not silently repoint a running profile. |
 | R9 | Partially implemented with a specific blocker | Shared tracked-attempt inventory, legacy import, 1 GiB default capacity reservations, 80% warning, inspectable settings/API, protected records and empty cleanup preview. Disposable fixtures verify shared capacity and no deletion. | Complete cross-profile/client reference and submission proof is unavailable. Safe automated cleanup cannot be authorized; all uploads remain protected, no deletion endpoint exists. Operator-assisted audit is documented. |
 
-## Configuration and migration
+## Current configuration
 
-Use `--connection-profile machine-b` or `CODEXUI_CONNECTION_PROFILE=machine-b` on A.
-The default `legacy` retains existing local state without copying it into named
-profiles. Restart the backend to change profiles. Keep `CODEX_HOME` on A separate
-from B's project paths/home/authentication. Configure B's initial absolute directory
-with `CODEXUI_REMOTE_INITIAL_DIRECTORY`. Optional `CODEXUI_REMOTE_UPLOAD_DIR` is an
-absolute path on B; `codexapp-uploads` is appended. The 20 MiB file limit is unchanged.
-`CODEXUI_UPLOAD_CAPACITY_BYTES=1073741824` is the default shared tracked-attempt
-budget. Unknown legacy sizes and files tracked by other A state directories are
-outside this byte total. No automatic deletion or reservation release occurs.
-
-See [deployment and recovery](external-app-server.md),
-[profile migration and operator cleanup](connection-profiles-uploads.md), and
-[reproducible transfer benchmark](remote-transfer-performance.md).
+Start the backend with an explicit App Server ID and configure a dedicated
+absolute path on the App Server for uploads. See the
+[current storage and upload guide](connection-profiles-uploads.md) and the
+[deployment and recovery guide](external-app-server.md). The verification
+results below describe the implementation tested on their stated dates.
 
 ## Commands and outcomes
 

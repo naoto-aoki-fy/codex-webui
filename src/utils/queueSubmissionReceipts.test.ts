@@ -34,7 +34,7 @@ it('serializes concurrent receipts, refuses same-thread reservation and compare-
 })
 
 it('fails closed on malformed IndexedDB records and unavailable transaction storage', async () => {
-  records.set('codex-web-local.queue-submissions.v1', { thread: 42 })
+  records.set('codex-unbound.codex-web-local.queue-submissions.v1', { thread: 42 })
   await expect(writeQueueSubmissionReceipt('thread', 'client')).rejects.toThrow('unreadable')
   vi.stubGlobal('indexedDB', undefined)
   const { updateBrowserRecord } = await vi.importActual<typeof import('./browserTransactionalRecords')>('./browserTransactionalRecords')

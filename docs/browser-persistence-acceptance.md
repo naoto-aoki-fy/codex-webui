@@ -54,7 +54,7 @@ submission. An absent native queue row does not prove non-execution.
 Start the current checkout's verification server if needed:
 
 ```sh
-pnpm run dev --host 127.0.0.1 --port 4173
+CODEXUI_CONNECTION_PROFILE=browser-fixture pnpm run dev --host 127.0.0.1 --port 4173
 ```
 
 The commands below use the Chromium installation available in this environment.

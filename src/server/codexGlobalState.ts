@@ -1,7 +1,7 @@
-import { profileStateDirectory } from './connectionProfile.js'
+import { storageNames } from './webuiStorage.mjs'
+import { profileStorageDirectory } from './connectionProfile.js'
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, open, readFile, readlink, realpath, rename, rm, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import lockfile from 'proper-lockfile'
@@ -17,7 +17,7 @@ const lockOptions = {
 }
 
 export function getCodexGlobalStatePath(): string {
-  return join(profileStateDirectory(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex')), '.codex-global-state.json')
+  return join(profileStorageDirectory('data'), storageNames.state)
 }
 
 function isMissing(error: unknown): boolean {
@@ -26,7 +26,7 @@ function isMissing(error: unknown): boolean {
 
 // Resolve both directory aliases and dangling file symlinks without replacing the link.
 async function resolveDestination(path: string, depth = 0): Promise<string> {
-  if (depth > 40) throw new Error('Too many symbolic links in Codex global state path')
+  if (depth > 40) throw new Error('Too many symbolic links in WebUI state path')
   const absolute = resolve(path)
   try {
     return await realpath(absolute)
@@ -60,7 +60,7 @@ async function readState(path: string, recoverMalformed = false): Promise<CodexG
   }
   if (!state || typeof state !== 'object' || Array.isArray(state)) {
     if (recoverMalformed) return {}
-    throw new Error(`Invalid Codex global state object: ${path}`)
+    throw new Error(`Invalid WebUI state object: ${path}`)
   }
   return state as CodexGlobalState
 }

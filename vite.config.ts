@@ -39,9 +39,9 @@ export default defineConfig({
         holdWebuiWriterLease();
       },
       configureServer(server) {
-        holdWebuiWriterLease();
         process.env.CODEXUI_SERVER_PORT = String(server.config.server.port ?? 5173);
         const bridge = createCodexBridgeMiddleware();
+        holdWebuiWriterLease();
         const httpServer = server.httpServer;
         if (httpServer) {
           httpServer.once("listening", () => {

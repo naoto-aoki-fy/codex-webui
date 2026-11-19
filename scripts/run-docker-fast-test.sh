@@ -5,11 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_NAME="${CODEXAPP_DOCKER_FAST_IMAGE:-codexapp-fast-test-base:latest}"
 CONTAINER_NAME="${CODEXAPP_DOCKER_FAST_CONTAINER:-codexapp-fast-test}"
 PORT="${PORT:-4191}"
-CODEX_HOME_VOLUME="${CODEXAPP_DOCKER_FAST_HOME:-codexapp-fast-test-home}"
+WEBUI_STORAGE_VOLUME="${CODEXAPP_DOCKER_FAST_HOME:-codex-webui-fast-test-storage}"
 
 # This optional container workflow uses an independently managed App Server.
 # The URL must be reachable from inside the container, not just from the host.
 : "${CODEXUI_APP_SERVER_URL:?Set CODEXUI_APP_SERVER_URL to the externally managed test server; see docs/development.md}"
+: "${CODEXUI_CONNECTION_PROFILE:?Set CODEXUI_CONNECTION_PROFILE to the App Server ID}"
 docker info >/dev/null
 if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
   echo "Container already exists: $CONTAINER_NAME. Choose another name or remove it explicitly." >&2
@@ -20,7 +21,7 @@ if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
 fi
 
 pnpm --dir "$ROOT_DIR" run build
-docker volume create "$CODEX_HOME_VOLUME" >/dev/null
+docker volume create "$WEBUI_STORAGE_VOLUME" >/dev/null
 
 created=0
 ready=0
@@ -38,10 +39,15 @@ docker create \
   --name "$CONTAINER_NAME" \
   --add-host host.docker.internal:host-gateway \
   -p "127.0.0.1:${PORT}:4191" \
-  -e CODEX_HOME=/codex-home \
+  -e XDG_CONFIG_HOME=/webui-storage/config \
+  -e XDG_DATA_HOME=/webui-storage/data \
+  -e XDG_CACHE_HOME=/webui-storage/cache \
+  -e XDG_STATE_HOME=/webui-storage/state \
+  -e CODEXUI_CONNECTION_PROFILE \
+  -e CODEXUI_REMOTE_UPLOAD_DIR \
   -e CODEXUI_APP_SERVER_URL \
   -v "$ROOT_DIR:/repo:ro" \
-  -v "$CODEX_HOME_VOLUME:/codex-home" \
+  -v "$WEBUI_STORAGE_VOLUME:/webui-storage" \
   "$IMAGE_NAME" >/dev/null
 created=1
 docker start "$CONTAINER_NAME" >/dev/null
@@ -59,7 +65,7 @@ for _ in $(seq 1 60); do
     ready=1
     echo "Docker fast test server: http://127.0.0.1:${PORT}/"
     echo "Container: $CONTAINER_NAME"
-    echo "CODEX_HOME volume: $CODEX_HOME_VOLUME"
+    echo "WebUI storage volume: $WEBUI_STORAGE_VOLUME"
     echo "Stop after testing: docker rm -f $CONTAINER_NAME"
     exit 0
   fi

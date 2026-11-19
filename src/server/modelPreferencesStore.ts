@@ -1,11 +1,11 @@
-import { homedir } from 'node:os'
+import { storageNames } from './webuiStorage.mjs'
 import { join } from 'node:path'
-import { profileStateDirectory } from './connectionProfile.js'
+import { profileStorageDirectory } from './connectionProfile.js'
 import { readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState.js'
 import { emptyModelPreferences, preferenceModelKey, type ModelPreferences, type ModelSettings } from '../modelPreferences.js'
 
 export function modelPreferencesPath(): string {
-  return join(profileStateDirectory(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex')), 'codexapp-model-preferences.json')
+  return join(profileStorageDirectory('data'), storageNames.modelPreferences)
 }
 
 function record(value: unknown): Record<string, unknown> {

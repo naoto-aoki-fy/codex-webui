@@ -66,9 +66,9 @@ export class AppServerClient {
     (method, params) => this.call(method, params),
     () => `${this.getConnectionGeneration()}:${getConnectionProfileId()}`,
   )
-  async resolveCodexHome(): Promise<string> {
+  async resolveCodexHome({ discover = true } = {}): Promise<string> {
     await this.ensureInitialized()
-    return this.codexHome.resolve()
+    return discover ? this.codexHome.resolve() : this.codexHome.observedHome()
   }
 
   private readonly rolloutMetadata = new RolloutGenerationMetadata({

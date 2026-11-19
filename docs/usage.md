@@ -7,11 +7,11 @@ For development and verification use the [development guide](development.md).
 
 ## WebUI version upgrades
 
-WebUI uses the current storage formats and leaves retired settings and files in
-place. Automatic upgrades from older WebUI formats are unsupported. Use
-**Settings → General → Draft Recovery** to recover saved drafts from earlier
-releases, including drafts restored by Fork and Revert. See the
-[browser storage guide](browser-persistence.md#draft-ownership-after-changes).
+Choose an explicit [App Server ID](connection-profiles-uploads.md) at startup.
+WebUI initializes fresh backend state for each ID in its OS application
+directories. Existing WebUI and native data in Codex home stay in place. The
+browser's Draft Recovery picker can copy available drafts stored under the
+current App Server ID. See the [browser storage guide](browser-persistence.md#draft-ownership-after-changes).
 
 ## Browser access
 

@@ -1726,7 +1726,7 @@ describe('shared catalog ownership and deferred submission characterization', ()
       gateway.resumeThread.mockReturnValueOnce(resumed.promise)
       const key = (model: string) => `provider-model:${JSON.stringify(['openai', model])}`
       reasoningCatalog.value = [...a, ...b].map(model => ({ ...model, modelProvider: 'openai' }))
-      window.localStorage.setItem(`codex-web-local.selected-model-by-context.v2.${encodeURIComponent(thread.id)}`, JSON.stringify(key('A')))
+      window.localStorage.setItem(`codex-unbound.codex-web-local.selected-model-by-context.v2.${encodeURIComponent(thread.id)}`, JSON.stringify(key('A')))
       const state = createState()
       state.setSelectedModelIdForThread(thread.id, 'A')
       state.setSelectedReasoningEffort('high', thread.id)
@@ -1798,7 +1798,7 @@ describe('new-thread preference context across deferred creation', () => {
         if (request.method === 'config/read') return Promise.resolve(new Response(JSON.stringify({ result: { config: { model: 'A' } } })))
         return submitted.promise
       }))
-      window.localStorage.setItem(`codex-web-local.selected-model-by-context.v2.${encodeURIComponent(thread.id)}`, JSON.stringify('A'))
+      window.localStorage.setItem(`codex-unbound.codex-web-local.selected-model-by-context.v2.${encodeURIComponent(thread.id)}`, JSON.stringify('A'))
       const state = createState()
       state.setSelectedModelIdForThread(thread.id, 'A')
       state.setSelectedReasoningEffort('high', thread.id)

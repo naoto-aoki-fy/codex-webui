@@ -53,6 +53,11 @@ export class CodexHomeResolver {
     this.home = sessionCodexHome(asRecord(asRecord(result)?.thread)?.path)
   }
 
+  observedHome(): string {
+    this.token()
+    return this.home
+  }
+
   resolve(): Promise<string> {
     const token = this.token()
     if (this.home) return Promise.resolve(this.home)

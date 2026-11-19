@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname } from 'node:path'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { inlineAssetPath } from './appAssets.js'
+import { resolveInlineAssetPath } from './appAssets.js'
 import { projectPath, type ProjectFileService } from './appServerFileSystem.js'
 import mime from 'mime-types'
 import { getLocalDirectoryListing, normalizeLocalPath } from './localBrowseUi.js'
@@ -46,8 +46,9 @@ export function createLocalFileMiddleware(files: ProjectFileService) {
       let localPath: string
       if (kind === 'asset') {
         const id = new URLSearchParams(rawUrl.slice(pathname.length)).get('id') ?? ''
-        const path = inlineAssetPath(id)
-        if (!path) throw new RequestError(400, 'Invalid application asset ID.')
+        if (!/^[a-zA-Z0-9_.-]+$/u.test(id)) throw new RequestError(400, 'Invalid application asset ID.')
+        const path = resolveInlineAssetPath(id)
+        if (!path) throw new RequestError(404, 'Application asset not found.')
         let bytes: Buffer
         try { bytes = await readFile(path) } catch { throw new RequestError(404, 'Application asset not found.') }
         res.setHeader('Content-Type', mime.contentType(extname(path)) || 'application/octet-stream')

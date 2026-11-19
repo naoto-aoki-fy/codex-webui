@@ -1,8 +1,7 @@
 import {
   closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync,
-  renameSync, rmdirSync, unlinkSync, writeFileSync, fchmodSync, fchownSync, fsyncSync,
+  rmdirSync, unlinkSync,
 } from 'node:fs'
-import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, parse, relative, sep } from 'node:path'
 
 const linux = process.platform === 'linux'
@@ -92,24 +91,7 @@ function sameFile(path, expected, actual) {
   if (fingerprint(expected) !== fingerprint(actual)) throw new Error(`Changed during reset: ${path}`)
 }
 
-export function readBytes(path, expected, limit = 64 * 1024 * 1024) {
-  if (expected.size > BigInt(limit)) throw new Error(`File exceeds reset inspection limit: ${path}`)
-  return inParent(path, child => {
-    const fd = openSync(child, constants.O_RDONLY | constants.O_NONBLOCK | noFollow)
-    try {
-      sameFile(path, expected, fstatSync(fd, { bigint: true }))
-      const bytes = readFileSync(fd)
-      sameFile(path, expected, fstatSync(fd, { bigint: true }))
-      return bytes
-    } finally { closeSync(fd) }
-  })
-}
-
-export function read(path, expected, limit) {
-  return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(readBytes(path, expected, limit))
-}
-
-export function apply({ path, info, kind, replacement }) {
+export function apply({ path, info, kind }) {
   let applied = false
   inParent(path, child => {
     const actual = assertSafe(path, lstat(child))
@@ -117,28 +99,9 @@ export function apply({ path, info, kind, replacement }) {
       // Child deletions in this plan changed the directory's timestamps.
       if (identity(info) !== identity(actual)) throw new Error(`Changed during reset: ${path}`)
       rmdirSync(child)
-    } else if (kind === 'unlink') {
-      sameFile(path, info, actual)
-      unlinkSync(child)
     } else {
       sameFile(path, info, actual)
-      const temp = join(dirname(child), `.${basename(child)}.webui-reset-${randomUUID()}.tmp`)
-      const mode = Number(info.mode & 0o7777n)
-      const fd = openSync(temp, 'wx', mode)
-      try {
-        writeFileSync(fd, replacement)
-        const tempInfo = fstatSync(fd, { bigint: true })
-        if (tempInfo.uid !== info.uid || tempInfo.gid !== info.gid) {
-          fchownSync(fd, Number(info.uid), Number(info.gid))
-        }
-        fchmodSync(fd, mode)
-        fsyncSync(fd)
-        sameFile(path, info, assertSafe(path, lstat(child)))
-        renameSync(temp, child)
-      } finally {
-        closeSync(fd)
-        try { unlinkSync(temp) } catch (error) { if (error.code !== 'ENOENT') throw error }
-      }
+      unlinkSync(child)
     }
     applied = true
   })

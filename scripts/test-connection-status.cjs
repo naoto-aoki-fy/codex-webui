@@ -60,6 +60,7 @@ const base = 'http://127.0.0.1:4173'
       }, { theme, transport })
       const thread = { id: 'connection-fixture', cwd: '/remote/disposable', preview: 'Connection status fixture', createdAt: 1, updatedAt: 1, status: { type: 'idle' }, turns: [] }
       await page.route('**/codex-api/**', async route => {
+        if (route.request().url().endsWith('/codex-api/connection-profile')) return route.fulfill({ json: { connectionProfile: 'browser-fixture' } })
         const pathname = new URL(route.request().url()).pathname
         const body = route.request().postDataJSON()
         requests.push({ path: pathname, method: body?.method || route.request().method() })

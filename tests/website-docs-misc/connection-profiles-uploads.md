@@ -1,38 +1,51 @@
-# Connection profiles and upload accounting
+# App Server ID, storage, and upload isolation
 
-## Profile isolation
+Use a disposable App Server and a temporary WebUI storage environment. On Linux,
+point the four XDG variables at separate absolute directories in the fixture.
+Start the App Server with a separate disposable Codex home. Place arbitrary
+sentinels in that home, including an old `.codex-global-state.json`, model
+preferences, and upload inventory. Use the same endpoint for all test IDs.
 
-Prerequisites: disposable local CODEX_HOME and fixture server, never existing user state.
+1. Start the built CLI without `--connection-profile` or
+   `CODEXUI_CONNECTION_PROFILE`. Repeat with `pnpm run dev`, and try an ID of
+   `../outside`. Each process exits before serving HTTP and prints the App
+   Server ID error.
+2. Launch with `--connection-profile one` against the fixture endpoint. Choose a
+   Home model/mode, save a thread draft, and sign in with WebUI password
+   protection enabled. Restart with the same ID and confirm all three persist.
+3. Restart with ID `two` at the same endpoint. The model preference and draft
+   start empty. The WebUI login session still works. Restart with ID `one` to
+   recover its earlier selections and draft. Supply `legacy` explicitly and
+   confirm it initializes fresh backend state. The old sentinels retain their
+   bytes.
+4. Set `CODEXUI_REMOTE_UPLOAD_DIR` to an absolute disposable attachment root on
+   the App Server and `CODEXUI_UPLOAD_CAPACITY_BYTES=4` on the backend. On ID
+   `one`, upload a three-byte file, then attempt a two-byte upload. The first
+   appears under `codexapp-uploads/<sha256(one)>/` on the App Server. The second
+   is rejected before the filesystem write.
+5. Use ID `two` and upload four bytes. Verify the second namespace has separate
+   upload bytes and a separate local `uploads/inventory.json` and
+   `uploads/journal.jsonl`. Return to ID `one`, remove its disposable inventory
+   only, and retry. Its journal restores the three-byte reservation with status
+   `unknown`. Simulate a lost write response and verify its bytes stay reserved.
+6. Repeat with a missing or Codex-owned upload root. Expect a clear
+   `CODEXUI_REMOTE_UPLOAD_DIR` error and no writes under Codex home.
 
-1. Start with no explicit profile and set a Home model preference.
-2. Restart with `--connection-profile one` against the same fixture URL and set a different Home model preference.
-3. Restart with `--connection-profile two` and confirm it starts with the fixture defaults. Repeat with profile `one`, then with no explicit profile.
+Credential-free API entry-point coverage runs with
+`pnpm run test:integration:fixture`, and with `CODEXAPP_FIXTURE_TRANSPORT=unix`
+on Linux/macOS. OS resolver and filesystem behavior are covered in
+`connectionProfile.test.ts`, `remoteUploads.test.ts`, `appAssets.test.ts`, and
+`rolloutGenerationMetadata.test.ts`.
 
-Expected: each profile restores its own choice on Home. The default `legacy`
-profile uses the preference file directly under `CODEX_HOME`. Global WebUI
-password sessions remain shared. Automated coverage lives in
-`src/server/connectionProfile.test.ts` and `src/server/modelPreferencesStore.test.ts`.
+## Browser restart
 
-Cleanup: stop only disposable servers and delete the disposable state directory.
+On the current verification server at `127.0.0.1:4173`, run
+`node scripts/test-connection-profiles.cjs`. This fixture supplies a backend ID
+and synthetic notification socket. Verify colliding thread IDs start with
+separate drafts, return restores the original draft, and a same-ID ready frame
+does not reload. The fixture also checks that a stale URL hint and an unscoped
+draft are ignored. Screenshots for both themes land in `output/playwright/`.
 
-## Upload inventory, retention and capacity
-
-Prerequisites: disposable remote fixture filesystem and local state directory, `CODEXUI_UPLOAD_CAPACITY_BYTES=4`.
-
-1. Seed a historical journal entry with unknown size, stage three bytes using profile one, then attempt two bytes using profile two.
-2. Remove only the disposable fixture's `codexapp-upload-inventory.json`. Retry
-   the two-byte upload, then upload one byte and read the recovered inventory.
-3. In a separate fresh fixture, simulate a lost write response, then inspect
-   the inventory and remote mutation log.
-
-Expected: the two-byte attempts are rejected before `fs/writeFile`. The recovered
-inventory retains the historical path, the three-byte reservation with its
-journal status of `unknown`, and the new one-byte reservation. Ambiguous writes
-retain their byte reservation. The remote log contains no `fs/remove` call.
-Automated coverage lives in `src/server/remoteUploads.test.ts`.
-
-Cleanup: remove disposable fixture files and local state only. Real two-host verification remains required for filesystem quota behavior and authentication; fixture results do not establish remote quota enforcement or live reference recovery.
-
-## Browser profile transition
-
-Prerequisites: current disposable verification server on 127.0.0.1:4173. Run `node scripts/test-connection-profiles.cjs`; it intercepts API requests and supplies synthetic notification sockets. Expected: different-profile ready reloads once, colliding thread IDs have separate drafts, returning to legacy restores its draft, and same-profile ready does not reload. Light/dark screenshots land under `output/playwright/connection-profiles-*.png`. No real remote operations occur. Disabled-storage reload-loop coverage is in `src/utils/browserConnectionProfile.test.ts`. Cleanup: close fixture pages; keep the verification server running.
+Cleanup: close fixture pages, stop the disposable App Server and any disposable
+backend other than the reusable verification server, and remove fixture
+directories. Preserve any real attachment referenced by a conversation.

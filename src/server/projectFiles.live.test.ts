@@ -1,5 +1,5 @@
 import { spawn, execFileSync } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { once } from 'node:events'
@@ -7,12 +7,17 @@ import { createServer } from 'node:http'
 import { expect, it, vi } from 'vitest'
 import { AppServerClient } from './appServerClient'
 import { ProjectFileService } from './appServerFileSystem'
+import { stageRemoteUpload } from './remoteUploads'
+import { profileStorageDirectory } from './connectionProfile'
 import { createLocalFileMiddleware } from './localFileHttp'
 
 // Explicitly opt in: the default suite never requires a Codex installation or credentials.
 it.skipIf(process.env.CODEX_PROJECT_FILES_LIVE !== '1' || process.platform === 'win32')('serves files through Codex CLI 0.167.2 RPCs', async () => {
   expect(execFileSync('node_modules/.bin/codex', ['--version'], { encoding: 'utf8' }).trim()).toBe('codex-cli 0.167.2')
   const directory = await mkdtemp(join(tmpdir(), 'codex-project-files-live-'))
+  const codexHome = join(directory, 'codex-core')
+  await mkdir(codexHome)
+  const uploadRoot = join(directory, 'attachments')
   const reservation = createServer()
   reservation.listen(0, '127.0.0.1')
   await once(reservation, 'listening')
@@ -20,7 +25,7 @@ it.skipIf(process.env.CODEX_PROJECT_FILES_LIVE !== '1' || process.platform === '
   await new Promise<void>(resolve => reservation.close(() => resolve()))
   const url = `ws://127.0.0.1:${port}`
   const child = spawn('node_modules/.bin/codex', ['app-server', '--listen', url], {
-    env: { ...process.env, CODEX_HOME: directory }, stdio: ['ignore', 'ignore', 'pipe'],
+    env: { ...process.env, CODEX_HOME: codexHome }, stdio: ['ignore', 'ignore', 'pipe'],
   })
   let logs = ''
   child.stderr.on('data', data => { logs += data })
@@ -41,7 +46,16 @@ it.skipIf(process.env.CODEX_PROJECT_FILES_LIVE !== '1' || process.platform === '
     expect((await files.readFile(file)).toString()).toBe('remote-rpc-content')
     expect((await files.getMetadata(file)).isFile).toBe(true)
     expect((await files.readDirectory(join(directory, 'project'))).entries[0]!.fileName).toBe('日本 語.txt')
-    expect(client.getInitializationMetadata()).toMatchObject({ codexHome: directory, platformFamily: 'unix' })
+    expect(client.getInitializationMetadata()).toMatchObject({ codexHome, platformFamily: 'unix' })
+    vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', uploadRoot)
+    const attachment = await stageRemoteUpload(client, 'live.txt', Buffer.from('live upload'))
+    expect(attachment.startsWith(join(uploadRoot, 'codexapp-uploads'))).toBe(true)
+    expect(await readFile(attachment, 'utf8')).toBe('live upload')
+    const inventory = JSON.parse(await readFile(join(profileStorageDirectory('data'), 'uploads/inventory.json'), 'utf8'))
+    expect(inventory.records).toEqual([expect.objectContaining({ path: attachment, bytes: 11, status: 'staged' })])
+    vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', codexHome)
+    await expect(stageRemoteUpload(client, 'blocked.txt', Buffer.from('x'))).rejects.toThrow('outside the App Server Codex home')
+    expect(await readdir(codexHome)).not.toContain('codexapp-uploads')
     const handler = createLocalFileMiddleware(files)
     http = createServer((req, res) => handler(req, res, () => { res.statusCode = 404; res.end() }))
     http.listen(0, '127.0.0.1')

@@ -1,5 +1,9 @@
 import { sessionCodexHome } from './codexHomeResolver.js'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdir, open, rename, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { profileStorageDirectory } from './connectionProfile.js'
+import { storageNames } from './webuiStorage.mjs'
 import { projectPath } from './appServerFileSystem.js'
 import { readGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata.js'
 
@@ -36,14 +40,36 @@ export function parseRolloutMetadata(raw: string): Map<string, TurnGenerationMet
   return new Map([...turns].filter(([, value]) => Object.keys(value).length))
 }
 
-export function rolloutCacheLocation(path: unknown, home?: string) {
+export function rolloutSourcePath(path: unknown, home: string): string | undefined {
   if (typeof path !== 'string' || path.length > 4096 || /[\x00-\x1f]/u.test(path)) return undefined
   const rules = projectPath(path)
   if (!rules.isAbsolute(path) || rules.normalize(path) !== path) return undefined
   const inferred = sessionCodexHome(path)
   if (!inferred) return undefined
-  if (home && rules.relative(rules.normalize(home), inferred) !== '') return undefined
-  return rules.join(inferred, 'cache', 'model-history', 'v1')
+  if (rules.relative(rules.normalize(home), inferred) !== '') return undefined
+  return path
+}
+
+async function readCache(path: string): Promise<unknown> {
+  const file = await open(path, 'r')
+  try {
+    if ((await file.stat()).size > MAX_CACHE_BYTES) throw new Error('Rollout cache exceeds budget')
+    return JSON.parse(await file.readFile('utf8'))
+  } finally {
+    await file.close()
+  }
+}
+
+async function writeCache(directory: string, path: string, raw: string): Promise<void> {
+  const temporary = `${path}.${randomUUID()}.tmp`
+  await mkdir(directory, { recursive: true })
+  try {
+    await writeFile(temporary, raw, { mode: 0o600, flag: 'wx' })
+    await rename(temporary, path)
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined)
+    throw error
+  }
 }
 
 type Client = {
@@ -86,20 +112,22 @@ export class RolloutGenerationMetadata {
       return Buffer.from(response.dataBase64, 'base64').toString('utf8')
     }
     const thread = await rpc('thread/read', { threadId, includeTurns: false })
-    const path = thread?.thread?.path
+    const candidate = thread?.thread?.path
     const home = await this.client.home()
     if (generation !== this.client.generation() || !home) return new Map<string, TurnGenerationMetadata>()
-    const dir = rolloutCacheLocation(path, home)
-    if (!dir) return new Map<string, TurnGenerationMetadata>()
-    const cachePath = projectPath(path).join(dir, createHash('sha256').update(threadId).digest('hex') + '.json')
+    const path = rolloutSourcePath(candidate, home)
+    if (!path) return new Map<string, TurnGenerationMetadata>()
+    const dir = join(profileStorageDirectory('cache'), storageNames.rolloutCache, 'v1')
+    const cachePath = join(dir, createHash('sha256').update(threadId).digest('hex') + '.json')
     const before = await rpc('fs/getMetadata', { path })
     if (!before?.isFile) return new Map<string, TurnGenerationMetadata>()
     const stamp = before.modifiedAtMs
     const reliable = typeof stamp === 'number' && Number.isFinite(stamp) && stamp > 0
     if (!force && reliable) {
       try {
-        const cached = JSON.parse(await readFile(cachePath, MAX_CACHE_BYTES))
-        if (cached.version === 1 && cached.sourcePath === path && cached.modifiedAtMs === stamp && Array.isArray(cached.turns) && cached.turns.length <= MAX_TURNS) {
+        const cached = record(await readCache(cachePath))
+        if (generation !== this.client.generation()) return new Map<string, TurnGenerationMetadata>()
+        if (cached?.version === 1 && cached.sourcePath === path && cached.modifiedAtMs === stamp && Array.isArray(cached.turns) && cached.turns.length <= MAX_TURNS) {
           const data = new Map<string, TurnGenerationMetadata>()
           for (const row of cached.turns) {
             const metadata = readGenerationMetadata(row?.metadata)
@@ -120,11 +148,10 @@ export class RolloutGenerationMetadata {
       const raw = JSON.stringify({ version: 1, sourcePath: path, modifiedAtMs: stamp, turns: [...data].map(([turnId, metadata]) => ({ turnId, metadata })) })
       if (Buffer.byteLength(raw) <= MAX_CACHE_BYTES) {
         try {
-          await rpc('fs/createDirectory', { path: dir, recursive: true })
-          await rpc('fs/writeFile', { path: cachePath, dataBase64: Buffer.from(raw).toString('base64') })
-        } catch { /* Read-only hosts still supply execution evidence. */ }
+          await writeCache(dir, cachePath, raw)
+        } catch { /* Cache write failures do not affect execution evidence. */ }
       }
     }
-    return data
+    return generation === this.client.generation() ? data : new Map<string, TurnGenerationMetadata>()
   }
 }

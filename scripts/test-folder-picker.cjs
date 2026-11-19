@@ -24,6 +24,7 @@ const fs = require('node:fs')
         const calls = []
         await page.routeWebSocket('**/codex-api/ws', () => {})
         await page.route('**/codex-api/**', async (route) => {
+          if (route.request().url().endsWith('/codex-api/connection-profile')) return route.fulfill({ json: { connectionProfile: 'browser-fixture' } })
           if (!route.request().url().endsWith('/rpc')) return route.fulfill({ json: { data: [] } })
           const { method, params } = route.request().postDataJSON()
           calls.push({ method, params })

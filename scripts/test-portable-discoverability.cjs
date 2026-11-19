@@ -1,3 +1,4 @@
+const { fixtureWebuiStorage } = require('./fixture-webui-storage.cjs')
 // Explicit live acceptance only. Compare an archived pre-cleanup build with current.
 const assert = require('node:assert/strict')
 const { spawn, execFileSync } = require('node:child_process')
@@ -41,7 +42,7 @@ const sleep = ms => new Promise(done => setTimeout(done, ms))
   const start = async v => {
     const fd = openSync(join(v.home, 'app.log'), 'a')
     v.child = spawn(process.execPath, [join(v.cwd, 'dist-cli/index.js'), '--host', '127.0.0.1', '--port', String(v.port), '--no-open'], {
-      cwd: v.cwd, env: { ...process.env, CODEX_HOME: v.home, CODEXUI_CONNECTION_PROFILE: 'legacy', CODEXUI_REMOTE_INITIAL_DIRECTORY: root }, stdio: ['ignore', fd, fd],
+      cwd: v.cwd, env: { ...process.env, ...fixtureWebuiStorage(v.home, 'legacy'), CODEX_HOME: v.home, CODEXUI_REMOTE_INITIAL_DIRECTORY: root }, stdio: ['ignore', fd, fd],
     })
     for (let n = 0; n < 100; n++) {
       if (v.child.exitCode !== null) throw new Error('App exited: ' + readFileSync(join(v.home, 'app.log'), 'utf8').slice(-1500))

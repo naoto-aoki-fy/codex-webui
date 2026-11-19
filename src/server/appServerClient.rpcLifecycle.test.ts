@@ -303,27 +303,22 @@ it.each([{}, { codexHome: 'relative' }])('falls back to thread/config discovery 
 
 it('waits for the handshake on the first upload and makes zero discovery config reads', async () => {
   const { stageRemoteUpload } = await import('./remoteUploads')
-  const { mkdtemp, rm } = await import('node:fs/promises')
-  const { tmpdir } = await import('node:os')
-  const { join } = await import('node:path')
-  const state = await mkdtemp(join(tmpdir(), 'handshake-upload-'))
-  vi.stubEnv('CODEX_HOME', '/webui/state')
-  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '')
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '/server/attachments')
   wire.holdHandshake = true
   wire.autoFs = true
   const client = new AppServerClient()
   try {
-    const upload = stageRemoteUpload(client, 'test.txt', Buffer.from('test'), state)
+    const upload = stageRemoteUpload(client, 'test.txt', Buffer.from('test'))
     const concurrentHome = client.resolveCodexHome()
     await flush()
     const socket = wire.sockets[0]
     expect(socket.frames.map((f: any) => f.method)).toEqual(['initialize'])
     socket.reply(socket.frames[0].id, { codexHome: '/server/state' })
     expect(await concurrentHome).toBe('/server/state')
-    expect(await upload).toMatch(/^\/server\/state\/codexapp-uploads\//)
+    expect(await upload).toMatch(/^\/server\/attachments\/codexapp-uploads\/[0-9a-f]{64}\//)
     expect(socket.frames.filter((f: any) => f.method === 'config/read')).toHaveLength(0)
     expect(socket.frames.filter((f: any) => f.method === 'initialize')).toHaveLength(1)
-  } finally { client.dispose(); await rm(state, { recursive: true, force: true }) }
+  } finally { client.dispose(); vi.unstubAllEnvs() }
 })
 
 it('applies handshake home before internal reads and subscription recovery, and replaces it on reconnect', async () => {

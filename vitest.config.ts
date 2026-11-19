@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [vue()],
   test: {
     environment: 'node',
+    setupFiles: ['./src/server/webuiTestStorage.ts'],
     include: ['src/**/*.test.ts'],
     exclude: ['node_modules/**', 'dist/**', 'dist-cli/**', 'output/**'],
   },
