@@ -44,8 +44,14 @@ Set `CODEXUI_REMOTE_UPLOAD_DIR` in the WebUI backend environment to a dedicated
 absolute path **on the App Server host**, outside its Codex home. The App Server
 must be able to create and write to that directory. Uploaded bytes are stored in
 `<CODEXUI_REMOTE_UPLOAD_DIR>/codexapp-uploads/<sha256(ID)>/` via App Server RPC.
-The backend needs only the ledger and journal. Uploads with an unset, invalid,
-or known Codex-owned root fail with a configuration error.
+The backend needs only the ledger and journal. It resolves Codex home from the
+connected App Server and checks both paths via remote metadata before creating
+directories or writing files. If the home or the paths cannot be verified,
+uploads fail with a configuration error. Use absolute paths with no symbolic
+links in either path. Place the dedicated storage outside Codex home on the
+App Server, and keep paths stable during uploads. The protocol does not expose
+directory identity or atomic path-checked writes, so avoid bind mounts, mapped
+drives, or share aliases that expose Codex home through another path.
 
 The limits are 20 MiB per file and 21 MiB per multipart request. The backend
 reserves each attempt in `uploads/inventory.json` under the ID's data directory

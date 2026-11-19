@@ -95,7 +95,7 @@ when a thread response wins a race with configuration discovery. Reconnection or
 profile changes clear the cache, apply the new connection's initialization
 metadata, and retire in-flight results. Initialization metadata is applied before
 normal and internal thread reads, including subscription recovery.
-Uploads use the explicit App Server upload root and check any home already
-observed at initialization or during an existing thread read. They never trigger
-`config/read` for this check. See the
+Uploads resolve the home before any remote filesystem mutation. They reuse a
+known home and request `config/read` when discovery is needed. Unknown homes
+block uploads. See the
 [discovery checks](../tests/website-docs-misc/codex-home-discovery.md).

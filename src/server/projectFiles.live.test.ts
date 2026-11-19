@@ -1,5 +1,5 @@
 import { spawn, execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { once } from 'node:events'
@@ -14,7 +14,7 @@ import { createLocalFileMiddleware } from './localFileHttp'
 // Explicitly opt in: the default suite never requires a Codex installation or credentials.
 it.skipIf(process.env.CODEX_PROJECT_FILES_LIVE !== '1' || process.platform === 'win32')('serves files through Codex CLI 0.167.2 RPCs', async () => {
   expect(execFileSync('node_modules/.bin/codex', ['--version'], { encoding: 'utf8' }).trim()).toBe('codex-cli 0.167.2')
-  const directory = await mkdtemp(join(tmpdir(), 'codex-project-files-live-'))
+  const directory = await mkdtemp(join(await realpath(tmpdir()), 'codex-project-files-live-'))
   const codexHome = join(directory, 'codex-core')
   await mkdir(codexHome)
   const uploadRoot = join(directory, 'attachments')
@@ -55,6 +55,10 @@ it.skipIf(process.env.CODEX_PROJECT_FILES_LIVE !== '1' || process.platform === '
     expect(inventory.records).toEqual([expect.objectContaining({ path: attachment, bytes: 11, status: 'staged' })])
     vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', codexHome)
     await expect(stageRemoteUpload(client, 'blocked.txt', Buffer.from('x'))).rejects.toThrow('outside the App Server Codex home')
+    const alias = join(directory, 'linked-home')
+    await symlink(codexHome, alias)
+    vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', alias)
+    await expect(stageRemoteUpload(client, 'blocked.txt', Buffer.from('x'))).rejects.toThrow('Cannot safely verify CODEXUI_REMOTE_UPLOAD_DIR')
     expect(await readdir(codexHome)).not.toContain('codexapp-uploads')
     const handler = createLocalFileMiddleware(files)
     http = createServer((req, res) => handler(req, res, () => { res.statusCode = 404; res.end() }))

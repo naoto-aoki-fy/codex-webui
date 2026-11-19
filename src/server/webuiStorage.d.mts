@@ -9,6 +9,7 @@ export function resolveWebuiStorage(env?: NodeJS.ProcessEnv, platform?: NodeJS.P
 export function requireConnectionProfile(value?: string): string
 export const profileDirectoryPattern: RegExp
 export function profileDirectoryName(id: string): string
+export function isAbsoluteUploadPath(value: string): boolean
 export function remoteUploadsDirectory(root: string, id: string): string
 export const storageNames: Record<'profiles' | 'global' | 'state' | 'modelPreferences' | 'authSessions' |
   'uploads' | 'inventory' | 'journal' | 'inlineMedia' | 'rolloutCache', string>

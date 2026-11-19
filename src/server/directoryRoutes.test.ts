@@ -15,7 +15,7 @@ beforeEach(async () => {
   vi.stubEnv('CODEX_HOME', home)
   previous = scope.__codexRemoteSharedBridge__
   rpc.mockReset().mockResolvedValue({ data: [] })
-  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v4', appServer: { rpc }, methodCatalog: {} }
+  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v5', appServer: { rpc }, methodCatalog: {} }
 })
 afterEach(async () => { scope.__codexRemoteSharedBridge__ = previous; vi.unstubAllEnvs(); await rm(home, { recursive: true, force: true }) })
 async function request(path: string, method = 'GET') {

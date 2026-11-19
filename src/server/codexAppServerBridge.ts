@@ -438,7 +438,7 @@ type SharedBridgeState = {
 }
 
 const SHARED_BRIDGE_KEY = '__codexRemoteSharedBridge__'
-const SHARED_BRIDGE_VERSION = 'external-websocket-files-v4'
+const SHARED_BRIDGE_VERSION = 'external-websocket-files-v5'
 
 function disposeSharedBridgeState(state: SharedBridgeState): void {
   if (state.retired) return

@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { projectPath } from './appServerFileSystem.js'
-import { remoteUploadsDirectory, storageNames } from './webuiStorage.mjs'
+import { join, win32, type PlatformPath } from 'node:path'
+import { isAbsoluteUploadPath, projectPath, remoteUploadsDirectory, storageNames } from './webuiStorage.mjs'
 import { getConnectionProfileId, profileStorageDirectory } from './connectionProfile.js'
 import { updateCodexGlobalState } from './codexGlobalState.js'
+import { asRecord } from './bridgeHttpUtils.js'
 import type { AppServerClient } from './appServerClient.js'
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -44,27 +44,88 @@ async function withInventory<T>(stateDirectory: string, operation: (records: Upl
   }, join(stateDirectory, storageNames.inventory))
 }
 
+type UploadClient = Pick<AppServerClient, 'uploadRpc' | 'resolveCodexHome' | 'getConnectionGeneration'>
+const homeError = 'Cannot verify the App Server Codex home. Ensure the App Server reports its absolute Codex home in initialization or config/read before using CODEXUI_REMOTE_UPLOAD_DIR.'
+
+function inside(rules: PlatformPath, parent: string, child: string): boolean {
+  // Treat case and Unicode normalization variants as aliases, including on macOS.
+  const normalized = (path: string) => path.normalize('NFC').toLowerCase()
+  const relative = rules.relative(normalized(parent), normalized(child))
+  return !rules.isAbsolute(relative) && relative !== '..' && !relative.startsWith('..' + rules.sep)
+}
+
+async function validateUploadDirectory(
+  client: UploadClient, generation: number, rules: PlatformPath, root: string, directory: string,
+): Promise<void> {
+  const home = await client.resolveCodexHome().catch(cause => {
+    throw Object.assign(new Error(homeError), { cause })
+  })
+  if (!isAbsoluteUploadPath(home)) throw new Error(homeError)
+  if (projectPath(home) !== rules) {
+    throw new Error('CODEXUI_REMOTE_UPLOAD_DIR must use the same absolute path syntax as the App Server Codex home')
+  }
+  if (inside(rules, home, root) || inside(rules, home, directory) || inside(rules, directory, home)) {
+    throw new Error('CODEXUI_REMOTE_UPLOAD_DIR must be outside the App Server Codex home')
+  }
+
+  const checks = new Map<string, Promise<boolean>>()
+  function check(path: string): Promise<boolean> {
+    const existing = checks.get(path)
+    if (existing) return existing
+    const result = client.uploadRpc('fs/getMetadata', { path }, generation).then(value => {
+      const info = asRecord(value)
+      if (info?.isDirectory !== true || info.isSymlink !== false) {
+        throw new Error('Expected a directory without symbolic links')
+      }
+      return true
+    }, error => {
+      // Codex forwards OS errors as internal errors. Only an explicit missing
+      // file (or Windows missing path) permits creating descendants.
+      const missing = rules === win32 ? /\(os error [23]\)$/u : /\(os error 2\)$/u
+      if (error?.code === -32603 && typeof error.message === 'string' && missing.test(error.message)) return false
+      throw error
+    })
+    checks.set(path, result)
+    return result
+  }
+
+  async function checkAncestors(path: string, allowMissing: boolean): Promise<void> {
+    const paths = []
+    for (let component = rules.resolve(path); ; component = rules.dirname(component)) {
+      paths.push(component)
+      if (rules.dirname(component) === component) break
+    }
+    for (const [index, component] of paths.reverse().entries()) {
+      if (await check(component)) continue
+      if (allowMissing && index > 0) return
+      throw new Error('Required directory is missing')
+    }
+  }
+
+  try {
+    await Promise.all([checkAncestors(home, false), checkAncestors(directory, true)])
+  } catch (cause) {
+    throw Object.assign(new Error('Cannot safely verify CODEXUI_REMOTE_UPLOAD_DIR. Use a dedicated path on the App Server outside Codex home, with no symbolic links in either path, and ensure fs/getMetadata can inspect them.'), { cause })
+  }
+}
+
 /** Indefinite retention, including unknown outcomes. No automatic deletion:
  * accepted turns and durable history may refer to these files after restart. */
 export async function stageRemoteUpload(
-  client: Pick<AppServerClient, 'rpc' | 'resolveCodexHome'>,
+  client: UploadClient,
   name: string, bytes: Buffer,
 ): Promise<string> {
   if (bytes.length > MAX_UPLOAD_BYTES) throw new Error('Upload exceeds 20 MiB file limit')
   const id = getConnectionProfileId()
-  const directory = remoteUploadsDirectory(process.env.CODEXUI_REMOTE_UPLOAD_DIR?.trim() ?? '', id)
+  const root = process.env.CODEXUI_REMOTE_UPLOAD_DIR?.trim() ?? ''
+  const directory = remoteUploadsDirectory(root, id)
   const rules = projectPath(directory)
-  const codexHome = await client.resolveCodexHome({ discover: false })
-  if (codexHome) {
-    const relative = rules.relative(codexHome, directory)
-    if (!relative || (!rules.isAbsolute(relative) && relative !== '..' && !relative.startsWith('..' + rules.sep))) {
-      throw new Error('CODEXUI_REMOTE_UPLOAD_DIR must be outside the App Server Codex home')
-    }
-  }
+  const generation = client.getConnectionGeneration()
+  await validateUploadDirectory(client, generation, rules, root, directory)
 
   const stateDirectory = join(profileStorageDirectory('data', id), storageNames.uploads)
   const path = rules.join(directory, `${randomUUID()}-${name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120)}`)
-  await client.rpc('fs/createDirectory', { path: directory, recursive: true })
+  await client.uploadRpc('fs/createDirectory', { path: directory, recursive: true }, generation)
   await mkdir(stateDirectory, { recursive: true })
   const intent: UploadRecord = { path, at: new Date().toISOString(), bytes: bytes.length, status: 'unknown' }
   // Locked, atomic reservation across instances with this App Server ID; ambiguous writes
@@ -76,7 +137,7 @@ export async function stageRemoteUpload(
   })
   // Keep a second record of each reservation for recovery if the inventory is lost.
   await appendFile(join(stateDirectory, storageNames.journal), JSON.stringify(intent) + '\n', { mode: 0o600 })
-  await client.rpc('fs/writeFile', { path, dataBase64: bytes.toString('base64') })
+  await client.uploadRpc('fs/writeFile', { path, dataBase64: bytes.toString('base64') }, generation)
   await withInventory(stateDirectory, records => { const record = records.find(record => record.path === path); if (record) record.status = 'staged' })
   return path
 }

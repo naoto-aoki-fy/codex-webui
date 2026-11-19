@@ -18,7 +18,8 @@ vi.mock('ws', async () => {
       const frame = JSON.parse(raw)
       this.frames.push(frame)
       if (frame.method === 'initialize' && !wire.holdHandshake) queueMicrotask(() => this.reply(frame.id, wire.metadata))
-      if (wire.autoFs && frame.method?.startsWith('fs/')) queueMicrotask(() => this.reply(frame.id, {}))
+      if (wire.autoFs && frame.method?.startsWith('fs/')) queueMicrotask(() => this.reply(frame.id,
+        frame.method === 'fs/getMetadata' ? { isDirectory: true, isSymlink: false } : {}))
       callback?.()
     }
     reply(id: number, result: unknown) { this.emit('message', Buffer.from(JSON.stringify({ id, result })), false) }
@@ -319,6 +320,46 @@ it('waits for the handshake on the first upload and makes zero discovery config 
     expect(socket.frames.filter((f: any) => f.method === 'config/read')).toHaveLength(0)
     expect(socket.frames.filter((f: any) => f.method === 'initialize')).toHaveLength(1)
   } finally { client.dispose(); vi.unstubAllEnvs() }
+})
+
+it.each([
+  ['/server/custom', 'must be outside'],
+  ['', 'Cannot verify the App Server Codex home'],
+  ['/server/other-core', ''],
+])('checks config discovery before any upload filesystem call, with home %j', async (home, error) => {
+  const { stageRemoteUpload } = await import('./remoteUploads')
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '/server/custom/attachments')
+  wire.autoFs = true
+  const client = new AppServerClient()
+  try {
+    const upload = stageRemoteUpload(client, 'test.txt', Buffer.from('test'))
+    const result = error ? expect(upload).rejects.toThrow(error) : expect(upload).resolves.toContain('/server/custom/attachments/')
+    await flush()
+    const socket = wire.sockets[0]
+    const configs = socket.frames.filter((f: any) => f.method === 'config/read')
+    expect(configs).toHaveLength(1)
+    expect(socket.frames.some((f: any) => f.method.startsWith('fs/'))).toBe(false)
+    socket.reply(configs[0].id, { layers: home ? [{ name: { type: 'user', profile: null, file: home + '/config.toml' } }] : [] })
+    await result
+    expect(socket.frames.some((f: any) => f.method === 'fs/writeFile')).toBe(!error)
+  } finally { client.dispose() }
+})
+
+it('does not send a validated filesystem mutation on a replacement connection', async () => {
+  const client = new AppServerClient()
+  try {
+    wire.metadata = { codexHome: '/server/first' }
+    expect(await client.resolveCodexHome()).toBe('/server/first')
+    const generation = client.getConnectionGeneration()
+    const mutation = client.uploadRpc('fs/createDirectory', { path: '/server/second', recursive: true }, generation)
+    const rejected = expect(mutation).rejects.toThrow(/connection changed during upload|Retired app-server initialization/)
+    wire.metadata = { codexHome: '/server/second' }
+    await client.reconnect()
+    await rejected
+    expect(wire.sockets.flatMap(socket => socket.frames).some(f => f.method === 'fs/createDirectory')).toBe(false)
+    await expect(client.uploadRpc('fs/writeFile', {}, generation)).rejects.toThrow('connection changed during upload')
+    expect(wire.sockets[1].frames.some((f: any) => f.method === 'fs/writeFile')).toBe(false)
+  } finally { client.dispose() }
 })
 
 it('applies handshake home before internal reads and subscription recovery, and replaces it on reconnect', async () => {

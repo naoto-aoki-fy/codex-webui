@@ -341,8 +341,15 @@ export class AppServerClient {
     return result
   }
 
-  private async callObserved(method: string, params: unknown, deadlineMs?: number): Promise<unknown> {
+  uploadRpc(method: 'fs/getMetadata' | 'fs/createDirectory' | 'fs/writeFile', params: unknown, generation: number): Promise<unknown> {
+    return this.callObserved(method, params, undefined, generation)
+  }
+
+  private async callObserved(method: string, params: unknown, deadlineMs?: number, expectedGeneration?: number): Promise<unknown> {
     await this.ensureInitialized()
+    if (expectedGeneration !== undefined && expectedGeneration !== this.connectionGeneration) {
+      throw new Error('App Server connection changed during upload. Retry to validate the upload destination on the new connection.')
+    }
     // No await between this guard and the wire write: initialization may yield
     // while another browser starts login or an account notification arrives.
     if (AUTHENTICATED_WRITES.has(method)) this.authentication.assertReady()

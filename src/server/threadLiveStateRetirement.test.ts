@@ -36,7 +36,7 @@ beforeEach(async () => {
   events = []
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
   scope.__codexRemoteSharedBridge__ = {
-    version: 'external-websocket-files-v4', appServer: { rpc: async (method: string, params: unknown) => nativeHistoryResponse(method, params, await rpc(method, params)), getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getLastThreadReadSnapshot: () => snapshot, getStreamEvents: () => events },
+    version: 'external-websocket-files-v5', appServer: { rpc: async (method: string, params: unknown) => nativeHistoryResponse(method, params, await rpc(method, params)), getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getLastThreadReadSnapshot: () => snapshot, getStreamEvents: () => events },
     methodCatalog: {},
   }
 })
