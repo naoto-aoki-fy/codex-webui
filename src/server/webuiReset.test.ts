@@ -3,6 +3,7 @@ import { once } from 'node:events'
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { profileDirectoryName, remoteUploadsDirectory, resolveWebuiStorage } from './webuiStorage.mjs'
 
@@ -57,6 +58,16 @@ function run(args: string[] = [], overrides: Record<string, string> = {}, script
 }
 
 describe('WebUI reset preview and validation', () => {
+  it.each(['darwin', 'win32'])('rejects execution on %s before inspecting storage paths', platform => {
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      Object.defineProperty(process, 'platform', { value: ${JSON.stringify(platform)} })
+      process.argv.splice(1, process.argv.length, '--execute', '--offline', '--profile', 'workstation')
+      await import(${JSON.stringify(pathToFileURL(backendScript).href)})
+    `], { encoding: 'utf8' })
+    expect(child.status).toBe(1)
+    expect(child.stderr).toContain('Reset execution requires Linux')
+  })
+
   it('defaults to a dry run and resolves exactly the runtime storage layout', () => {
     const state = join(profile(data), 'state.json')
     const other = join(profile(data, 'other'), 'state.json')

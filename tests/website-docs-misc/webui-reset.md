@@ -22,6 +22,11 @@ root on the App Server. Seed the old Codex home with WebUI and native sentinels.
    --remote-upload <filename>`. Execute with `--execute --offline
    --confirm-remote <hostname>`. Confirm other files and IDs are preserved,
    and the WebUI's accounting is still intact.
+5. On macOS and Windows, run
+   `pnpm reset:webui --profile one --execute --offline` against disposable
+   storage. Expect an immediate Linux-only error and verify the data and
+   cache directories retain their contents. The path resolver tests in
+   `src/server/connectionProfile.test.ts` cover all three platforms.
 
 Cleanup: remove the disposable directories and browser profile. To retain
 saved backend state when testing, stop after the dry-run steps.
