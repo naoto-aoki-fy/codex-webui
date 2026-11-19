@@ -55,6 +55,7 @@ async function main() {
         const fixture = await setupRecovery(page)
         await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), theme === 'dark')
         const input = page.locator('.thread-composer-input')
+        assert.equal(await input.inputValue(), '')
         await input.fill('Current draft to preserve')
         const before = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)))
         assert.equal(await page.locator('.thread-composer').getByRole('button', { name: /Recover saved drafts/ }).count(), 0)

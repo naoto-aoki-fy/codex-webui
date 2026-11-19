@@ -61,8 +61,8 @@ browser preferences. Use a profile with two valid models in the same provider.
    same context: the last stored choice wins; draft text never changes.
 2. Change a thread preference in the other tab; verify storage events update the
    shared selection without navigating either tab.
-3. Seed a legacy global explicit-context array. Legacy profile choices must still
-   survive server default hydration; a named profile must not inherit the array.
+3. Seed a legacy global explicit-context array and v1 model/mode maps. Reload and
+   verify only current context records apply. Verify the old keys keep their values.
 4. Seed old selected-thread, model-order and token-usage entries. Home must stay
    home, usage ordering must follow backend accepted usage, and stale token counts
    must not appear after reload. Counts are unavailable until server observation.

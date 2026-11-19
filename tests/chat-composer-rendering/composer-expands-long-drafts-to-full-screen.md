@@ -61,11 +61,12 @@ conversation. Include text, an image, a file, a Skill and an App where supported
 3. Duplicate a tab, edit both copies, reload each. Copies must remain independent.
 4. Open different conversations in the two tabs; reload either. Routes and drafts
    must remain independent. The home route must not reopen an old conversation.
-5. Close a tab and open the conversation in a fresh tab. Click **Recover saved
-   drafts** and choose the closed tab's draft: it is copied without submission.
+5. Close a tab and open the conversation in a fresh tab. In **Settings → General →
+   Draft Recovery**, choose the closed tab's draft. The copy does not submit a turn.
 6. Seed a `thread-draft.v1.<thread>` payload (in the active profile namespace),
-   reload, edit it. Verify the legacy entry remains and the new writer owns a
-   distinct v2 entry. Named profiles must not load unprefixed legacy drafts.
+   then reload. Confirm the composer stays empty and the record is available in
+   Draft Recovery. Choose it explicitly and verify the original bytes remain.
+   A different named profile must exclude the record.
 7. Deny storage writes: editing remains possible and a warning asks the user to
    copy the draft before closing. Repeat in light and dark themes.
 

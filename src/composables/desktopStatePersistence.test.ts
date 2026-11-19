@@ -15,44 +15,34 @@ function storage(values: Record<string, string> = {}) {
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
-describe('desktop persistence compatibility', () => {
-  it('keeps every storage key and context derivation', () => {
-    const keys = Object.entries(persistence).filter(([name]) => name.endsWith('_STORAGE_KEY'))
-    expect(Object.fromEntries(keys)).toEqual({
-      SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY: 'codex-web-local.selected-model-by-context.v1',
-      LEGACY_SELECTED_MODEL_STORAGE_KEY: 'codex-web-local.selected-model-id.v1',
-      COLLABORATION_MODE_STORAGE_KEY: 'codex-web-local.collaboration-mode-by-context.v1',
-    })
+describe('desktop persistence', () => {
+  it('derives thread and composer contexts', () => {
     expect(persistence.toThreadContextId(' t ')).toBe('t')
     expect(persistence.toThreadContextId(' ')).toBe('__new-thread__')
     expect(persistence.NEW_THREAD_MODEL_CONTEXT).toBe('__new-thread-provider__::codex')
   })
 
-  it('preserves model fallback, malformed versus unsupported data, and migration writes', () => {
-    const mock = storage({ [persistence.LEGACY_SELECTED_MODEL_STORAGE_KEY]: ' legacy ' })
-    expect(persistence.readSelectedModel(persistence.loadSelectedModelMap(), 'thread')).toBe('legacy')
-    mock.setItem(persistence.SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY, '{')
-    expect(persistence.loadSelectedModelMap()['__new-thread__']).toBe('legacy')
-    for (const raw of ['null', '[]', 'false', '42', '"model"']) {
-      mock.setItem(persistence.SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY, raw)
-      expect(Object.keys(persistence.loadSelectedModelMap())).toEqual([])
-    }
-    mock.setItem(persistence.SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY, '{"t":" m ","":"bad","x":4,"__proto__":" safe "}')
+  it('reads and clears independent current model choices and ignores old maps', () => {
+    const base = 'codex-web-local.selected-model-by-context.v2.'
+    const legacy = 'codex-web-local.selected-model-by-context.v1'
+    const mock = storage({
+      [legacy]: '{"old":"model"}',
+      [base + 't']: '" m "',
+      [base + '__proto__']: '"safe"',
+      [base + 'corrupt']: '{',
+      [base + 'invalid']: '4',
+    })
     const state = persistence.loadSelectedModelMap()
     expect(Object.getPrototypeOf(state)).toBeNull()
-    expect(state.__proto__).toBe('safe')
+    expect(state).toEqual({ ['__proto__']: 'safe', t: ' m ' })
     expect(persistence.readSelectedModel(state, ' t ')).toBe('m')
-    persistence.saveSelectedModelMap(state)
-    expect(persistence.loadSelectedModelMap()).toEqual(state)
-    expect(mock.removeItem).not.toHaveBeenCalledWith(persistence.LEGACY_SELECTED_MODEL_STORAGE_KEY)
     persistence.saveSelectedModelMap({}, state)
-    expect(persistence.loadSelectedModelMap()).toEqual({})
+    expect(mock.getItem(legacy)).toBe('{"old":"model"}')
   })
 
   it('keeps context-specific collaboration preferences', () => {
-    const mock = storage({
-      [persistence.COLLABORATION_MODE_STORAGE_KEY]: '{"t":"plan","other":"default","__proto__":"plan"}',
-    })
+    const base = 'codex-web-local.collaboration-mode-by-context.v2.'
+    storage({ [base + 't']: '"plan"', [base + 'other']: '"default"' })
     const state = persistence.loadSelectedCollaborationModeMap()
     expect(persistence.readSelectedCollaborationMode(state, 't')).toBe('plan')
     expect(persistence.readSelectedCollaborationMode(state, 'new')).toBe('default')
@@ -62,7 +52,6 @@ describe('desktop persistence compatibility', () => {
     expect(next).not.toBe(state)
     expect(next.t).toBeUndefined()
     persistence.saveSelectedCollaborationModeMap(next, state)
-    mock.removeItem(persistence.COLLABORATION_MODE_STORAGE_KEY)
     expect(Object.keys(persistence.loadSelectedCollaborationModeMap())).toEqual([])
   })
 
@@ -80,11 +69,13 @@ describe('desktop persistence compatibility', () => {
     expect(persistence.normalizeThreadTokenUsage({ total: {}, last: {} })?.remainingContextPercent).toBeNull()
   })
 
-  const forgivingLoaders = [persistence.loadSelectedCollaborationModeMap]
+  const forgivingLoaders = [persistence.loadSelectedModelMap, persistence.loadSelectedCollaborationModeMap]
   it('keeps malformed and unsupported values harmless for forgiving loaders', () => {
-    for (const raw of ['{', 'null', '42', 'true', '"text"']) {
-      const mock = storage()
-      mock.getItem.mockReturnValue(raw)
+    for (const raw of ['{', 'null', '42', 'true', '[]', '""']) {
+      storage({
+        'codex-web-local.selected-model-by-context.v2.t': raw,
+        'codex-web-local.collaboration-mode-by-context.v2.t': raw,
+      })
       for (const load of forgivingLoaders) expect(Object.keys(load())).toEqual([])
     }
   })
@@ -93,7 +84,6 @@ describe('desktop persistence compatibility', () => {
     const mock = storage()
     mock.getItem.mockImplementation(() => { throw new Error('read') })
     for (const load of forgivingLoaders) expect(() => load()).not.toThrow()
-    expect(persistence.loadSelectedModelMap()).toEqual({})
     mock.setItem.mockImplementation(() => { throw new Error('write') })
     expect(() => persistence.saveSelectedModelMap({ t: 'm' })).not.toThrow()
     expect(() => persistence.saveSelectedCollaborationModeMap({ t: 'plan' })).not.toThrow()
@@ -123,14 +113,13 @@ describe('desktop persistence compatibility', () => {
   it('preserves behavior when accessing localStorage itself throws', () => {
     vi.stubGlobal('window', { get localStorage() { throw new Error('unavailable') } })
     for (const load of forgivingLoaders) expect(() => load()).not.toThrow()
-    expect(persistence.loadSelectedModelMap()).toEqual({})
     expect(() => persistence.saveSelectedModelMap({ t: 'm' })).not.toThrow()
     expect(() => persistence.saveSelectedCollaborationModeMap({ t: 'plan' })).not.toThrow()
   })
 
   it('handles missing window without storage side effects', () => {
     vi.stubGlobal('window', undefined)
-    for (const load of [...forgivingLoaders, persistence.loadSelectedModelMap]) expect(Object.keys(load())).toEqual([])
+    for (const load of forgivingLoaders) expect(Object.keys(load())).toEqual([])
     persistence.saveSelectedModelMap({})
     persistence.saveSelectedCollaborationModeMap({})
   })

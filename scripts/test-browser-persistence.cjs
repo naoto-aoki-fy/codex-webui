@@ -45,8 +45,7 @@ async function concurrency(browser, fallback) {
   await a.evaluate(() => {
     localStorage.setItem('codex-web-local.queue-submissions.v1', JSON.stringify({ legacy: 'old-client' }))
   })
-  assert.deepEqual(await moduleCall(a, 'queueSubmissionReceipts', 'readQueueSubmissionReceipts'), { legacy: 'old-client' })
-  await moduleCall(a, 'queueSubmissionReceipts', 'writeQueueSubmissionReceipt', ['legacy', null, 'old-client'])
+  assert.deepEqual(await moduleCall(a, 'queueSubmissionReceipts', 'readQueueSubmissionReceipts'), {})
   assert.deepEqual(await moduleCall(b, 'queueSubmissionReceipts', 'readQueueSubmissionReceipts'), {})
   assert.equal(await a.evaluate(() => JSON.parse(localStorage.getItem('codex-web-local.queue-submissions.v1')).legacy), 'old-client')
   await Promise.all([a.locator('.thread-composer-input').fill('a own draft'), b.locator('.thread-composer-input').fill('b own draft')])
@@ -95,12 +94,16 @@ async function concurrency(browser, fallback) {
     const valueA = key.startsWith('selected-model') ? 'provider-model:["fixture","B"]' : 'plan'
     const valueB = key.startsWith('selected-model') ? 'provider-model:["fixture","A"]' : 'plan'
     await Promise.all([moduleCall(a, 'browserPreferenceRecords', 'savePreferenceRecords', [root, { a: valueA }, {}]), moduleCall(b, 'browserPreferenceRecords', 'savePreferenceRecords', [root, { b: valueB }, {}])])
-    assert.deepEqual(await moduleCall(a, 'browserPreferenceRecords', 'readPreferenceRecords', [root, {}]), { a: valueA, b: valueB })
+    assert.deepEqual(await moduleCall(a, 'browserPreferenceRecords', 'readPreferenceRecords', [root]), { a: valueA, b: valueB })
     if (key.startsWith('selected-model')) await b.locator('.thread-composer .composer-dropdown-trigger').filter({ hasText: /^B$/ }).waitFor()
   }
   // Recovering a copy archives the currently edited payload before replacement.
-  await b.getByRole('button', { name: 'Recover saved drafts', exact: true }).click()
-  await b.getByRole('button', { name: 'Recover copy: same thread A', exact: true }).first().click()
+  await b.getByRole('button', { name: 'Settings', exact: true }).click()
+  const settings = b.getByRole('dialog', { name: 'Settings', exact: true })
+  await settings.getByRole('button', { name: /^General/ }).click()
+  await settings.getByRole('button', { name: /^Recover saved drafts/ }).click()
+  await settings.getByRole('button', { name: 'Recover copy: same thread A', exact: true }).first().click()
+  await b.keyboard.press('Escape')
   assert.equal(await b.locator('.thread-composer-input').inputValue(), 'same thread A')
   assert((await moduleCall(b, 'composerDraftStorage', 'recoverableDrafts', ['a'])).some(row => row.draft.text === 'original tab'))
   await b.reload(); assert.equal(await b.locator('.thread-composer-input').inputValue(), 'same thread A')

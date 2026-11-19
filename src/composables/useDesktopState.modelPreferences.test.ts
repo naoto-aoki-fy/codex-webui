@@ -31,6 +31,7 @@ vi.mock('../api/codexGateway', async importOriginal => ({
   subscribeCodexNotifications: vi.fn((cb: (n: RpcNotification) => void) => { streams.add(cb); return () => streams.delete(cb) }),
 }))
 const modelKey = 'codex-web-local.selected-model-by-context.v1'
+const existingModelKey = 'codex-web-local.selected-model-by-context.v2.existing'
 const effortKey = 'codex-web-local.reasoning-by-provider-model.v1'
 const usageKey = 'codex-web-local.model-usage-order.v1'
 let local: Map<string, string>, backend: ModelPreferences
@@ -98,7 +99,7 @@ it('synchronizes two live sessions through revisioned notifications with no poll
 })
 
 it('preserves per-thread choices and the provider guard when shared defaults change', async () => {
-  local.set(modelKey, JSON.stringify({ existing: key('openai', 'A') }))
+  local.set(existingModelKey, JSON.stringify(key('openai', 'A')))
   const state = create(); await state.refreshAll(options); state.startPolling()
   state.setSelectedModelIdForThread('existing', key('openai', 'A'))
   state.setSelectedModelIdForThread('existing', key('other', 'A'))
@@ -106,7 +107,7 @@ it('preserves per-thread choices and the provider guard when shared defaults cha
   backend.lastUsed = settings('B'); backend.revision++; notify()
   expect(state.readModelIdForThread('existing')).toBe(key('openai', 'A'))
   expect(state.readModelIdForThread('')).toBe(key('openai', 'B'))
-  expect(JSON.parse(local.get(modelKey)!)).toEqual({ existing: key('openai', 'A') })
+  expect(JSON.parse(local.get(existingModelKey)!)).toBe(key('openai', 'A'))
 })
 
 it('keeps the full catalog, orders accepted usage, and never records usage on selection', async () => {
@@ -177,7 +178,7 @@ it('uses restored accepted settings when creating a new conversation', async () 
 })
 
 it('does not reorder usage or write browser state on rejected submissions', async () => {
-  local.set(modelKey, JSON.stringify({ existing: key('openai', 'A') }))
+  local.set(existingModelKey, JSON.stringify(key('openai', 'A')))
   const gateway = await import('../api/codexGateway')
   vi.spyOn(gateway, 'resumeThread').mockResolvedValue({ model: 'A', modelProvider: 'openai' } as Awaited<ReturnType<typeof gateway.resumeThread>>)
   vi.spyOn(gateway, 'startThreadTurn').mockRejectedValue(new Error('rejected'))

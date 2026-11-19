@@ -379,7 +379,6 @@ const emit = defineEmits<{
 }>()
 
 const PROJECT_GROUP_EXPANDED_GAP_PX = 6
-const LEGACY_SECTION_EXPANSION_STORAGE_KEY = 'codex-web-local.sidebar-section-expansion.v1'
 const SECTION_EXPANSION_BASE = 'codex-web-local.sidebar-section-expansion.v2'
 const PINNED_EXPANSION_STORAGE_KEY = `${SECTION_EXPANSION_BASE}.pinned`
 const THREAD_VIEW_MODE_STORAGE_KEY = 'codex-web-local.thread-view-mode.v1'
@@ -482,29 +481,12 @@ const projectGroupResizeObserver =
         }
       })
     : null
-const COLLAPSED_STORAGE_KEY = 'codex-web-local.collapsed-projects.v1'
-
-function loadCollapsedState(): Record<string, boolean> {
-  if (typeof window === 'undefined') return {}
-
-  try {
-    const raw = readUiPreference(COLLAPSED_STORAGE_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    return parsed as Record<string, boolean>
-  } catch {
-    return {}
-  }
-}
-
 const projectCollapseBase = 'codex-web-local.collapsed-projects.v2'
 const folderCollapseBase = 'codex-web-local.collapsed-folders.v2'
 
 function loadCollapsedGroups(): Record<string, boolean> {
-  const legacy = Object.fromEntries(Object.entries(loadCollapsedState()).map(([key, value]) => [key, value ? '1' : '0']))
-  const projects = readPreferenceRecords(projectCollapseBase, legacy)
-  const folders = readPreferenceRecords(folderCollapseBase, {})
+  const projects = readPreferenceRecords(projectCollapseBase)
+  const folders = readPreferenceRecords(folderCollapseBase)
   return Object.fromEntries([
     ...Object.entries(projects).map(([id, value]) => [projectGroupKey(id), value === '1']),
     ...Object.entries(folders).filter(([key]) => key.startsWith('folder:')).map(([key, value]) => [key, value === '1']),
@@ -514,14 +496,7 @@ function loadCollapsedGroups(): Record<string, boolean> {
 const collapsedGroups = ref(loadCollapsedGroups())
 
 function loadPinnedSectionExpansion(): boolean {
-  const saved = readPreferenceRecord(SECTION_EXPANSION_BASE, 'pinned')
-  if (saved !== null) return saved !== '0'
-
-  try {
-    return JSON.parse(readUiPreference(LEGACY_SECTION_EXPANSION_STORAGE_KEY) || '{}')?.pinned !== false
-  } catch {
-    return true
-  }
+  return readPreferenceRecord(SECTION_EXPANSION_BASE, 'pinned') !== '0'
 }
 
 function onSidebarStorage(event: StorageEvent): void {

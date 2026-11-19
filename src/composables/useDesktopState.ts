@@ -10,7 +10,6 @@ import {createThreadSecurityObservation} from './threadSecurityObservation'
 import {createDeniedActionObservation} from './deniedActionObservation'
 import {createNativeQueue} from './nativeQueue'
 import {createThreadPermissions} from './threadPermissions'
-import {removeLegacyNativeAuthenticationPending} from '../utils/legacyNativeAuthenticationStorage'
 import {createBackendAuthentication} from './backendAuthentication'
 import {rpcCall} from '../api/codexRpcClient'
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
@@ -306,7 +305,6 @@ export function useDesktopState() {
     return nativeDeletion.value
   }
   const nativeAuthentication=shallowRef<import('./nativeAuthentication').NativeAuthentication|null>(null)
-  removeLegacyNativeAuthenticationPending()
   const backendAuthentication=createBackendAuthentication(()=>{
     operationEpoch.value++;modelRefreshVersion++;rateLimitRefreshPromise=null
     accountRateLimitSnapshots.value=[];setCodexRateLimit(null);availableModelIds.value=[]
@@ -617,15 +615,7 @@ export function useDesktopState() {
 
   // Explicit composer choices survive backend defaults, including after reload.
   const explicitModelStorageKey = profileStorageKey('codex-web-local.explicit-model-contexts.v2')
-  const legacyExplicit: Record<string, string> = Object.create(null)
-  try {
-    // The old global key belongs only to the legacy connection profile.
-    if (profileStorageKey('codex-web-local.explicit-model-contexts.v1') === 'codex-web-local.explicit-model-contexts.v1') {
-      const stored: unknown = JSON.parse(window.localStorage.getItem('codex-web-local.explicit-model-contexts.v1') || '[]')
-      if (Array.isArray(stored)) for (const id of stored) if (typeof id === 'string' && selectedModelIdByContext.value[id]) legacyExplicit[id] = '1'
-    }
-  } catch { /* Invalid migration data cannot block startup. */ }
-  let savedExplicitContexts = readPreferenceRecords(explicitModelStorageKey, legacyExplicit)
+  let savedExplicitContexts = readPreferenceRecords(explicitModelStorageKey)
   const explicitModelContexts = new Set(Object.keys(savedExplicitContexts))
   function persistExplicitModelContexts(): void {
     const next = Object.fromEntries([...explicitModelContexts].map(id => [id, '1']))
@@ -645,7 +635,7 @@ export function useDesktopState() {
       ...(selectedCollaborationModeByContext.value['__new-thread__'] ? { '__new-thread__': selectedCollaborationModeByContext.value['__new-thread__'] } : {}) }
     savedThreadModelMap = models
     savedCollaborationMap = modes
-    savedExplicitContexts = readPreferenceRecords(explicitModelStorageKey, legacyExplicit)
+    savedExplicitContexts = readPreferenceRecords(explicitModelStorageKey)
     explicitModelContexts.clear()
     for (const id of Object.keys(savedExplicitContexts)) explicitModelContexts.add(id)
     selectedCollaborationMode.value = readSelectedCollaborationMode(selectedCollaborationModeByContext.value, selectedThreadId.value)

@@ -8,7 +8,8 @@ fixtures or server-side files. Source paths are relative to `src/`.
 
 ## Historical inventory before the persistence changes
 
-For retired prompt records, see [UI settings after changes](#ui-settings-after-changes).
+The rows below describe earlier revisions. For current storage owners, see the
+[current key inventory](#current-key-disposition-and-runtime-owners). For retired prompt records, see [UI settings after changes](#ui-settings-after-changes).
 
 | Key / schema | Read / write owner | Scope | Authority, necessity and risks |
 | --- | --- | --- | --- |
@@ -36,7 +37,7 @@ For retired prompt records, see [UI settings after changes](#ui-settings-after-c
 | `thread-view-mode.v1`: project/chronological | same sidebar owners | global | UI preference; scalar last-writer wins. |
 | `collapsed-projects.v1`: project → boolean | `SidebarThreadTree.vue` | global/project | UI preference; whole-map last-writer may lose unrelated expansion changes. |
 | `sidebar-section-expansion.v1`: `{pinned,projects}` booleans | `SidebarThreadTree.vue` | global | UI preference; whole-record last-writer may lose unrelated expansion changes. |
-| `native-authentication-pending.v1`: obsolete latch | delete-only `utils/legacyNativeAuthenticationStorage.ts` | legacy + named profiles | Already retired, never used as authority. Existing narrowly scoped cleanup retained. |
+| `native-authentication-pending.v1`: obsolete latch | Previously cleared during startup | legacy + named profiles | Backend state now owns authentication readiness. |
 
 There is no production IndexedDB, sessionStorage, document.cookie API, or OPFS
 usage before this change. A server-issued authentication cookie is inventoried
@@ -65,20 +66,19 @@ profile/thread `thread-draft.v2.<encoded thread>.resume` pointer. A new random w
 ID is allocated for every document, even when Duplicate Tab copies the session ID
 and resume pointer. Each document writes only its own key. Reload follows the
 session pointer; duplicate tabs copy the same starting snapshot then diverge.
-Empty payloads are tombstones: clear cannot resurrect v1 or fork recovery data.
-Legacy inputs and predecessor snapshots are never consumed or automatically pruned.
-A fresh tab can explicitly copy them using **Recover saved drafts**. The picker
-never deletes another writer's data. Without sessionStorage, fresh document keys
+An empty payload preserves a cleared composer on reload. **Recover saved drafts**
+can copy predecessor v2 snapshots and historical v1 drafts, including drafts
+restored by older forks and subsequent edits (CAP-001). Historical sources are
+read only from the picker and stay in their original keys. Without sessionStorage, fresh document keys
 still isolate writes, but recovery requires that picker. With failed localStorage
 writes, drafts remain in memory and the composer warns that closing can lose them.
 A failed draft read is also visible and stays flagged until a read succeeds;
 a successful subsequent write alone does not prove the earlier data was recovered.
 
 Performance: each save serializes one current draft, not all threads; this retains
-synchronous localStorage image costs from v1. Full recovery payload enumeration happens only
-on explicit request. A thread with no owned/resume record also scans key names
-once to decide whether legacy auto-import is appropriate. No server requests, timers, fanout, or cache invalidation
-are introduced. Only failed saves retain an extra in-memory payload copy. Archived snapshots can consume quota; this is deliberately
+synchronous localStorage image costs from v1. Ordinary hydration reads only the owned record and its resume pointer. The
+recovery picker enumerates keys when open. This adds no server requests, timers,
+fanout or cache invalidation. Only failed saves retain an extra in-memory payload copy. Archived snapshots can consume quota; this is deliberately
 preferred to silently deleting recoverable drafts. IndexedDB/blob migration and
 an explicit archive-management UI remain possible future improvements.
 
@@ -92,11 +92,9 @@ compare-clear, and writes the result. Completion is awaited **before** the RPC.
 Writes request strict durability. Unsupported/blocked/failed IndexedDB disables
 queue submission; there is no unlocked fallback and no automatic replay.
 
-The old localStorage receipt map is read only when no IndexedDB record exists.
-The first successful mutation imports the complete valid map within the same
-transaction. Empty IndexedDB records override legacy data, so acknowledgment
-cannot resurrect an old marker. The original localStorage input is retained as a
-conservative backup. Malformed or oversized input blocks migration/submission.
+A missing IndexedDB record starts empty. Older localStorage receipts stay in
+place. A receipt recorded only by that older client will not block queue
+submission in the current client. An unreadable current record blocks submission.
 The controller marks itself busy before reservation and refuses changed selection,
 connection epoch or concurrent jobs during asynchronous recovery reads. Accepted
 or rejected replies clear only their exact client identity. Uncertain outcomes
@@ -113,51 +111,20 @@ Performance: one bounded (20 entries/90 KB) record transaction per reservation o
 settlement, no transaction held over network traffic, no polling/replay. Queue
 recovery adds one asynchronous IndexedDB read at controller startup, no server
 request. Old open application versions cannot cooperate with this protocol;
-reload them before queue use. Downgrading to an older release cannot see new
-IndexedDB receipts and is not a safe recovery procedure.
+reload them before queue use. An earlier release that uses only localStorage
+cannot see IndexedDB receipts.
 
 ## Safe upgrade: mixed versions are unsupported
 
-**Old-version and new-version tabs must not submit concurrently.** This release
-has no cross-version handshake. Older code rewrites localStorage and cannot see
-new IndexedDB receipts. Once an IndexedDB record exists, newer code does not keep
-merging later legacy writes. New-version tabs alone are covered by concurrency
-tests; an old tab bypasses those protections.
+Queue submission guards only inspect the current profile's IndexedDB receipts.
+An unresolved submission recorded only by an earlier client in localStorage
+requires checking the native queue and conversation before deliberately sending
+again. A missing queue entry cannot establish whether a turn ran. Older clients
+using localStorage and current clients using IndexedDB cannot coordinate sends.
 
-Use this procedure for every browser context/origin and connection profile:
-
-1. Pause submissions in **all** app tabs before opening the new build. Let known
-   in-flight requests settle. Record any lost/delayed acknowledgment as unresolved;
-   do not retry it, even if the native queue row is absent.
-2. Preserve each tab's visible draft before reloading: text, images/original image
-   sources, file paths, Skills and Apps. Older same-thread tabs may already have
-   overwritten their shared v1 draft, so copy directly from each live composer.
-   Back up only the relevant legacy/named-profile draft and queue-receipt records;
-   if a new tab has already run, preserve its IndexedDB `records` entries too.
-3. Keep unresolved thread/client message IDs from both stores. Inspect native
-   queue/history against these identities. Preserve the browser profile and saved
-   records; do **not** clear browser/site storage or delete receipts to unlock Send.
-4. Deploy the new build and reload **every** existing app tab, including duplicate,
-   pinned, background and installed-app windows, before any further submission.
-   Check that all tabs load the same deployment's assets. Do not keep an old tab
-   active for rollback or run an older release against the migrated browser data.
-5. Verify each tab's URL/profile and draft against its backup. Restore missing
-   content through **Recover saved drafts** or the preserved per-tab copy; do not
-   submit it as a migration check. v1 inputs and archived writer snapshots remain
-   available; migration does not automatically delete drafts.
-6. Verify unresolved receipt identities in the new profile-scoped IndexedDB
-   `queue-submissions.v1` record and recovery UI before resuming. First mutation
-   imports a valid legacy map when no IndexedDB record exists. If versions already
-   overlapped, do not assume a later old-tab marker was imported: preserve the
-   union of both stores' identities and inspect queue/history before proceeding.
-   This release provides no automatic mixed-version reconciliation or replay.
-   A missing row is not proof of non-execution. Explicit uncertainty acknowledgment
-   remains a deliberate decision after inspection, not an upgrade shortcut.
-
-Browser-storage clearing is not a recovery procedure. Read/storage failure means
-keep the tab and backups intact and restore access; no automatic reset is performed.
-See [focused final acceptance evidence](browser-persistence-acceptance.md) for the
-transaction traces and the distinction between fixture and live-server evidence.
+Historical drafts remain available under **Settings → General → Draft Recovery**.
+Ordinary composer hydration uses v2 data. Historical preference, receipt and
+authentication keys remain in storage. The current app leaves their values intact.
 
 ## Navigation, model choices and token usage after changes
 
@@ -171,26 +138,21 @@ server usage event, rather than presenting an old snapshot as authoritative. No
 extra startup RPC or polling is added. Backend accepted-model usage remains the
 only ordering source; legacy browser usage is never migrated as accepted usage.
 
-Retained legacy model/collaboration/reasoning inputs are read for compatibility.
-New writes use one string entry per encoded context:
+Current choices use one string entry per encoded context:
 `selected-model-by-context.v2.<context>`,
 `collaboration-mode-by-context.v2.<context>` (`plan`; empty means default), and
 `explicit-model-contexts.v2.<context>` (`1`; empty clears). All are profile-scoped.
 Writers compare their own previous snapshot and write only changed contexts;
 there is no shared read-modify-write map. Different contexts cannot overwrite
 each other. Same-context concurrent choices intentionally use last-writer wins.
-Empty-string tombstones override legacy inputs without deleting them. Storage
-events refresh shared preferences, never routes or drafts. Explicit membership
-is retained because observed server model metadata also populates the model map;
-that map alone cannot distinguish unsent user choices. The old global explicit
-array is read **only** in the legacy profile. Named profiles start independently.
+An empty value means a context has been cleared. Storage events refresh shared
+preferences. Explicit membership distinguishes unsent user choices from observed
+server models in the same map. Named profiles have independent choices.
 A partial/sidebar thread list no longer deletes persistent choices.
 
 Performance: context writes are constant-size instead of rewriting all threads.
 Startup/event hydration enumerates storage keys once per preference map; no new
-network requests, timers or unbounded async fanout. Legacy input remains read-only
-and may be retained indefinitely. Context tombstone compaction is deferred to
-avoid resurrecting old selections.
+network requests, timers or unbounded async fanout.
 
 ## UI settings after changes
 
@@ -202,20 +164,16 @@ Harmless UI preference reads/writes now tolerate storage denial. Scalar UI keys
 retain their schema and intentionally use last-writer wins; theme, width, send
 behavior, sidebar visibility/sort/view update through storage events. Composite
 sidebar preferences use independent string (`1`/`0`) records at
-`collapsed-projects.v2.<encoded project>` and
-`sidebar-section-expansion.v2.<pinned|projects>`, retaining v1 as read-only fallback.
+`collapsed-projects.v2.<encoded project>`,
+`collapsed-folders.v2.<encoded folder>`, and `sidebar-section-expansion.v2.pinned`.
 There is no shared map rewrite, and unrelated project toggles survive concurrency.
 
-Performance: no new dependencies or startup RPCs. Prompt transactions run only on
-explicit edits or opted-in accepted text. UI scalar events are constant work;
-composite preference hydration scans localStorage keys, with no network fanout.
+Performance: UI scalar events are constant work. Composite preference hydration
+scans localStorage keys with no network fanout.
 
-Fresh documents automatically import legacy v1/fork recovery only when no v2
-record exists for the thread. Once v2 exists, legacy snapshots remain available
-through explicit recovery rather than resurrecting submitted content. Recovery
-first archives the current nonempty draft under a new writer key; if that backup
-fails, replacement is refused. Thread IDs are encoded including dots to avoid
-prefix collisions in recovery enumeration.
+Explicit draft recovery first archives the current nonempty draft under a new
+writer key. A backup failure leaves the current composer intact. Thread IDs are
+encoded including dots to avoid prefix collisions in recovery enumeration.
 
 
 ## Final storage boundaries and deferred work
@@ -227,7 +185,7 @@ prefix collisions in recovery enumeration.
   retained unchanged and independent of connection-profile data.
 - sessionStorage: tab identity and per-profile/thread resume pointers.
 - localStorage: UI preferences/context choices, tab/document-owned drafts and
-  retained migration inputs.
+  saved draft recovery sources.
 - IndexedDB: atomic queue recovery receipts. No draft
   migration to IndexedDB is needed for ownership safety; unique writer keys avoid
   shared draft mutations. Draft blob/quota handling remains a separate improvement.
@@ -235,7 +193,7 @@ prefix collisions in recovery enumeration.
   native queue, global model preferences and accepted model usage.
 
 Intentionally deferred: automatic archive cleanup (would risk recoverable drafts),
-IndexedDB image/blob drafts, legacy/context tombstone compaction, live server
+IndexedDB image/blob drafts, live server
 latency profiling, and old-version simultaneous writers. Browser eviction, manual
 site-data clearing and unavailable/quota-limited storage cannot guarantee durable
 unsent recovery. No automatic replay compensates for missing browser data.
@@ -248,18 +206,17 @@ above, unless explicitly marked global.
 | Disposition | Key / schema | Current read and write locations | Ownership / recovery |
 | --- | --- | --- | --- |
 | Retired runtime | `selected-thread-id.v1`, `model-usage-order.v1`, `thread-token-usage.v1` | None; inert legacy values untouched | URL, backend accepted usage, and observed in-memory usage respectively |
-| Legacy thread contexts | `selected-model-by-context.v1`, `selected-model-id.v1`, `collaboration-mode-by-context.v1` | Read-only fallback in `composables/desktopStatePersistence.ts` | Profile-scoped |
+| Retired thread contexts | `selected-model-by-context.v1`, `selected-model-id.v1`, `collaboration-mode-by-context.v1`, `explicit-model-contexts.v1` | None | Values left intact |
 | Retired global preferences | `collaboration-mode.v1`, `reasoning-by-provider-model.v1` | None | Backend owns global defaults and reasoning |
-| Retained marker migration | Global `explicit-model-contexts.v1`: string array | Read-only in `useDesktopState.ts`, only for legacy profile | Never inherited by named profiles |
 | New context records | `selected-model-by-context.v2.<encoded context>`: JSON string; `collaboration-mode-by-context.v2.<encoded context>`: JSON `plan` or empty tombstone; `explicit-model-contexts.v2.<encoded context>`: JSON `1` or empty tombstone | `utils/browserPreferenceRecords.ts`, called by `useDesktopState.ts`; storage-event hydration there | Profile/thread; distinct contexts independent, same context last-writer wins; choices cannot all be reconstructed from executed server metadata |
-| Migrated drafts | `thread-draft.v1.<thread>`, `thread-fork-recovery.v1.<thread>` | Read-only in `utils/composerDraftStorage.ts` | Profile/thread; legacy recovery preserved |
+| Historical draft recovery | `thread-draft.v1.<thread>`, `thread-fork-recovery.v1.<thread>` | Explicit recovery picker via `utils/composerDraftStorage.ts` | Profile/thread; source bytes stay in place |
 | New owned drafts | `thread-draft.v2.<encoded thread>.<tab>.<writer>`: full draft payload; archive writer starts `archive-` | `composerDraftStorage.ts`; called by `ThreadComposer.vue`, `composerInput.ts`, existing App restoration path | Profile/thread/tab/document; empty payload tombstones; never auto-pruned |
 | New session metadata | Global `tab-id.v1`: random string; profile/thread `thread-draft.v2.<encoded thread>.resume`: owned localStorage key | `utils/browserTabIdentity.ts`, `composerDraftStorage.ts` | sessionStorage; reload lineage only, not shared navigation; collision-safe writer IDs |
-| Migrated critical records | localStorage `queue-submissions.v1`: old schema | Read-only fallback in `queueSubmissionReceipts.ts` | Profile; retained migration backup, not runtime write authority |
+| Retired queue recovery keys | localStorage `queue-submissions.v1` | None | Values left intact. Current guards use IndexedDB |
 | New atomic records | IndexedDB `codex-web-local.persistence.v1` / `records`, primary key = scoped `queue-submissions.v1`; value = bounded receipt map | `utils/browserTransactionalRecords.ts`, `utils/queueSubmissionReceipts.ts`, `composables/nativeQueue.ts` | Profile; transactionally authoritative queue recovery data |
-| New sidebar records | Global `collapsed-projects.v2.<encoded project>`, `sidebar-section-expansion.v2.<pinned|projects>`: JSON `1`/`0` strings | `browserPreferenceRecords.ts`, `SidebarThreadTree.vue` | Shared UI preference per entry; v1 composite keys retained read-only |
+| New sidebar records | Global `collapsed-projects.v2.<encoded project>`, `collapsed-folders.v2.<encoded folder>`, `sidebar-section-expansion.v2.pinned`: JSON `1`/`0` strings | `browserPreferenceRecords.ts`, `SidebarThreadTree.vue` | Shared UI preference per entry. v1 values are inert. |
 | Retained scalar UI preferences | Global `send-with-enter.v1`, `dark-mode.v1`, `chat-width.v1`, `sidebar-collapsed.v1`, `sidebar-width.v1`, `chat-sort-mode.v1`, `thread-view-mode.v1`: schemas in original inventory | `utils/browserUiStorage.ts`, App/layout/sidebar callers in original inventory | Shared settings, best-effort storage, last-writer wins with storage-event visibility |
-| Retained connection and retirement behavior | `connection-profile.v1`, obsolete auth latch cleanup, retired service-worker caches | Original owners unchanged | No unknown data reset; active profile fixed for document |
+| Retained connection and retirement behavior | `connection-profile.v1`, retired service-worker caches | Original owners unchanged | No unknown data reset; active profile fixed for document |
 
 ## Historical verification and performance evidence
 

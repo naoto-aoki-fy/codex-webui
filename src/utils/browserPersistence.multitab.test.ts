@@ -40,23 +40,18 @@ it('isolates duplicated session identities, reloads, clearing, profiles and all 
   expect(remote.recoverableDrafts('same')).toEqual([])
 })
 
-it('copies legacy drafts without consuming recovery data and survives denied writes', async () => {
+it('keeps the current draft in memory when a write exceeds quota', async () => {
   const local = storage(), session = storage()
-  const legacy = 'codex-web-local.thread-draft.v1.t'
-  local.setItem(legacy, JSON.stringify(payload('legacy')))
   vi.stubGlobal('window', { localStorage: local, sessionStorage: session })
   const drafts = await import('./composerDraftStorage')
-  expect(drafts.loadPersistedDraftForThread('t')).toEqual(payload('legacy'))
-  drafts.persistDraftForThread('t', payload('changed'))
-  expect(local.getItem(legacy)).toBe(JSON.stringify(payload('legacy')))
+  drafts.persistDraftForThread('t', payload('saved'))
   local.setItem = () => { throw new Error('Quota exceeded') }
   drafts.persistDraftForThread('t', payload('in memory'))
   expect(drafts.loadPersistedDraftForThread('t')).toEqual(payload('in memory'))
   expect(drafts.draftStorageError).toContain('copy it before closing')
 })
 
-
-it('keeps dotted thread IDs and recovery backups separate and never revives submitted v1 text', async () => {
+it('keeps dotted thread IDs, archived drafts and explicit historical recovery separate', async () => {
   const local = storage(), session = storage()
   vi.stubGlobal('window', { localStorage: local, sessionStorage: session })
   const drafts = await import('./composerDraftStorage')
@@ -69,6 +64,7 @@ it('keeps dotted thread IDs and recovery backups separate and never revives subm
   vi.stubGlobal('window', { localStorage: local, sessionStorage: storage() })
   const fresh = await import('./composerDraftStorage')
   expect(fresh.loadPersistedDraftForThread('a')).toBeNull()
+  expect(local.getItem('codex-web-local.thread-draft.v1.a')).toBe(JSON.stringify(payload('legacy')))
   expect(fresh.recoverableDrafts('a.b')[0]?.draft.text).toBe('other thread')
 })
 

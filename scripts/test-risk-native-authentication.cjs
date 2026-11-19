@@ -76,7 +76,7 @@ const until=async(test)=>{for(let i=0;i<150;i++){if(test())return;await new Prom
   hold=true;notify('account/updated',{authMode:'chatgpt'});await until(()=>queued.length>0)
   await reload();assert.equal(await page.locator('.thread-composer-input').isDisabled(),true)
   hold=false;queued.splice(0).forEach(resolve=>resolve());await ready()
-  assert.equal(await page.evaluate(()=>localStorage.getItem('codex-web-local.native-authentication-pending.v1')),null)
+  assert.equal(await page.evaluate(()=>localStorage.getItem('codex-web-local.native-authentication-pending.v1')),'1')
   assert.equal(await page.evaluate(()=>localStorage.getItem('auth-test-unrelated')),'keep')
   // A late raw notification cannot recreate a frontend latch after verification.
   first.emit('account/updated',{authMode:'chatgpt'});await page.waitForTimeout(100)

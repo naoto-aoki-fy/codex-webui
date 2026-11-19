@@ -88,9 +88,8 @@ Realtime updates apply immediately; event-driven reconciliation is debounced
 an unconditional full-history fetch on every event. External disconnects fail
 pending RPC calls; requests are not replayed automatically.
 
-Browser storage retains read state, model/reasoning/collaboration preferences and
-layout state, including legacy migration keys. Opening home does not restore the
-last selected thread. Thread names and pins use native Codex state. Workspace UI preferences use shared global
+Browser storage retains per-thread model and collaboration choices, drafts and
+layout preferences. Opening Home starts with no selected thread. Thread names and pins use native Codex state. Workspace UI preferences use shared global
 state; attachment-only history has an [app-owned index](docs/persistent-thread-index.md).
 Persistence does not make sending messages available while disconnected.
 

@@ -29,7 +29,9 @@ function getDraftStorageKey(threadId: string): string {
   return `${prefix(threadId)}${tabId}.${writerId}`
 }
 function pointerKey(threadId: string) { return `${prefix(threadId)}resume` }
-function legacyKeys(threadId: string) {
+function historicalRecoveryKeys(threadId: string) {
+  // Only the explicit recovery picker reads these sources. Old fork edits could
+  // be saved under the ordinary v1 draft key.
   return [profileStorageKey(`codex-web-local.thread-draft.v1.${threadId}`),
     profileStorageKey(`codex-web-local.thread-fork-recovery.v1.${threadId}`)]
 }
@@ -42,11 +44,9 @@ export function loadPersistedDraftForThread(threadId: string): ComposerDraftPayl
     const owned = getDraftStorageKey(normalizedThreadId)
     let previous: string | null = null
     try { previous = window.sessionStorage.getItem(pointerKey(normalizedThreadId)) } catch { /* Recovery picker remains available. */ }
-    // Only follow pointers inside this profile/thread namespace. Empty payloads
-    // are tombstones, so clearing a draft does not resurrect legacy content.
+    // Only follow pointers inside this profile/thread namespace.
     const raw = memory().get(owned) ?? window.localStorage.getItem(owned)
       ?? (previous?.startsWith(prefix(normalizedThreadId)) ? window.localStorage.getItem(previous) : null)
-      ?? (!hasV2Draft(normalizedThreadId) ? legacyKeys(normalizedThreadId).map(key => window.localStorage.getItem(key)).find(value => value !== null) : null)
     if (draftReadFailed) { draftReadFailed = false; draftStorageError = '' }
     if (!raw) return null
     return parseDraft(raw)
@@ -119,7 +119,7 @@ export function recoverableDrafts(threadId: string): Array<{ key: string; draft:
   if (!threadId.trim() || typeof window === 'undefined') return result
   try {
     const storage = window.localStorage
-    const keys = new Set(legacyKeys(threadId))
+    const keys = new Set(historicalRecoveryKeys(threadId))
     for (let i = 0; i < storage.length; i++) {
       const key = storage.key(i)
       if (key?.startsWith(prefix(threadId)) && key !== getDraftStorageKey(threadId)) keys.add(key)
@@ -131,11 +131,6 @@ export function recoverableDrafts(threadId: string): Array<{ key: string; draft:
     }
   } catch { /* Storage restrictions cannot destroy the live draft. */ }
   return result
-}
-
-function hasV2Draft(threadId: string): boolean {
-  for (let i = 0; i < window.localStorage.length; i++) if (window.localStorage.key(i)?.startsWith(prefix(threadId))) return true
-  return false
 }
 
 export function archiveDraftBeforeRecovery(threadId: string, payload: ComposerDraftPayload): boolean {

@@ -30,7 +30,7 @@ delete drafts, or change queue protocol/reconciliation semantics.
   Recoverable records are not removed. Existing save-quota/archive-failure behavior
   already preserves the live draft and refuses destructive replacement.
 
-## Conflict and upgrade policy
+## Historical conflict and upgrade policy
 
 Different preset IDs are merged independently. For the **same** preset, the last
 committed operation wins: edit after deletion recreates the edited ID; deletion
@@ -45,7 +45,8 @@ pause submissions, preserve every tab's live draft and unresolved identities fro
 all applicable stores/profiles, reload every existing tab into the new build, then
 verify recovery before resuming. If versions already overlapped, preserve and
 inspect the union of legacy and IndexedDB identities; do not assume newer code
-imported later legacy writes. Never clear browser storage as recovery or to unlock
+imported later legacy writes. The current client uses IndexedDB receipts only.
+Never clear browser storage as recovery or to unlock
 submission. An absent native queue row does not prove non-execution.
 
 ## Exact tests and commands

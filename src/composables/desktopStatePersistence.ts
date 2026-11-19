@@ -2,9 +2,6 @@ import { readPreferenceRecords, savePreferenceRecords } from '../utils/browserPr
 import { profileStorageKey } from '../utils/browserConnectionProfile'
 import type { CollaborationModeKind, UiThreadTokenUsage } from '../types/codex'
 
-export const SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY = 'codex-web-local.selected-model-by-context.v1'
-export const LEGACY_SELECTED_MODEL_STORAGE_KEY = 'codex-web-local.selected-model-id.v1'
-export const COLLABORATION_MODE_STORAGE_KEY = 'codex-web-local.collaboration-mode-by-context.v1'
 export const NEW_THREAD_COLLABORATION_MODE_CONTEXT = '__new-thread__'
 export const NEW_THREAD_MODEL_CONTEXT = '__new-thread-provider__::codex'
 
@@ -69,38 +66,7 @@ export function toThreadContextId(threadId: string): string {
 }
 
 export function loadSelectedModelMap(): Record<string, string> {
-  return readPreferenceRecords(profileStorageKey('codex-web-local.selected-model-by-context.v2'), loadLegacySelectedModelMap())
-}
-
-function loadLegacySelectedModelMap(): Record<string, string> {
-  if (typeof window === 'undefined') return createStringKeyedRecord<string>()
-
-  try {
-    const raw = window.localStorage.getItem(profileStorageKey(SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY))
-    if (raw) {
-      const parsed = JSON.parse(raw) as unknown
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return createStringKeyedRecord<string>()
-
-      const next = createStringKeyedRecord<string>()
-      for (const [contextId, value] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof contextId !== 'string' || contextId.length === 0) continue
-        const normalizedModelId = normalizeStoredModelId(value)
-        if (normalizedModelId) {
-          next[contextId] = normalizedModelId
-        }
-      }
-      return next
-    }
-  } catch {
-    // Fall back to the legacy global preference below.
-  }
-
-  const next = createStringKeyedRecord<string>()
-  try {
-    const legacyModelId = normalizeStoredModelId(window.localStorage.getItem(profileStorageKey(LEGACY_SELECTED_MODEL_STORAGE_KEY)))
-    if (legacyModelId) next[NEW_THREAD_COLLABORATION_MODE_CONTEXT] = legacyModelId
-  } catch { /* Unavailable browser storage cannot prevent backend hydration. */ }
-  return next
+  return readPreferenceRecords(profileStorageKey('codex-web-local.selected-model-by-context.v2'))
 }
 
 export function readSelectedModel(
@@ -118,36 +84,8 @@ export function saveSelectedModelMap(state: Record<string, string>, previous: Re
 }
 
 export function loadSelectedCollaborationModeMap(): Record<string, CollaborationModeKind> {
-  const values = readPreferenceRecords(profileStorageKey('codex-web-local.collaboration-mode-by-context.v2'), loadLegacyCollaborationModeMap())
+  const values = readPreferenceRecords(profileStorageKey('codex-web-local.collaboration-mode-by-context.v2'))
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value === 'plan')) as Record<string, CollaborationModeKind>
-}
-
-function loadLegacyCollaborationModeMap(): Record<string, CollaborationModeKind> {
-  if (typeof window === 'undefined') return createStringKeyedRecord<CollaborationModeKind>()
-
-  try {
-    const raw = window.localStorage.getItem(profileStorageKey(COLLABORATION_MODE_STORAGE_KEY))
-    if (raw) {
-      const parsed = JSON.parse(raw) as unknown
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return createStringKeyedRecord<CollaborationModeKind>()
-      }
-
-      const next = createStringKeyedRecord<CollaborationModeKind>()
-      for (const [contextId, value] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof contextId !== 'string' || contextId.length === 0) continue
-        const normalizedMode = normalizeCollaborationMode(value)
-        if (normalizedMode === 'plan') {
-          next[contextId] = normalizedMode
-        }
-      }
-      return next
-    }
-  } catch {
-    // Fall back to the legacy global preference below.
-  }
-
-  return createStringKeyedRecord<CollaborationModeKind>()
 }
 
 export function readSelectedCollaborationMode(
