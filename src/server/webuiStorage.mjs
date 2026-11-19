@@ -48,8 +48,6 @@ export function requireConnectionProfile(value = process.env.CODEXUI_CONNECTION_
   return id
 }
 
-export const profileDirectoryPattern = /^[0-9a-f]{64}$/u
-
 // Case-sensitive IDs get distinct, portable directory names, including on Windows.
 export function profileDirectoryName(id) {
   return createHash('sha256').update(requireConnectionProfile(id)).digest('hex')

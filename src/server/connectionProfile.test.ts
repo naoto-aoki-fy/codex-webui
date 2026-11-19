@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { getConnectionProfileId, profileStorageDirectory } from './connectionProfile'
-import { profileDirectoryName, profileDirectoryPattern, resolveWebuiStorage, storageNames } from './webuiStorage.mjs'
+import { profileDirectoryName, resolveWebuiStorage, storageNames } from './webuiStorage.mjs'
 
 afterEach(() => vi.unstubAllEnvs())
 
@@ -31,7 +31,7 @@ it('isolates case-sensitive IDs at the same endpoint and leaves native and old W
       expect(await readCodexGlobalState()).toEqual({})
       await updateCodexGlobalState(state => { state['test-state'] = profile })
       expect(getCodexGlobalStatePath()).toBe(join(resolveWebuiStorage().data, storageNames.profiles, profileDirectoryName(profile), storageNames.state))
-      expect(profileDirectoryName(profile)).toMatch(profileDirectoryPattern)
+      expect(profileDirectoryName(profile)).toMatch(/^[0-9a-f]{64}$/u)
       expect(profileStorageDirectory('cache')).toBe(join(resolveWebuiStorage().cache, storageNames.profiles, profileDirectoryName(profile)))
     }
     for (const profile of ['Machine-a', 'legacy', 'machine-a', 'CON.']) {
