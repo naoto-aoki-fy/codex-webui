@@ -21,7 +21,7 @@ it('ignores obsolete integration files and returns 404 for removed endpoints acr
   try {
     for (const [name, contents] of Object.entries(files)) await writeFile(join(home, name), contents)
     for (let restart = 0; restart < 2; restart++) {
-      scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v4', appServer: { dispose: vi.fn() }, methodCatalog: {} }
+      scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v5', appServer: { dispose: vi.fn() }, methodCatalog: {} }
       const middleware = createCodexBridgeMiddleware()
       try {
         for (const path of ['config', 'configure-bot', 'status', 'test-notification']) {

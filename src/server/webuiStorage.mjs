@@ -73,11 +73,24 @@ export function projectPath(path) {
   return /^[a-z]:[\\/]/iu.test(path) || path.startsWith('\\\\') || /^\/\/[^/]+\/[^/]+/u.test(path) ? win32 : posix
 }
 
+export function isAbsoluteUploadPath(value) {
+  const path = projectPath(value)
+  if (!path.isAbsolute(value) || value.length > 4096 || /[\x00-\x1f\x7f]/u.test(value)) return false
+  const parts = value.split(/[\\/]/u)
+  if (parts.some(part => part === '.' || part === '..')) return false
+  if (path === posix) return !value.includes('\\') && !value.startsWith('//')
+  if (/^[a-z]:[\\/]/iu.test(value)) parts.shift()
+  else if (!/^[\\/]{2}[^\\/]+[\\/][^\\/]+(?:[\\/]|$)/u.test(value)) return false
+  // Reject device/extended paths, streams, short-name aliases and Win32 normalization.
+  return parts.every(part => !/[<>:"|?*~]|[. ]$/u.test(part)
+    && !/^(?:con|prn|aux|nul|(?:com|lpt)[1-9¹²³])(?:\.|$)/iu.test(part))
+}
+
 export function remoteUploadsDirectory(root, id) {
   // The root is interpreted using the App Server path syntax.
   const path = projectPath(root)
-  if (!root || !path.isAbsolute(root) || /[\x00-\x1f]/u.test(root) ||
-      root.split(/[\\/]/u).some(part => part === '.' || part === '..' || /^\.codex[. ]*$/iu.test(part))) {
+  if (!isAbsoluteUploadPath(root) ||
+      root.split(/[\\/]/u).some(part => /^\.codex[. ]*$/iu.test(part))) {
     throw new Error('Set CODEXUI_REMOTE_UPLOAD_DIR to an absolute dedicated path outside Codex home on the App Server host')
   }
   return path.join(root, 'codexapp-uploads', profileDirectoryName(id))

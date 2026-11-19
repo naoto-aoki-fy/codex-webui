@@ -16,6 +16,12 @@ filesystem RPCs separately from other requests.
    path. Verify that existing read can supply the home. Before any usable read,
    concurrent metadata recovery shares one `config/read` discovery request,
    using the base user layer's path.
+   Before opening any thread, try an upload with a fixture that reports
+   a custom Codex home through that layer. A directory inside the custom
+   home must be rejected before filesystem requests. Repeat with an empty
+   layer list and expect a Codex-home configuration error. Then report a
+   valid home and configure a symbolic link to that home as the upload root.
+   Expect only read-only metadata requests and no inventory reservation.
 3. Reconnect with different initialization metadata. Verify the new home
    replaces the previous value, and delayed responses from the previous
    connection do not change it.

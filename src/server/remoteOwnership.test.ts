@@ -26,7 +26,7 @@ it.each(['/only-on-B/repository', 'D:\\only-on-B\\repository'])('browses, regist
   })
   const client = { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: vi.fn() }
   const files = new ProjectFileService(client)
-  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v4', appServer: client, files, methodCatalog: {} }
+  scope.__codexRemoteSharedBridge__ = { version: 'external-websocket-files-v5', appServer: client, files, methodCatalog: {} }
   const middleware = createCodexBridgeMiddleware()
   const request = async (url: string, body?: unknown) => {
     const req = Object.assign(Readable.from(body ? [JSON.stringify(body)] : []), { method: body ? 'POST' : 'GET', url, headers: {} }) as any

@@ -54,6 +54,7 @@ async function run() {
       }
       if (frame.method === 'fs/writeFile') files.set(frame.params.path, Buffer.from(frame.params.dataBase64, 'base64'))
       const result = frame.method === 'initialize' ? { codexHome: '/fixture/core' }
+        : frame.method === 'fs/getMetadata' ? { isDirectory: true, isSymlink: false }
         : frame.method === 'thread/name/set' ? {}
         : frame.method === 'account/read' ? { account: { type: 'apiKey', apiKey: 'fixture-secret' }, requiresOpenaiAuth: true, authToken: 'fixture-secret' }
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
@@ -156,9 +157,14 @@ async function run() {
         await preferences('update', { preferred })
         const attachment = new FormData()
         attachment.set('file', new Blob([profile]), 'profile.txt')
+        const beforeUpload = frames.length
         const uploadResponse = await fetch(url + '/codex-api/upload-file', { method: 'POST', body: attachment })
         const { path: uploaded, error } = await uploadResponse.json()
         assert.equal(uploadResponse.status, 200, error)
+        const uploadMethods = frames.slice(beforeUpload).map(frame => frame.method)
+        assert.equal(uploadMethods.filter(method => method === 'fs/getMetadata').length, 6)
+        assert.equal(uploadMethods.includes('config/read'), false)
+        assert.deepEqual(uploadMethods.slice(-2), ['fs/createDirectory', 'fs/writeFile'])
         const hash = profileDirectoryName(profile)
         assert(uploaded.startsWith('/fixture/attachments/codexapp-uploads/' + hash + '/'))
         assert.equal(files.get(uploaded).toString(), profile)

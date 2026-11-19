@@ -76,8 +76,9 @@ Server. See [storage and upload configuration](connection-profiles-uploads.md).
 
 ## Uploads and transfer limits
 
-Uploads require `fs/createDirectory` and `fs/writeFile`. The bytes are written on
-B before HTTP success returns. The returned path is used for both previews
+Uploads use `fs/getMetadata` to verify the remote paths before `fs/createDirectory`
+and `fs/writeFile`. The bytes are written on B before HTTP success returns.
+The returned path is used for both previews
 (`fs/readFile`) and turn input. A rejected or timed-out write returns no usable
 attachment. A timeout may still have created a file on B; it is never retried.
 

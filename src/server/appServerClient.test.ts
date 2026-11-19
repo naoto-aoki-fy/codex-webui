@@ -88,7 +88,7 @@ it('reuses the current runtime across middleware instances and disposes the acti
   const previous = scope.__codexRemoteSharedBridge__
   const client = new AppServerClient()
   const dispose = vi.spyOn(client, 'dispose')
-  const runtime = { version: 'external-websocket-files-v4', appServer: client, methodCatalog: {} }
+  const runtime = { version: 'external-websocket-files-v5', appServer: client, methodCatalog: {} }
   scope.__codexRemoteSharedBridge__ = runtime
   try {
     const first = createCodexBridgeMiddleware()
