@@ -318,7 +318,7 @@ describe('response fork operation support', () => {
       result: { thread: { id: 'full-fork', turns: [] } },
     }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
-    await expect(forkThreadFromResponse('source', 1)).rejects.toThrow('Backend did not verify')
+    await expect(forkThreadFromResponse('source', 'turn-1')).rejects.toThrow('Backend did not verify')
     expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string).method).toBe('thread/fork-at-response')
   })
 })

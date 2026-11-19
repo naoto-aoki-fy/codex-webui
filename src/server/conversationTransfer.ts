@@ -1,6 +1,6 @@
 import { normalizeThreadMessagesV2 } from '../api/normalizers/v2.js'
 import type { Thread } from '../api/appServerDtos.js'
-import type { PortableRevertTarget } from '../types/codex.js'
+import type { PortableRevertTarget, ResponseForkTarget } from '../types/codex.js'
 import { randomUUID } from 'node:crypto'
 import { readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState.js'
 
@@ -45,37 +45,44 @@ type Rpc = (method: string, params: any) => Promise<any>
 export function createConversationTransfers(rpc: Rpc) {
   const busy = new Set<string>()
   return {
-    async prepare(sourceId: string, cutoff?: number, expectedTurnId?: string, revertTarget?: PortableRevertTarget) {
+    async prepare(sourceId: string, target?: ResponseForkTarget, revertTarget?: PortableRevertTarget) {
       if (!sourceId) throw new Error('Missing source thread')
       // Direct server read is uncapped; never use the browser's ten-turn presentation page.
       const thread = record((await rpc('thread/read', { threadId: sourceId, includeTurns: true })).thread)
       const turns = thread.turns
       if (!Array.isArray(turns)) throw new Error('Complete source history unavailable. Upgrade the app-server.')
       if (thread.inProgress === true || thread.status === 'inProgress' || thread.turnStatus === 'inProgress' || ['active', 'inProgress'].includes(thread.status?.type) || turns.some(t => ['inProgress', 'in_progress'].includes(record(t).status))) throw new Error('Finish or stop the current source turn before transferring.')
-      if (cutoff !== undefined && (!Number.isSafeInteger(cutoff) || cutoff >= turns.length)) throw new Error('The selected response is no longer available. Refresh the thread.')
-      if (expectedTurnId && cutoff !== undefined && cutoff >= 0 && record(turns[cutoff]).id !== expectedTurnId) throw new Error('Source history changed at the selected response. Refresh the thread.')
       let draftText: string | undefined
-      let selected: unknown[]
+      let selected = turns
+      let importedCutoff: number | undefined
       if (revertTarget) {
-        if (cutoff !== undefined || expectedTurnId) throw new Error('Cannot combine user and response cutoffs.')
+        if (target) throw new Error('Cannot combine user and response cutoffs.')
         const index = turns.findIndex(turn => record(turn).id === revertTarget.turnId)
         if (index < 0) throw new Error('The selected user turn is no longer available. Refresh the thread.')
-        const target = record(turns[index])
-        const item = Array.isArray(target.items) ? target.items.find(item => record(item).id === revertTarget.messageId && record(item).type === 'userMessage') : undefined
-        const message = normalizeThreadMessagesV2({ thread: { ...thread, turns: [{ ...target, items: item ? [item] : [] }] } as Thread })
+        const selectedTurn = record(turns[index])
+        const item = Array.isArray(selectedTurn.items) ? selectedTurn.items.find(item => record(item).id === revertTarget.messageId && record(item).type === 'userMessage') : undefined
+        const message = normalizeThreadMessagesV2({ thread: { ...thread, turns: [{ ...selectedTurn, items: item ? [item] : [] }] } as Thread })
           .find(message => message.id === revertTarget.messageId && message.role === 'user' && message.messageType === 'userMessage')
         if (!message?.text.trim()) throw new Error('The selected user message is no longer available. Refresh the thread.')
         draftText = message.text
         // Native Fork and Revert removes the selected turn, not an inclusive response prefix.
         selected = turns.slice(0, index)
-      } else {
-        selected = cutoff === undefined ? turns : cutoff < 0 ? [] : turns.slice(0, cutoff + 1)
+      } else if (target) {
+        if ('turnId' in target) {
+          const index = turns.findIndex(turn => record(turn).id === target.turnId)
+          if (index < 0) throw new Error('Source history changed at the selected response. Refresh the thread.')
+          selected = turns.slice(0, index + 1)
+        } else {
+          importedCutoff = target.importedMessageIndex
+          if (!Number.isSafeInteger(importedCutoff) || importedCutoff < 0) throw new Error('Imported response cutoff is no longer available.')
+          selected = []
+        }
       }
       const converted = convertTransferHistory(selected, `${sourceId} (${thread.modelProvider || 'source provider'} / ${thread.model || 'source model'})`)
       const imported = Object.values(await transfers()).find(t => t.destinationId === sourceId)
       if (imported && imported.stage !== 'ready') throw new Error('The source is an incomplete transfer; inspect it before continuing.')
-      if (cutoff !== undefined && cutoff < 0 && (!imported || -cutoff > imported.messages.length || imported.messages[-cutoff - 1]?.role !== 'assistant')) throw new Error('Imported response cutoff is no longer available.')
-      const prefix = cutoff !== undefined && cutoff < 0 ? imported!.messages.slice(0, -cutoff) : imported?.messages || []
+      if (importedCutoff !== undefined && imported?.messages[importedCutoff]?.role !== 'assistant') throw new Error('Imported response cutoff is no longer available.')
+      const prefix = importedCutoff === undefined ? imported?.messages || [] : imported!.messages.slice(0, importedCutoff + 1)
       const retainedPrefix = prefix.filter(message => (message.role === 'user' || message.role === 'assistant') && typeof message.text === 'string' && message.text.trim())
         .map(({ role, text, source }) => ({ role, text, source }))
       const messages = [...retainedPrefix, ...converted.messages]

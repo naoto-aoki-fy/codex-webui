@@ -136,15 +136,12 @@ has no size: cold HEAD and cold ETag validation still need full reads; warm requ
 can reuse valid bytes. If-Modified-Since can return 304 from metadata alone. Range,
 Content-Length, If-Range and conditional semantics retain HTTP coverage.
 
-Thread history uses native `thread/turns/list` when available, with opaque cursors
-and `itemsView: full` for requested pages. A bounded `itemsView: notLoaded` index
-scan preserves absolute turn positions used by fork/edit controls. Index work is
-limited to 100 pages / 100,000 turns; oversized histories return actionable errors.
-Only explicit method-not-found enables the full `thread/read` fallback; timeout or
-permission failures do not masquerade as unsupported. Resume/fork responses and
-legacy fallback paths may still transfer full history. See
-[transfer benchmark and protocol limits](remote-transfer-performance.md) for exact
-cache bounds, reproducible fixture results and paths that still transfer full data.
+Thread history requires native `thread/turns/list`. An initial load combines
+a metadata-only thread read or resume with a ten-turn page. Older loads send the
+App Server's opaque cursor through the generic RPC bridge. Servers without the
+method need an upgrade. Native response fork verification and Portable Fork
+still read the complete source history on explicit request. See the
+[history and recovery details](native-thread-history.md).
 
 ## Failure recovery
 
@@ -237,9 +234,9 @@ history is refreshed automatically, with no per-thread background history fanout
 Diagnostics coalesce concurrent explicit probes and never issue write probes.
 Profile selection adds no remote calls. Upload inventory uses local locked updates,
 with O(tracked attempts) inventory payload; no remote filesystem/history scan is
-performed for accounting. Native history metadata scans trade small bounded requests
-for avoiding large item payloads; full fallback and large-file reads remain explicit
-limitations. Browser recovery checks use synthetic responses and are not WAN profiles.
+performed for accounting. History transfers ten content-bearing turns on open
+and one page per earlier request. Browser recovery checks use synthetic responses.
+Live WAN performance remains unmeasured.
 
 ## MCP OAuth across hosts
 

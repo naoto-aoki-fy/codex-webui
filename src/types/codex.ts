@@ -1,4 +1,5 @@
 export type ForkMethod = 'native' | 'portable'
+export type ResponseForkTarget = { turnId: string } | { importedMessageIndex: number }
 export type RevertOperation = 'revert' | 'fork-and-revert' | 'portable-fork-and-revert'
 export type PortableRevertTarget = { turnId: string; messageId: string }
 

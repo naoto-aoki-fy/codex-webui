@@ -53,19 +53,19 @@ Expected: native history remains visible; first-turn recovery and duplicate-send
 Cleanup: remove only test conversations if desired; retain existing metadata files.
 Performance: eliminates unused session parsing/cache implementations and one filesystem append per accepted turn; native history requests remain unchanged. Live timings were not measured.
 
-## Native pagination compatibility boundary
+## Native history request count
 
-Setup: disposable native RPC fixture. Run
-`pnpm exec vitest run src/server/remoteHistoryPager.test.ts
-src/server/threadLiveStateRetirement.test.ts src/server/threadFileChangeRetirement.test.ts
-src/server/projectHistory.test.ts src/server/conversationTransfer.test.ts
-src/composables/useDesktopState.test.ts`.
+Setup: run `pnpm run test:integration:fixture` after building or open a disposable
+thread with at least 15 turns in the current dev server. Inspect App Server RPCs.
+Historical response metadata recovery may separately inspect the rollout path.
 
-Expect native recent/older pages with absolute positions and unchanged fork
-cutoffs, coalesced metadata indexes, notification invalidation and preserved
-inline media/errors. An adapter lacking the native pager must return a clear
-compatibility error without a full read. Explicit method-not-found is an upgrade
-failure; permission, transport and malformed responses remain distinct. Portable
-transfer full reads and revert/fork-and-revert still execute their supported
-entry points. No fixture operates on real history. Cleanup is automatic for
-fixture homes; do not delete real conversations or restart the persistent server.
+1. Open the thread. Expect one metadata-only read or resume and a single
+   descending `thread/turns/list` content page.
+2. Load earlier messages. Expect one `thread/turns/list` call with the preceding
+   page's opaque cursor. Check the first turn, inline media and turn errors.
+3. Repeat against a fixture that rejects `thread/turns/list` as method-not-found.
+   Expect an upgrade error and no full thread read.
+4. Fork from an older response. Expect the exact prefix through its persisted turn
+   ID. Run the Portable Fork and Revert tests to verify the preserved draft flow.
+
+Cleanup: fixture homes are temporary. Archive only disposable manual-test threads.

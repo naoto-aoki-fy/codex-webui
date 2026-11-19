@@ -12,7 +12,7 @@ the last owner disposes the shared client and active SSE requests. Matching runt
 versions reuse the shared object on hot reload; incompatible versions replace it.
 The transport never owns the independently managed Codex process.
 
-Disconnect rejects pending RPCs, clears approvals/events/snapshots/page caches,
+Disconnect rejects pending RPCs, clears approvals, events and snapshots,
 advances connection generation and schedules reconnect. Obsolete socket replies
 cannot settle new calls. Subscription restoration runs sequentially with
 `excludeTurns: true`, reports per-thread failures and never gates unrelated RPCs.
@@ -21,11 +21,10 @@ default 60-second caller deadline; standalone commands default to 600 seconds. D
 release pending ownership without cancelling remote work: outcomes can be unknown.
 See [connection settings and recovery](external-app-server.md).
 
-Earlier-page reads share in-flight work and a 30-second cache. Promise identity,
-connection generation and invalidation protect publication; snapshot epochs prevent
-stale RPC results from repopulating invalidated snapshots. Stream history is bounded
-at 400 frames per thread, not globally. These buffers merge execution errors into
-history; they are not a browser replay API.
+Earlier pages are direct native RPCs using `thread/turns/list`. The bridge uses
+snapshot epochs to prevent stale detail replies from replacing recovery snapshots.
+The 400-frame per-thread stream buffer supplies recent execution errors for
+history rendering.
 
 Historical generation metadata comes only from the rollout reader and persistent
 remote rollout cache. Runtime settings recording and source-to-fork inheritance

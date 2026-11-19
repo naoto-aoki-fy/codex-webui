@@ -17,11 +17,11 @@ Thread conversation incremental older-turn loading.
 5. Continue clicking Load earlier messages until the control disappears.
 6. Confirm the oldest messages in the thread are visible and no duplicate message rows are introduced.
 7. Switch to dark theme and repeat steps 1-6 on the same thread or another long thread.
-8. For the inline-media sanitization extraction, verify images render in the newest page and after loading earlier turns. Inspect image URLs in developer tools: inline images should use `/codex-local-image?path=...`. Reload and repeat; confirm non-image message content is unchanged.
+8. For the inline-media sanitization extraction, verify images render in the newest page and after loading earlier turns. Inspect image URLs in developer tools: inline images should use `/codex-app-asset?id=...`. Reload and repeat; confirm non-image message content is unchanged.
 
 #### Expected Results
 - Initial thread open remains bounded to the latest turn page.
-- Load earlier messages fetches older persisted turns from the local bridge instead of only revealing already-loaded messages.
+- Load earlier messages calls native `thread/turns/list` through the bridge with the opaque cursor from the preceding page.
 - The control remains available while older persisted turns exist and disappears after the first turn is loaded.
 - Message ordering, turn actions, and scroll restoration remain stable in light and dark themes.
 - Inline media continues to render in both history views without duplicate history requests. Existing local proxy URLs and attachment fallback text retain their behavior.
@@ -34,12 +34,12 @@ Thread conversation incremental older-turn loading.
 ### Concurrent detail refresh and history retirement
 
 Setup: a disposable fixture thread with more than ten turns, plus controllable
-pending detail/page responses. Keep absolute turn indices in each response.
+pending detail/page responses. Use a cursor from the recent reply and an opaque next cursor or null from the older page.
 
 1. Load recent turns and request an older page. Force a detail refresh while it
    is pending. Complete page then detail, and repeat with detail then page.
-2. Expect both ranges to survive in order, stable absolute indices, and the
-   oldest loaded page's pagination flag. Neither loading flag remains stuck.
+2. Expect both ranges to survive in order, stable order by native turn ID, and the
+   oldest loaded page's next cursor. Neither loading flag remains stuck.
 3. Switch threads during each pending read; no content or error may leak into
    the selected thread. Returning to the original thread retains its history.
 4. Archive the source thread while a detail/page read is pending, then settle it.
@@ -52,7 +52,7 @@ pending detail/page responses. Keep absolute turn indices in each response.
 Automated: `pnpm exec vitest run src/composables/useDesktopState.messages.test.ts`.
 Cleanup: dispose fixture states; archive only disposable fixture threads.
 
-Empty-page edge: return an empty older page with `hasMoreOlder: false` before a
+Empty-page edge: return an empty older page with `nextCursor: null` before a
 pending detail refresh completes. If the detail still contains the page boundary,
 the refresh must keep pagination exhausted rather than re-enable the older button.
 

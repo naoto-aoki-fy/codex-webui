@@ -69,7 +69,7 @@ export function indexConversationFileChanges(messages: readonly UiMessage[]) {
   const fileChangeMessagesByTurnKey = new Map<string, UiMessage[]>()
 
   for (const message of messages) {
-    if (isCopyableAssistantMessage(message) && typeof message.turnIndex === 'number') {
+    if (isCopyableAssistantMessage(message) && !message.importMetadata && typeof message.turnIndex === 'number') {
       assistantAnchorIdByTurnKey.set(`turn:${message.turnIndex}`, message.id)
       if (Array.isArray(message.fileChanges) && message.fileChanges.length > 0) {
         assistantSummaryByAnchorId.set(message.id, {

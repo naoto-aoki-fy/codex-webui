@@ -1,4 +1,3 @@
-import { RemoteHistoryPager } from './remoteHistoryPager'
 import { nativeHistoryResponse } from './testFixtures/nativeHistory'
 import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
@@ -42,9 +41,8 @@ beforeEach(async () => {
   rpc.mockReset().mockImplementation(async method => method === 'fs/getMetadata' ? { isDirectory: true, isFile: false } : { data: [] })
   storeSnapshot.mockReset()
   sqlite.mockReset().mockReturnValue({ status: 0, stdout: '[]', stderr: '' })
-  const pager = new RemoteHistoryPager({ rpc: async (method, params) => nativeHistoryResponse(method, params, await rpc(method, params)), getConnectionGeneration: () => 1 })
   scope.__codexRemoteSharedBridge__ = {
-    version: 'external-websocket-files-v3', appServer: { rpc, getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getStreamEvents: () => [], readThreadPage: pager.read.bind(pager) },
+    version: 'external-websocket-files-v4', appServer: { rpc: async (method: string, params: unknown) => nativeHistoryResponse(method, params, await rpc(method, params)), getSnapshotEpoch: () => null, storeThreadReadSnapshot: storeSnapshot, getStreamEvents: () => [] },
     methodCatalog: {},
   }
 })
@@ -82,10 +80,13 @@ it('keeps normal history and earlier-history pagination available', async () => 
   const initial = await request('/codex-api/rpc', 'POST', { method: 'thread/read', params: { threadId: 'historical-thread', includeTurns: true } })
   expect(initial.res.statusCode).toBe(200)
   expect(initial.json.result.thread.turns.map((t: { id: string }) => t.id)).toEqual(turns.slice(5).map(t => t.id))
-  const older = await request('/codex-api/thread-turn-page?threadId=historical-thread&beforeTurnId=t5&limit=10')
+  const older = await request('/codex-api/rpc', 'POST', { method: 'thread/turns/list', params: { threadId: 'historical-thread', cursor: 'cursor-10', limit: 10, sortDirection: 'desc', itemsView: 'full' } })
   expect(older.res.statusCode).toBe(200)
-  expect(older.json.result.thread.turns).toEqual(turns.slice(0, 5))
-  expect(older.json.hasMoreOlder).toBe(false)
+  expect(initial.json.result.olderCursor).toBe('cursor-10')
+  expect(older.json.result.data).toEqual(turns.slice(0, 5).reverse())
+  expect(older.json.result.nextCursor).toBeNull()
+  expect(rpc.mock.calls.map(([method]) => method)).toEqual(['thread/read', 'thread/turns/list', 'thread/turns/list'])
+  expect(rpc.mock.calls[0]?.[1]).toMatchObject({ includeTurns: false })
 })
 
 it.each(['/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion'])('retires %s without modifying existing files or history', async path => {

@@ -13,7 +13,9 @@ least 25 turns, text, a tool observation and an image. Stop any active turn.
    confirmation.
    Expect one `thread/start`, then one `thread/inject_items`, no native fork or
    `turn/start`. Check all ordinary messages, including unloaded older turns.
-3. Fork a middle response. While the picker is open, append a source turn in
+3. Click Load earlier messages and fork a response from that page. Verify the
+   selected persisted turn ID is used for the inclusive cutoff. While the picker
+   is open, append a source turn in
    another client. Confirm; expect only the captured prefix through the selected
    response. Transferred text must match the source without repeated import labels.
    Source attribution must remain in the internal transcript metadata.

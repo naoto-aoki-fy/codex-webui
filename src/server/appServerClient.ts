@@ -1,7 +1,6 @@
 import { NativeAuthenticationStateMachine, AUTHENTICATED_WRITES } from './nativeAuthenticationState.js'
 import { CodexHomeResolver } from './codexHomeResolver.js'
 import { getConnectionProfileId } from './connectionProfile.js'
-import { RemoteHistoryPager } from './remoteHistoryPager.js'
 import { RemoteCapabilities } from './remoteCapabilities.js'
 import { SubscriptionRecovery } from './subscriptionRecovery.js'
 import { RolloutGenerationMetadata } from './rolloutGenerationMetadata.js'
@@ -111,11 +110,6 @@ export class AppServerClient {
   getConnectionGeneration(): number { return this.connectionGeneration }
   getSnapshotEpoch(): object { return this.snapshotEpoch }
 
-  private readonly historyPager = new RemoteHistoryPager(this)
-  readThreadPage(threadId: string, beforeTurnId = '', limit = 10) {
-    return this.historyPager.read(threadId, beforeTurnId, limit)
-  }
-
   private readonly lastThreadReadSnapshotByThreadId = new Map<string, unknown>()
   private readonly snapshotBytesByThreadId = new Map<string, number>()
   private disposed = false
@@ -130,7 +124,6 @@ export class AppServerClient {
     this.authentication.disconnect()
     this.connectionGeneration++
     this.codexHome.reset()
-    this.historyPager.invalidate()
     this.capabilities.reset()
     this.recovery.cancel()
     for (const request of this.pending.values()) request.reject(new Error('App-server disconnected. Retry to reconnect; inspect the thread before resending a turn.'))
@@ -196,7 +189,6 @@ export class AppServerClient {
     this.recordStreamEvent(notification)
     const nThreadId = this.extractThreadIdFromParams(notification.params)
     if (nThreadId && notification.method !== 'turn/generationMetadata') {
-      this.historyPager.invalidate(nThreadId)
       if (notification.method === 'thread/reverted' || notification.method === 'thread/deleted') {
         this.snapshotEpoch = {}
         this.lastThreadReadSnapshotByThreadId.delete(nThreadId)
@@ -448,7 +440,6 @@ export class AppServerClient {
       const id = readNonEmptyString(asRecord(params)?.threadId)
       this.lastThreadReadSnapshotByThreadId.delete(id)
       this.streamEventsByThreadId.delete(id)
-      this.historyPager.invalidate(id)
     }
     if (['thread/start', 'thread/resume', 'thread/fork'].includes(method)) {
       const id = readNonEmptyString(asRecord(asRecord(result)?.thread)?.id)

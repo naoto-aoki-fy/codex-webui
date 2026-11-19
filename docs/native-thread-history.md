@@ -3,10 +3,19 @@
 ## History and recovery
 
 Thread discovery and ordering come from the connected Codex App Server.
-History pages use native `thread/turns/list` with opaque cursors and
-`AppServerClient.readThreadPage()` for absolute turn positions. The paging
-adapter has bounded metadata scans, request coalescing and invalidation.
-See the [required server capabilities](native-project-migration.md).
+Opening a conversation uses a metadata-only native read or resume and one
+`thread/turns/list` request for its ten newest turns. Load earlier messages
+passes the server's opaque cursor to the same native API through the generic
+RPC bridge. The conversation keeps loaded rows and its next cursor in browser
+memory. The bridge has no history index or older-page cache.
+
+Response forks and revert use persisted turn IDs. Native response forks verify
+the exact retained prefix. Revert validates the target with native metadata pages
+and restores the edited prompt as a draft. Portable Fork reads the full native
+source history to include eligible turns the browser has yet to load. The bridge
+continues sanitizing inline media and merging recent turn errors, and historical
+metadata recovery still runs on content-bearing pages. See the
+[required server capabilities](native-project-migration.md).
 
 The WebUI retains browser optimistic rows and bounded in-memory recovery
 snapshots for transient failures. Active subscriptions resume after an upstream
@@ -43,9 +52,10 @@ IndexedDB cover the separate Queue operation.
 
 Attachment-only sends use the same native dispatch as other turns. The bridge
 does zero index file reads, locks or writes and performs no history preflight
-to capture previous turn IDs. Native subscription recovery and history paging
-retain their existing request behavior. Live delivery and restart latency were
-not measured for this cleanup.
+to capture previous turn IDs. Older loads use one native request per page. The CLI and dev transport fixture
+asserts the two content-page calls and the initial metadata-only read. Historical
+response metadata recovery can make separate metadata and filesystem requests. Live
+delivery, restart and App Server history latency were not measured for this cleanup.
 
 See the [attachment and reconnect checks](../tests/chat-composer-rendering/attachment-only-thread-persistence.md)
 for test setup, optimistic rows, reload, lost acknowledgments and deliberate

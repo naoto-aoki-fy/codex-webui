@@ -3,24 +3,21 @@ import { computed, ref } from 'vue';
 import type { Router } from 'vue-router';
 import { cancelConversationTransfer, prepareConversationTransfer, reasoningCatalog } from './api/codexGateway';
 import { defaultModelForProvider, modelSelectionKey, parseModelSelection } from './api/modelCapabilities';
-import type { ForkMethod, PortableRevertTarget, UiMessage } from './types/codex';
+import type { ForkMethod, PortableRevertTarget, ResponseForkTarget, UiMessage } from './types/codex';
 /** Owns the existing prepare/select/confirm/cancel dialog state machine and native-fork publication. No automatic retry, injection replay, lifecycle hook or module-level state is introduced. */
 export function createAppTransferDialog(deps: {
     messages: ComputedRef<UiMessage[]>;
     selectedThreadId: Ref<string, string>;
     composerSelectedModelId: ComputedRef<string>;
     forkThreadById: (threadId: string, transferId?: string, modelId?: string) => Promise<string>;
-    forkThreadFromTurn: (threadId: string, _turnIndex: number, transferId?: string, modelId?: string) => Promise<string>;
     desktopError: Ref<string, string>;
     router: Pick<Router, 'push'>;
     isMobile: Ref<boolean, boolean>;
     setSidebarCollapsed: (nextValue: boolean) => void;
-    forkNativeThreadById: (threadId: string, turnIndex?: number, expectedTurnId?: string) => Promise<string>;
+    forkNativeThreadById: (threadId: string, turnId?: string) => Promise<string>;
 }) {
     const transferPicker = ref<null | {
         sourceId: string;
-        turnIndex?: number;
-        turnId?: string;
         revertTarget?: PortableRevertTarget;
         id: string;
         loading: boolean;
@@ -42,17 +39,16 @@ export function createAppTransferDialog(deps: {
         const model = defaultModelForProvider(reasoningCatalog.value, transferProvider.value);
         return model && transferProvider.value ? modelSelectionKey(transferProvider.value, model) : '';
     });
-    async function openTransferPicker(sourceId: string, turnIndex?: number, revertTarget?: PortableRevertTarget): Promise<void> {
+    async function openTransferPicker(sourceId: string, target?: ResponseForkTarget, revertTarget?: PortableRevertTarget): Promise<void> {
         if (isForkOperationPending.value)
             return;
-        const turnId = turnIndex !== undefined && deps.selectedThreadId.value === sourceId ? deps.messages.value.find(message => message.role === 'assistant' && message.turnIndex === turnIndex)?.turnId : undefined;
-        transferPicker.value = { sourceId, turnIndex, turnId, revertTarget, id: '', loading: true, pending: false, failure: '' };
+        transferPicker.value = { sourceId, revertTarget, id: '', loading: true, pending: false, failure: '' };
         const picker = transferPicker.value;
         // Capture the opening selection without binding later dialog choices to the composer.
         const composerProvider = parseModelSelection(deps.composerSelectedModelId.value).provider;
         transferProvider.value = '';
         try {
-            const prepared = await prepareConversationTransfer(sourceId, turnIndex, turnId, revertTarget);
+            const prepared = await prepareConversationTransfer(sourceId, target, revertTarget);
             Object.assign(picker, prepared);
             // Cancellation can finish while this read is pending.
             if (transferPicker.value !== picker)
@@ -83,9 +79,7 @@ export function createAppTransferDialog(deps: {
         if (!picker || !canConfirmFork.value)
             return;
         picker.pending = true;
-        const nextId = picker.turnIndex === undefined
-            ? await deps.forkThreadById(picker.sourceId, picker.id, transferModel.value)
-            : await deps.forkThreadFromTurn(picker.sourceId, picker.turnIndex, picker.id, transferModel.value);
+        const nextId = await deps.forkThreadById(picker.sourceId, picker.id, transferModel.value);
         picker.pending = false;
         if (!nextId) {
             picker.failure = deps.desktopError.value || 'Import did not complete. Do not retry injection.';
@@ -101,21 +95,20 @@ export function createAppTransferDialog(deps: {
     }
     async function onForkThread(payload: {
         threadId: string;
-        turnIndex?: number;
+        target?: ResponseForkTarget;
         method: ForkMethod;
     }): Promise<void> {
         if (isForkOperationPending.value)
             return;
         nativeForkFailure.value = '';
         if (payload.method === 'portable') {
-            await openTransferPicker(payload.threadId, payload.turnIndex);
+            await openTransferPicker(payload.threadId, payload.target);
             return;
         }
         nativeForkPending.value = true;
         try {
-            const turnId = payload.turnIndex !== undefined && deps.selectedThreadId.value === payload.threadId
-                ? deps.messages.value.find(message => message.role === 'assistant' && message.turnIndex === payload.turnIndex)?.turnId : undefined;
-            const nextId = await deps.forkNativeThreadById(payload.threadId, payload.turnIndex, turnId);
+            if (payload.target && !('turnId' in payload.target)) return;
+            const nextId = await deps.forkNativeThreadById(payload.threadId, payload.target?.turnId);
             if (nextId)
                 await navigateToFork(nextId);
             else
@@ -127,7 +120,7 @@ export function createAppTransferDialog(deps: {
     }
     async function onForkThreadFromMessage(payload: {
         threadId: string;
-        turnIndex: number;
+        target: ResponseForkTarget;
         method: ForkMethod;
     }): Promise<void> {
         await onForkThread(payload);

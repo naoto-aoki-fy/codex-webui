@@ -113,7 +113,6 @@ it('updates only requested exact turn IDs through existing notifications, includ
     if (method === 'thread/read' && params.includeTurns) return { thread: { id: 't', path, turns: [{ id: 'new', items: [] }] } }
     return f.rpc(method, params)
   })
-  const invalidate = vi.spyOn((instance as any).historyPager, 'invalidate')
   const notify = vi.fn(); instance.onNotification(notify)
   try {
     await instance.rpc('thread/read', { threadId: 't', includeTurns: true })
@@ -122,7 +121,6 @@ it('updates only requested exact turn IDs through existing notifications, includ
     await instance.rpc('thread/turns/list', { threadId: 't', cursor: 'older' })
     await vi.waitFor(() => expect(notify).toHaveBeenCalledWith({ method: 'turn/generationMetadata', params: { threadId: 't', turnId: 'old', generationMetadata: execution('A', 'high') } }))
     expect(notify).toHaveBeenCalledTimes(1)
-    expect(invalidate).not.toHaveBeenCalled()
     expect(sourceReads(f)).toBe(1)
   } finally { instance.dispose() }
 })

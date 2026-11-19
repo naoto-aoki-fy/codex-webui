@@ -76,7 +76,8 @@ Baseline and final commands all exited zero:
   metadata, browser WebSocket and correlated-error checks; one upstream connection
   per entry, independent fixture listener survived both shutdowns.
 
-Focused final commands:
+Focused final commands for this historical change (some fixtures were later retired).
+For current history verification, see [native thread history](native-thread-history.md).
 
 ```sh
 pnpm exec vitest run src/server/persistentThreadIndex.test.ts src/server/remoteHistoryPager.test.ts src/server/appServerClient.test.ts src/server/projectHistory.test.ts

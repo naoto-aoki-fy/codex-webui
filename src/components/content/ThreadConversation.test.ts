@@ -145,19 +145,19 @@ describe('conversation thread state isolation', () => {
     expect(frames.size).toBe(before)
     expect(listeners).toHaveLength(4)
   })
-  it('defaults response forks to native and preserves portable cutoffs and disabled boundaries', () => {
+  it('forks an older native response by turn ID and keeps imported cutoffs portable', () => {
     const { props, state: s, emit } = setup({ messages: [
-      { id: 'answer', role: 'assistant', text: 'answer', turnId: 'turn', turnIndex: 3 },
-      { id: 'imported', role: 'assistant', text: 'imported answer', turnIndex: -2 },
+      { id: 'answer', role: 'assistant', text: 'answer', turnId: 'turn', turnIndex: -2 },
+      { id: 'imported', role: 'assistant', text: 'imported answer', turnIndex: -2, importMetadata: { source: 'fixture' } },
     ] })
     s.forkResponse('answer')
-    expect(emit).toHaveBeenLastCalledWith('forkThread', { threadId: 'A', turnIndex: 3, method: 'native' })
+    expect(emit).toHaveBeenLastCalledWith('forkThread', { threadId: 'A', target: { turnId: 'turn' }, method: 'native' })
     s.forkResponse('answer', 'portable')
-    expect(emit).toHaveBeenLastCalledWith('forkThread', { threadId: 'A', turnIndex: 3, method: 'portable' })
+    expect(emit).toHaveBeenLastCalledWith('forkThread', { threadId: 'A', target: { turnId: 'turn' }, method: 'portable' })
     s.forkResponse('imported', 'native')
     expect(emit).toHaveBeenCalledTimes(2)
     s.forkResponse('imported', 'portable')
-    expect(emit).toHaveBeenLastCalledWith('forkThread', { threadId: 'A', turnIndex: -2, method: 'portable' })
+    expect(emit).toHaveBeenLastCalledWith('forkThread', { threadId: 'A', target: { importedMessageIndex: 1 }, method: 'portable' })
     Object.assign(props, { isForkDisabled: true })
     s.forkResponse('answer')
     s.forkResponse('answer', 'portable')

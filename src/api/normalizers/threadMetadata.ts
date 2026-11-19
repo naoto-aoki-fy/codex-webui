@@ -29,12 +29,6 @@ export function buildTurnIndexByTurnId(payload: Pick<ThreadReadResponse, 'thread
   return lookup
 }
 
-export function readThreadTurnStartIndex(payload: Pick<ThreadReadResponse, 'thread'>): number {
-  const record = asRecord(payload)
-  const raw = record?.threadTurnStartIndex
-  return Math.max(0, Math.floor(typeof raw === 'number' ? raw : 0))
-}
-
 export function normalizeThreadIdFromPayload(payload: unknown): string {
   if (!payload || typeof payload !== 'object') return ''
   const record = payload as Record<string, unknown>

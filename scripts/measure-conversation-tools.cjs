@@ -34,7 +34,7 @@ async function setup(context, root) {
    const detail=()=>({thread:{...thread,turns:[0,1].map(index=>({id:`turn-${index}`,status:'completed',error:null,items:[
     {type:'userMessage',id:`u-${index}`,content:[{type:'text',text:`TURN_${index}_USER`}]},
     {type:'agentMessage',id:`a-${index}`,text:'Latest **Markdown**'},
-   ]}))},threadTurnStartIndex:0,importedTranscript:imported,importStage:'ready',model:'current-model',modelProvider:'fixture'})
+   ]}))},importedTranscript:imported,importStage:'ready',model:'current-model',modelProvider:'fixture'})
    let result={}, payload
    if(body.method==='thread/list')result={data:[thread],nextCursor:null}
    if(body.method==='thread/resume'||body.method==='thread/read')result=body.params?.includeTurns===false?{thread}:detail()
@@ -73,7 +73,7 @@ async function setup(context, root) {
     const {page,calls,payloads,errors,assetRequests,sockets}=await setup(context,root)
     await page.waitForTimeout(7000)
     assert.deepEqual(errors,[])
-    assert.equal(calls.some(call=>call.params?.archived===true||call.method==='account/usage/read'||call.path.endsWith('/thread-turn-page')),false)
+    assert.equal(calls.some(call=>call.params?.archived===true||call.method==='account/usage/read'||call.method==='thread/turns/list'),false)
     const counts={};for(const call of calls){const key=call.method||call.path;counts[key]=(counts[key]||0)+1}
     assert.equal(assetRequests.some(path=>/\/(ConversationTools|AppsPicker|RemoteControlStatus|AuthInspection|NativeAuthentication|nativeAuthentication|threadDeletion|NativeShell|nativeShell)-/.test(path)),false,'Optional feature module fetched before opening it')
     const javascriptBytes=[...new Set(assetRequests)].filter(path=>path.endsWith('.js')).reduce((sum,path)=>sum+readFileSync(join(root,'dist',path.slice(1))).length,0)

@@ -19,6 +19,9 @@ async function run() {
   await once(http, 'listening')
   const endpoint = path ? 'unix://' + path : 'ws://127.0.0.1:' + http.address().port
   const frames = []
+  const historyId = 'history-cursor-fixture'
+  const historyTurns = Array.from({ length: 15 }, (_, index) => ({ id: 'turn-' + index, items: [] }))
+  const olderCursor = 'native-opaque-cursor'
   let connections = 0
   server.on('connection', socket => {
     connections++
@@ -43,7 +46,11 @@ async function run() {
         : frame.method === 'account/read' ? { account: { type: 'apiKey' }, requiresOpenaiAuth: true }
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
         : frame.method === 'model/list' ? { data: [{ id: frame.params.cursor ? 'fixture-hidden' : 'fixture-model', hidden: Boolean(frame.params.cursor), isDefault: !frame.params.cursor }], nextCursor: frame.params.cursor ? null : 'fixture-next' }
-        : frame.method === 'thread/list' ? { data: [], nextCursor: null } : {}
+        : frame.method === 'thread/list' ? { data: [], nextCursor: null }
+        : frame.method === 'thread/read' && frame.params.threadId === historyId ? { thread: { id: historyId, turns: [] } }
+        : frame.method === 'thread/turns/list' && frame.params.threadId === historyId
+          ? { data: frame.params.cursor ? historyTurns.slice(0, 5).reverse() : historyTurns.slice(5).reverse(), nextCursor: frame.params.cursor ? null : olderCursor }
+          : {}
       socket.send(JSON.stringify({ id: frame.id, result }))
     })
   })
@@ -70,7 +77,7 @@ async function run() {
           await new Promise(resolve => setTimeout(resolve, 100))
         }
         assert(ready, output)
-        for (const path of ['/codex-api/git/repository-status', '/codex-api/prompts', '/codex-api/thread-titles', '/codex-api/worktree/create', '/codex-api/worktree/branches', '/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion', '/codex-api/telegram/config', '/codex-api/telegram/configure-bot', '/codex-api/telegram/status', '/codex-api/telegram/test-notification', '/codex-api/worktree/create-permanent', '/codex-api/thread-file-change-fallback', '/codex-api/thread-live-state', '/codex-api/thread-stream-events']) {
+        for (const path of ['/codex-api/git/repository-status', '/codex-api/prompts', '/codex-api/thread-titles', '/codex-api/worktree/create', '/codex-api/worktree/branches', '/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion', '/codex-api/telegram/config', '/codex-api/telegram/configure-bot', '/codex-api/telegram/status', '/codex-api/telegram/test-notification', '/codex-api/worktree/create-permanent', '/codex-api/thread-file-change-fallback', '/codex-api/thread-live-state', '/codex-api/thread-stream-events', '/codex-api/thread-turn-page']) {
           for (const method of ['GET', 'HEAD', 'POST']) {
             for (const query of ['', '?threadId=fixture-thread']) {
               const retired = await fetch(url + path + query, { method })
@@ -113,6 +120,32 @@ async function run() {
         assert.equal(auth.status, 200)
         assert.equal(auth.body.result.authToken, null)
         assert.deepEqual(await call('thread/name/set'), { status: 200, body: { result: {} } })
+        const historyRequest = async (method, params) => {
+          const response = await fetch(url + '/codex-api/rpc', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ method, params: { threadId: historyId, ...params } }),
+          })
+          const body = await response.json()
+          assert(response.ok, JSON.stringify(body))
+          return body.result
+        }
+        const historyStart = frames.length
+        const latest = await historyRequest('thread/read', { includeTurns: true })
+        assert.equal(latest.olderCursor, olderCursor)
+        assert.deepEqual(latest.thread.turns, historyTurns.slice(5))
+        const older = await historyRequest('thread/turns/list', { cursor: latest.olderCursor, itemsView: 'full', sortDirection: 'desc', limit: 10 })
+        assert.deepEqual(older, { data: historyTurns.slice(0, 5).reverse(), nextCursor: null })
+        const historyFrames = frames.slice(historyStart).filter(frame => frame.params?.threadId === historyId)
+        const { method: firstMethod, params: firstParams } = historyFrames[0]
+        assert.deepEqual({ method: firstMethod, params: firstParams },
+          { method: 'thread/read', params: { threadId: historyId, includeTurns: false } })
+        assert.deepEqual(historyFrames.filter(frame => frame.method === 'thread/turns/list').map(frame => frame.params), [
+          { threadId: historyId, itemsView: 'full', sortDirection: 'desc', limit: 10 },
+          { threadId: historyId, cursor: olderCursor, itemsView: 'full', sortDirection: 'desc', limit: 10 },
+        ])
+        // Historical execution metadata may independently request the rollout path.
+        assert(historyFrames.filter(frame => frame.method === 'thread/read').every(frame => frame.params.includeTurns === false))
+        console.log('PASS', dev ? 'pnpm run dev' : 'built CLI', 'two bounded native content pages, opaque cursor and no full thread read')
         const metadataRead=async(includeTurns)=>{
           const response=await fetch(url+'/codex-api/rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({method:'thread/read',params:{threadId:'metadata-status-fixture',...(includeTurns===undefined?{}:{includeTurns})}})})
           return {status:response.status,body:await response.json()}

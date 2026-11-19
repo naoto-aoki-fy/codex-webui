@@ -113,32 +113,12 @@ the real compiled composer SFC as well as the pure capability resolver.
 
 ## 3. History boundary
 
-**Found and fixed:** the HTTP adapter still had an internal full-read slicing
-branch if an injected client omitted `readThreadPage`. The production client
-already supplies it, but the remaining branch weakened the boundary.
-`82893fc` removes it and tests a clear compatibility error with zero fallback RPCs.
-
-Native pager implementation, absolute indices, cursor seek, limits, coalescing,
-TTL, disconnect/invalidation guards and fork cutoffs were not changed in this
-audit. Adapter tests now use native pagination fixture replies and the real pager
-instead of relying on the removed branch. Metadata index sharing and notification
-invalidation are asserted through `AppServerClient.readThreadPage`.
-The unused full-history page cache has since been removed. Recovery snapshots
-remain separate from native index invalidation; pagination uses only the native pager.
-
-- `remoteHistoryPager.test.ts`: recent/older absolute positions, exact order,
-  concurrent pages, reconnect, invalidation, malformed envelopes/repeated cursors,
-  and -32601 upgrade rejection with no full-read fallback. Permission/disconnect/
-  timeout errors preserve their original messages.
-- `threadLiveStateRetirement.test.ts` and `threadFileChangeRetirement.test.ts`:
-  unchanged item/error/media assertions, native earlier pages and fork cutoffs.
-- `conversationTransfer.test.ts`: full `thread/read(includeTurns: true)` remains
-  required for Portable Fork, including imported prefixes and incomplete receipts.
-- `useDesktopState.test.ts`: `executeThreadRevert`, old absolute-index targets,
-  fork-and-revert stages, restoration and history invalidation remain covered.
-- `appServerClient.test.ts`: recovery snapshot invalidation on revert and active
-  runtime replacement remain covered. Native cache/race coverage remains in
-  `remoteHistoryPager.test.ts` and `remoteTransfers.benchmark.test.ts`.
+The audit removed the bridge's full-read fallback in `82893fc`. A later cleanup
+removed the native cursor index and its tests. The current implementation and
+verification are documented under [native thread history](native-thread-history.md).
+Recent and older page tests still cover errors, inline media, and historical
+response metadata. Portable Fork and Revert keep their full-prefix and draft
+restoration checks.
 
 ## 4. Deleted-test audit
 
@@ -184,7 +164,8 @@ no unknown listener or persistent 5173 server was stopped. Screenshots:
 extended past the warning width; shared CSS now wraps it and the browser asserts
 `scrollWidth <= clientWidth` before capturing each theme.
 
-Commands/results:
+Commands/results for this historical change (some fixtures were later retired).
+For current history verification, see [native thread history](native-thread-history.md).
 
 ```sh
 # Independent upgrade/gateway/sidebar + adapter/media/native cache + restore cases:
@@ -222,9 +203,7 @@ Performance code-path audit: pin refresh adds one asynchronous profile-state rea
 per existing pin refresh, not per thread/message. It adds no migration writes,
 section moves, duplicate list requests, new cache or unbounded fanout. Rejected
 pin fixtures assert zero native pin RPCs. Successful refresh still lists native
-section pages once. The HTTP adapter now performs zero full-read calls when its
-required pager is missing. Native pager request coalescing/invalidation is
-unchanged and measured by fixture call counts. No live latency/browser profiler
+section pages once. The history fixture measured request counts for the historical implementation. No live latency/browser profiler
 measurement was performed.
 
 Review commands (resolve `HEAD` to the completion-report commit):

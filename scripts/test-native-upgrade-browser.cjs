@@ -20,7 +20,6 @@ const assert = require('node:assert/strict')
   if(url.pathname.endsWith('/thread-pins')) { await route.fulfill({status:502,json:{error:'Native thread sections are required for pinning. Upgrade Codex.'}});return }
   if(url.pathname.endsWith('/pending')) payload={data:[]}
   if(url.pathname.endsWith('/methods')) payload={methods:[]}
-  if(url.pathname.endsWith('/thread-turn-page')) payload={result:{thread},startTurnIndex:0,hasMoreOlder:false}
   await route.fulfill({json:payload})
  })
  await page.routeWebSocket('**/codex-api/ws', ws=>{})

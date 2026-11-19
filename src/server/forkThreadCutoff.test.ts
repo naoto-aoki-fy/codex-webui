@@ -8,13 +8,12 @@ describe('response fork cutoff', () => {
     const rpc = vi.fn(async (method: string, params: unknown) => {
       const p = params as Record<string, unknown>
       if (method === 'thread/fork') {
-        expect(p).toMatchObject({ threadId: 'source', lastTurnId: 'turn-1' })
-        expect(p).not.toHaveProperty('forkFromTurnIndex')
+        expect(p).toEqual({ threadId: 'source', lastTurnId: 'turn-1' })
       } else expect(method).toBe('thread/read')
       return { thread: { id: p.threadId === 'source' && method === 'thread/read' ? 'source' : 'fork', turns: method === 'thread/read' && p.threadId === 'source' ? turns : turns.slice(0, 2) } }
     })
-    expect(await forkThreadAtCutoff({ rpc }, { threadId: 'source', forkFromTurnIndex: 1 })).toMatchObject({
-      forkCutoff: { sourceThreadId: 'source', turnIndex: 1, turnId: 'turn-1', turnCount: 2 },
+    expect(await forkThreadAtCutoff({ rpc }, { threadId: 'source', turnId: 'turn-1' })).toMatchObject({
+      forkCutoff: { sourceThreadId: 'source', turnId: 'turn-1' },
       thread: { id: 'fork', turns: turns.slice(0, 2) },
     })
     expect(rpc.mock.calls.map(([method]) => method)).toEqual(['thread/read', 'thread/fork', 'thread/read'])
@@ -28,10 +27,10 @@ describe('response fork cutoff', () => {
       }
       return { thread: { id: params.threadId, turns: params.threadId === 'source' ? turns : turns.slice(0, 2) } }
     })
-    await forkThreadAtCutoff({ rpc }, { threadId: 'source', forkFromTurnIndex: 1, expectedTurnId: 'turn-1', persistExtendedHistory: true })
+    await forkThreadAtCutoff({ rpc }, { threadId: 'source', turnId: 'turn-1', persistExtendedHistory: true })
     expect(rpc.mock.calls.map(([method]) => method)).toEqual(['thread/read', 'thread/fork', 'thread/read'])
     rpc.mockClear()
-    await expect(forkThreadAtCutoff({ rpc }, { threadId: 'source', forkFromTurnIndex: 1, expectedTurnId: 'stale' })).rejects.toThrow('Source history changed')
+    await expect(forkThreadAtCutoff({ rpc }, { threadId: 'source', turnId: 'stale' })).rejects.toThrow('Source history changed')
     expect(rpc.mock.calls.map(([method]) => method)).toEqual(['thread/read'])
   })
 
@@ -44,13 +43,13 @@ describe('response fork cutoff', () => {
         ? turns : failure === 'wrong-ids' ? turns.slice(2, 4) : turns.slice(0, 2)
       return { thread: { id: 'fork', turns: history } }
     })
-    await expect(forkThreadAtCutoff({ rpc }, { threadId: 'source', forkFromTurnIndex: 1 })).rejects.toThrow('cutoff was not applied')
+    await expect(forkThreadAtCutoff({ rpc }, { threadId: 'source', turnId: 'turn-1' })).rejects.toThrow('cutoff was not applied')
     expect(rpc).toHaveBeenLastCalledWith('thread/archive', { threadId: 'fork' })
   })
 
-  it.each([-1, 1.5, undefined])('rejects invalid cutoff %s before RPC', async cutoff => {
+  it.each([1, '', undefined])('rejects invalid cutoff %s before RPC', async cutoff => {
     const rpc = vi.fn()
-    await expect(forkThreadAtCutoff({ rpc }, { threadId: 'source', forkFromTurnIndex: cutoff })).rejects.toThrow('Invalid fork response cutoff')
+    await expect(forkThreadAtCutoff({ rpc }, { threadId: 'source', turnId: cutoff })).rejects.toThrow('Missing response turn ID')
     expect(rpc).not.toHaveBeenCalled()
   })
 })

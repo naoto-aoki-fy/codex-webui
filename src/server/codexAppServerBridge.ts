@@ -127,14 +127,12 @@ function trimThreadTurnsInRpcResult(method: string, result: unknown): unknown {
   const thread = asRecord(record?.thread)
   const turns = Array.isArray(thread?.turns) ? thread.turns : null
   if (!record || !thread || !turns || turns.length <= THREAD_RESPONSE_TURN_LIMIT) return result
-  const startTurnIndex = Math.max(0, turns.length - THREAD_RESPONSE_TURN_LIMIT)
 
   return {
     ...record,
-    threadTurnStartIndex: startTurnIndex,
     thread: {
       ...thread,
-      turns: turns.slice(startTurnIndex),
+      turns: turns.slice(-THREAD_RESPONSE_TURN_LIMIT),
     },
   }
 }
@@ -234,21 +232,19 @@ function isArchivedThreadReadResult(threadReadResult: unknown): boolean {
 }
 
 export async function forkThreadAtCutoff(appServer: RpcExecutor, params: Record<string, unknown>): Promise<unknown> {
-  const { forkFromTurnIndex, expectedTurnId, ...forkParams } = params
-  if (!Number.isSafeInteger(forkFromTurnIndex) || (forkFromTurnIndex as number) < 0) {
-    throw new Error('Invalid fork response cutoff')
-  }
+  const { turnId, ...forkParams } = params
+  if (typeof turnId !== 'string' || !turnId.trim()) throw new Error('Missing response turn ID')
   const source = asRecord(await callRpcWithArchiveRecovery(appServer, 'thread/read', {
     threadId: params.threadId, includeTurns: true,
   }))
   const sourceTurns = asRecord(source?.thread)?.turns
-  const cutoff = forkFromTurnIndex as number
-  const prefix = Array.isArray(sourceTurns) ? sourceTurns.slice(0, cutoff + 1) : []
+  const cutoff = Array.isArray(sourceTurns) ? sourceTurns.findIndex(turn => asRecord(turn)?.id === turnId) : -1
+  if (cutoff < 0 || !Array.isArray(sourceTurns)) throw new Error('Source history changed at the selected response. Refresh the thread.')
+  const prefix = sourceTurns.slice(0, cutoff + 1)
   const ids = prefix.map(turn => readNonEmptyString(asRecord(turn)?.id))
   if (ids.length !== cutoff + 1 || ids.some(id => !id)) {
     throw new Error('Fork response cutoff is outside the source history')
   }
-  if (expectedTurnId && expectedTurnId !== ids[cutoff]) throw new Error('Source history changed at the selected response. Refresh the thread.')
   const cutoffParams = { ...forkParams, lastTurnId: ids[cutoff] }
   const result = await callRpcWithArchiveRecovery(appServer, 'thread/fork', cutoffParams)
   const record = asRecord(result)
@@ -265,7 +261,7 @@ export async function forkThreadAtCutoff(appServer: RpcExecutor, params: Record<
         throw new Error('Response fork cutoff was not applied by the app-server')
       }
     }
-    return { ...record, forkCutoff: { sourceThreadId: params.threadId, turnIndex: cutoff, turnId: ids[cutoff], turnCount: ids.length } }
+    return { ...record, forkCutoff: { sourceThreadId: params.threadId, turnId } }
   } catch (error) {
     try {
       await callRpcWithArchiveRecovery(appServer, 'thread/archive', { threadId: id })
@@ -274,6 +270,45 @@ export async function forkThreadAtCutoff(appServer: RpcExecutor, params: Record<
     }
     throw error
   }
+}
+
+async function readRecentThread(appServer: AppServerClient, method: 'thread/read' | 'thread/resume', params: Record<string, unknown>): Promise<unknown> {
+  const threadId = readNonEmptyString(params.threadId)
+  const snapshotEpoch = appServer.getSnapshotEpoch()
+  const metadata = asRecord(await appServer.rpc(method, {
+    ...params,
+    ...(method === 'thread/read' ? { includeTurns: false } : { excludeTurns: true }),
+  }))
+  const thread = asRecord(metadata?.thread)
+  if (!threadId || thread?.id !== threadId) throw new Error('Invalid thread metadata in history response')
+
+  try {
+    const page = asRecord(await appServer.rpc('thread/turns/list', {
+      threadId, sortDirection: 'desc', itemsView: 'full', limit: THREAD_RESPONSE_TURN_LIMIT,
+    }))
+    if (!Array.isArray(page?.data) || (page.nextCursor != null && typeof page.nextCursor !== 'string')) {
+      throw new Error('Invalid native history page')
+    }
+    if (snapshotEpoch !== appServer.getSnapshotEpoch()) throw new Error('History changed while loading. Refresh the thread.')
+    return { ...metadata, thread: { ...thread, turns: [...page.data].reverse() }, olderCursor: page.nextCursor ?? null }
+  } catch (error) {
+    if ((error as { code?: number } | null)?.code === -32601) {
+      throw new Error('Connected Codex server lacks thread/turns/list. Upgrade Codex.')
+    }
+    if (isThreadMaterializationPendingError(error)) {
+      return { ...metadata, thread: { ...thread, turns: [] }, olderCursor: null }
+    }
+    throw error
+  }
+}
+
+async function presentTurnPage(appServer: AppServerClient, threadId: string, result: unknown): Promise<unknown> {
+  const page = asRecord(result)
+  if (!threadId || !Array.isArray(page?.data)) return result
+  // Reuse the existing native thread presentation for each page's items and buffered errors.
+  const wrapped = { thread: { id: threadId, turns: page.data } }
+  const presented = asRecord(await sanitizeThreadTurnsInlinePayloads('thread/read', mergeStreamTurnErrorsIntoThreadResult(appServer, wrapped)))
+  return { ...page, data: asRecord(presented?.thread)?.turns }
 }
 
 export async function callRpcWithArchiveRecovery(
@@ -413,7 +448,7 @@ type SharedBridgeState = {
 }
 
 const SHARED_BRIDGE_KEY = '__codexRemoteSharedBridge__'
-const SHARED_BRIDGE_VERSION = 'external-websocket-files-v3'
+const SHARED_BRIDGE_VERSION = 'external-websocket-files-v4'
 
 function disposeSharedBridgeState(state: SharedBridgeState): void {
   if (state.retired) return
@@ -585,7 +620,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         if (body.method.startsWith('conversation-transfer/')) {
           const params = asRecord(body.params) ?? {}
           const result = body.method === 'conversation-transfer/prepare'
-            ? await transfers.prepare(readNonEmptyString(params.threadId), params.turnIndex as number | undefined, readNonEmptyString(params.turnId), params.revertTarget as import('../types/codex.js').PortableRevertTarget | undefined)
+            ? await transfers.prepare(readNonEmptyString(params.threadId), params.target as import('../types/codex.js').ResponseForkTarget | undefined, params.revertTarget as import('../types/codex.js').PortableRevertTarget | undefined)
             : body.method === 'conversation-transfer/status'
               ? await transfers.status(readNonEmptyString(params.id))
             : body.method === 'conversation-transfer/cancel'
@@ -629,8 +664,9 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           const params = asRecord(body.params)
           rpcResult = responseFork
             ? await forkThreadAtCutoff(appServer, params ?? {})
-            : body.method === 'thread/read' && params?.includeTurns === true && typeof appServer.readThreadPage === 'function'
-              ? (await appServer.readThreadPage(readNonEmptyString(params.threadId), '', THREAD_RESPONSE_TURN_LIMIT)).result
+            : params && ((body.method === 'thread/read' && params.includeTurns === true)
+              || (body.method === 'thread/resume' && params.excludeTurns !== true && params.initialTurnsPage == null))
+              ? await readRecentThread(appServer, body.method, params)
               : await callRpcWithArchiveRecovery(appServer, body.method, body.params ?? null)
         } catch (error) {
 		          // Metadata-only reads authorize safety-sensitive actions. A cached
@@ -684,13 +720,17 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           }
         }
 
-        const sanitizedResult = await sanitizeThreadTurnsInlinePayloads(body.method, errorMergedResult)
+        const sanitizedResult = body.method === 'thread/turns/list'
+          ? await presentTurnPage(appServer, readNonEmptyString(asRecord(body.params)?.threadId), rpcResult)
+          : await sanitizeThreadTurnsInlinePayloads(body.method, errorMergedResult)
         if (body.method === 'thread/start' && asRecord(body.params)?.projectId) {
           const expected = asRecord(body.params)!.projectId
           const thread = asRecord(asRecord(rpcResult)?.thread)
           if (thread?.projectId !== expected) throw new Error(`thread/start did not confirm native project ${expected}; inspect destination ${thread?.id || '(unknown)'} before retrying`)
         }
-        const result = await transfers.decorate(sanitizedResult)
+        const result = asRecord(asRecord(sanitizedResult)?.thread)
+          ? await transfers.decorate(sanitizedResult)
+          : sanitizedResult
 
 	        if (THREAD_METHODS_WITH_THREAD_SNAPSHOT.has(body.method) && !asRecord(body.params)?.excludeTurns && snapshotEpoch === appServer.getSnapshotEpoch()) {
 	          const rpcRecord = asRecord(result)
@@ -702,30 +742,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         }
 
         setJson(res, 200, { result })
-        return
-      }
-
-      if (req.method === 'GET' && url.pathname === '/codex-api/thread-turn-page') {
-        try {
-          const threadId = url.searchParams.get('threadId')?.trim() ?? ''
-          const beforeTurnId = url.searchParams.get('beforeTurnId')?.trim() ?? ''
-          const limitRaw = url.searchParams.get('limit')?.trim() ?? String(THREAD_RESPONSE_TURN_LIMIT)
-          const limit = Math.max(1, Math.min(50, Number.parseInt(limitRaw, 10) || THREAD_RESPONSE_TURN_LIMIT))
-          if (!threadId) {
-            setJson(res, 400, { error: 'Missing threadId' })
-            return
-          }
-
-          if (typeof appServer.readThreadPage === 'function') {
-            const page = await appServer.readThreadPage(threadId, beforeTurnId, limit)
-            const result = await sanitizeThreadTurnsInlinePayloads('thread/read', mergeStreamTurnErrorsIntoThreadResult(appServer, page.result))
-            setJson(res, 200, { ...page, result: await transfers.decorate(result) })
-            return
-          }
-          throw new Error('Native history pagination is required. Upgrade the WebUI/Codex connection; full-history fallback is unavailable.')
-        } catch (error) {
-          setJson(res, 500, { error: getErrorMessage(error, 'Failed to load earlier thread messages') })
-        }
         return
       }
 

@@ -8,7 +8,7 @@
 #### Steps
 1. Open the long thread and inspect the `thread/read` RPC with `includeTurns: true`.
 2. Confirm the bridge returns the latest 10 turns and older-history metadata.
-3. Click Load earlier messages; inspect `/codex-api/thread-turn-page` and continue to the oldest turn.
+3. Click Load earlier messages; inspect `thread/turns/list` RPC requests and continue to the oldest turn.
 4. Confirm no duplicate rows and stable chronological order and scroll position.
 5. Separately fetch `/codex-api/thread-live-state?threadId=<id>` and assert HTTP 404 with JSON `{"error":"Not found"}`.
 6. Fetch `/codex-api/thread-stream-events?threadId=<id>&limit=50` with GET, HEAD and POST, and repeat without query parameters. Expect HTTP 404 and JSON content type (HEAD has no body). Confirm GET/POST return `{"error":"Not found"}`.
