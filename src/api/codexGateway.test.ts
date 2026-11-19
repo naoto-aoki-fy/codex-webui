@@ -326,7 +326,7 @@ describe('response fork operation support', () => {
 // Keep workspace coordination coverage at the public gateway boundary.
 
 describe('workspace roots cache coordination', () => {
-  const state: WorkspaceRootsState = { order: ['/a'], projectMode: 'native', nativeProjects: [] }
+  const state: WorkspaceRootsState = { order: ['/a'], nativeProjects: [] }
   const response = () => new Response(JSON.stringify({ data: state }))
   function deferred() {
     let resolve!: (response: Response) => void
@@ -587,10 +587,10 @@ it('submits only confirmed Fast tiers and explicitly requests standard speed aft
   vi.unstubAllGlobals()
 })
 
-it('preserves pin upgrade errors rather than returning an empty successful pin list', async () => {
+it('preserves native pin failures rather than returning an empty successful pin list', async () => {
   const { getPinnedThreadState } = await import('./codexGateway')
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Legacy pin migration is incomplete' }), { status: 500 })))
-  await expect(getPinnedThreadState()).rejects.toThrow('Legacy pin migration is incomplete')
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Native thread sections are required for pinning' }), { status: 500 })))
+  await expect(getPinnedThreadState()).rejects.toThrow('Native thread sections are required for pinning')
   vi.unstubAllGlobals()
 })
 

@@ -93,7 +93,7 @@ function installTestWindow(initialStorage: Record<string, string> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  gatewayMocks.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [], projectMode: 'native', nativeProjects: [] })
+  gatewayMocks.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [], nativeProjects: [] })
 })
 
 afterEach(() => {
@@ -1199,7 +1199,7 @@ describe('history discovery across pagination and workspace removal', () => {
     installTestWindow()
     const cwd = '/home/user/Documents/Codex/2026-11-12/hello'
     const empty = { id: 'empty', name: 'Empty', roots: [], metadata: {}, position: 1, createdAt: 1, updatedAt: 1, recencyAt: null }
-    const roots = { order: [cwd], active: [], projectOrder: ['hello', 'empty'], labels: {}, projectMode: 'native' as const, nativeProjects: [{ ...empty, id: 'hello', name: 'Hello', roots: [{ path: cwd }], position: 0 }, empty] }
+    const roots = { order: [cwd], active: [], projectOrder: ['hello', 'empty'], labels: {}, nativeProjects: [{ ...empty, id: 'hello', name: 'Hello', roots: [{ path: cwd }], position: 0 }, empty] }
     const unregistered = { ...roots, nativeProjects: [empty], projectOrder: ['empty'] }
     const first = { projectName: 'hello', threads: [thread('first', cwd)] }
     const later = { projectName: 'hello', threads: [thread('first', cwd), thread('older', cwd)] }
@@ -1251,7 +1251,7 @@ describe('native archive restore', () => {
     const state = useDesktopState()
     gatewayMocks.unarchiveThread.mockResolvedValue({ ...thread('restored', '/remote'), projectName: 'project-id', projectId: 'project-id' })
     gatewayMocks.getThreadGroupsPage.mockResolvedValue({ groups: [], nextCursor: null })
-    gatewayMocks.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: ['project-id'], projectMode: 'native', nativeProjects: [{ id: 'project-id', name: 'Project', roots: [] }] })
+    gatewayMocks.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: ['project-id'], nativeProjects: [{ id: 'project-id', name: 'Project', roots: [] }] })
     await state.restoreThreadById('restored')
     expect(state.projectGroups.value.flatMap(group => group.threads).some(row => row.id === 'restored' && row.projectId === 'project-id')).toBe(true)
   })

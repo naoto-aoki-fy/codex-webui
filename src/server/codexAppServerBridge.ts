@@ -1,7 +1,6 @@
 import { ModelPreferencesStore } from './modelPreferencesStore.js'
 import { createModelPreferenceUsage } from './modelPreferenceUsage.js'
 import type { ModelPreferences } from '../modelPreferences.js'
-import { resolveAppServerUrl } from './appServerWebSocketClient.js'
 import { NativeProjects } from './nativeProjects.js'
 import { createConversationTransfers } from './conversationTransfer.js'
 import { profileStateDirectory, getConnectionProfileId } from './connectionProfile.js'
@@ -9,8 +8,7 @@ import { WORKFLOW_CAPABILITIES, classifyCapabilityError } from './remoteCapabili
 import { stageRemoteUpload, inspectRemoteUploads } from './remoteUploads.js'
 import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
-export type { WorkspaceRootsState } from './workspaceRootsStore.js'
-import { createThreadPresentationStore } from './threadPresentationStore.js'
+import { readPinnedThreadIds } from './nativeThreadPins.js'
 import { asRecord, getErrorMessage, setJson, readJsonBody, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
 export { isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
 import { sanitizeThreadTurnsInlinePayloads, THREAD_METHODS_WITH_TURNS } from './threadInlinePayloads.js'
@@ -349,8 +347,6 @@ function getCodexHomeDir(): string {
   return codexHome && codexHome.length > 0 ? codexHome : join(homedir(), '.codex')
 }
 
-const { readPinnedThreadIds } = createThreadPresentationStore()
-
 function handleFileUpload(req: IncomingMessage, res: ServerResponse, appServer: AppServerClient): void {
   const chunks: Buffer[] = []
   let size = 0
@@ -481,7 +477,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   }
   const transfers = createConversationTransfers((method, params) => appServer.rpc(method, params))
   const files = sharedState.files ?? new ProjectFileService(appServer)
-  const projects = new NativeProjects((m, p) => appServer.rpc(m, p), () => JSON.stringify([getConnectionProfileId(), resolveAppServerUrl(), appServer.getInitializationMetadata?.()?.codexHome ?? '']))
+  const projects = new NativeProjects((method, params) => appServer.rpc(method, params))
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const requestStartNs = process.hrtime.bigint()
     const rawUrl = req.url ?? ''
@@ -548,7 +544,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
       if (req.method === 'GET' && url.pathname === '/codex-api/connection-diagnostics') {
         const state = url.searchParams.get('probe') === '1' ? await projects.read() : null
-        const directory = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state?.active[0] || state?.order[0] || null
+        const directory = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state?.order[0] || null
         const generation = appServer.getConnectionGeneration()
         const diagnostics = appServer.capabilities
         let git: { available: boolean | null; detail: string } = { available: null, detail: 'Not checked. command/exec support does not establish Git availability.' }
@@ -774,7 +770,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
       if (req.method === 'GET' && url.pathname === '/codex-api/home-directory') {
         const state = await projects.read()
-        const path = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state.active[0] || state.order[0]
+        const path = process.env.CODEXUI_REMOTE_INITIAL_DIRECTORY?.trim() || state.order[0]
         if (!path) { setJson(res, 409, { error: 'Enter an absolute workspace path on the App Server host, or set CODEXUI_REMOTE_INITIAL_DIRECTORY.' }); return }
         setJson(res, 200, { data: { path } })
         return
@@ -785,7 +781,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         if (!record || !['delete', 'rename', 'move'].includes(String(record.type)) || typeof record.projectId !== 'string' || !record.projectId
           || (record.type === 'rename' && (typeof record.name !== 'string' || !record.name.trim()))
           || (record.type === 'move' && record.beforeProjectId != null && typeof record.beforeProjectId !== 'string')) {
-          setJson(res, 400, { error: 'Expected a native project operation with projectId; legacy path writes are disabled' })
+          setJson(res, 400, { error: 'Expected a native project operation with projectId' })
           return
         }
         const state = await projects.operation(record as { type: 'delete' | 'rename' | 'move'; projectId: string; name?: string; beforeProjectId?: string | null })

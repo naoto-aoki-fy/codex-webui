@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto'
-const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -39,39 +37,30 @@ function fixture() {
     if (method === 'project/delete') { projects.splice(projects.findIndex(v => v.id === p.projectId), 1); for (const thread of threads.values()) if (thread.projectId === p.projectId) thread.projectId = null; return {} }
     throw new Error('Unexpected ' + method)
   })
-  return { rpc, projects, threads, service: new NativeProjects(rpc, () => 'test-server/home') }
+  return { rpc, projects, threads, service: new NativeProjects(rpc) }
 }
 
-it('rejects unmigrated and interrupted legacy data without modifying files or native records', async () => {
-  for (const receipt of [undefined, { completed: false }]) {
-    const seed = { ...legacy, ...(receipt ? { 'codexapp-native-project-migrations-v1': { [hash('test-server/home')]: receipt } } : {}) }
-    await writeFile(statePath(), JSON.stringify(seed))
-    const f = fixture()
-    await expect(f.service.read()).rejects.toThrow('pre-cleanup WebUI')
-    expect(JSON.parse(await readFile(statePath(), 'utf8'))).toEqual(seed)
-    expect(f.rpc.mock.calls.map(([m]) => m)).toEqual(['project/list'])
-  }
-})
-it('preserves completed migration receipts and uses native names, roots, order and empty projects', async () => {
-  const seed = { ...legacy, 'codexapp-native-project-migrations-v1': { [hash('test-server/home')]: { completed: true } } }
+it('uses native names, roots, order and empty projects while preserving old state', async () => {
+  const seed = { ...legacy, 'codexapp-native-project-migrations-v1': { fixture: { completed: false } } }
   await writeFile(statePath(), JSON.stringify(seed))
   const f = fixture()
   const p = { id: 'one', name: 'Same', roots: [{ path: '/a' }], metadata: {}, position: 0 }
   f.projects.push(p, { ...p, id: 'two' }, { ...p, id: 'empty', roots: [] })
   const [state, concurrent] = await Promise.all([f.service.read(), f.service.read()])
   expect(concurrent).toBe(state)
-  expect(state.nativeProjects?.map(p => p.id)).toEqual(['one', 'two', 'empty'])
+  expect(state.nativeProjects.map(p => p.id)).toEqual(['one', 'two', 'empty'])
   await f.service.operation({ type: 'rename', projectId: 'two', name: 'Renamed' })
   await f.service.operation({ type: 'move', projectId: 'two', beforeProjectId: 'one' })
-  expect((await f.service.read()).nativeProjects?.map(p => p.name)).toEqual(['Renamed', 'Same', 'Same'])
+  expect((await f.service.read()).nativeProjects.map(p => p.name)).toEqual(['Renamed', 'Same', 'Same'])
   await f.service.operation({ type: 'delete', projectId: 'one' })
-  expect((await f.service.read()).nativeProjects?.map(p => p.id)).toEqual(['two', 'empty'])
+  expect((await f.service.read()).nativeProjects.map(p => p.id)).toEqual(['two', 'empty'])
   expect(JSON.parse(await readFile(statePath(), 'utf8'))).toEqual(seed)
 })
 it('supports new installations and native registration without legacy state writes', async () => {
   const f = fixture()
   const first = await f.service.register('/remote/root')
   expect(await f.service.register('/remote/root')).toEqual(first)
+  expect(f.rpc.mock.calls.map(([method]) => method)).toEqual(['project/list', 'project/create', 'project/list'])
   expect(f.projects).toHaveLength(1)
   await expect(readFile(statePath())).rejects.toMatchObject({ code: 'ENOENT' })
 })

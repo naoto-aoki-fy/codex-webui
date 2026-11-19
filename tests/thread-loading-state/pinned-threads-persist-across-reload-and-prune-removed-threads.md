@@ -1,11 +1,17 @@
 # Native thread pins and names
 
-Setup: Codex 0.167.2 app-server, two existing threads, and a disposable web CODEX_HOME with legacy pinned-thread-ids and an unrelated global-state field.
+Use a disposable profile on an App Server with native thread sections. Create
+two threads, then record a legacy pin and an unrelated value in the disposable
+WebUI global-state file.
 
-Actions: load sidebar, pin/unpin a thread, rename a thread, reload, reconnect, and change its section from another client. Repeat in light and dark themes. Repeat migration with an unsupported server or a failed move.
+1. Pin a thread and rename it. Reload and reconnect. The new pin and name persist.
+2. Move the thread to a different section in another client and observe the WebUI
+   refresh. Unpinning sends `thread/section/move` with a null section ID.
+3. Repeat in both themes. Native pin membership and the thread name remain visible.
+4. Deny the native list request. The sidebar surfaces the error and keeps its last
+   successful pins. Check that the legacy key and unrelated value stay unchanged.
 
-Expected: pins use the built-in native Pinned section and names use thread/name/set. State survives reload and reconnect. Successful migration removes only pinned-thread-ids; interrupted migration retains the field for retry. No title-cache requests or writes occur. Unsupported sections leave legacy state intact.
+Cleanup: restore the original section/name for the disposable threads and discard
+the disposable profile.
 
-Cleanup: restore original section/name using native controls; preserve original user files.
-
-Performance: removed title-cache startup request and pin-array write watcher/pruning. Section reads paginate serially in pages of 100; migration moves only legacy IDs, then stops. No live timings measured.
+The pin list reads native section pages serially at 100 rows per request.

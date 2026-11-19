@@ -158,5 +158,4 @@ The legacy `/codex-api/thread-stream-events` buffered-event diagnostic HTTP API 
 Read status uses native Codex receipts exclusively; see
 [native Codex cleanup](docs/native-codex-cleanup.md) for protocol and data-preservation details.
 
-Native API ownership, removed features, migration and retained adapters are documented in
-[capability consolidation](docs/native-project-migration.md).
+See the [native server contract](docs/native-project-migration.md).

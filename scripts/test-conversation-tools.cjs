@@ -34,7 +34,7 @@ const { resolve } = require('node:path')
     else result={summary:usageKind==='empty'?{}:{lifetimeTokens:12345,longestRunningTurnSec:60},dailyUsageBuckets:usageKind==='empty'?[]:[{startDate:'2026-11-01',tokens:123}]}
    }
    payload=payload||{result}
-   if(url.pathname.endsWith('/workspace-roots-state'))payload={data:{projectMode:'native',nativeProjects:[{id:'p',name:'Fixture project',roots:[{path:'/fixture'}],position:0,metadata:{}}],order:['/fixture'],active:[],labels:{},projectOrder:['p']}}
+   if(url.pathname.endsWith('/workspace-roots-state'))payload={data:{nativeProjects:[{id:'p',name:'Fixture project',roots:[{path:'/fixture'}],position:0,metadata:{}}],order:['/fixture'],active:[],labels:{},projectOrder:['p']}}
    if(url.pathname.endsWith('/thread-pins'))payload={data:{threadIds:[]}}
    if(url.pathname.endsWith('/pending'))payload={data:[]}
    if(url.pathname.endsWith('/methods'))payload={data:[]}

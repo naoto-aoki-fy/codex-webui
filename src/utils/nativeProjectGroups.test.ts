@@ -3,7 +3,7 @@ import { filterGroupsByWorkspaceRoots, getWorkspaceProjectId, UNASSIGNED_PROJECT
 import { cloneWorkspaceRootsState } from '../api/normalizers/workspaceRoots'
 import { normalizeThreadGroupsV2 } from '../api/normalizers/v2'
 
-const state = { projectMode: 'native' as const, order: ['/shared'], active: [], labels: {}, projectOrder: ['p2', 'p1'], nativeProjects: [
+const state = { order: ['/shared'], active: [], labels: {}, projectOrder: ['p2', 'p1'], nativeProjects: [
   { id: 'p2', name: 'Same name', roots: [{ path: '/shared' }], metadata: {}, position: 0, createdAt: 1, updatedAt: 1, recencyAt: null },
   { id: 'p1', name: 'Same name', roots: [{ path: '/shared' }], metadata: {}, position: 1, createdAt: 1, updatedAt: 1, recencyAt: null },
   { id: 'empty', name: 'Empty project', roots: [], metadata: {}, position: 2, createdAt: 1, updatedAt: 1, recencyAt: null },

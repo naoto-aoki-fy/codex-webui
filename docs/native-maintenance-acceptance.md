@@ -1,7 +1,7 @@
 # Native cleanup acceptance audit
 
 > Historical verification record. Numbering and commands describe that review.
-> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [migration policy](native-project-migration.md).
+> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [native server contract](native-project-migration.md).
 
 Audit baseline (the proposed cleanup): `8565c81`.
 Original pre-cleanup baseline: `3f659043adef2fb075919dec669e88e843fe4889`.
@@ -38,8 +38,7 @@ The guards do not gate direct conversation navigation/history, Portable Fork,
 revert or unrelated native RPCs. A failed Project load may temporarily lack native
 Project labels, but thread visibility is not filtered by those legacy roots.
 
-Use the exact [migration source, environment, identity formula and observable
-completion checks](native-project-migration.md#reproducible-migration-source-and-environment).
+These checks describe the historical upgrade guard. The current [native server contract](native-project-migration.md) describes current behavior.
 The old source is `3f659043adef2fb075919dec669e88e843fe4889`; Project completion
 and removal of the old pin key must be verified separately. The old revision's
 Project and pin migration suites were rerun from a new `/tmp` source archive:

@@ -1,7 +1,7 @@
 # Scoped persistence maintenance evidence
 
 > Historical verification record. Numbering and commands describe that review.
-> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [migration policy](native-project-migration.md).
+> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [native server contract](native-project-migration.md).
 
 Baseline: fresh checkpoint `0cb06a31d805f1ffead3ed23b0469268f5ba0d8a`,
 created on clean `main` after `ebd3df5`. No earlier cleanup was reset.
@@ -56,9 +56,7 @@ native RPC capability, not a legacy runtime importer, and is retained.
 The historical source `3f659043adef2fb075919dec669e88e843fe4889` was inspected with
 `git show`: its Project importer writes completion only after verified native
 operations; its pin migrator moves sections before deleting the old pin key.
-The current runtime performs neither operation. Existing exact endpoint/profile/
-home identity guidance in [the upgrade procedure](native-project-migration.md)
-remains applicable. No minimum version or supported upgrade policy changed.
+The checks below describe the guard used in that revision. See the [native server contract](native-project-migration.md) for current behavior.
 
 `nativeProjects.ts` and `threadPresentationStore.ts` are intentionally unchanged.
 Native CRUD, thread associations, ordering, capability checks, section moves and

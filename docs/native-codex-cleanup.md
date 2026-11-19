@@ -1,7 +1,7 @@
 # Native Codex cleanup
 
 > Historical verification record. Numbering and commands describe that review.
-> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [migration policy](native-project-migration.md).
+> Current ownership: [maintenance scope](maintenance-scope.md). Current support and upgrades: [native server contract](native-project-migration.md).
 
 ## Read receipts
 The browser uses `thread/list.readStates` and `thread/read.readState`.
@@ -35,6 +35,6 @@ verification was performed. The frontend build emitted 378.59 kB main JavaScript
 ## Further consolidation
 
 Pins now use native sections; automatic worktree creation and unused session
-history enrichment are removed. See [current ownership and migration](native-project-migration.md).
+history enrichment are removed. See [current ownership and capabilities](native-project-migration.md).
 Attachment-only intent persistence and pending-send recovery remain necessary; see
 [history ownership and recovery](persistent-thread-index.md).

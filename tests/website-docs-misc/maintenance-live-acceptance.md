@@ -4,7 +4,7 @@ Prerequisites: an independently managed POSIX Codex App Server with matching
 credentials and filesystem, Project, pagination, inject-items and revert APIs.
 Record its initialization version. The test creates small real model turns using
 its default provider; never use an existing user conversation as the source.
-Use a disposable local application home: the harness seeds its global state.
+Use a disposable local application home: the harness writes local Portable Fork records there.
 
 Setup and actions:
 1. Inspect any listener on 4173 and its cwd. Start this checkout there with a new
@@ -24,9 +24,9 @@ Setup and actions:
    ```
 
 3. Inspect `output/playwright/maintenance-live.json`, the light/dark screenshots,
-   and `maintenance-fork-revert-draft.png`. Expect native create/import idempotency,
-   name/root updates, ordering, association and deletion; repeatable migration
-   including an empty project and a genuinely pre-existing imported transcript.
+   and `maintenance-fork-revert-draft.png`. Expect native create idempotency, name/root
+   updates, ordering, association, empty projects and deletion. Portable Fork
+   persists imported content across a transfer-service restart.
 4. Expect cold persistent rollout-cache creation, reuse in a fresh Node process
    with zero source reads, and one source refresh after a third native turn.
    Native fork/revert content remains accessible; missing inherited metadata is
@@ -52,30 +52,18 @@ Keep 4173 running unless asked to stop it. Remove disposable artifacts deliberat
 when their inspection is complete. A second host, Windows server, live approvals
 and cross-provider inference are outside this same-host acceptance run.
 
-### Feature: Read-only Project/pin upgrade safeguards
+### Feature: Native Project and pin adapter verification
 
-Prerequisites: repository dependencies and disposable temporary state only; no
-credentials, native database or real user files. Run:
+Install repository dependencies and run the disposable filesystem and RPC fixtures:
 
 ```sh
-pnpm exec vitest run src/server/nativeProjects.test.ts src/server/nativeUpgradeAcceptance.test.ts src/server/threadPresentationStore.test.ts src/server/projectHistory.test.ts src/server/workspaceRootsStore.test.ts src/server/connectionProfile.test.ts
+pnpm exec vitest run src/server/nativeProjects.test.ts src/server/nativeThreadPins.test.ts src/server/projectHistory.test.ts src/server/connectionProfile.test.ts
 ```
 
-Actions: fixtures read fresh state, populated native Projects alongside legacy
-roots, interrupted and completed receipts, empty/meaningful legacy pins, a receipt
-for another connection, malformed JSON, an invalid top-level object and an
-unreadable state path (a directory, producing EISDIR). Completed cases retain
-legacy fields and an unrelated backup object. Exercise native create, rename,
-move and delete plus paginated pin reads and profile isolation.
-
-Expected: incomplete Projects and remaining legacy pins are independently blocked
-with upgrade instructions even when native records exist. Completed/fresh native
-installations remain usable; errors remain errors, and stored bytes are unchanged.
-Ordinary native conversation reads remain available when upgrade guards reject.
-The API gateway unit suite additionally checks pin/unpin native section moves.
-These are mocked RPC/isolated filesystem checks, not authenticated migration tests.
-Cleanup: tests remove their temporary directories and restore environment variables;
-no user-state rollback or migration is performed.
+The fixtures exercise native Project creation, rename, move, deletion,
+paginated pins, profile isolation and read errors. A fixture with old local
+roots, pins and an incomplete receipt must show the native list and pins, then
+match the original bytes. Tests remove their temporary directories.
 
 ## Credential-free maintenance UI regression
 

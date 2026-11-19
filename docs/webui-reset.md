@@ -61,7 +61,7 @@ the packaged CLI. The Vite development server can start from source.
 | Scope | Cleanup |
 | --- | --- |
 | Selected profile | `codexapp-thread-index.json` (active attachment-intent recovery with older list snapshots tolerated) and `codexapp-model-preferences.json` (active defaults, reasoning, acceptance records and usage). For `legacy` these are under the backend home. Named profiles use `codexapp-profiles/<SHA-256 of profile ID>/`. |
-| Profile global JSON | Remove `conversation-transfers-v1` (Portable Fork records). Remove `codexapp-native-project-migrations-v1` when receipts are complete and no legacy Project inputs require them. The root `.codex-global-state.json` stays in place, and retained top-level members keep their original JSON bytes. A named profile's copy is deleted only when every member is safely removable. Empty WebUI profile directories are then removed. |
+| Profile global JSON | Remove `conversation-transfers-v1` (Portable Fork records). The root `.codex-global-state.json` stays in place, and retained top-level members keep their original JSON bytes. A named profile's copy is deleted only when every member is safely removable. Empty WebUI profile directories are then removed. |
 | Profile scratch | Exact UUID-suffixed temporary files for the thread index and model preferences, state-writer temporaries within named profiles, and temporary files left by this reset. Exact WebUI lock directories are eligible after at least 30 seconds, when empty and all writers are stopped. |
 | Shared backend home, with `--shared` | `codexapp-upload-inventory.json`, `codexapp-uploads.jsonl`, and `webui-auth-sessions.json` plus their recognized scratch paths. The upload journal began as legacy import input and is still appended for new upload attempts. Session deletion revokes all WebUI password-login tokens for this home on restart. |
 | OS temporary directory, with `--shared` | Flat files matching the inline-media writer's `inline-image-`, `inline-file-`, and `generated-image-` names with a SHA-1 suffix in `codex-web-inline-media/`. Unrecognized entries stay. |
@@ -73,11 +73,10 @@ directory such as `dist/`, because build cleanup would also reach native state.
 Official Codex credentials, `config.toml`, native histories and rollout files,
 native project and thread databases, installed skills, user instructions,
 MCP configuration, repositories, and worktrees are outside the deletion plan.
-Native Legacy state keys such as `electron-saved-workspace-roots`,
+Historical state keys such as `electron-saved-workspace-roots`,
 `electron-workspace-root-labels`, `active-workspace-roots`, `project-order`, and
-`pinned-thread-ids` are preserved, as are `remote-projects`, incomplete or
-required migration receipts, and other unrecognized global keys. Complete any
-required migration using the [native Project migration guide](native-project-migration.md).
+`pinned-thread-ids` are preserved, as are `remote-projects`, historical Project
+receipts, and other unrecognized global keys.
 Mixed root global-state locks and writer scratch files of ambiguous ownership
 are preserved. If a mixed file would otherwise change while a lock exists,
 the reset stops. Malformed or ambiguous global JSON stops execution before
@@ -111,7 +110,7 @@ pnpm reset:webui --all-profiles --shared --include-legacy --acknowledge-legacy-d
 ```
 
 The [standard reset policy](#backend-inventory) governs Portable Fork records,
-eligible Project migration receipts, attachment indexes, and recognized
+attachment indexes and recognized
 profile scratch in every mode. With `--shared`, the standard plan also
 includes the upload inventory, journal, and recognized upload scratch. The
 acknowledgement applies only to additional historical targets. Ownership
@@ -151,7 +150,7 @@ original JSON bytes of each preserved member.
 
 | Artifact | Ownership and reason to retain |
 | --- | --- |
-| Global `thread-titles`, workspace roots and labels, `project-order`, `pinned-thread-ids`, `remote-projects`, and incomplete or required Project migration receipts | Mixed native and historical WebUI state. Project and pin compatibility guards still use migration inputs and receipts. See `7518a4c`, `850246b`, and `eff44c6`. |
+| Global `thread-titles`, workspace roots and labels, `project-order`, `pinned-thread-ids`, `remote-projects`, and historical Project receipts | Mixed native and historical state. See `7518a4c`, `850246b`, and `eff44c6`. |
 | Global `thread-queue-state` | Deferred prompts may be unsent. See `30acccc`. |
 | `codex-web-uploads/f-<6 characters>/` under the old backend's temporary directory, and remote `codexapp-uploads/` | Historical and current staged attachments may be referenced in native conversations or drafts. When an old backend ran on the App Server host, the old temporary staging directory belongs to that host. See `2f1fb38` and `9b3c7d7`. |
 | `accounts.json`, `accounts/<id>/auth.json`, temporary `codexui-account-*` homes, native `auth.json` | Retired account switching and quota checks stored copies of official Codex credentials. See `696372d` and `8b90e98`. |
@@ -251,10 +250,8 @@ receipts and any migration inputs you still need.
 4. In **IndexedDB**, open `codex-web-local.persistence.v1`, object store
    `records`. Remove the selected profile's `prompt-library.v1` record
    after exporting anything you need. Keep `queue-submissions.v1` records
-   and their localStorage counterparts until reconciled. An empty IndexedDB
-   receipt can mask an older Local Storage receipt. To clear a reconciled
-   record, remove the old Local Storage input before deleting the IndexedDB
-   record so the old receipt cannot reappear. Delete the database itself
+   and their localStorage counterparts until reconciled. Current submission
+   guards use the IndexedDB record. Delete the database itself
    only when every profile is in scope and no recovery record needs it.
    The retired `codex-web-local.persistence-locks.v1` database with store
    `locks` can be deleted for an origin-wide reset after closing all WebUI

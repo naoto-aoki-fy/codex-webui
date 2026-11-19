@@ -1,35 +1,20 @@
-# Native Project and pin upgrade boundary
+# Native Project and pin behavior with historical local state
 
-Setup: disposable profile/home and a server satisfying
-[the capability contract](../../docs/native-project-migration.md). Never test
-migration or deletion against real user data.
+Setup: use a disposable profile/home and a server satisfying the
+[native capability contract](../../docs/native-project-migration.md).
 
-1. Seed legacy roots/pins in the disposable profile. Follow the pre-upgrade guide
-   using the old release. Confirm completion receipt and native pins after reload.
-2. Upgrade. Create empty projects and two projects sharing names/roots; explicitly
-   assign different conversations. Rename/reorder, reload and reconnect. Expect
-   identities, order, empty projects, membership and native pins to persist.
-3. Change cwd without changing projectId. Expect membership unchanged. Delete a
-   project; its conversations must remain visible as unassigned.
-4. In a separate disposable home, leave an interrupted migration. Expect an
-   actionable pre-upgrade error and byte-for-byte unchanged legacy state.
-5. Deny project/history calls or disconnect. Expect the original errors; return
-   method-not-found for required APIs and expect an upgrade error. Test initial
-   and older native pages and fork at an older absolute index: expect no duplicate
-   turns and the original cutoff. Never fetch full history as a fallback.
+1. Seed a legacy root, an unfinished Project receipt and a legacy pin in the
+   local state file. Record its bytes.
+2. Register an actual native Project. Create a thread and pin it using the
+   application. Reload and reconnect. The sidebar shows native Projects and
+   pins, including the new values. The legacy-only root and pin stay absent.
+3. Read the local state file again. Project and pin operations leave the
+   original bytes intact.
+4. Return method-not-found for Project or pin listing. Upgrade guidance appears
+   and ordinary conversation navigation still works. Permission and transport
+   errors retain their own messages.
 
-Cleanup: remove only disposable profiles/homes and restore test connectivity.
-Existing native data and legacy files must not be automatically removed.
-
-## Independent acceptance matrix
-
-Run `pnpm exec vitest run src/server/nativeUpgradeAcceptance.test.ts
-src/server/projectHistory.test.ts src/server/threadPresentationStore.test.ts
-src/components/sidebar/SidebarThreadTree.test.ts src/api/codexGateway.test.ts`.
-The six disposable fixtures cover no legacy data, unmigrated Projects,
-interrupted migration, completed migration, completed Projects with remaining
-pins, and pins without Projects. Expect byte-identical state files in every case.
-Project receipts must never suppress pin warnings. Native thread list/direct read
-remain usable after both guards fail; pin UI changes are blocked until recovery.
-Use the exact source/environment/completion checks in the migration guide for a
-live acceptance run. Restore connectivity and remove only disposable fixture homes.
+Cleanup: remove only the disposable projects, threads and local fixture profile.
+The credential-free coverage is in `src/server/nativeProjects.test.ts`,
+`src/server/nativeThreadPins.test.ts`, `src/server/projectHistory.test.ts` and
+`src/components/sidebar/SidebarThreadTree.test.ts`.

@@ -39,7 +39,7 @@ Browser `/codex-api/ws` is a separate connection from the upstream transport.
 ## Capabilities and paths
 
 The minimum supported deployment baseline is Codex 0.169.0 with the required
-[native capabilities and pre-upgrade migrations](native-project-migration.md).
+[native server capabilities](native-project-migration.md).
 The implementation uses versioned protocol types generated with Codex 0.167.2
 (`pnpm run generate:project-file-protocol`). This is the verified schema baseline,
 not a claim that every external server implements these experimental APIs.
