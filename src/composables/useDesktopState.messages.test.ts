@@ -34,7 +34,7 @@ const gateway = vi.hoisted(() => ({
   getPendingServerRequests: vi.fn(),
   replyToServerRequest: vi.fn(),
   getThreadTitleCache: vi.fn(),
-  getWorkspaceRootsState: vi.fn(),
+  getProjects: vi.fn(),
   getAvailableModelIds: vi.fn(),
   getCurrentModelConfig: vi.fn(),
   getAvailableCollaborationModes: vi.fn(),
@@ -135,7 +135,7 @@ beforeEach(() => {
   })
   gateway.getThreadGroupsPage.mockResolvedValue({ groups: [{ projectName: 'project', threads: [thread] }], nextCursor: null })
   gateway.getThreadTitleCache.mockResolvedValue({ titles: {} })
-  gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [], nativeProjects: [] })
+  gateway.getProjects.mockResolvedValue([])
   gateway.getAvailableModelIds.mockResolvedValue({ ids: ['gpt-5.5'], models: [] })
   gateway.getCurrentModelConfig.mockResolvedValue({ model: 'gpt-5.5', reasoningEffort: '', speedMode: 'standard' })
   gateway.getAvailableCollaborationModes.mockResolvedValue([{ value: 'default', label: 'Default' }])
@@ -1496,7 +1496,7 @@ describe('lifecycle generation ownership across restart', () => {
   })
 
   it.each(['success', 'failure'] as const)('ignores obsolete older-history %s during a new pagination request', async (outcome) => {
-    gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], labels: {}, active: [], projectOrder: [] })
+    gateway.getProjects.mockResolvedValue([])
     gateway.resumeThread.mockResolvedValueOnce({ ...oldDetail, olderCursor: 'older' })
     const state = await loadState()
     const oldPage = deferred<unknown>()
@@ -1984,7 +1984,7 @@ describe('history refresh and pruning interleavings', () => {
 
 
 it.each(['success', 'failure'] as const)('does not let a pruned history %s retire a replacement read', async outcome => {
-  gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], labels: {}, active: [], projectOrder: [] })
+  gateway.getProjects.mockResolvedValue([])
   const state = await loadState()
   const obsolete = deferred<ResumedThread>()
   const fresh = deferred<ResumedThread>()
@@ -2047,7 +2047,7 @@ describe('remote backend identity', () => {
   })
 
   it('clears disconnect errors after a successful snapshot while retaining execution failures', async () => {
-    gateway.getWorkspaceRootsState.mockResolvedValue({ order: [], active: [], labels: {}, projectOrder: [] })
+    gateway.getProjects.mockResolvedValue([])
     const state = await loadState()
     turnStarted()
     notify({ method: 'app-server/disconnected', params: null })
@@ -2338,7 +2338,7 @@ describe('conversation model and fresh fork provider selection', () => {
   })
   it('does not surface stale omission notices returned by an older backend', async () => {
     setupCatalog()
-    gateway.getWorkspaceRootsState.mockRejectedValue(new Error('no workspace roots'))
+    gateway.getProjects.mockRejectedValue(new Error('no workspace roots'))
     const state = createState()
     await state.loadMessages(thread.id)
     gateway.createConversationTransfer.mockResolvedValueOnce({ threadId: 'text-copy', model: 'A', modelProvider: 'P', warnings: ['Legacy omission notice'] })

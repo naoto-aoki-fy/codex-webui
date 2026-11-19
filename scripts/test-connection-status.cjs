@@ -67,11 +67,10 @@ const base = 'http://127.0.0.1:4173'
           const method = body.method
           const result = method === 'thread/list' ? { data: [thread], nextCursor: null }
             : ['thread/read', 'thread/resume'].includes(method) ? { thread }
-            : method === 'model/list' ? { data: [], nextCursor: null } : {}
+            : ['model/list', 'project/list'].includes(method) ? { data: [], nextCursor: null } : {}
           return route.fulfill({ json: { result } })
         }
         if (pathname.endsWith('/thread-pins')) return route.fulfill({ json: { data: { threadIds: [] } } })
-        if (pathname.endsWith('/workspace-roots-state')) return route.fulfill({ json: { data: { order: [thread.cwd], active: [thread.cwd], labels: {}, projectOrder: [thread.cwd] } } })
         return route.fulfill({ json: { data: [] } })
       })
       await page.goto(`${base}/#/thread/${thread.id}`)

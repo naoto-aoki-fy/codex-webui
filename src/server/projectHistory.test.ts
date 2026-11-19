@@ -90,13 +90,11 @@ it.each([['GET', 'project-zip'], ['HEAD', 'project-zip'], ['POST', 'project-impo
 )
 
 it('opens and lists an existing project without importing or changing its files', async () => {
-  const opened = await request('/codex-api/project-root', 'POST', { path: project, label: 'Existing project' })
+  const opened = await request('/codex-api/rpc', 'POST', { method: 'project/create', params: { name: 'Existing project', roots: [{ path: project }] } })
   expect(opened.res.statusCode).toBe(200)
-  expect(opened.json.data.path).toBe(project)
-  const listing = await request('/codex-api/workspace-roots-state')
-  expect(listing.json.data.order).toContain(project)
-  expect(listing.json.data.nativeProjects).toEqual([
-    expect.objectContaining({ id: opened.json.data.projectId, roots: [{ path: project }] }),
+  const listing = await request('/codex-api/rpc', 'POST', { method: 'project/list', params: { sortKey: 'position' } })
+  expect(listing.json.result.data).toEqual([
+    expect.objectContaining({ id: opened.json.result.project.id, roots: [{ path: project }] }),
   ])
   expect(sqlite).not.toHaveBeenCalled()
   await expectPreservedFiles()
@@ -168,17 +166,6 @@ it('rejects retired index rebuild without sending or changing session logs', asy
   await expectPreservedFiles()
 })
 
-it('rejects all legacy path mutations without rewriting registry fields', async () => {
-  const statePath = join(home, '.codex-global-state.json')
-  const raw = JSON.stringify({ 'electron-saved-workspace-roots': [project], 'remote-projects': [{ id: 'remote', future: { keep: true } }], unknown: true })
-  await writeFile(statePath, raw)
-  for (const operation of [{ type: 'rename', path: project, label: 'Renamed' }, { type: 'reorder', order: [project] }, { type: 'delete', path: project }]) {
-    expect((await request('/codex-api/workspace-roots-state', 'PATCH', operation)).res.statusCode).toBe(400)
-  }
-  expect(await readFile(statePath, 'utf8')).toBe(raw)
-  expect(rpc).not.toHaveBeenCalled()
-})
-
 it('keeps native pagination errors visible without fetching full history', async () => {
   rpc.mockResolvedValueOnce({ thread: { id: 'historical-thread', turns: [] } })
     .mockRejectedValueOnce(Object.assign(new Error('Method not found'), { code: -32601 }))
@@ -195,9 +182,9 @@ it('loads native Projects and pins independently of historical state without cha
   await writeFile(path, before)
   const project = { id: 'native-project', name: 'Native', roots: [{ path: '/native' }], position: 0, metadata: {} }
   rpc.mockResolvedValueOnce({ data: [project], nextCursor: null })
-  const projects = await request('/codex-api/workspace-roots-state')
+  const projects = await request('/codex-api/rpc', 'POST', { method: 'project/list', params: {} })
   expect(projects.res.statusCode).toBe(200)
-  expect(projects.json.data).toMatchObject({ order: ['/native'], nativeProjects: [project] })
+  expect(projects.json.result).toMatchObject({ data: [project], nextCursor: null })
   rpc.mockResolvedValueOnce({ data: [{ id: 'native-pin' }], nextCursor: null })
   const pins = await request('/codex-api/thread-pins')
   expect(pins.res.statusCode).toBe(200)

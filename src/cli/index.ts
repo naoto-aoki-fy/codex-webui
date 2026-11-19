@@ -1,6 +1,9 @@
 import { getConnectionProfileId } from '../server/connectionProfile.js'
-import { createCodexBridgeMiddleware } from '../server/codexAppServerBridge.js'
-import { isAbsoluteLikePath } from '../pathUtils.js'
+import { AppServerClient } from '../server/appServerClient.js'
+import { ProjectFileService } from '../server/appServerFileSystem.js'
+import { listNativeProjects } from '../nativeProjects.js'
+import { randomUUID } from 'node:crypto'
+import { isAbsoluteLikePath, toProjectName } from '../pathUtils.js'
 import { resolveAppServerUrl } from '../server/appServerWebSocketClient.js'
 import { createServer } from 'node:http'
 import { networkInterfaces } from 'node:os'
@@ -74,14 +77,19 @@ async function persistLaunchProject(projectPath: string): Promise<void> {
   const trimmed = projectPath.trim()
   if (!trimmed) return
   if (!isAbsoluteLikePath(trimmed)) throw new Error('Use an absolute project path on the App Server host')
-  const normalizedPath = trimmed
-  const bridge = createCodexBridgeMiddleware()
+  const client = new AppServerClient()
   try {
-    const info = await bridge.files.getMetadata(normalizedPath)
-    if (!info.isDirectory) throw new Error(`Not a remote directory: ${normalizedPath}`)
-    await bridge.projects.register(normalizedPath)
-  } finally { bridge.dispose() }
-
+    const info = await new ProjectFileService(client).getMetadata(trimmed)
+    if (!info.isDirectory) throw new Error(`Not a remote directory: ${trimmed}`)
+    const projects = await listNativeProjects((method, params) => client.rpc(method, params))
+    if (!projects.some(project => project.roots.some(root => root.path === trimmed))) {
+      await client.rpc('project/create', {
+        name: toProjectName(trimmed), roots: [{ path: trimmed }], idempotencyKey: randomUUID(),
+      })
+    }
+  } finally {
+    client.dispose()
+  }
 }
 
 async function addProjectOnly(projectPath: string): Promise<void> {

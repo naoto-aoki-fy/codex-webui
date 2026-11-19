@@ -1,11 +1,11 @@
+import { listNativeProjects } from '../nativeProjects'
+import type { Project } from '../server/protocol/0.167.2/v2/Project'
 import type { TurnsPage } from '../server/protocol/0.167.2/v2/TurnsPage'
 import { readThreadTurnOutcomes, type ThreadTurnOutcomes } from './normalizers/threadMetadata'
 import {threadSecurity} from './threadSecurity'
 import { fastModeAvailability, modelSelectionKey, parseModelSelection } from './modelCapabilities'
 import { normalizeSkillsList, type SkillInfo, type SkillsListResponseEntry } from './normalizers/skills'
 export type { SkillInfo } from './normalizers/skills'
-import { normalizeWorkspaceRootsState, cloneWorkspaceRootsState, type WorkspaceRootsState } from './normalizers/workspaceRoots'
-export type { WorkspaceRootsState } from './normalizers/workspaceRoots'
 import { normalizeDirectoryMcpServer, type DirectoryMcpServerStatus } from './normalizers/directoryMcp'
 export type { DirectoryMcpServerStatus } from './normalizers/directoryMcp'
 import {
@@ -28,8 +28,6 @@ export { pickCodexRateLimitSnapshot } from './normalizers/rateLimits'
 import { nativeAppInputs } from './apps'
 import { buildTurnInput, type FileAttachmentParam } from './turnInput'
 export type { FileAttachmentParam } from './turnInput'
-import type { WorkspaceRootsOperation } from '../types/workspaceRoots'
-export type { WorkspaceRootsOperation } from '../types/workspaceRoots'
 import { ref } from 'vue'
 import {
   fetchRpcMethodCatalog,
@@ -83,12 +81,6 @@ type DirectoryMcpLoginResult = {
   authorizationUrl: string
 }
 
-
-let workspaceRootsGeneration = 0
-let workspaceRootsRequestId = 0
-let workspaceRootsRequest: { generation: number; id: number; promise: Promise<WorkspaceRootsState> } | null = null
-let workspaceRootsMutation: Promise<unknown> = Promise.resolve()
-let cachedWorkspaceRootsState: WorkspaceRootsState | null = null
 
 export type ComposerFileSuggestion = {
   path: string
@@ -887,75 +879,15 @@ export async function getAvailableCollaborationModes(): Promise<CollaborationMod
   return DEFAULT_COLLABORATION_MODE_OPTIONS
 }
 
-export async function getWorkspaceRootsState(): Promise<WorkspaceRootsState> {
-  await workspaceRootsMutation
-  if (cachedWorkspaceRootsState) return cloneWorkspaceRootsState(cachedWorkspaceRootsState)
-  if (!workspaceRootsRequest) {
-    const generation = workspaceRootsGeneration
-    const id = ++workspaceRootsRequestId
-    const promise = fetchWorkspaceRootsState()
-      .then((state) => {
-        if (generation !== workspaceRootsGeneration) return getWorkspaceRootsState()
-        cachedWorkspaceRootsState = state
-        return state
-      })
-      .catch((error: unknown) => {
-        if (generation !== workspaceRootsGeneration) return getWorkspaceRootsState()
-        throw error
-      })
-      .finally(() => {
-        if (workspaceRootsRequest?.id === id) workspaceRootsRequest = null
-      })
-    workspaceRootsRequest = { generation, id, promise }
-  }
-  const request = workspaceRootsRequest
-  const state = await request.promise
-  // Invalidation can also happen between promise resolution and this continuation.
-  if (request.generation !== workspaceRootsGeneration) return getWorkspaceRootsState()
-  return cloneWorkspaceRootsState(state)
-}
-
-async function fetchWorkspaceRootsState(): Promise<WorkspaceRootsState> {
-  const response = await fetch('/codex-api/workspace-roots-state')
-  const payload = (await response.json()) as unknown
-  if (!response.ok) {
-    throw new Error(getErrorMessageFromPayload(payload, 'Failed to load workspace roots state'))
-  }
-  const envelope =
-    payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? (payload as Record<string, unknown>)
-      : {}
-  return normalizeWorkspaceRootsState(envelope.data)
-}
-
-export function getWorkspaceRootsStateGeneration(): number {
-  return workspaceRootsGeneration
-}
-
-export function invalidateWorkspaceRootsStateCache(): void {
-  workspaceRootsGeneration += 1
-  cachedWorkspaceRootsState = null
-  workspaceRootsRequest = null
-}
-
-function queueWorkspaceRootsMutation<T>(
-  mutation: () => Promise<T>,
-  stateFromResult?: (result: T) => WorkspaceRootsState,
-): Promise<T> {
-  const run = workspaceRootsMutation.catch(() => undefined).then(async () => {
-    invalidateWorkspaceRootsStateCache()
-    try {
-      const result = await mutation()
-      invalidateWorkspaceRootsStateCache()
-      if (stateFromResult) cachedWorkspaceRootsState = cloneWorkspaceRootsState(stateFromResult(result))
-      return result
-    } catch (error) {
-      invalidateWorkspaceRootsStateCache()
-      throw error
+export async function getProjects(): Promise<Project[]> {
+  try {
+    return await listNativeProjects(rpcCall)
+  } catch (error) {
+    if (asRecord(error)?.rpcCode === -32601) {
+      throw new Error('The connected server does not support native Projects. Upgrade Codex App Server.')
     }
-  })
-  workspaceRootsMutation = run.catch(() => undefined)
-  return run
+    throw error
+  }
 }
 
 export async function getHomeDirectory(): Promise<string> {
@@ -1018,54 +950,6 @@ async function readJsonResponse(response: Response): Promise<unknown> {
   } catch {
     throw new Error(`Expected JSON response from ${response.url || 'request'}`)
   }
-}
-
-export function updateWorkspaceRootsState(operation: WorkspaceRootsOperation): Promise<WorkspaceRootsState> {
-  return queueWorkspaceRootsMutation(() => updateWorkspaceRootsStateRequest(operation), (state) => state)
-}
-
-export function openProjectRootSelection(path: string): Promise<{ path: string; projectId?: string }> {
-  return queueWorkspaceRootsMutation(() => openProjectRootRequest(path))
-}
-
-async function updateWorkspaceRootsStateRequest(operation: WorkspaceRootsOperation): Promise<WorkspaceRootsState> {
-  const response = await fetch('/codex-api/workspace-roots-state', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(operation),
-  })
-  const payload = await readJsonResponse(response)
-  if (!response.ok) {
-    throw new Error(getErrorMessageFromPayload(payload, 'Failed to save workspace roots state'))
-  }
-  const envelope = payload as { data?: unknown }
-  const state = normalizeWorkspaceRootsState(envelope.data)
-  return cloneWorkspaceRootsState(state)
-}
-
-async function openProjectRootRequest(path: string): Promise<{ path: string; projectId?: string }> {
-  const response = await fetch('/codex-api/project-root', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      path,
-    }),
-  })
-  const payload = (await response.json()) as unknown
-  if (!response.ok) {
-    const message = getErrorMessageFromPayload(payload, 'Failed to open project root')
-    throw new Error(message)
-  }
-  const record =
-    payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? (payload as Record<string, unknown>)
-      : {}
-  const data =
-    record.data && typeof record.data === 'object' && !Array.isArray(record.data)
-      ? (record.data as Record<string, unknown>)
-      : {}
-  const normalizedPath = typeof data.path === 'string' ? normalizePathForUi(data.path) : ''
-  return { path: normalizedPath, ...(typeof data.projectId === 'string' ? { projectId: data.projectId } : {}) }
 }
 
 export async function searchComposerFiles(cwd: string, query: string, limit = 20): Promise<ComposerFileSuggestion[]> {

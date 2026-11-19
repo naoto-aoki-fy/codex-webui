@@ -42,8 +42,8 @@ async function setup(context, root) {
    if(body.method==='model/list')result={data:[{id:'current-model',model:'current-model',isDefault:true}],nextCursor:null}
    if(body.method==='config/read')result={config:{model:'current-model',model_provider:'fixture'}}
    if(body.method==='skills/list')result={data:[]}
+   if (body.method === 'project/list') result = { data: [{id:'p',name:'Fixture project',roots:[{path:'/fixture'}],position:0,metadata:{}}], nextCursor: null }
    payload={result}
-   if(url.pathname.endsWith('/workspace-roots-state'))payload={data:{nativeProjects:[{id:'p',name:'Fixture project',roots:[{path:'/fixture'}],position:0,metadata:{}}],order:['/fixture'],active:[],labels:{},projectOrder:['p']}}
    if(url.pathname.endsWith('/thread-pins'))payload={data:{threadIds:[]}}
    if(url.pathname.endsWith('/pending'))payload={data:[]}
    if(url.pathname.endsWith('/methods'))payload={data:[]}

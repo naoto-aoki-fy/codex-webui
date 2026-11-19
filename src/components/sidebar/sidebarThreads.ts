@@ -26,7 +26,7 @@ export function createSidebarThreads(deps: {
     }
     const isFolderView = computed(() => threadViewMode.value === 'folder');
     const sidebarGroups = computed(() => isFolderView.value ? groupThreadsByFolder(deps.props.groups) : toSidebarProjectGroups(deps.props.groups));
-    const sortedGroups = computed(() => sortThreadGroups(sidebarGroups.value, chatSortMode.value));
+    const sortedGroups = computed(() => sortThreadGroups(sidebarGroups.value, chatSortMode.value, isFolderView.value ? undefined : deps.props.removableProjectIds));
     const normalizedSearchQuery = computed(() => deps.props.searchQuery.trim().toLowerCase());
     const isSearchActive = computed(() => normalizedSearchQuery.value.length > 0);
     const matchedThreadIdSet = computed(() => {

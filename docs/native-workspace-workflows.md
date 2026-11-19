@@ -6,7 +6,7 @@ Conversation revert and fork/revert use Codex thread operations. The application
 
 The composer accepts ordinary files and images using the standard file input, clipboard, and file drag/drop paths. Camera capture and directory selection/upload are removed.
 
-Legacy browser project aliases and manual ordering controls, their mutation APIs, timers, drag handlers, and browser persistence have been removed. Native Project rename/move operations remain supported. Inactive legacy browser project-order and project-display-name keys are left intact without changing selected threads, drafts, registrations, files or history. They are not another writable project registry. Projects now use native IDs, names and positions; sidebar membership follows native thread associations. See [native Project contract](native-project-migration.md). Legacy global-state root arrays, labels, remote records and unknown fields remain intact. Project reads depend on the connected App Server. Unsupported `project/list` produces an upgrade error.
+The sidebar project menu renames, moves and removes Projects through native RPCs. Inactive legacy browser project-order and project-display-name keys are left intact without changing selected threads, drafts, registrations, files or history. They are not another writable project registry. Projects now use native IDs, names and positions; sidebar membership follows native thread associations. See [native Project contract](native-project-migration.md). Legacy global-state root arrays, labels, remote records and unknown fields remain intact. Project reads depend on the connected App Server. Unsupported `project/list` produces an upgrade error.
 
 Retired directory-creation, GitHub clone, automatic chat-directory creation, and file rollback endpoints return JSON 404 for every method. Native Project operations remain available and do not create workspace directories. Older tabs must reload. Existing directories under Documents/Codex remain accessible as historical conversations or through normal folder selection. Codex's own Git tools are unaffected.
 
@@ -31,11 +31,9 @@ remain supported. See [read receipts](native-codex-cleanup.md).
 
 ## Performance and verification boundaries
 
-New conversation validation performs one directory stat. Project sorting is
-O(n log n), without legacy rename timers, mutation requests or drag frames.
+New conversation validation performs one directory stat. The browser requests native project and thread pages concurrently at startup. Project
+pages use native position order and do not fetch project details per row.
 Retired file rollback endpoints return a fixed 404 without RPC or file operations.
-This consolidation changes documentation only; historical measurements do not
-establish performance of the current checkout.
 
 Use [manual workspace checks](../tests/projects-sidebar-new-chat/native-workspace-workflows.md),
 [development checks](development.md), and the

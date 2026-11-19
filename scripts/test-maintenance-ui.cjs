@@ -31,9 +31,8 @@ const thread = { id: 'maintenance-fixture', name: marker, preview: marker, proje
         await page.route('**/codex-api/**', async route => {
           const path = new URL(route.request().url()).pathname
           let payload = {}
-          if (path.endsWith('/workspace-roots-state')) payload = { data: { nativeProjects: [{ id: 'project-id', name: 'Native fixture', roots: [{ path: '/fixture' }], metadata: {}, position: 0 }], order: ['/fixture'] } }
-          else if (path.endsWith('/thread-pins')) payload = { data: { threadIds: [...pinnedIds] } }
-          else if (path.endsWith('/home-directory')) payload = { path: '/fixture' }
+          if (path.endsWith('/thread-pins')) payload = { data: { threadIds: [...pinnedIds] } }
+          else if (path.endsWith('/home-directory')) payload = { data: { path: '/fixture' } }
           else if (path.endsWith('/meta/methods')) payload = { data: require('../src/server/appServerMethods.json').methods }
           else if (path.endsWith('/skills-hub')) payload = { installed: [{ name: 'fixture-skill', path: '/fixture/skills/fixture-skill/SKILL.md', description: 'Installed fixture skill', enabled: true }] }
           else if (path.endsWith('/skills-hub/readme')) payload = { content: '# Fixture skill instructions', description: 'Installed fixture skill' }
@@ -43,7 +42,8 @@ const thread = { id: 'maintenance-fixture', name: marker, preview: marker, proje
             rpcCalls.push({ method, params })
             if (method === 'thread/section/move') { pinnedIds.splice(0); if (params.sectionId) pinnedIds.push(params.threadId) }
             if (method === 'skills/config/write') skillWrites.push(params)
-            const result = method === 'thread/list' ? { data: params?.cursor ? [pagedThread] : [fixtureThread], nextCursor: params?.cursor ? null : 'page-2' }
+            const result = method === 'project/list' ? { data: [{ id: 'project-id', name: 'Native fixture', roots: [{ path: '/fixture' }], metadata: {}, position: 0 }], nextCursor: null }
+              : method === 'thread/list' ? { data: params?.cursor ? [pagedThread] : [fixtureThread], nextCursor: params?.cursor ? null : 'page-2' }
               : method === 'thread/read' || method === 'thread/resume' ? { thread: params?.threadId === pagedThread.id ? pagedThread : fixtureThread, model: 'fixture-model' }
               : method === 'turn/start' ? { turn: { id: 'submitted-turn', status: 'inProgress', items: [] } }
               : method === 'modelProvider/list' ? { data: [{ id: 'openai', displayName: 'OpenAI', isDefault: true }] }

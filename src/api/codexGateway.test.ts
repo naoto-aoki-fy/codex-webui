@@ -1,4 +1,4 @@
-import { getWorkspaceRootsState, getWorkspaceRootsStateGeneration, invalidateWorkspaceRootsStateCache, updateWorkspaceRootsState, type WorkspaceRootsState, type WorkspaceRootsOperation } from './codexGateway'
+import { getProjects } from './codexGateway'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setThreadPinned, acquireReasoningCatalog, forkThreadFromResponse, reasoningCatalog, getAvailableModelIds, getThreadDetail, resumeThread, startThreadTurn } from './codexGateway'
 
@@ -323,86 +323,33 @@ describe('response fork operation support', () => {
   })
 })
 
-// Keep workspace coordination coverage at the public gateway boundary.
+describe('native projects', () => {
+  afterEach(() => vi.unstubAllGlobals())
 
-describe('workspace roots cache coordination', () => {
-  const state: WorkspaceRootsState = { order: ['/a'], nativeProjects: [] }
-  const response = () => new Response(JSON.stringify({ data: state }))
-  function deferred() {
-    let resolve!: (response: Response) => void
-    let reject!: (error: Error) => void
-    const promise = new Promise<Response>((yes, no) => { resolve = yes; reject = no })
-    return { promise, resolve, reject }
-  }
-  afterEach(() => {
-    invalidateWorkspaceRootsStateCache()
-    vi.unstubAllGlobals()
+  it('loads native projects in server order across pages without caching or rewriting roots', async () => {
+    const first = { id: 'b', name: 'Same name', roots: [{ path: 'D:\\projects\\repo' }], position: 0 }
+    const second = { id: 'a', name: 'Same name', roots: [], position: 1 }
+    const reply = (data: unknown[], nextCursor: string | null) => new Response(JSON.stringify({ result: { data, nextCursor } }))
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(reply([first], 'next'))
+      .mockResolvedValueOnce(reply([second], null))
+      .mockResolvedValueOnce(reply([second], null))
+    vi.stubGlobal('fetch', fetch)
+
+    expect(await getProjects()).toEqual([first, second])
+    expect(await getProjects()).toEqual([second])
+    expect(fetch.mock.calls.map(([url, options]) => [url, JSON.parse(options.body)])).toEqual(
+      [null, 'next', null].map(cursor => ['/codex-api/rpc', {
+        method: 'project/list', params: { cursor, sortKey: 'position', sortDirection: 'asc', limit: 100 },
+      }]),
+    )
   })
 
-  it('coalesces concurrent reads, reuses cache, and isolates returned nested values', async () => {
-    invalidateWorkspaceRootsStateCache()
-    const pending = deferred()
-    const fetch = vi.fn(() => pending.promise)
+  it('reports an unsupported native server without a fallback', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'Method not found', rpcCode: -32601 }), { status: 502 }))
     vi.stubGlobal('fetch', fetch)
-    const first = getWorkspaceRootsState()
-    const second = getWorkspaceRootsState()
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
-    pending.resolve(response())
-    const [a, b] = await Promise.all([first, second])
-    expect(a).toEqual(state)
-    a.order.push('/changed')
-    a.nativeProjects!.push({ id: 'test', name: 'Changed', roots: [], metadata: {}, position: 0, createdAt: 0, updatedAt: 0, recencyAt: null })
-    expect(b).toEqual(state)
-    expect(await getWorkspaceRootsState()).toEqual(state)
+    await expect(getProjects()).rejects.toThrow('Upgrade Codex App Server')
     expect(fetch).toHaveBeenCalledTimes(1)
-  })
-
-  it.each(['success', 'failure'])('discards stale read %s after generation invalidation', async (outcome) => {
-    invalidateWorkspaceRootsStateCache()
-    const stale = deferred()
-    const fetch = vi.fn().mockReturnValueOnce(stale.promise).mockResolvedValueOnce(response())
-    vi.stubGlobal('fetch', fetch)
-    const read = getWorkspaceRootsState()
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
-    const generation = getWorkspaceRootsStateGeneration()
-    invalidateWorkspaceRootsStateCache()
-    expect(getWorkspaceRootsStateGeneration()).toBe(generation + 1)
-    if (outcome === 'success') stale.resolve(new Response(JSON.stringify({ data: { order: ['/stale'] } })))
-    else stale.reject(new Error('stale'))
-    expect(await read).toEqual(state)
-    expect(fetch).toHaveBeenCalledTimes(2)
-  })
-
-  it('serializes mutations, recovers from failure, and publishes an isolated cache before reads', async () => {
-    invalidateWorkspaceRootsStateCache()
-    const first = deferred()
-    const second = deferred()
-    const fetch = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
-    vi.stubGlobal('fetch', fetch)
-    const operation: WorkspaceRootsOperation = { type: 'delete', projectId: 'a' }
-    const failed = updateWorkspaceRootsState(operation)
-    const failure = expect(failed).rejects.toThrow('failed')
-    const updated = updateWorkspaceRootsState(operation)
-    const read = getWorkspaceRootsState()
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
-    first.reject(new Error('failed'))
-    await failure
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
-    second.resolve(response())
-    const result = await updated
-    result.order.push('/changed')
-    expect(await read).toEqual(state)
-    expect(await getWorkspaceRootsState()).toEqual(state)
-    expect(fetch.mock.calls.map((call) => call[1].method)).toEqual(['PATCH', 'PATCH'])
-  })
-
-  it('does not cache failed reads and retries on the next read', async () => {
-    invalidateWorkspaceRootsStateCache()
-    const fetch = vi.fn().mockResolvedValueOnce(new Response('{}', { status: 500 })).mockResolvedValueOnce(response())
-    vi.stubGlobal('fetch', fetch)
-    await expect(getWorkspaceRootsState()).rejects.toThrow('Failed to load workspace roots state')
-    expect(await getWorkspaceRootsState()).toEqual(state)
-    expect(fetch).toHaveBeenCalledTimes(2)
   })
 })
 

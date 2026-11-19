@@ -103,14 +103,12 @@ const sleep = ms => new Promise(done => setTimeout(done, ms))
     // or alter discovery filters: only remove non-test rows from actual responses.
     await page.route('**/codex-api/rpc', async route => {
       const request = route.request().postDataJSON()
-      if (!['thread/list', 'thread/search'].includes(request.method)) return route.continue()
+      if (!['project/list', 'thread/list', 'thread/search'].includes(request.method)) return route.continue()
       const response = await route.fetch(), body = await response.json()
-      if (Array.isArray(body.result?.data)) body.result.data = body.result.data.filter(t => allowed.has(request.method === 'thread/search' ? t.thread.id : t.id))
-      await route.fulfill({ response, json: body })
-    })
-    await page.route('**/codex-api/workspace-roots-state', async route => {
-      const response = await route.fetch(), body = await response.json()
-      if (Array.isArray(body.data?.nativeProjects)) { body.data.nativeProjects = body.data.nativeProjects.filter(p => p.id === projectId); body.data.projectOrder = [projectId]; body.data.order = [root] }
+      if (Array.isArray(body.result?.data)) {
+        body.result.data = body.result.data.filter(row => request.method === 'project/list'
+          ? row.id === projectId : allowed.has(request.method === 'thread/search' ? row.thread.id : row.id))
+      }
       await route.fulfill({ response, json: body })
     })
     try {

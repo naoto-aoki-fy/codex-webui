@@ -38,7 +38,9 @@ it.each(['/only-on-B/repository', 'D:\\only-on-B\\repository'])('browses, regist
   }
   try {
     expect((await getLocalDirectoryListing(path, files)).entries[0].path).toContain('child')
-    expect((await request('/codex-api/project-root', { path })).data.path).toBe(path)
+    expect((await request('/codex-api/rpc', { method: 'fs/getMetadata', params: { path } })).result.isDirectory).toBe(true)
+    const created = await request('/codex-api/rpc', { method: 'project/create', params: { name: 'Remote', roots: [{ path }] } })
+    expect(created.result.project.roots).toEqual([{ path }])
     expect((await request('/codex-api/rpc', { method: 'thread/start', params: { cwd: path } })).result.thread.cwd).toBe(path)
     await expect(access(path)).rejects.toThrow()
   } finally { scope.__codexRemoteSharedBridge__ = previous; vi.unstubAllEnvs(); await rm(state, { recursive: true }) }

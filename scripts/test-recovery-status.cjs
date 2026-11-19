@@ -27,10 +27,9 @@ const fs = require('node:fs')
           const { method } = route.request().postDataJSON()
           const result = method === 'thread/list' ? { data: [thread], nextCursor: null }
             : ['thread/read', 'thread/resume'].includes(method) ? { thread }
-            : method === 'model/list' ? { data: [], nextCursor: null } : {}
+            : ['model/list', 'project/list'].includes(method) ? { data: [], nextCursor: null } : {}
           return route.fulfill({ json: { result } })
         }
-        if (path.endsWith('/workspace-roots-state')) return route.fulfill({ json: { data: { order: ['/remote/disposable'], active: ['/remote/disposable'], labels: {}, projectOrder: ['/remote/disposable'] } } })
         if (path.endsWith('/server-requests')) return route.fulfill({ json: { data: [] } })
         if (path.endsWith('/thread-pins')) return route.fulfill({ json: { data: { threadIds: [] } } })
         if (path.endsWith('/methods')) return route.fulfill({ json: { data: [] } })

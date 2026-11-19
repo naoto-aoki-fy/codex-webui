@@ -17,12 +17,20 @@ export function compareThreads(mode: ThreadSortMode): (a: UiThread, b: UiThread)
 }
 
 // Sort copies: source groups are shared with selection, search, and pinned threads.
-export function sortThreadGroups(groups: SidebarGroup[], mode: ThreadSortMode): SidebarGroup[] {
+export function sortThreadGroups(
+  groups: SidebarGroup[], mode: ThreadSortMode, nativeProjectIds: readonly string[] = [],
+): SidebarGroup[] {
   const compare = compareThreads(mode)
+  const position = new Map(nativeProjectIds.map((id, index) => [id, index]))
   return groups.map(group => ({ ...group, threads: [...group.threads].sort(compare) }))
     .sort((a, b) => {
       const aName = a.kind === 'project' ? a.projectId : a.key
       const bName = b.kind === 'project' ? b.projectId : b.key
+      const aPosition = a.kind === 'project' ? position.get(a.projectId) : undefined
+      const bPosition = b.kind === 'project' ? position.get(b.projectId) : undefined
+      if (aPosition !== undefined || bPosition !== undefined) {
+        return (aPosition ?? position.size) - (bPosition ?? position.size)
+      }
       if (!a.threads.length || !b.threads.length) {
         return Number(!a.threads.length) - Number(!b.threads.length) || aName.localeCompare(bName)
       }

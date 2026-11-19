@@ -16,19 +16,12 @@ const { resolve } = require('node:path')
   page.on('pageerror', error => errors.push(error.message))
   // Responses remain native/live. Filter only list visibility so screenshots do
   // not contain unrelated user projects/conversations; mutations are never stubbed.
-  await page.route('**/codex-api/workspace-roots-state', async route => {
-    if (route.request().method() !== 'GET') return route.continue()
-    const response = await route.fetch(), payload = await response.json()
-    assert(Array.isArray(payload.data.nativeProjects))
-    payload.data.nativeProjects = payload.data.nativeProjects.filter(p => f.projectIds.includes(p.id))
-    payload.data.order = payload.data.nativeProjects.flatMap(p => p.roots.map(r => r.path))
-    await route.fulfill({ response, json: payload })
-  })
   await page.route('**/codex-api/rpc', async route => {
     const request = route.request().postDataJSON()
     calls.push({ method: request.method, threadId: request.params?.threadId })
-    if (request.method !== 'thread/list' && request.method !== 'thread/fork') return route.continue()
+    if (!['project/list', 'thread/list', 'thread/fork'].includes(request.method)) return route.continue()
     const response = await route.fetch(), payload = await response.json()
+    if (request.method === 'project/list' && Array.isArray(payload.result?.data)) payload.result.data = payload.result.data.filter(project => f.projectIds.includes(project.id))
     if (request.method === 'thread/list' && Array.isArray(payload.result?.data)) payload.result.data = payload.result.data.filter(t => allowed.has(t.id))
     if (request.method === 'thread/fork' && payload.result?.thread?.id) {
       createdThreadIds.push(payload.result.thread.id); allowed.add(payload.result.thread.id)

@@ -23,7 +23,7 @@ vi.mock('../api/codexGateway', async importOriginal => ({
   getCurrentModelConfig: vi.fn(async () => ({ model: 'A', modelProvider: 'openai', speedMode: 'standard', reasoningEffort: 'medium' })),
   getAvailableModelIds: vi.fn(),
   getThreadGroupsPage: vi.fn(async () => ({ groups: [{ projectName: 'project', threads: [{ id: 'existing', title: 'Existing', cwd: '/workspace', projectName: 'project', createdAtIso: '2026-11-16T00:00:00Z', updatedAtIso: '2026-11-16T00:00:00Z', preview: '', unread: false, inProgress: false, hasWorktree: false }] }], nextCursor: null })),
-  getWorkspaceRootsState: vi.fn(async () => ({ order: [], labels: {}, active: [], projectOrder: [] })),
+  getProjects: vi.fn(async () => []),
   getThreadTitleCache: vi.fn(async () => ({ titles: {} })),
   getAvailableCollaborationModes: vi.fn(async () => [{ value: 'default', label: 'Default' }, { value: 'plan', label: 'Plan' }]),
   getSkillsList: vi.fn(async () => []), getAccountRateLimits: vi.fn(async () => null),

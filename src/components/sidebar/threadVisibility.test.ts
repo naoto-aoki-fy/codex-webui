@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeThreadGroupsV2 } from '../../api/normalizers/v2'
-import { filterGroupsByWorkspaceRoots } from '../../utils/desktopProjectGroups'
+import { groupThreadsByProject } from '../../utils/desktopProjectGroups'
 import { projectGroupKey, toSidebarProjectGroups } from './sidebarGroups'
 import { collectChronologicalThreads, filterSidebarGroups } from './threadVisibility'
 
@@ -17,7 +17,10 @@ function history() {
 
 describe('history visibility through normalization, workspace union and sidebar', () => {
   it.each([[], ['/unrelated/empty'], [cwd, '/unrelated/empty']].map(order => ({ order })))('shows dated and missing-cwd rows with roots $order', ({ order }) => {
-    const groups = filterGroupsByWorkspaceRoots(history(), { order })
+    const groups = groupThreadsByProject(history(), order.map((path, position) => ({
+      id: 'project-' + position, name: 'Project', roots: [{ path }], metadata: {}, position,
+      createdAt: 1, updatedAt: 1, recencyAt: null,
+    })))
     const matches = (thread: { id: string }) => thread.id !== 'archiving'
     const projects = filterSidebarGroups(toSidebarProjectGroups(groups), matches, false, projectGroupKey('__codexapp_unassigned__'))
     expect(projects.find(group => group.key === projectGroupKey('__codexapp_unassigned__'))?.threads.map(thread => thread.id)).toEqual(['dated', 'pinned', 'missing', 'blank'])
