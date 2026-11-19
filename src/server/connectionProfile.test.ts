@@ -8,6 +8,11 @@ import { profileDirectoryName, profileDirectoryPattern, resolveWebuiStorage, sto
 
 afterEach(() => vi.unstubAllEnvs())
 
+vi.mock('node:os', async importOriginal => ({
+  ...await importOriginal<typeof import('node:os')>(),
+  hostname: () => 'Workstation.example.test',
+}))
+
 it('isolates case-sensitive IDs at the same endpoint and leaves native and old WebUI data untouched', async () => {
   const home = await mkdtemp(join(tmpdir(), 'core-home-'))
   vi.stubEnv('CODEX_HOME', home)
@@ -38,9 +43,15 @@ it('isolates case-sensitive IDs at the same endpoint and leaves native and old W
   } finally { await rm(home, { recursive: true, force: true }) }
 })
 
-it.each([undefined, '', '  '])('requires an ID independently of URL or Codex home (%j)', value => {
+it('defaults to the short WebUI hostname when the profile is unset', () => {
+  vi.stubEnv('CODEXUI_CONNECTION_PROFILE', undefined)
+  vi.stubEnv('CODEXUI_APP_SERVER_URL', 'ws://app-server.example.test:4500')
+  expect(getConnectionProfileId()).toBe('Workstation')
+  expect(profileStorageDirectory('data')).toBe(profileStorageDirectory('data', 'Workstation'))
+})
+
+it.each(['', '  '])('rejects an explicitly blank ID (%j)', value => {
   vi.stubEnv('CODEXUI_CONNECTION_PROFILE', value)
-  vi.stubEnv('CODEXUI_APP_SERVER_URL', 'ws://127.0.0.1:4500')
   expect(() => getConnectionProfileId()).toThrow('App Server ID is required')
 })
 

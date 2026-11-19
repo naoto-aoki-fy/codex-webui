@@ -179,7 +179,7 @@ program
   .option('--no-password', 'disable password protection (default)')
   .option('--open', 'open browser on startup', true)
   .option('--no-open', 'do not open browser on startup')
-  .option('--connection-profile <id>', 'required App Server ID (env CODEXUI_CONNECTION_PROFILE)')
+  .option('--connection-profile <id>', 'App Server ID (env CODEXUI_CONNECTION_PROFILE, otherwise the short hostname)')
   .option('--app-server-url <url>', 'external Codex app-server URL (ws://, wss://, unix:///path.sock)')
   .action(async (
     projectPath: string | undefined,

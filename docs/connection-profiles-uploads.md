@@ -1,8 +1,9 @@
 # App Server IDs, storage, and uploads
 
-Each WebUI backend process connects to one Codex App Server. Set its required
-ID with `--connection-profile workstation-b` or
-`CODEXUI_CONNECTION_PROFILE=workstation-b`. The CLI flag takes precedence.
+Each WebUI backend process connects to one Codex App Server. The ID comes from
+`--connection-profile workstation-b`, then `CODEXUI_CONNECTION_PROFILE=workstation-b`,
+then the WebUI backend's short hostname (the part before the first dot, as in
+`hostname -s`).
 IDs are case-sensitive and contain 1–80 ASCII letters, digits, dots, underscores
 or hyphens, starting with a letter or digit. The URL selects the endpoint
 independently of the ID. Use a unique ID for each App Server, including when

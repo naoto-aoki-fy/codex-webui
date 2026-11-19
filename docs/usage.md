@@ -7,7 +7,9 @@ For development and verification use the [development guide](development.md).
 
 ## WebUI version upgrades
 
-Choose an explicit [App Server ID](connection-profiles-uploads.md) at startup.
+The [App Server ID](connection-profiles-uploads.md) defaults to the WebUI backend's
+short hostname. If you previously configured an ID, keep using it to access its
+saved WebUI state.
 WebUI initializes fresh backend state for each ID in its OS application
 directories. Existing WebUI and native data in Codex home stay in place. The
 browser's Draft Recovery picker can copy available drafts stored under the
