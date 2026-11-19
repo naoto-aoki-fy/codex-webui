@@ -5,6 +5,7 @@ import { createLocalFileMiddleware } from "./src/server/localFileHttp";
 import tailwindcss from "@tailwindcss/vite";
 import { attachBrowserNotificationTransport } from "./src/server/browserNotificationTransport";
 import { getBuildMetadata } from "./scripts/build-metadata";
+import { holdWebuiWriterLease } from "./src/server/webuiMaintenance.mjs";
 
 const WS_UPGRADE_ATTACHED_KEY = "__codexBridgeWsAttached__";
 const buildMetadata = getBuildMetadata();
@@ -34,7 +35,11 @@ export default defineConfig({
     tailwindcss(),
     {
       name: "codex-bridge",
+      buildStart() {
+        holdWebuiWriterLease();
+      },
       configureServer(server) {
+        holdWebuiWriterLease();
         process.env.CODEXUI_SERVER_PORT = String(server.config.server.port ?? 5173);
         const bridge = createCodexBridgeMiddleware();
         const httpServer = server.httpServer;
