@@ -27,11 +27,6 @@ export function getErrorMessage(payload: unknown, fallback: string): string {
   return fallback
 }
 
-export function isUnauthenticatedRateLimitError(error: unknown): boolean {
-  const message = getErrorMessage(error, '').toLowerCase()
-  return message.includes('authentication required') && message.includes('rate limits')
-}
-
 export function isEmptyThreadReadError(error: unknown): boolean {
   const message = getErrorMessage(error, '').toLowerCase()
   return message.includes('failed to read thread') && message.includes('rollout') && message.includes('is empty')

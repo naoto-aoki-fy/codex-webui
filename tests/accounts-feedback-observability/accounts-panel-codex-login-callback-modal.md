@@ -13,6 +13,10 @@
 6. Repeat the account-panel checks in light and dark themes. No login URL, callback input, or modal appears in either theme.
 7. POST to the old `/codex-api/accounts/login/start` and `/codex-api/accounts/login/complete` endpoints. Both return JSON 404. The connected server and credentials stay unchanged.
 8. Run the built CLI with `--sandbox-mode workspace-write`, `--approval-policy never`, and `--no-memories` separately. Each exits with an unknown-option error. `login` likewise explains external authentication.
+9. With a disposable server or fixture, return a native quota snapshot and reload
+   the account panel. Confirm the displayed quota matches that snapshot. Return
+   a native quota error on the next refresh. Confirm the RPC reports the error
+   and the UI retains its last known snapshot during a temporary failure.
 
 #### Cleanup
 Stop only disposable processes. Restore authentication in the external server if needed. Do not migrate or delete existing credential files or legacy account archives.

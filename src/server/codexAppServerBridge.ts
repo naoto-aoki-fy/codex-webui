@@ -11,8 +11,8 @@ import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
 export type { WorkspaceRootsState } from './workspaceRootsStore.js'
 import { createThreadPresentationStore } from './threadPresentationStore.js'
-import { asRecord, getErrorMessage, setJson, readJsonBody, isUnauthenticatedRateLimitError, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
-export { isUnauthenticatedRateLimitError, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
+import { asRecord, getErrorMessage, setJson, readJsonBody, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
+export { isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError } from './bridgeHttpUtils.js'
 import { sanitizeThreadTurnsInlinePayloads, THREAD_METHODS_WITH_TURNS } from './threadInlinePayloads.js'
 export { sanitizeThreadTurnsInlinePayloads } from './threadInlinePayloads.js'
 import appServerMethods from './appServerMethods.json'
@@ -23,7 +23,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CodexCredentialError, readPublicAuthStatus } from './codexCredentials.js'
-import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
 
 type RpcProxyRequest = {
@@ -287,7 +286,7 @@ export async function callRpcWithArchiveRecovery(
   params: unknown,
 ): Promise<unknown> {
   try {
-    const result = await callRpcWithRateLimitDecodeRecovery(appServer, method, params)
+    const result = await appServer.rpc(method, params ?? null)
     if (method === 'thread/search') {
       const page = asRecord(result)
       if (Array.isArray(page?.data)) {
@@ -654,10 +653,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
               ? (await appServer.readThreadPage(readNonEmptyString(params.threadId), '', THREAD_RESPONSE_TURN_LIMIT)).result
               : await callRpcWithArchiveRecovery(appServer, body.method, body.params ?? null)
         } catch (error) {
-	          if (body.method === 'account/rateLimits/read' && isUnauthenticatedRateLimitError(error)) {
-	            setJson(res, 200, { result: null })
-	            return
-	          }
 		          // Metadata-only reads authorize safety-sensitive actions. A cached
 		          // idle snapshot is not current activity evidence after a read failure.
 		          if (body.method === 'thread/read' && asRecord(body.params)?.includeTurns !== false && isEmptyThreadReadError(error)) {

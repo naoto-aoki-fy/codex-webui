@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { describe, expect, it, vi } from 'vitest'
-import { asRecord, getErrorMessage, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError, isUnauthenticatedRateLimitError, readJsonBody, readRawBody, setJson } from './bridgeHttpUtils'
+import { asRecord, getErrorMessage, isEmptyThreadReadError, isThreadMaterializationPendingError, isThreadNotFoundError, readJsonBody, readRawBody, setJson } from './bridgeHttpUtils'
 
 const request = (chunks: Array<string | Buffer>) => Readable.from(chunks) as unknown as IncomingMessage
 
@@ -52,7 +52,6 @@ describe('bridge error extraction', () => {
     expect(asRecord(value)).toBe(value)
   })
   it.each([
-    [isUnauthenticatedRateLimitError, 'AUTHENTICATION REQUIRED to read RATE LIMITS', 'authentication required'],
     [isEmptyThreadReadError, 'FAILED TO READ THREAD: rollout abc IS EMPTY', 'rollout is empty'],
     [isThreadMaterializationPendingError, 'NOT MATERIALIZED YET: includeTurns is unavailable before first user message', 'not materialized yet'],
     [isThreadNotFoundError, 'THREAD NOT FOUND: abc', 'thread read failed'],
