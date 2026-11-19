@@ -67,6 +67,9 @@ the packaged CLI. The Vite development server can start from source.
 | OS temporary directory, with `--shared` | Flat files matching the inline-media writer's `inline-image-`, `inline-file-`, and `generated-image-` names with a SHA-1 suffix in `codex-web-inline-media/`. Unrecognized entries stay. |
 | Checkout, with `--build` | `dist/`, `dist-cli/`, `output/playwright/`, `test-results/`, and root-level `*.tsbuildinfo`. Cleanup checks the Git index and refuses tracked data or nested Git worktrees. The rest of `output/`, dependencies, source, and workspace data stay. |
 
+`--build` refuses to run when `CODEX_HOME` is inside a generated output
+directory such as `dist/`, because build cleanup would also reach native state.
+
 Official Codex credentials, `config.toml`, native histories and rollout files,
 native project and thread databases, installed skills, user instructions,
 MCP configuration, repositories, and worktrees are outside the deletion plan.
