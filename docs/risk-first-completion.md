@@ -1,7 +1,7 @@
 # Risk-first approved features: completion report
 
 This report is historical. The WebUI worktree creation workflow (13) and Markdown conversation downloads have since been removed. Existing worktree directories can still be opened.
-The Hook, advanced configuration, Daybreak, standalone shell and external-agent preview panels have also been removed. Native sign-in remains available, and the account and submission guard described in this historical report has been removed. See [current account controls](native-authentication-state.md).
+The Hook, advanced configuration, Daybreak, standalone shell and external-agent preview panels have also been removed. See [Codex account settings](native-codex-account.md) for the current account workflow.
 
 Implementation starts at clean `main` / `42a9790`. The supported runtime floor is
 unchanged: independently managed Codex App Server **0.169.0**. Official contracts
@@ -39,7 +39,7 @@ Fixtures and disposable Git repositories are development evidence, not live
 App Server acceptance. No blocker was bypassed through global configuration.
 
 The subsequent [high-impact evidence review](high-impact-evidence-review.md)
-records corrective commits and remaining deletion, account-isolation and queue
+records corrective commits and remaining deletion and queue
 guarantee gaps. It preserves these feature classifications and does not close
 high-impact live acceptance.
 
@@ -67,7 +67,7 @@ scope also passes the final full suite. B filenames are `scripts/test-risk-*.cjs
 | 34 | **BLOCKED**: no fabricated IDE bridge | 4/4/4/5=21 (21) / no viable supported scope / — | Native filesystem API does not expose active editor, unsaved buffer or selection identity | Repository/native protocol inspection; unchanged regressions | NOT RUN | Requires supported authenticated IDE context bridge; on-disk files are not editor buffers |
 | 03 | **PARTIAL**: observed effective thread security; confirmed native approval and built-in sandbox changes | 5/5/4/4=23 (23) / inspection 2/2/1/2=9; writes 3/5/3/4=20 / 2/5/3/4=19 | normal resume/settings events; `thread/settings/update`; managed requirements/native writable-cwd semantics | U `threadSecurityObservation`, `threadPermissions`; B `permissions`, `permission-changes`, 6V each; refresh persistence and unknown reconciliation | NOT RUN | on-request/never and restricted built-in choices only; no custom roots/named-profile editing. Effective matching event required; no global changes |
 | 04 | **PARTIAL**: exact native denied-review/target/thread/turn identities and bounded details | 4/5/3/4=21 (21) / 2/2/1/3=10 / 1/2/1/2=8 | `item/autoApprovalReview/completed`; retry requires opaque core Guardian event | U `deniedActionObservation`; B `denials`, 6V: dedup, association, secret/bounds/disconnect | NOT RUN | Public unstable projection cannot establish retry eligibility, expiry or original serialized denial. No retry reconstructed from displayed text |
-| 29 | **PARTIAL**: actual auth/method inspection, confirmed native browser/device ChatGPT login, exact cancellation and account/cache reconciliation | 4/5/5/5=24 (24) / inspection 2/2/1/2=9; writes 4/5/4/4=22 / 3/5/4/4=21 | `account/read`, login start/cancel/completion; official account processor owns tokens, auth reload and notifications | U `nativeAuthentication` and auth tests; B `auth`, `native-authentication`, 6V each: cancel/completion races, code storage omission, unknowns and send barrier | NOT RUN | Signed-out default provider, known login policy and ≤20 idle loaded threads. No replacement OAuth/API-key client, account switching, external credential takeover or credential persistence. No cross-client activity lock |
+| 29 | Native account details, browser/device-code sign-in, cancellation and logout | 4/5/5/5 = 24 (24) | App Server owns credentials and applies policy to RPCs | See [current account acceptance tests](../tests/accounts-feedback-observability/accounts-panel-codex-login-callback-modal.md) | NOT RUN in this report | WebUI checks up to 20 loaded conversations before explicit sign-in. |
 | 27 | **BLOCKED**: no misleading dictation UI or silent/billable recording | 4/4/3/3=18 (18) / attempted 4/4/3/5=20 / — | Native realtime source routes completed transcripts/handoffs into coding admission; no transcription-only API | Official realtime admission/source inspection; no microphone/media/billable call | NOT RUN | Mandatory initial single-shot editable-input isolation cannot be established. `clientManagedHandoffs` does not suppress coding admission; no third-party substitute |
 | 07 | **IMPLEMENTED**: explicit native Queue mode, list/preview, structured add, plain-text edit preserving other inputs, delete, reorder and confirmed idle start | 4/4/4/4=20 (20) / 3/3/2/3=14 / 2/3/3/3=14 | Five native `thread/queue/*` writes plus list/change events; native persistence and client ID acknowledgment | U `nativeQueue`, composer/drafts, HTTP UUID compatibility; B `queue`, `queue-management`, 6V each; refresh, ordering, rejection/unknown/reconnect | NOT RUN | Immediate steering remains default. Native editable text only, ≤100 displayed entries; no browser execution registry. External edits follow native non-CAS semantics |
 | 13 | **IMPLEMENTED**: explicit remote worktree preview/create/reconcile, separate new-conversation setup in verified destination | 4/5/4/4=22 (22) / 3/4/3/4=18 / 2/4/3/3=16 | Established native `command/exec` fixed-argv Git and native project registration | U `createWorktree` with disposable Git repos and gateway/path tests; B `worktree`, 6V: confirmation/conflict/unknown reconciliation, preserved source draft | NOT RUN | POSIX new branch/separate path only; no force/reset/overwrite, automatic migration or cleanup. Actual Git creation disables Hooks |
@@ -198,9 +198,6 @@ Optional/lazy JavaScript bytes, raw/gzip, from the final manifest:
 | Chunk | Before | After | Loaded before use? |
 |---|---:|---:|---|
 | ConversationTools | 14,143 / 4,902 | 75,143 / 21,263 | No |
-| AuthInspection | — | 2,174 / 1,088 | No |
-| NativeAuthentication UI | — | 4,742 / 1,963 | No |
-| Native authentication controller | — | 8,298 / 3,187 | No |
 | Native standalone command controller | — | 6,284 / 2,623 | No |
 | Native deletion controller | — | 4,135 / 1,751 | No |
 | AppsPicker | 2,827 / 1,317 | 2,827 / 1,316 | No |
@@ -266,7 +263,6 @@ c7b3825 feat: inspect native Hooks definitions origins and trust without executi
 4ac7636 feat: preview remote external-agent configuration candidates without importing
 cdc0f94 feat: inspect observed native thread permissions without extra resumes
 1741cd0 feat: inspect exact native auto-review denials without unsafe retries
-4d509cc feat: inspect native authentication state and allowed login methods
 972cf59 feat: add explicit native prompt queuing while preserving immediate steering
 e61cba7 feat: manage native queued prompts with explicit lifecycle safeguards
 cb0e236 feat: create and reconcile explicit remote Git worktrees safely
@@ -277,7 +273,6 @@ c7777cb fix: preserve uncertain native write outcomes and bound operation errors
 0cfd373 feat: save scoped native Hook policies with explicit trust review
 5172d36 feat: inspect native Daybreak preferences and advertised model programs
 3b19d8a fix: support native queue identifiers on HTTP browser origins
-8956447 feat: manage explicit native ChatGPT sign-in with account reconciliation
 bb01604 docs: record native shell ownership and recovery contract blocker
 84f9f50 feat: confirm native conversation deletion and protect imported history
 9dd04d1 fix: bound named profile projections across configuration layers
@@ -311,7 +306,6 @@ scripts/test-risk-denials.cjs
 scripts/test-risk-hook-policies.cjs
 scripts/test-risk-hooks.cjs
 scripts/test-risk-import.cjs
-scripts/test-risk-native-authentication.cjs
 scripts/test-risk-permission-changes.cjs
 scripts/test-risk-permissions.cjs
 scripts/test-risk-queue-management.cjs
@@ -320,8 +314,6 @@ scripts/test-risk-shell.cjs
 scripts/test-risk-subagents.cjs
 scripts/test-risk-worktree.cjs
 src/App.vue
-src/api/authInspection.test.ts
-src/api/authInspection.ts
 src/api/codexGateway.test.ts
 src/api/codexGateway.ts
 src/api/codexRpcClient.test.ts
@@ -338,7 +330,6 @@ src/api/hooksInspection.test.ts
 src/api/hooksInspection.ts
 src/api/importPreview.test.ts
 src/api/importPreview.ts
-src/api/nativeAuthentication.ts
 src/api/nativeQueue.ts
 src/api/nativeShell.ts
 src/api/nativeWriteOutcome.test.ts
@@ -367,14 +358,10 @@ src/components/content/ThreadComposer.vue
 src/components/content/composerContracts.ts
 src/components/content/composerInput.ts
 src/components/sidebar/AccountSettingsPanel.vue
-src/components/sidebar/AuthInspection.vue
-src/components/sidebar/NativeAuthentication.vue
 src/composables/deniedActionObservation.test.ts
 src/composables/deniedActionObservation.ts
 src/composables/desktopConnection.ts
 src/composables/desktopHistory.ts
-src/composables/nativeAuthentication.test.ts
-src/composables/nativeAuthentication.ts
 src/composables/nativeQueue.test.ts
 src/composables/nativeQueue.ts
 src/composables/nativeShell.test.ts

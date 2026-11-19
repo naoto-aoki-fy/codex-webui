@@ -52,6 +52,24 @@ it('handles an early native login completion and ignores completions for other a
   expect(settings.actionError.value).toBe('Sign-in was denied by the App Server')
 })
 
+it('keeps the loaded conversation activity check scoped to explicit sign-in', async () => {
+  const settings = createAccountSettings()
+  settings.setActive(true)
+  await vi.waitFor(() => expect(settings.status.value).toEqual(signedOut))
+  expect(rpc.mock.calls).toEqual([['account/read', { refreshToken: false }]])
+
+  rpc.mockResolvedValueOnce({ data: ['active-thread'], nextCursor: null })
+    .mockResolvedValueOnce({ thread: { id: 'active-thread', status: { type: 'active' } } })
+  await settings.startLogin('chatgpt', () => true)
+
+  expect(rpc.mock.calls.slice(1)).toEqual([
+    ['thread/loaded/list', { limit: 21 }],
+    ['thread/read', { threadId: 'active-thread', includeTurns: false }],
+  ])
+  expect(settings.actionError.value).toBe('Finish active conversations before signing in.')
+  expect(settings.challenge.value).toBeNull()
+})
+
 it('can cancel a matching native login and logout through the App Server', async () => {
   const settings = createAccountSettings()
   settings.setActive(true)

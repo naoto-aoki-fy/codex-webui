@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { createAccountSettings } from '../../composables/accountSettings'
-import type { LoginMethod } from '../../api/nativeAuthentication'
+import type { LoginMethod } from '../../api/nativeSignIn'
 import ComposerDropdown from '../content/ComposerDropdown.vue'
 import AccountUsage from './AccountUsage.vue'
 
@@ -36,12 +36,12 @@ watch([account, props.auth.challenge], () => { confirmed.value = false })
     </div>
     <div v-if="auth.readError.value" class="sidebar-settings-account-error" role="alert">{{ auth.readError.value }}</div>
     <div v-if="auth.actionError.value" class="sidebar-settings-account-error" role="alert">{{ auth.actionError.value }}</div>
-    <div v-if="auth.challenge.value" class="feature-panel native-authentication">
+    <div v-if="auth.challenge.value" class="feature-panel">
       <a :href="auth.challenge.value.url" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open native sign-in page</a>
       <p v-if="auth.challenge.value.code">Device code <code>{{ auth.challenge.value.code }}</code></p>
       <button type="button" :disabled="busy" @click="auth.cancelLogin">Cancel native sign-in</button>
     </div>
-    <div v-else-if="auth.status.value?.requiresOpenaiAuth && account === null" class="feature-panel native-authentication">
+    <div v-else-if="auth.status.value?.requiresOpenaiAuth && account === null" class="feature-panel">
       <ComposerDropdown v-model="method" :options="[
         { value: 'chatgpt', label: 'ChatGPT browser sign-in' },
         { value: 'chatgptDeviceCode', label: 'ChatGPT device-code sign-in' },

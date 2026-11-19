@@ -58,7 +58,9 @@ const { setup, assert } = require('./approved-fixture.cjs')
         await startButton.click()
         await settings.getByRole('link', { name: 'Open native sign-in page' }).waitFor()
       }
+      const countAccountReads = () => fixture.calls.filter(call => call.method === 'account/read').length
       const submit = async text => {
+        const accountReads = countAccountReads()
         const turn = page.waitForResponse(response => {
           const request = response.request()
           return request.method() === 'POST' && request.url().endsWith('/codex-api/rpc') && request.postDataJSON().method === 'turn/start'
@@ -68,10 +70,12 @@ const { setup, assert } = require('./approved-fixture.cjs')
         assert.equal((await turn).status(), 502)
         await page.getByText(/Sign in on the App Server to send messages/).first().waitFor()
         assert.equal(await page.getByText(/Submission outcome unknown/).count(), 0)
+        assert.equal(countAccountReads(), accountReads)
+        assert.equal(await page.getByText(/\bverif\w*\b.*\b(?:account|sending)\b/i).count(), 0)
       }
 
       await submit('Signed-out submission')
-      assert.equal(fixture.calls.filter(call => call.method === 'account/read').length, 0)
+      assert.equal(countAccountReads(), 0)
       await openAccount()
       await start()
       await closeAccount()
@@ -108,13 +112,12 @@ const { setup, assert } = require('./approved-fixture.cjs')
       await settings.getByRole('button', { name: 'Logout' }).click()
       await startButton.waitFor()
       await closeAccount()
-      const accountReads = fixture.calls.filter(call => call.method === 'account/read').length
+      const accountReads = countAccountReads()
       fixture.emit('app-server/disconnected', null)
       fixture.emit('app-server/reconnected', null)
       await submit('Submission after reconnect')
-      assert.equal(fixture.calls.filter(call => call.method === 'account/read').length, accountReads)
+      assert.equal(countAccountReads(), accountReads)
       assert.equal(fixture.calls.filter(call => call.method === 'turn/start').length, 3)
-      assert.equal(await page.getByText(/Verifying native account state/).count(), 0)
       assert.deepEqual(fixture.errors, [])
       await page.close()
       console.log(`PASS ${width}×${height}: signed-out and pending-login sends, native sign-in and cancellation, native errors, logout, reconnect and both themes`)

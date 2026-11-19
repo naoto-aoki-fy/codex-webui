@@ -53,7 +53,7 @@ operations still require their existing explicit controls and confirmations.
 No deferred feature is enabled. In particular, permanent deletion remains read-only
 inspection with its mutation withheld. Archive rows retain Restore; no new delete,
 search or bulk capability is introduced. Portable Fork, Fork and Revert, historical
-metadata, authentication barriers and unknown-outcome handling are unchanged.
+metadata and unknown-outcome handling are covered by their existing workflows.
 
 ## Send modes
 

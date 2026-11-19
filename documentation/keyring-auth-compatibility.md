@@ -15,7 +15,7 @@ uses `account/logout`. Browser status exposes only display metadata. The legacy
 token-returning RPC is blocked. External token refresh receives an explicit
 unsupported reply from WebUI, so configure native Codex-managed authentication
 on the App Server host. WebUI password protection is separate from Codex account
-authentication. See [native Codex account controls](../docs/native-authentication-state.md).
+authentication. See [native Codex account controls](../docs/native-codex-account.md).
 
 ## Retired features
 

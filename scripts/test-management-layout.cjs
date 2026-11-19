@@ -144,7 +144,7 @@ async function screenshot(page,name,width,theme) {
    assert.equal(await page.locator('[data-message-id="modal-stream"]').count(),1)
    assert.equal(await draft.inputValue(),'Retained draft fixture')
    assert.equal(page.url(),originalRoute)
-   assert(await page.getByRole('button',{name:'Send mode: Queue mode',exact:true}).count())
+   await page.getByRole('button',{name:'Send mode: Queue mode',exact:true}).waitFor()
    console.log(`PASS views ${width} ${theme}`)
    reports.push({url:originalRoute,width,height,theme,images,alignment})
   }
@@ -162,7 +162,6 @@ async function screenshot(page,name,width,theme) {
  }
  const creationPage=await browser.newPage({viewport:{width:1280,height:900}})
  const creation=await setup(creationPage,body=>{
-  if (body.method === 'account/read') return { json: { result: { account: { type: 'chatgpt' }, requiresOpenaiAuth: true } } }
   if(body.method==='thread/start')return {json:{result:{thread:{id:'created-fixture',cwd:'/remote/project',projectId:'p',turns:[]},model:'fixture-model',modelProvider:'fixture'}}}
   if(body.method==='turn/start')return {json:{result:{turn:{id:'first-turn',status:'inProgress'}}}}
   if(body.method==='thread/queue/list')return {json:{result:{data:[],nextCursor:null}}}
