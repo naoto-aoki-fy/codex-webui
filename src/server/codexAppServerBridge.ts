@@ -16,7 +16,7 @@ export { AppServerClient } from './appServerClient.js'
 import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
-import { publicAccountStatus } from './publicAccount.js'
+import { publicAccountStatus, publicLoginChallenge } from './publicAccount.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
 
 type RpcProxyRequest = {
@@ -587,6 +587,25 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           return
         }
 
+        if (body.method === 'account/login/start') {
+          const type = asRecord(body.params)?.type
+          if (type !== 'chatgpt' && type !== 'chatgptDeviceCode') {
+            setJson(res, 502, { error: 'Only Codex-managed ChatGPT sign-in is available through WebUI', rpcCode: -32602 })
+            return
+          }
+          try {
+            const result = await appServer.rpc(body.method, { type })
+            setJson(res, 200, { result: publicLoginChallenge(result, type) })
+          } catch (error) {
+            const code = asRecord(error)?.code
+            setJson(res, 502, {
+              error: getErrorMessage(error, 'Native sign-in failed'),
+              ...(typeof code === 'number' ? { rpcCode: code } : {}),
+            })
+          }
+          return
+        }
+
         if (body.method.startsWith('conversation-transfer/')) {
           const params = asRecord(body.params) ?? {}
           const result = body.method === 'conversation-transfer/prepare'
@@ -665,7 +684,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
               return
             }
           }
-          if (body.method.startsWith('project/') || ['account/usage/read', 'thread/compact/start', 'thread/delete', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update', 'account/login/start', 'account/login/cancel', 'account/logout'].includes(body.method)) {
+          if (body.method.startsWith('project/') || ['turn/start', 'turn/steer', 'account/usage/read', 'thread/compact/start', 'thread/delete', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update', 'account/login/cancel', 'account/logout'].includes(body.method)) {
             setJson(res, 502, { error: getErrorMessage(error, body.method === 'account/usage/read' ? 'Account usage unavailable' : `Native ${body.method} request failed`), ...(typeof asRecord(error)?.code === 'number' ? { rpcCode: asRecord(error)!.code } : {}) })
             return
           }

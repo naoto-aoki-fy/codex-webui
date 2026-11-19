@@ -30,8 +30,7 @@ async function main() {
         }
         if (path.endsWith('/rpc')) {
           const { method } = route.request().postDataJSON()
-          const result = method === 'native-authentication/read' ? { phase: 'ready', blocking: false, revision: 1 }
-            : method === 'thread/list' ? { data: [thread], nextCursor: null }
+          const result = method === 'thread/list' ? { data: [thread], nextCursor: null }
             : ['thread/read', 'thread/resume'].includes(method) ? { thread }
             : ['model/list', 'project/list'].includes(method) ? { data: [], nextCursor: null } : {}
           return route.fulfill({ json: { result } })

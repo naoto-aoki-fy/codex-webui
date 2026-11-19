@@ -135,7 +135,6 @@
             </details>
           </template>
         </ContentHeader>
-        <p v-if="nativeAuthenticationBlocked" class="feature-panel native-auth-barrier" role="status">{{ nativeAuthenticationStatus }} <button type="button" @click="settingsCategory='Codex account';isSettingsOpen=true">Open native sign-in controls</button></p>
         <p v-if="nativeDeletion?.state.value==='completed'" class="feature-panel" role="status">{{ nativeDeletion.status.value }}</p>
         <p v-if="modelPreferencesLoading" class="composer-model-notice" role="status">Loading model preferences…</p>
         <p v-if="modelPreferencesError" class="composer-model-notice" role="alert">Model preferences could not be synchronized. {{ modelPreferencesError }} <button type="button" @click="refreshBackendModelPreferences">Retry</button></p>
@@ -208,7 +207,7 @@
                   :cwd="composerCwd"
                   :selected-queue-mode="composerSendMode.queue.value"
                   @update:selected-queue-mode="composerSendMode.queue.value=$event"
-                  :disabled="modelPreferencesLoading || nativeAuthenticationBlocked || !newThreadCwd.trim()"
+                  :disabled="modelPreferencesLoading || !newThreadCwd.trim()"
                   :collaboration-modes="availableCollaborationModes"
                   :selected-collaboration-mode="composerCollaborationMode"
                   :models="availableModelIds" :model-provider="parseModelSelection(composerSelectedModelId).provider" :selected-model="composerSelectedModelId"
@@ -268,7 +267,7 @@
                   v-show="!selectedThreadPendingRequest"
                   ref="threadComposerRef"
                   :has-pending-request="!!selectedThreadPendingRequest"
-                  :disabled="nativeDeletion?.selectedBlocking.value || nativeAuthenticationBlocked || isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
+                  :disabled="nativeDeletion?.selectedBlocking.value || isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
                   :active-thread-id="composerThreadContextId"
                   :queue-ready="nativeQueue.available.value"
                   :cwd="composerCwd"
@@ -310,7 +309,7 @@
                     :permission-changes="permissionChanges"
                     :deletion="nativeDeletion" :ensure-deletion="ensureNativeDeletion" :has-draft="()=>threadComposerRef?.hasUnsavedDraft()??false"
                     :epoch="operationEpoch" :messages="messages" :compaction="compaction" :review="review"
-                    :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage || permissionChanges.blocking.value || nativeAuthenticationBlocked" :incomplete="isSelectedThreadImportIncomplete"
+                    :in-progress="isSelectedThreadInProgress || isRollingBack" :sending="isSendingMessage || permissionChanges.blocking.value" :incomplete="isSelectedThreadImportIncomplete"
                     :disconnected="transportState === 'disconnected'" :interrupting="isInterruptingTurn" />
   </ManagementDialog>
   <ManagementDialog :open="isContextOpen" title="Context" @close="isContextOpen=false">
@@ -332,9 +331,9 @@
       </nav>
       <div class="settings-content">
         <section v-if="settingsLoaded" v-show="settingsCategory==='Codex account'" aria-label="Codex account">
-              <AccountSettingsPanel :epoch="operationEpoch"
-                :auth="backendAuthentication" :status="nativeAuthenticationStatus"
-                :change-blocked="nativeAccountChangeBlocked"
+              <AccountSettingsPanel :epoch="accountUsageEpoch"
+                :auth="accountSettings"
+                :change-blocked="nativeAccountChangeBlocked || transportState === 'disconnected'"
               />
         </section>
         <section v-show="settingsCategory==='General'" aria-label="General preferences">
@@ -523,7 +522,7 @@ const {
   deniedActions,
   nativeQueue,
   permissionChanges,
-  backendAuthentication, nativeAuthenticationBlocked, nativeAuthenticationStatus, nativeAccountChangeBlocked,
+  accountSettings, accountUsageEpoch, nativeAccountChangeBlocked,
   nativeDeletion,ensureNativeDeletion,
   compaction, review,
   forkThreadById,
@@ -615,6 +614,7 @@ const connectorsLoaded = ref(false)
 function openConnectorSettings() { connectorsLoaded.value = true; settingsCategory.value = 'Apps / Connectors'; isSettingsOpen.value = true }
 watch(settingsCategory, category => { if (category === 'Apps / Connectors') connectorsLoaded.value = true })
 watch(isSettingsOpen, open => { if (open) settingsLoaded.value = true })
+watch(() => isSettingsOpen.value && settingsCategory.value === 'Codex account', accountSettings.setActive)
 const SEND_WITH_ENTER_KEY = 'codex-web-local.send-with-enter.v1'
 const DARK_MODE_KEY = 'codex-web-local.dark-mode.v1'
 

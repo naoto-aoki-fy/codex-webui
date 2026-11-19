@@ -6,14 +6,6 @@ import { rpcCall } from '../api/codexRpcClient'
 import { reasoningCatalog, getAvailableModelIds, type RpcNotification } from '../api/codexGateway'
 import { useDesktopState } from './useDesktopState'
 
-vi.mock('./backendAuthentication', async importOriginal => {
-  const actual = await importOriginal<typeof import('./backendAuthentication')>()
-  return { createBackendAuthentication: () => {
-    const auth = actual.createBackendAuthentication()
-    auth.observe({ phase: 'ready', blocking: false, revision: 1 })
-    return { ...auth, refresh: vi.fn(async () => {}) }
-  } }
-})
 vi.mock('../api/codexRpcClient', async importOriginal => ({
   ...await importOriginal<typeof import('../api/codexRpcClient')>(), rpcCall: vi.fn(),
 }))

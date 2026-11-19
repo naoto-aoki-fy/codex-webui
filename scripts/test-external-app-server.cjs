@@ -44,7 +44,11 @@ async function run() {
         const reply=metadataFixtureRead?{error:{code:-32603,message:'failed to read thread: rollout at /fixture/rollout.jsonl is empty'}}:{result:{thread:{id:'metadata-status-fixture',cwd:'/fixture',status:{type:'idle'},turns:[]}}}
         metadataFixtureRead=true;socket.send(JSON.stringify({id:frame.id,...reply}));return
       }
-      if (frame.method === 'command/exec' || frame.method === 'command/exec/terminate' || frame.method === 'account/usage/read' || frame.method === 'account/login/start' || frame.method === 'account/login/cancel' || frame.method === 'thread/compact/start' || frame.method === 'thread/delete' || frame.method === 'review/start' || frame.method.startsWith('thread/queue/') || frame.method === 'thread/settings/update' || frame.method === 'config/value/write' || frame.method === 'maintenance/unknown' || frame.method === 'generate-thread-title') {
+      if (['turn/start', 'turn/steer'].includes(frame.method)) {
+        socket.send(JSON.stringify({ id: frame.id, error: { code: -32600, message: 'Sign in on the App Server to send messages' } }))
+        return
+      }
+      if (frame.method === 'command/exec' || frame.method === 'command/exec/terminate' || frame.method === 'account/usage/read' || frame.method === 'thread/compact/start' || frame.method === 'thread/delete' || frame.method === 'review/start' || frame.method.startsWith('thread/queue/') || frame.method === 'thread/settings/update' || frame.method === 'config/value/write' || frame.method === 'maintenance/unknown' || frame.method === 'generate-thread-title') {
         socket.send(JSON.stringify({ id: frame.id, error: { code: -32601, message: 'Method not found' } }))
         return
       }
@@ -64,6 +68,8 @@ async function run() {
         : frame.method === 'fs/getMetadata' ? { isDirectory: true, isSymlink: false }
         : frame.method === 'thread/name/set' ? {}
         : frame.method === 'account/read' ? { account: { type: 'apiKey', apiKey: 'fixture-secret' }, requiresOpenaiAuth: true, authToken: 'fixture-secret' }
+        : frame.method === 'account/login/start' ? { type: 'chatgpt', loginId: 'fixture-login', authUrl: 'https://example.invalid/sign-in', accessToken: 'fixture-secret' }
+        : frame.method === 'account/login/cancel' ? { status: 'canceled' }
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
         : frame.method === 'model/list' ? { data: [{ id: frame.params.cursor ? 'fixture-hidden' : 'fixture-model', hidden: Boolean(frame.params.cursor), isDefault: !frame.params.cursor }], nextCursor: frame.params.cursor ? null : 'fixture-next' }
         : ['thread/list', 'project/list'].includes(frame.method) ? { data: [], nextCursor: null }
@@ -140,10 +146,10 @@ async function run() {
           assert.match(missing.headers.get('content-type'), /application\/json/)
           if (method !== 'HEAD') assert.deepEqual(await missing.json(), { error: 'Not found' })
         }
-        const call = async (method) => {
+        const call = async (method, params = { threadId: 'fixture', name: 'Native title' }) => {
           const response = await fetch(url + '/codex-api/rpc', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ method, params: method === 'account/login/start' ? { type: 'chatgpt' } : { threadId: 'fixture', name: 'Native title' } }),
+            body: JSON.stringify({ method, params }),
           })
           return { status: response.status, body: await response.json() }
         }
@@ -189,14 +195,35 @@ async function run() {
           assert.equal(readFileSync(join(storageEnv.CODEX_HOME, name), 'utf8'), raw)
         }
         console.log('PASS', profile, previousRuns ? 'reuses' : 'initializes', 'preferences and upload accounting with an untouched Codex home')
+        const firstWrite = frames.length
+        for (const method of ['turn/start', 'turn/steer']) {
+          assert.deepEqual(await call(method, { threadId: 'fixture', input: [] }), {
+            status: 502, body: { error: 'Sign in on the App Server to send messages', rpcCode: -32600 },
+          })
+        }
+        assert.deepEqual(frames.slice(firstWrite).map(frame => frame.method), ['turn/start', 'turn/steer'])
         const [unknown, active] = await Promise.all([call('maintenance/unknown'), call('account/read')])
         assert.equal(unknown.status, 502)
         assert.deepEqual(unknown.body, { error: 'Method not found' })
         for (const method of ['account/usage/read', 'thread/compact/start', 'thread/delete', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update']) {
           assert.deepEqual(await call(method), { status: 502, body: { error: 'Method not found', rpcCode: -32601 } })
         }
-        assert.deepEqual(await call('account/login/start'),{status:502,body:{error:'Native sign-in requires a signed-out account',rpcCode:-32600}})
-        assert.deepEqual(await call('account/login/cancel'),{status:502,body:{error:'No matching backend native login to cancel',rpcCode:-32602}})
+        const firstLogin = frames.length
+        assert.deepEqual(await call('account/login/start', { type: 'chatgptAuthTokens', accessToken: 'fixture-secret' }), {
+          status: 502, body: { error: 'Only Codex-managed ChatGPT sign-in is available through WebUI', rpcCode: -32602 },
+        })
+        assert.deepEqual(await call('account/login/start', { type: 'chatgpt', accessToken: 'fixture-secret' }), {
+          status: 200, body: { result: { type: 'chatgpt', loginId: 'fixture-login', authUrl: 'https://example.invalid/sign-in' } },
+        })
+        assert.deepEqual(await call('account/login/cancel', { loginId: 'fixture-login' }), {
+          status: 200, body: { result: { status: 'canceled' } },
+        })
+        assert.deepEqual(await call('account/logout', {}), { status: 200, body: { result: {} } })
+        assert.deepEqual(frames.slice(firstLogin).map(({ method, params }) => ({ method, params })), [
+          { method: 'account/login/start', params: { type: 'chatgpt' } },
+          { method: 'account/login/cancel', params: { loginId: 'fixture-login' } },
+          { method: 'account/logout', params: {} },
+        ])
         assert.deepEqual(await call('config/value/write'),{status:502,body:{error:'Method not found'}})
         assert.equal(active.status, 200)
         assert.deepEqual(await call('generate-thread-title'), { status: 502, body: { error: 'Method not found' } })

@@ -10,7 +10,7 @@ import {createThreadSecurityObservation} from './threadSecurityObservation'
 import {createDeniedActionObservation} from './deniedActionObservation'
 import {createNativeQueue} from './nativeQueue'
 import {createThreadPermissions} from './threadPermissions'
-import {createBackendAuthentication} from './backendAuthentication'
+import { createAccountSettings } from './accountSettings'
 import {rpcCall} from '../api/codexRpcClient'
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
 import { createDesktopConnection } from './desktopConnection'
@@ -299,39 +299,22 @@ export function useDesktopState() {
   const operationEpoch = ref(0)
   const nativeDeletion=shallowRef<import('./threadDeletion').ThreadDeletion|null>(null)
   async function ensureNativeDeletion(){const epoch=operationEpoch.value,owner=connection.lifecycleGeneration,module=await import('./threadDeletion');if(epoch!==operationEpoch.value||owner!==connection.lifecycleGeneration)return null
-    if(!nativeDeletion.value)nativeDeletion.value=module.createThreadDeletion({epoch:operationEpoch,selected:selectedThreadId,ready:()=>transportState.value!=='disconnected',blocked:()=>nativeAuthenticationBlocked.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||turns.isSendingMessage.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.blocking.value||(approvals.pendingServerRequestsByThreadId.value[selectedThreadId.value]?.length??0)>0})
+    if(!nativeDeletion.value)nativeDeletion.value=module.createThreadDeletion({epoch:operationEpoch,selected:selectedThreadId,ready:()=>transportState.value!=='disconnected',blocked:()=>isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||turns.isSendingMessage.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.blocking.value||(approvals.pendingServerRequestsByThreadId.value[selectedThreadId.value]?.length??0)>0})
     return nativeDeletion.value
   }
-  const backendAuthentication=createBackendAuthentication(()=>{
-    operationEpoch.value++;modelRefreshVersion++;rateLimitRefreshPromise=null
-    accountRateLimitSnapshots.value=[];setCodexRateLimit(null);availableModelIds.value=[]
-    catalogOwnership?.release();catalogOwnership=null
-  })
-  const nativeAuthenticationBlocked=backendAuthentication.blocking
-  const nativeAuthenticationStatus=computed(()=>backendAuthentication.state.value.reason==='account-context-changed'?'The native account or workspace changed. Inspect and acknowledge the new account before sending.':backendAuthentication.state.value.reason==='account-identity-unavailable'?'Native account continuity could not be established. Inspect and acknowledge the account before sending.':({
-    checking:'Verifying native account state automatically. Sending will resume when verification succeeds.',
-    ready:'',
-    signedOut:'Native sign-in is required before sending.',
-    pending:'Native authentication is pending. Sending is paused.',
-    reconciliation:'Native account reconciliation is required. Sending is paused.',
-    unknown:'Native authentication could not be verified. Inspect the account before sending.',
-    disconnected:'Native authentication is unavailable while the connection is interrupted. Sending is paused.',
-  })[backendAuthentication.state.value.phase])
-  watch(backendAuthentication.state,(state,previous)=>{
-    if(state.phase==='ready'&&previous.phase!=='ready'&&(state.contextRevision??0)>0){
-      void refreshModelPreferences();void refreshRateLimits()
-    }
-  },{flush:'sync'})
+  const accountSettings = createAccountSettings()
+  const accountRevision = ref(0)
+  const accountUsageEpoch = computed(() => operationEpoch.value + accountRevision.value)
   const nativeAccountChangeBlocked=computed(()=>nativeDeletion.value?.blocking.value||hasActiveInProgressThreads()||turns.isSendingMessage.value||turns.isInterruptingTurn.value||isRollingBack.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.busy.value||permissionChanges.state.value==='unknown'||Object.values(approvals.pendingServerRequestsByThreadId.value).some(rows=>rows.length>0))
   watch(operationEpoch,()=>{securityObservation.clear();deniedActions.clear()},{flush:'sync'})
   const review = createThreadReview({ epoch: operationEpoch, selected: selectedThreadId,
-    blocked: () => nativeDeletion.value?.selectedBlocking.value || nativeAuthenticationBlocked.value || isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value || permissionChanges.blocking.value ||
+    blocked: () => nativeDeletion.value?.selectedBlocking.value || isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value || permissionChanges.blocking.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
     interrupt: (threadId, turnId) => interruptThreadTurn(threadId, turnId),
   })
   const compaction = createThreadCompaction({ epoch: operationEpoch, selected: selectedThreadId,
-    blocked: () => nativeDeletion.value?.selectedBlocking.value || nativeAuthenticationBlocked.value || isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || review.busy.value || permissionChanges.blocking.value ||
+    blocked: () => nativeDeletion.value?.selectedBlocking.value || isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || review.busy.value || permissionChanges.blocking.value ||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message => message.id === `import-status-${selectedThreadId.value}`) === true,
     ready: () => transportState.value !== 'disconnected',
     refresh: id => history.loadMessages(id, { force: true }),
@@ -340,19 +323,19 @@ export function useDesktopState() {
     active:()=>inProgressById.value[selectedThreadId.value]===true,
     refreshHistory:id=>history.loadMessages(id,{force:true}),
     ready:()=>transportState.value!=='disconnected',
-    blocked:()=>nativeDeletion.value?.selectedBlocking.value||nativeAuthenticationBlocked.value||isRollingBack.value||compaction.busy.value||review.busy.value||permissionChanges.blocking.value||turns.isSendingMessage.value||
+    blocked:()=>nativeDeletion.value?.selectedBlocking.value||isRollingBack.value||compaction.busy.value||review.busy.value||permissionChanges.blocking.value||turns.isSendingMessage.value||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
   })
   const permissionChanges=createThreadPermissions({epoch:operationEpoch,selected:selectedThreadId,
     ready:()=>transportState.value!=='disconnected',snapshot:id=>securityObservation.snapshots.value[id]??null,
-    blocked:()=>nativeDeletion.value?.selectedBlocking.value||nativeAuthenticationBlocked.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||compaction.busy.value||review.busy.value||nativeQueue.writing.value||turns.isSendingMessage.value||
+    blocked:()=>nativeDeletion.value?.selectedBlocking.value||isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||compaction.busy.value||review.busy.value||nativeQueue.writing.value||turns.isSendingMessage.value||
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
   })
 
   const browserConnection = createConnectionNotice()
   const appServerConnection = createConnectionNotice()
   const connection = createDesktopConnection({
-    onBrowserConnectionState: state=>{browserConnection.update(state);if(state!=='connected'){threadTokenUsageByThreadId.value={};backendAuthentication.disconnect()}},
+    onBrowserConnectionState: state=>{browserConnection.update(state);if(state!=='connected'){threadTokenUsageByThreadId.value={};accountSettings.disconnect()}},
     invalidateReadJobs() { operationEpoch.value++ },
     get history() { return history; },
     get setLiveAgentMessagesForThread() { return setLiveAgentMessagesForThread; },
@@ -477,6 +460,7 @@ export function useDesktopState() {
   let selectionGeneration = 0
 
   let rateLimitRefreshTimer: number | null = null
+  let refreshModelsWithRateLimits = false
   const delayedTurnSyncTimerByThreadId = new Map<string, number>()
   let loadThreadsPromise: Promise<void> | null = null
   let threadListLoadGeneration = 0
@@ -956,32 +940,42 @@ export function useDesktopState() {
 
   async function refreshRateLimits(): Promise<void> {
     const generation = connection.lifecycleGeneration
-    const epoch = operationEpoch.value
+    const epoch = accountUsageEpoch.value
     if (rateLimitRefreshPromise) {
       await rateLimitRefreshPromise
       return
     }
 
-    rateLimitRefreshPromise = (async () => {
+    const request = (async () => {
       try {
         const snapshot = await getAccountRateLimits()
-        if (generation !== connection.lifecycleGeneration || epoch !== operationEpoch.value) return
+        if (generation !== connection.lifecycleGeneration || epoch !== accountUsageEpoch.value) return
         setCodexRateLimit(snapshot)
         accountRateLimitSnapshots.value = snapshot ? [snapshot] : []
       } catch {
         // Keep the last known rate-limit state if the endpoint is temporarily unavailable.
-      } finally {
-        if (generation === connection.lifecycleGeneration && epoch === operationEpoch.value) rateLimitRefreshPromise = null
       }
     })()
-
-    await rateLimitRefreshPromise
+    rateLimitRefreshPromise = request
+    try {
+      await request
+    } finally {
+      if (rateLimitRefreshPromise === request) rateLimitRefreshPromise = null
+    }
   }
 
-  function scheduleRateLimitRefresh(): void {
+  function scheduleRateLimitRefresh(refreshModels = false): void {
+    refreshModelsWithRateLimits ||= refreshModels
+    const refresh = () => {
+      if (refreshModelsWithRateLimits) {
+        refreshModelsWithRateLimits = false
+        void refreshModelPreferences()
+      }
+      void refreshRateLimits()
+    }
     const generation = connection.lifecycleGeneration
     if (typeof window === 'undefined') {
-      void refreshRateLimits()
+      refresh()
       return
     }
 
@@ -992,7 +986,7 @@ export function useDesktopState() {
     rateLimitRefreshTimer = window.setTimeout(() => {
       if (generation !== connection.lifecycleGeneration) return
       rateLimitRefreshTimer = null
-      void refreshRateLimits()
+      refresh()
     }, RATE_LIMIT_REFRESH_DEBOUNCE_MS)
   }
 
@@ -1780,9 +1774,25 @@ export function useDesktopState() {
     if (notification.method === 'model-preferences/error') { backendPreferences.error.value = readString(asRecord(notification.params)?.message) || 'Model preferences could not be saved'; return }
     if (notification.method === 'ready' && asRecord(notification.params)?.reconnected === true) void backendPreferences.refresh()
     if(notification.method==='app-server/reconnected')void backendPreferences.refresh()
-    if(notification.method==='ready'||notification.method==='app-server/reconnected')void backendAuthentication.refresh()
-    if(notification.method==='native-authentication/state'){backendAuthentication.observe(notification.params);return}
-    if(notification.method==='app-server/disconnected'){threadTokenUsageByThreadId.value={};backendAuthentication.disconnect()}
+    if (notification.method === 'account/login/completed') {
+      accountSettings.completeLogin(notification.params)
+      return
+    }
+    if (notification.method === 'account/updated') {
+      accountRevision.value++
+      accountRateLimitSnapshots.value = []
+      setCodexRateLimit(null)
+      rateLimitRefreshPromise = null
+      modelRefreshVersion++
+      scheduleRateLimitRefresh(true)
+      accountSettings.accountUpdated()
+      return
+    }
+    if (notification.method === 'app-server/reconnected'
+      || (notification.method === 'ready' && asRecord(notification.params)?.reconnected === true && transportState.value !== 'disconnected')) {
+      accountSettings.refreshIfActive()
+    }
+    if(notification.method==='app-server/disconnected'){threadTokenUsageByThreadId.value={};accountSettings.disconnect()}
     if(notification.method==='turn/started'||notification.method==='thread/reverted'){
       const id=extractThreadIdFromNotification(notification)
       if(id)setThreadTokenUsage(id,null)
@@ -1907,11 +1917,6 @@ export function useDesktopState() {
       return
     }
 
-    if (notification.method === 'account/rateLimits/updated') {
-      if(nativeAuthenticationBlocked.value)return
-      scheduleRateLimitRefresh()
-    }
-
     if (notification.method === 'thread/name/updated') {
       const params = asRecord(notification.params)
       const threadId = readString(params?.threadId)
@@ -1922,6 +1927,7 @@ export function useDesktopState() {
     }
 
     if (notification.method === 'account/rateLimits/updated') {
+      scheduleRateLimitRefresh()
       setCodexRateLimit(pickCodexRateLimitSnapshot(notification.params))
       return
     }
@@ -2625,7 +2631,7 @@ export function useDesktopState() {
   }
 
   function hasPendingNativeAction(threadId: string): boolean {
-    return (nativeDeletion.value?.blocking.value&&nativeDeletion.value.thread.value===threadId) || nativeAuthenticationBlocked.value || ((permissionChanges.busy.value || permissionChanges.state.value==='unknown') && permissionChanges.thread.value === threadId) || (compaction.busy.value && compaction.thread.value === threadId)
+    return (nativeDeletion.value?.blocking.value&&nativeDeletion.value.thread.value===threadId) || ((permissionChanges.busy.value || permissionChanges.state.value==='unknown') && permissionChanges.thread.value === threadId) || (compaction.busy.value && compaction.thread.value === threadId)
       || (review.busy.value && review.thread.value === threadId)
   }
 
@@ -2790,7 +2796,7 @@ export function useDesktopState() {
   function stopPolling(): void {
     if (typeof window !== 'undefined') window.removeEventListener?.('storage', onPreferenceStorage)
     operationEpoch.value++
-    backendAuthentication.dispose()
+    accountSettings.disconnect()
     nativeDeletion.value?.dispose();nativeDeletion.value=null
     for (const timer of recoveryDismissTimerByThreadId.values()) clearTimeout(timer)
     recoveryDismissTimerByThreadId.clear()
@@ -2835,6 +2841,7 @@ export function useDesktopState() {
       window.clearTimeout(rateLimitRefreshTimer)
       rateLimitRefreshTimer = null
     }
+    refreshModelsWithRateLimits = false
     if (threadListBackgroundTimer !== null && typeof window !== 'undefined') {
       window.clearTimeout(threadListBackgroundTimer)
       threadListBackgroundTimer = null
@@ -2950,7 +2957,7 @@ export function useDesktopState() {
     compaction, review,
     nativeQueue,
     permissionChanges,
-    backendAuthentication, nativeAuthenticationBlocked, nativeAuthenticationStatus, nativeAccountChangeBlocked,
+    accountSettings, accountUsageEpoch, nativeAccountChangeBlocked,
     nativeDeletion,ensureNativeDeletion,
     renameThreadById,
     forkThreadById,
@@ -2958,10 +2965,10 @@ export function useDesktopState() {
     executeThreadRevert,
 
     sendMessageToSelectedThread: (...args: Parameters<typeof turns.sendMessageToSelectedThread>) => {
-      if (nativeDeletion.value?.selectedBlocking.value || nativeAuthenticationBlocked.value || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value&&permissionChanges.thread.value===selectedThreadId.value) return Promise.reject(new Error('Wait for the native conversation action to finish.'))
+      if (nativeDeletion.value?.selectedBlocking.value || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value&&permissionChanges.thread.value===selectedThreadId.value) return Promise.reject(new Error('Wait for the native conversation action to finish.'))
       return turns.sendMessageToSelectedThread(...args)
     },
-    sendMessageToNewThread: (...args:Parameters<typeof turns.sendMessageToNewThread>)=>nativeAuthenticationBlocked.value?Promise.reject(new Error('Finish native authentication before sending')):turns.sendMessageToNewThread(...args),
+    sendMessageToNewThread: turns.sendMessageToNewThread,
     interruptSelectedThreadTurn: turns.interruptSelectedThreadTurn,
     setSelectedCollaborationMode,
     readModelIdForThread,

@@ -118,7 +118,7 @@ it('reuses the current runtime across middleware instances and disposes the acti
 })
 
 it('forwards an attachment-only turn directly and does not use the request as historical metadata', async () => {
-  const call = vi.fn(async (method: string, _params: unknown) => method === 'account/read' ? {account:{type:'chatgpt'},requiresOpenaiAuth:true} : { turn: { id: 'turn' } })
+  const call = vi.fn(async (_method: string, _params: unknown) => ({ turn: { id: 'turn' } }))
   const client = new AppServerClient()
   const internal = client as any
   internal.ensureInitialized = vi.fn().mockResolvedValue(undefined)
@@ -130,10 +130,9 @@ it('forwards an attachment-only turn directly and does not use the request as hi
       { type: 'text', text: '# Files mentioned by the user:\n\n## notes.txt: /remote/notes.txt\n\n## My request for Codex:\n\n' },
     ] }
     const result = await client.rpc('turn/start', params) as any
-    expect(call.mock.calls.filter(([method])=>method==='turn/start')).toEqual([['turn/start',params]])
-    expect(call.mock.calls.some(([method]) => method === 'thread/read')).toBe(false)
+    expect(call.mock.calls).toEqual([['turn/start', params]])
     expect(result.turn).not.toHaveProperty('generationMetadata')
-    expect(listener.mock.calls.every(([event])=>event.method==='native-authentication/state')).toBe(true)
+    expect(listener).not.toHaveBeenCalled()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try { await expect(client.rpc('turn/start', params)).resolves.toHaveProperty('turn.id', 'turn') }
     finally { warn.mockRestore() }

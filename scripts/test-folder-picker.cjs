@@ -47,7 +47,6 @@ const fs = require('node:fs')
             projects.splice(params.beforeProjectId ? projects.findIndex(project => project.id === params.beforeProjectId) : projects.length, 0, project)
           }
           if (method === 'project/delete') projects.splice(projects.findIndex(project => project.id === params.projectId), 1)
-          if (method === 'native-authentication/read') result = { phase: 'ready', blocking: false, revision: 1 }
           return route.fulfill({ json: { result } })
         })
         await page.goto('http://127.0.0.1:4173/#/')

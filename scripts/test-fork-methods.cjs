@@ -46,6 +46,9 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
   const initialProvider = providers.includes(composerProvider) ? composerProvider : defaultProvider
   const destinationProvider = sameProvider ? composerProvider : defaultProvider
   const destinationDefault = destinationProvider === 'P' ? 'A' : 'C'
+  await page.routeWebSocket('**/codex-api/ws', socket => {
+    socket.send(JSON.stringify({ method: 'ready', params: { connectionProfile: 'browser-fixture' } }))
+  })
   await page.route('**/codex-api/**', async route => {
     if (route.request().url().endsWith('/codex-api/connection-profile')) return route.fulfill({ json: { connectionProfile: 'browser-fixture' } })
     const request = route.request()
@@ -78,7 +81,6 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
       ? [{ id: 'A', displayName: 'Alternate', priority: 9 }, { id: 'C', displayName: 'C', priority: 0, isDefault: true }, { id: 'D', displayName: 'D', priority: 1 }]
       : [{ id: 'A', displayName: 'A', priority: 0 }, { id: 'P-only', displayName: 'P only', priority: 1 }] }
     if (rpc === 'account/read') result = { account: { type: 'apiKey' } }
-    if (rpc === 'native-authentication/read') result = { phase: 'ready', blocking: false, revision: 1 }
     if (rpc === 'config/read') result = { config: { model: 'A', model_provider: 'P' } }
     if (rpc === 'model-preferences/read') result = { schemaVersion: 1, revision: 1,
       preferred: { providerId: 'P', modelId: 'A', reasoningEffort: '', collaborationMode: 'default' },

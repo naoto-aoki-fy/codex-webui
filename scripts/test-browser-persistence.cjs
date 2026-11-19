@@ -17,7 +17,6 @@ async function fixture(context) {
     let body = {}; try { body = route.request().postDataJSON() || {} } catch {}
     calls.push(body)
     let result = {}
-    if (body.method === 'native-authentication/read') result = { phase: 'ready', blocking: false, revision: 1 }
     if (body.method === 'thread/list') result = { data: threads, nextCursor: null }
     if (['thread/read', 'thread/resume'].includes(body.method)) result = { thread: { ...threads.find(t => t.id === body.params.threadId), turns: [] }, model: 'A', modelProvider: 'fixture' }
     if (body.method === 'model/list') result = { data: [{ id: 'A', model: 'A', isDefault: true }, { id: 'B', model: 'B' }], nextCursor: null }

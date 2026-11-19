@@ -1,15 +1,5 @@
 import * as codexRpc from '../api/codexRpcClient'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-// These orchestration fixtures begin with an already verified backend account.
-// Backend hydration/race behavior is exercised in backendAuthentication.test.ts.
-vi.mock('./backendAuthentication', async importOriginal => {
-  const actual = await importOriginal<typeof import('./backendAuthentication')>()
-  return { createBackendAuthentication: (invalidate?:()=>void) => {
-    const auth = actual.createBackendAuthentication(invalidate)
-    auth.observe({phase:'ready',blocking:false,revision:1})
-    return {...auth,refresh:vi.fn(async()=>{})}
-  } }
-})
 import {
   findAdjacentThreadId,
   removeThreadFromGroups,

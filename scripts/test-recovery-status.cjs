@@ -24,8 +24,7 @@ const fs = require('node:fs')
         const path = new URL(route.request().url()).pathname
         if (path.endsWith('/rpc')) {
           const { method } = route.request().postDataJSON()
-          const result = method === 'native-authentication/read' ? { phase: 'ready', blocking: false, revision: 1, account: { type: 'chatgpt' } }
-            : method === 'thread/list' ? { data: [thread], nextCursor: null }
+          const result = method === 'thread/list' ? { data: [thread], nextCursor: null }
             : ['thread/read', 'thread/resume'].includes(method) ? { thread }
             : ['model/list', 'project/list'].includes(method) ? { data: [], nextCursor: null } : {}
           return route.fulfill({ json: { result } })

@@ -1,14 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-// These orchestration fixtures begin with an already verified backend account.
-// Backend hydration/race behavior is exercised in backendAuthentication.test.ts.
-vi.mock('./backendAuthentication', async importOriginal => {
-  const actual = await importOriginal<typeof import('./backendAuthentication')>()
-  return { createBackendAuthentication: (invalidate?:()=>void) => {
-    const auth = actual.createBackendAuthentication(invalidate)
-    auth.observe({phase:'ready',blocking:false,revision:1})
-    return {...auth,refresh:vi.fn(async()=>{})}
-  } }
-})
 import { useDesktopState } from './useDesktopState'
 import { loadSelectedModelMap } from './desktopStatePersistence'
 import { reasoningCatalog } from '../api/codexGateway'
@@ -1444,7 +1434,6 @@ describe('lifecycle generation ownership across restart', () => {
     await state.sendMessageToNewThread('old send', '/tmp/project')
     state.stopPolling()
     state.startPolling()
-    notify({ method: 'native-authentication/state', params: { phase: 'ready', blocking: false, revision: 2 } })
     gateway.startThread.mockResolvedValueOnce({ threadId: 'fresh-thread', model: 'gpt-5.5' })
     await state.sendMessageToNewThread('fresh send', '/tmp/project')
     expect(state.isSendingMessage.value).toBe(true)
@@ -2502,22 +2491,28 @@ it('does not resurrect native-deleted history from a late read or retain its liv
  expect(state.messages.value).toEqual([])
  expect(state.projectGroups.value.flatMap(group=>group.threads).some(row=>row.id===thread.id)).toBe(false)
 })
-it('invalidates account views and hydrates the sending/queue barrier from backend state across document recreation',async()=>{
- const state=await loadState();const epoch=state.operationEpoch.value
- notify({method:'native-authentication/state',params:{phase:'checking',blocking:true,revision:2,contextRevision:1}});notify({method:'account/updated',params:{authMode:'chatgpt'}})
- expect(state.operationEpoch.value).toBe(epoch+1);expect(state.nativeAuthenticationBlocked.value).toBe(true);expect(state.availableModelIds.value).toEqual([])
- await expect(state.sendMessageToSelectedThread('blocked')).rejects.toThrow();await expect(state.sendMessageToNewThread('/remote','blocked')).rejects.toThrow('authentication')
- await expect(state.nativeQueue.add({text:'blocked',imageUrls:[],fileAttachments:[],skills:[]})).rejects.toThrow()
- expect(gateway.startThreadTurn).not.toHaveBeenCalled()
- const restored=createState();restored.startPolling();notify({method:'native-authentication/state',params:{phase:'reconciliation',blocking:true,revision:2}});expect(restored.nativeAuthenticationBlocked.value).toBe(true)
- expect(restored.backendAuthentication.state.value.phase).toBe('reconciliation')
- notify({method:'app-server/disconnected',params:{}});notify({method:'app-server/reconnected',params:{}})
- expect(restored.nativeAuthenticationBlocked.value).toBe(true);expect(gateway.startThreadTurn).not.toHaveBeenCalled()
+it('submits selected and new conversation turns without loading account settings', async () => {
+  const { CodexApiError } = await import('../api/codexErrors')
+  const state = await loadState()
+  const fetch = vi.fn()
+  vi.stubGlobal('fetch', fetch)
+  notify({ method: 'ready', params: { ok: true } })
+  notify({ method: 'account/updated', params: { authMode: null } })
+  gateway.startThreadTurn.mockRejectedValueOnce(new CodexApiError('Sign in on the App Server', {
+    code: 'http_error', method: 'turn/start', status: 502, rpcCode: -32600,
+  }))
+  await expect(state.sendMessageToSelectedThread('selected conversation')).rejects.toThrow('Sign in on the App Server')
+  expect(state.error.value).toBe('Sign in on the App Server')
+  expect(state.selectedUnknownOutcome.value).toBe(false)
+  await state.sendMessageToNewThread('new conversation', '/tmp/project')
+  expect(gateway.startThreadTurn).toHaveBeenCalledTimes(2)
+  expect(fetch.mock.calls.some(([, init]) => JSON.parse(init?.body ?? '{}').method === 'account/read')).toBe(false)
 })
+
 it('discards an old account rate-limit response after an account update',async()=>{
  const state=await loadState(),rates=deferred<any>();gateway.getAccountRateLimits.mockReturnValueOnce(rates.promise)
  const refresh=state.refreshAll({includeSelectedThreadMessages:false,awaitAncillaryRefreshes:true})
- await vi.advanceTimersByTimeAsync(0);notify({method:'native-authentication/state',params:{phase:'checking',blocking:true,revision:2,contextRevision:1}});notify({method:'account/updated',params:{authMode:'chatgpt'}})
+ await vi.advanceTimersByTimeAsync(0);notify({method:'account/updated',params:{authMode:'chatgpt'}})
  rates.resolve({limitId:'old-account',limitName:'Old',planType:null,primary:null,secondary:null,credits:null,raw:{}});await refresh
  expect(state.accountRateLimitSnapshots.value).toEqual([]);expect(state.codexQuota.value).toBeNull()
 })
@@ -2577,52 +2572,24 @@ describe('independent browser and App Server connection notices', () => {
     expect(state.appServerConnectionNotice.value).toBe('')
   })
 })
-it('refreshes account-specific views automatically and ignores raw or older state after verified readiness',async()=>{
- const state=await loadState(),epoch=state.operationEpoch.value
- const oldModels=deferred<any>();gateway.getAvailableModelIds.mockReturnValueOnce(oldModels.promise)
- const loading=state.refreshAll({includeSelectedThreadMessages:false,awaitAncillaryRefreshes:true})
- await vi.advanceTimersByTimeAsync(0)
- notify({method:'native-authentication/state',params:{phase:'checking',blocking:true,revision:2,contextRevision:1}})
- expect(state.nativeAuthenticationBlocked.value).toBe(true);expect(state.availableModelIds.value).toEqual([])
- oldModels.resolve({ids:['old-account-model'],models:[]});await loading
- expect(state.availableModelIds.value).not.toContain('old-account-model')
- gateway.getAvailableModelIds.mockResolvedValue({ids:['new-account-model'],models:[]})
- notify({method:'native-authentication/state',params:{phase:'ready',blocking:false,revision:3,contextRevision:1}})
- notify({method:'account/updated',params:{authMode:'chatgpt'}})
- notify({method:'native-authentication/state',params:{phase:'reconciliation',blocking:true,revision:1,contextRevision:0}})
- await vi.advanceTimersByTimeAsync(0)
- expect(state.nativeAuthenticationBlocked.value).toBe(false);expect(state.operationEpoch.value).toBe(epoch+1)
- expect(state.availableModelIds.value).toContain('new-account-model')
- expect(gateway.startThreadTurn).not.toHaveBeenCalled()
-})
-it('does not retire its own login response when backend operation start invalidates account caches',async()=>{
- const state=await loadState();let resolve!:(value:any)=>void
- const fetch=vi.fn(async(_url:any,init:any)=>{
-  const body=JSON.parse(init.body);let result:any
-  if(body.method==='thread/loaded/list')result={data:[],nextCursor:null}
-  if(body.method==='account/login/start')result=await new Promise(r=>resolve=r)
-  return new Response(JSON.stringify({result}),{status:200})
- });vi.stubGlobal('fetch',fetch)
- notify({method:'native-authentication/state',params:{phase:'signedOut',blocking:true,revision:2}})
- const auth=state.backendAuthentication
- const starting=auth.startLogin('chatgpt',()=>true)
- for(let i=0;i<50&&!resolve;i++)await Promise.resolve()
- expect(resolve).toBeTypeOf('function')
- notify({method:'native-authentication/state',params:{phase:'pending',blocking:true,revision:3,contextRevision:1,operationUnresolved:true}})
- resolve({type:'chatgpt',loginId:'owned',authUrl:'https://example.invalid/sign-in'});await starting
- notify({method:'native-authentication/state',params:{phase:'pending',blocking:true,revision:4,contextRevision:1,loginId:'owned'}})
- expect(auth.state.value.phase).toBe('pending')
- expect(auth.challenge.value?.url).toBe('https://example.invalid/sign-in')
- expect(state.nativeAuthenticationBlocked.value).toBe(true)
-})
-it('does not repopulate invalidated quota from account notifications while verification is unresolved',async()=>{
- const state=await loadState()
- notify({method:'native-authentication/state',params:{phase:'checking',blocking:true,revision:2,contextRevision:1}})
- const reads=gateway.getAccountRateLimits.mock.calls.length
- notify({method:'account/rateLimits/updated',params:{rateLimits:{primary:{usedPercent:90,windowDurationMins:300,resetsAt:100}}}})
- await vi.advanceTimersByTimeAsync(300)
- expect(state.codexQuota.value).toBeNull();expect(state.accountRateLimitSnapshots.value).toEqual([])
- expect(gateway.getAccountRateLimits.mock.calls).toHaveLength(reads)
+it('refreshes model choices on a native account update without retiring thread operations', async () => {
+  const state = await loadState()
+  const epoch = state.operationEpoch.value
+  const oldModels = deferred<Awaited<ReturnType<typeof gateway.getAvailableModelIds>>>()
+  gateway.getAvailableModelIds.mockReturnValueOnce(oldModels.promise)
+  const loading = state.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
+  await vi.advanceTimersByTimeAsync(0)
+  gateway.getAvailableModelIds.mockResolvedValue({ ids: ['new-account-model'], models: [] })
+  notify({ method: 'account/updated', params: { authMode: 'chatgpt' } })
+  notify({ method: 'account/updated', params: { authMode: 'chatgpt' } })
+  oldModels.resolve({ ids: ['old-account-model'], models: [] })
+  await loading
+  expect(state.availableModelIds.value).not.toContain('old-account-model')
+  const before = gateway.getAvailableModelIds.mock.calls.length
+  await vi.advanceTimersByTimeAsync(500)
+  expect(gateway.getAvailableModelIds.mock.calls.length - before).toBe(1)
+  expect(state.availableModelIds.value).toContain('new-account-model')
+  expect(state.operationEpoch.value).toBe(epoch)
 })
 
 describe('one-shot Plan mode', () => {
