@@ -24,10 +24,7 @@
             </button>
             <div v-if="isMcpSectionOpen" class="skills-embedded-body">
               <p class="directory-empty">OAuth callbacks run on the App Server host. If browser login cannot connect to localhost, forward the callback port separately or run <code>codex mcp login &lt;name&gt;</code> on that host, then reload MCPs. Forwarding the WebSocket port alone is insufficient.</p>
-              <div v-if="!supportsMcps" class="directory-empty">
-                MCP status APIs unavailable in this Codex CLI. Update Codex CLI to inspect MCP servers.
-              </div>
-              <div v-else-if="mcpError" class="directory-error">{{ mcpError }}</div>
+              <div v-if="mcpError" class="directory-error">{{ mcpError }}</div>
               <div v-else-if="isLoadingMcps" class="directory-loading">Loading MCP servers...</div>
               <div v-else-if="visibleMcpServers.length === 0" class="directory-empty">No MCP servers configured.</div>
               <div v-else class="mcp-skill-grid">
@@ -73,14 +70,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { getMethodCatalog, listDirectoryMcpServers, reloadDirectoryMcpServers, startDirectoryMcpLogin, type DirectoryMcpServerStatus } from '../../api/codexGateway'
+import { listDirectoryMcpServers, reloadDirectoryMcpServers, startDirectoryMcpLogin, type DirectoryMcpServerStatus } from '../../api/codexGateway'
 import IconTablerChevronRight from '../icons/IconTablerChevronRight.vue'
 import CuratedPlugins from './CuratedPlugins.vue'
 import McpConfiguration from './McpConfiguration.vue'
 const props = defineProps<{ epoch?: number }>()
 
-const methodSet = ref<Set<string>>(new Set())
-const methodsLoaded = ref(false)
 const mcpServers = ref<DirectoryMcpServerStatus[]>([])
 const isLoadingMcps = ref(false)
 const isManualRefreshInFlight = ref(false)
@@ -90,17 +85,13 @@ const mcpLoginServerName = ref('')
 const expandedMcpNames = ref<Set<string>>(new Set())
 const toast = ref<{ text: string; type: 'success' | 'error' } | null>(null)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
-const supportsMcps = computed(() => !methodsLoaded.value || methodSet.value.has('mcpServerStatus/list'))
-const supportsMcpReload = computed(() => methodSet.value.has('config/mcpServer/reload'))
-const supportsMcpLogin = computed(() => methodSet.value.has('mcpServer/oauth/login'))
 const visibleMcpServers = computed(() => [...mcpServers.value].sort((a, b) => a.name.localeCompare(b.name)))
 const mcpStatusByName = computed(() => new Map(mcpServers.value.map((server) => [server.name, server])))
 async function refreshMcps(): Promise<void> {
   if (isManualRefreshInFlight.value) return
   isManualRefreshInFlight.value = true
   try {
-    if (supportsMcpReload.value) await reloadMcps()
-    else await loadMcps()
+    await reloadMcps()
   } finally {
     isManualRefreshInFlight.value = false
   }
@@ -125,7 +116,7 @@ function mcpCardBadgeClass(status: string): string {
 }
 
 function shouldShowMcpLogin(serverName: string): boolean {
-  return supportsMcpLogin.value && getMcpAuthStatus(serverName) === 'notLoggedIn'
+  return getMcpAuthStatus(serverName) === 'notLoggedIn'
 }
 
 function showToast(text: string, type: 'success' | 'error' = 'success'): void {
@@ -140,18 +131,7 @@ function openExternalUrl(rawUrl: string): void {
   window.location.assign(url)
 }
 
-async function loadMethods(): Promise<void> {
-  try {
-    methodSet.value = new Set(await getMethodCatalog())
-  } catch {
-    methodSet.value = new Set()
-  } finally {
-    methodsLoaded.value = true
-  }
-}
-
 async function loadMcps(): Promise<void> {
-  if (!supportsMcps.value) return
   isLoadingMcps.value = true
   mcpError.value = ''
   try {
@@ -164,7 +144,6 @@ async function loadMcps(): Promise<void> {
 }
 
 async function loginMcpServer(serverName: string): Promise<boolean> {
-  if (!supportsMcpLogin.value) return false
   mcpLoginServerName.value = serverName
   try {
     const result = await startDirectoryMcpLogin(serverName)
@@ -198,10 +177,7 @@ function toggleMcpExpanded(name: string): void {
   else next.add(name)
   expandedMcpNames.value = next
 }
-onMounted(async () => {
-  await loadMethods()
-  await loadMcps()
-})
+onMounted(() => { void loadMcps() })
 onUnmounted(() => { if (toastTimer) clearTimeout(toastTimer) })
 </script>
 <style scoped>

@@ -76,7 +76,7 @@ async function run() {
           await new Promise(resolve => setTimeout(resolve, 100))
         }
         assert(ready, output)
-        for (const path of ['/codex-api/git/repository-status', '/codex-api/prompts', '/codex-api/thread-titles', '/codex-api/worktree/create', '/codex-api/worktree/branches', '/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion', '/codex-api/telegram/config', '/codex-api/telegram/configure-bot', '/codex-api/telegram/status', '/codex-api/telegram/test-notification', '/codex-api/worktree/create-permanent', '/codex-api/thread-file-change-fallback', '/codex-api/thread-live-state', '/codex-api/thread-stream-events', '/codex-api/thread-turn-page']) {
+        for (const path of ['/codex-api/git/repository-status', '/codex-api/prompts', '/codex-api/thread-titles', '/codex-api/worktree/create', '/codex-api/worktree/branches', '/codex-api/thread/rollback-files', '/codex-api/github-clone', '/codex-api/local-directory', '/codex-api/projectless-thread-cwd', '/codex-api/project-root-suggestion', '/codex-api/telegram/config', '/codex-api/telegram/configure-bot', '/codex-api/telegram/status', '/codex-api/telegram/test-notification', '/codex-api/worktree/create-permanent', '/codex-api/thread-file-change-fallback', '/codex-api/thread-live-state', '/codex-api/thread-stream-events', '/codex-api/thread-turn-page', '/codex-api/connection-diagnostics', '/codex-api/uploads', '/codex-api/meta/methods']) {
           for (const method of ['GET', 'HEAD', 'POST']) {
             for (const query of ['', '?threadId=fixture-thread']) {
               const retired = await fetch(url + path + query, { method })
@@ -176,14 +176,12 @@ async function run() {
             assert.deepEqual((await next.json()).result, { data: [{ id: 'fixture-hidden', hidden: true, isDefault: false }], nextCursor: null })
           }
         }
-        const metadata = await (await fetch(url + '/codex-api/meta/methods')).json()
-        assert(JSON.stringify(metadata).includes('thread/start'))
         const ws = new WebSocket(url.replace('http:', 'ws:') + '/codex-api/ws')
         const [raw] = await once(ws, 'message', { signal: AbortSignal.timeout(5000) })
         assert.equal(JSON.parse(String(raw)).method, 'ready')
         ws.terminate()
         assert.equal(connections - before, 1)
-        console.log('PASS', dev ? 'pnpm run dev' : 'built CLI', 'HTTP RPC, metadata, browser WS; one upstream connection')
+        console.log('PASS', dev ? 'pnpm run dev' : 'built CLI', 'HTTP RPC and browser WS; one upstream connection')
       } finally {
         const exited = once(child, 'exit')
         process.kill(-child.pid, 'SIGTERM')

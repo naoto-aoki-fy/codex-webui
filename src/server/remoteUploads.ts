@@ -32,25 +32,6 @@ async function withInventory<T>(stateDirectory: string, operation: (records: Upl
   }, join(stateDirectory, 'codexapp-upload-inventory.json'))
 }
 
-/** Shared across profiles because upload roots can be shared. Byte counts cover
- * tracked attempted uploads, not the remote directory; unknown legacy sizes are
- * listed separately. No history scan can prove these files unreferenced. */
-export async function inspectRemoteUploads(stateDirectory: string) {
-  return withInventory(stateDirectory, records => {
-    const trackedBytes = records.reduce((sum, record) => sum + (record.bytes ?? 0), 0)
-    const capacity = capacityBytes()
-    return {
-      accountingScope: 'tracked-attempts-only', trackedBytes, capacityBytes: capacity,
-      unknownSizeCount: records.filter(record => record.bytes === undefined).length,
-      capacityWarning: trackedBytes >= capacity * 0.8,
-      retention: 'indefinite; automatic deletion disabled',
-      cleanup: { eligiblePaths: [] as string[], supported: false, reason: 'Reference and submission status cannot be proven complete across profiles and remote histories. Operator review required; no deletion endpoint is enabled.' },
-      uploads: records.map(record => ({ ...record, protected: true, protectionReason: 'unknown-reference-or-submission-status' })),
-    }
-  })
-}
-
-
 /** Indefinite retention, including unknown outcomes. No automatic deletion:
  * accepted turns and durable history may refer to these files after restart. */
 export async function stageRemoteUpload(
@@ -69,7 +50,7 @@ export async function stageRemoteUpload(
   // consume capacity until an operator audits them. Never retry remote writes.
   await withInventory(stateDirectory, records => {
     const used = records.reduce((sum, record) => sum + (record.bytes ?? 0), 0)
-    if (used + bytes.length > capacityBytes()) throw new Error('Managed upload capacity reached; inspect /codex-api/uploads and audit retained files before raising CODEXUI_UPLOAD_CAPACITY_BYTES')
+    if (used + bytes.length > capacityBytes()) throw new Error('Managed upload capacity reached; audit the retained attachments and local upload inventory before raising CODEXUI_UPLOAD_CAPACITY_BYTES')
     records.push(intent)
   })
   // Record intent before sending a mutation: a lost response can leave a remote file.

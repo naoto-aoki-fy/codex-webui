@@ -118,15 +118,15 @@ it('allows explicitly selected existing folders and preserves legacy session dat
 })
 
 it.each([
-  [-32601, 'Method not found', 'unsupported-api', 'Upgrade the remote Codex'],
-  [-32000, 'ENOENT directory not found', 'missing-path', 'Check the directory'],
-  [-32000, 'EACCES permission denied', 'permission', 'Check the directory'],
-  [-32000, 'transport socket disconnected', 'transport', 'Check the directory'],
-])('diagnoses remote workspace validation errors without starting a thread (%s)', async (code, message, diagnosis, guidance) => {
+  [-32601, 'Method not found', 'Upgrade the remote Codex App Server'],
+  [-32000, 'ENOENT directory not found', 'Check the directory'],
+  [-32000, 'EACCES permission denied', 'Check the directory'],
+  [-32000, 'transport socket disconnected', 'Check the directory'],
+])('diagnoses remote workspace validation errors without starting a thread (%s)', async (code, message, guidance) => {
   rpc.mockRejectedValue(Object.assign(new Error(message), { code }))
   const response = await request('/codex-api/rpc', 'POST', { method: 'thread/start', params: { cwd: '/remote/project' } })
   expect(response.res.statusCode).toBe(502)
-  expect(response.json).toMatchObject({ capability: 'fs/getMetadata', diagnosis })
+  expect(response.json.error).toContain(message)
   expect(response.json.error).toContain(guidance)
   expect(rpc.mock.calls.map(call => call[0])).toEqual(['fs/getMetadata'])
 })

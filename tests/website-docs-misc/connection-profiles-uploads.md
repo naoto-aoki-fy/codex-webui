@@ -18,10 +18,10 @@ Cleanup: stop only disposable servers and delete the disposable state directory.
 Prerequisites: disposable remote fixture filesystem and local state directory, `CODEXUI_UPLOAD_CAPACITY_BYTES=4`.
 
 1. Seed a legacy journal entry with unknown size, stage three bytes using profile one, then attempt two bytes using profile two.
-2. Request `GET /codex-api/uploads` with the same HTTP authentication used by the app.
+2. Read the fixture backend’s `codexapp-upload-inventory.json` after staging.
 3. Simulate a lost write response, inspect again, and inspect the remote fixture's mutation log.
 
-Expected: the second write is rejected before `fs/writeFile`; accounting lists shared profile records and unknown legacy sizes, reports only tracked bytes, and protects every record. Ambiguous writes retain reservation. Cleanup preview is empty, unsupported reason explains missing reference proof, and no `fs/remove` is called. Existing uploads are never test targets. Automated coverage: `src/server/remoteUploads.test.ts`.
+Expected: the second write is rejected before `fs/writeFile`; the inventory keeps shared profile records, including the legacy record with unknown size. Ambiguous writes retain their byte reservation. No `fs/remove` is called. Existing uploads are never test targets. Automated coverage: `src/server/remoteUploads.test.ts`.
 
 Cleanup: remove disposable fixture files and local state only. Real two-host verification remains required for filesystem quota behavior and authentication; fixture results do not establish remote quota enforcement or live reference recovery.
 

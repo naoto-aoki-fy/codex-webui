@@ -1,4 +1,4 @@
-import type { RpcEnvelope, RpcMethodCatalog } from '../types/codex'
+import type { RpcEnvelope } from '../types/codex'
 import { CodexApiError, extractErrorMessage } from './codexErrors'
 
 type RpcRequestBody = {
@@ -80,31 +80,6 @@ export async function rpcCall<T>(method: string, params?: unknown, options?:{con
     })
   }
   return envelope.result
-}
-
-export async function fetchRpcMethodCatalog(): Promise<string[]> {
-  const response = await fetch('/codex-api/meta/methods')
-
-  let payload: unknown = null
-  try {
-    payload = await response.json()
-  } catch {
-    payload = null
-  }
-
-  if (!response.ok) {
-    throw new CodexApiError(
-      extractErrorMessage(payload, `Method catalog failed with HTTP ${response.status}`),
-      {
-        code: 'http_error',
-        method: 'meta/methods',
-        status: response.status,
-      },
-    )
-  }
-
-  const catalog = payload as RpcMethodCatalog
-  return Array.isArray(catalog.data) ? catalog.data : []
 }
 
 function toNotification(value: unknown): RpcNotification | null {

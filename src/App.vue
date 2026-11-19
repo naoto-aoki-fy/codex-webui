@@ -334,7 +334,7 @@
       </nav>
       <div class="settings-content">
         <section v-if="settingsLoaded" v-show="settingsCategory==='Codex account'" aria-label="Codex account">
-              <AccountSettingsPanel :epoch="operationEpoch" :warnings="diagnosticWarnings"
+              <AccountSettingsPanel :epoch="operationEpoch"
                 :auth="backendAuthentication" :status="nativeAuthenticationStatus"
                 :change-blocked="nativeAccountChangeBlocked"
               />
@@ -529,7 +529,6 @@ const {
   nativeDeletion,ensureNativeDeletion,
   nativeShell,ensureNativeShell,
   compaction, review,
-  diagnosticWarnings,
   forkThreadById,
   forkNativeThreadById,
   renameThreadById,

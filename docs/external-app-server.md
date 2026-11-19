@@ -43,25 +43,10 @@ The minimum supported deployment baseline is Codex 0.169.0 with the required
 The implementation uses versioned protocol types generated with Codex 0.167.2
 (`pnpm run generate:project-file-protocol`). This is the verified schema baseline,
 not a claim that every external server implements these experimental APIs.
-The packaged method picker is advisory, not runtime capability negotiation.
-Use **Settings → Account → Check remote compatibility** (or authenticated
-`GET /codex-api/connection-diagnostics?probe=1`) for connection-scoped evidence.
-The initialization response contains platform/home metadata, not an authoritative
-method-capability list. Only JSON-RPC `-32601` establishes unsupported; a valid
-response establishes supported. Path, permission, transport/deadline and malformed
-response failures are diagnosed separately and otherwise retain unknown support.
-A previously successful API can remain supported while a particular path is denied.
-Checks use the configured initial directory or a saved workspace, and perform only
-metadata/directory reads, unmatched fuzzy search and `git --version`. Concurrent
-checks coalesce. File reads are observed during actual previews; create/write
-support stays unknown until a user-requested upload. Git API support and Git
-executable availability are reported separately. Evidence resets on disconnect;
-late results cannot update the next generation. An interrupted check asks for retry.
-Missing required metadata APIs produce upgrade guidance before thread creation.
-Optional upload/search/Git failures do not disable conversation features.
-There is no local
-filesystem, git, rg, credential or process fallback. Permissions and approval
-failures are returned from B. Upgrade B if its protocol lacks a required method.
+Use the normal workflow to verify support. Missing native directory validation
+produces upgrade guidance before thread creation. Individual upload, search and
+Git failures remain visible when those actions are requested. The backend uses
+the remote filesystem and tools, and returns errors from the App Server.
 
 - Browsing, validation, preview and reads: `fs/getMetadata`, `fs/readDirectory`,
   `fs/readFile`. Paths retain remote Windows or POSIX lexical semantics.
@@ -111,19 +96,14 @@ unavailable. A's temporary directory is never used for remote uploads.
 
 Retention is **indefinite**, including abandoned and unknown-outcome uploads.
 A reserves attempted bytes in a locked, atomically replaced shared inventory before
-writing on B and also appends its local intent journal. `GET /codex-api/uploads`
-and the compatibility panel expose inventory, tracked-byte usage, unknown legacy
-sizes and a cleanup preview. `CODEXUI_UPLOAD_CAPACITY_BYTES` defaults to 1073741824
-(1 GiB), shared across all profiles in A's state directory; at 80% a warning is
-reported. This is a tracked-attempt budget, not remote directory accounting or a
-filesystem quota. Failed writes retain their reservations. Legacy journal entries
-are imported once without dropping unknown sizes. Shared roots require shared
-protection: a profile-local scan cannot authorize deletion of another profile's files.
+writing on B and also appends its local intent journal. The existing inventory
+file under the backend's state directory records tracked attempts.
+`CODEXUI_UPLOAD_CAPACITY_BYTES` defaults to 1073741824 (1 GiB) and is shared across
+all profiles in that directory. Failed writes retain their reservations. Legacy
+journal entries with unknown sizes remain outside the byte total.
 
-Automatic deletion is disabled. The preview is empty and no deletion endpoint is
-enabled: complete reference/submission status cannot be established from partial
-history, drafts, other clients or profiles. No deletion was needed to verify this
-work. Follow the [operator-assisted audit procedure](connection-profiles-uploads.md#conservative-cleanup)
+Automatic deletion is disabled. Follow the
+[operator-assisted audit procedure](connection-profiles-uploads.md#conservative-cleanup)
 on B; retain anything uncertain. Age and failed transfer status do not prove safety.
 
 The pinned `fs/readFile` accepts only a path and returns whole-file Base64,

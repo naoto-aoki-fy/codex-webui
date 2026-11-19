@@ -1188,11 +1188,6 @@
   @apply text-zinc-200 hover:bg-zinc-800;
 }
 
-.connection-diagnostics { margin: 0.75rem 0; font-size: 0.75rem; color: #52525b; overflow-wrap: anywhere; }
-.connection-diagnostics button { padding: 0.4rem 0.6rem; border: 1px solid #d4d4d8; border-radius: 0.5rem; background: #fff; color: #27272a; }
-.connection-diagnostics li { margin: 0.5rem 0; }
-:root.dark .connection-diagnostics { color: #d4d4d8; }
-:root.dark .connection-diagnostics button { background: #27272a; color: #f4f4f5; border-color: #52525b; }
 
 .connection-recovery-status {
   display: flex;
@@ -1255,7 +1250,6 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 :is(.permanent-deletion, .config-inspection, .native-shell) input:not([type="checkbox"]):focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 :root.dark :is(.permanent-deletion, .config-inspection, .native-shell) input:not([type="checkbox"]) { border-color: #71717a; background: #27272a; color: #f4f4f5; }
 
-.diagnostic-report { white-space: pre-wrap; max-height: 200px; overflow: auto; font-size: 11px; }
 
 .execution-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
 .execution-details summary { cursor: pointer; overflow-wrap: anywhere; }

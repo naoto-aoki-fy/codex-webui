@@ -201,8 +201,7 @@ it('coalesces notification bursts and shares automatic recovery with every brows
   expect(f.wire.mock.calls.filter(([m])=>m==='account/read')).toHaveLength(1)
   expect(f.wire.mock.calls.filter(([m])=>m==='accountSession/list')).toHaveLength(1)
   expect(first).toEqual(second)
-  const records=f.client.getAuthenticationDiagnostics();expect(records.length).toBeLessThanOrEqual(32)
-  expect(JSON.stringify(records)).not.toMatch(/fixture@example|session-1|workspace-1|authUrl|loginId/)
+  expect(JSON.stringify(first)).not.toMatch(/session-1|workspace-1|authUrl|accessToken/)
  }finally{a();b();f.client.dispose()}
 })
 it('automatically checks the latest invalidation after discarding an older verification result',async()=>{
@@ -213,7 +212,6 @@ it('automatically checks the latest invalidation after discarding an older verif
   f.emit('account/updated');await vi.waitFor(()=>expect(finish).toBeTypeOf('function'))
   f.emit('account/updated');finish({account:{type:'chatgpt'},requiresOpenaiAuth:true})
   await vi.waitFor(()=>expect(f.peek().phase).toBe('ready'))
-  expect(f.client.getAuthenticationDiagnostics().some(r=>r.reason==='verification-superseded')).toBe(true)
   expect(f.wire.mock.calls.filter(([m])=>m==='account/read')).toHaveLength(3)
  }finally{f.client.dispose()}
 })
@@ -276,7 +274,7 @@ it.each(['signedOut','failure','malformed','external'] as const)('handles %s ver
   const phase=outcome==='external'?'reconciliation':outcome==='signedOut'?'signedOut':'unknown'
   await vi.waitFor(()=>expect(f.peek().phase).toBe(phase))
   const reads=f.wire.mock.calls.length;await new Promise(r=>setTimeout(r,70));expect(f.wire.mock.calls).toHaveLength(reads)
-  expect(JSON.stringify(f.client.getAuthenticationDiagnostics())).not.toContain('private upstream detail')
+  expect(JSON.stringify(f.peek())).not.toContain('private upstream detail')
  }finally{f.client.dispose()}
 })
 it('preserves automatic readiness for a provider that does not require OpenAI authentication',async()=>{
