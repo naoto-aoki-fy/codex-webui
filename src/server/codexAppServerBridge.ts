@@ -596,7 +596,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         if (body.method.startsWith('model-preferences/')) {
           const result = body.method === 'model-preferences/read' ? await modelPreferences.read()
             : body.method === 'model-preferences/update' ? await modelPreferences.update(body.params)
-            : body.method === 'model-preferences/migrate' ? await modelPreferences.migrate(body.params)
             : null
           if (!result) { setJson(res, 400, { error: 'Unknown model preferences method' }); return }
           if (body.method !== 'model-preferences/read') publishPreferences(result)

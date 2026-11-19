@@ -25,7 +25,6 @@ function decode(raw: Record<string, unknown>): ModelPreferences {
   const state = emptyModelPreferences()
   if (raw.schemaVersion !== 1) return state
   state.revision = Number.isSafeInteger(raw.revision) && Number(raw.revision) >= 0 ? Number(raw.revision) : 0
-  state.initialized = raw.initialized === true
   for (const key of ['preferred', 'lastUsed'] as const) {
     try { if (raw[key]) state[key] = settings(raw[key]) } catch { /* Ignore malformed fields. */ }
   }
@@ -44,7 +43,6 @@ function decode(raw: Record<string, unknown>): ModelPreferences {
       }
     }
   }
-  state.initialized ||= !!state.preferred || !!state.lastUsed || Object.keys(state.reasoningByModel).length > 0 || Object.keys(state.modelUsage).length > 0
   return state
 }
 
@@ -57,7 +55,6 @@ export class ModelPreferencesStore {
     return updateCodexGlobalState(raw => {
       const state = decode(raw)
       if (!change(state, raw)) return state
-      state.initialized = true
       state.revision++
       Object.assign(raw, state)
       return state
@@ -74,16 +71,6 @@ export class ModelPreferencesStore {
       if (preferred) state.preferred = preferred
       if (reasoning) state.reasoningByModel[preferenceModelKey(reasoning.providerId as string, reasoning.modelId as string)] = reasoning.effort as string
       return true
-    })
-  }
-
-  async migrate(payload: unknown): Promise<ModelPreferences> {
-    return this.mutate(state => {
-      if (state.initialized) return false
-      const p = record(payload)
-      try { if (p.preferred) state.preferred = settings(p.preferred) } catch { /* Invalid legacy choices are optional. */ }
-      state.reasoningByModel = decode({ schemaVersion: 1, reasoningByModel: p.reasoningByModel }).reasoningByModel
-      return true // Claim initialization even when this browser has no legacy data.
     })
   }
 

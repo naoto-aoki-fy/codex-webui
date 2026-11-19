@@ -3,12 +3,9 @@ import { profileStorageKey } from '../utils/browserConnectionProfile'
 import type { CollaborationModeKind, UiThreadTokenUsage } from '../types/codex'
 
 export const SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY = 'codex-web-local.selected-model-by-context.v1'
-export const REASONING_BY_MODEL_STORAGE_KEY = 'codex-web-local.reasoning-by-provider-model.v1'
 export const LEGACY_SELECTED_MODEL_STORAGE_KEY = 'codex-web-local.selected-model-id.v1'
 export const COLLABORATION_MODE_STORAGE_KEY = 'codex-web-local.collaboration-mode-by-context.v1'
-export const LEGACY_COLLABORATION_MODE_STORAGE_KEY = 'codex-web-local.collaboration-mode.v1'
 export const NEW_THREAD_COLLABORATION_MODE_CONTEXT = '__new-thread__'
-// Retain the context key for migration; values may encode a provider/model pair.
 export const NEW_THREAD_MODEL_CONTEXT = '__new-thread-provider__::codex'
 
 function normalizeCollaborationMode(value: unknown): CollaborationModeKind {
@@ -106,13 +103,6 @@ function loadLegacySelectedModelMap(): Record<string, string> {
   return next
 }
 
-export function loadLegacyGlobalCollaborationMode(): CollaborationModeKind {
-  try {
-    return typeof window === 'undefined' ? 'default'
-      : normalizeCollaborationMode(window.localStorage.getItem(profileStorageKey(LEGACY_COLLABORATION_MODE_STORAGE_KEY)))
-  } catch { return 'default' }
-}
-
 export function readSelectedModel(
   state: Record<string, string>,
   threadId: string,
@@ -125,22 +115,6 @@ export function readSelectedModel(
 
 export function saveSelectedModelMap(state: Record<string, string>, previous: Record<string, string> = {}): void {
   savePreferenceRecords(profileStorageKey('codex-web-local.selected-model-by-context.v2'), state, previous)
-}
-
-export function loadReasoningPreferences(): Record<string, string> {
-  const next = createStringKeyedRecord<string>()
-  if (typeof window === 'undefined') return next
-  try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(profileStorageKey(REASONING_BY_MODEL_STORAGE_KEY)) || '{}')
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      for (const [key, value] of Object.entries(parsed)) {
-        if (typeof value === 'string') next[key] = value
-      }
-    }
-  } catch {
-    // Missing, malformed, or unavailable storage uses model capability defaults.
-  }
-  return next
 }
 
 export function loadSelectedCollaborationModeMap(): Record<string, CollaborationModeKind> {

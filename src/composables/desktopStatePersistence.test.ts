@@ -20,10 +20,8 @@ describe('desktop persistence compatibility', () => {
     const keys = Object.entries(persistence).filter(([name]) => name.endsWith('_STORAGE_KEY'))
     expect(Object.fromEntries(keys)).toEqual({
       SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY: 'codex-web-local.selected-model-by-context.v1',
-      REASONING_BY_MODEL_STORAGE_KEY: 'codex-web-local.reasoning-by-provider-model.v1',
       LEGACY_SELECTED_MODEL_STORAGE_KEY: 'codex-web-local.selected-model-id.v1',
       COLLABORATION_MODE_STORAGE_KEY: 'codex-web-local.collaboration-mode-by-context.v1',
-      LEGACY_COLLABORATION_MODE_STORAGE_KEY: 'codex-web-local.collaboration-mode.v1',
     })
     expect(persistence.toThreadContextId(' t ')).toBe('t')
     expect(persistence.toThreadContextId(' ')).toBe('__new-thread__')
@@ -51,11 +49,9 @@ describe('desktop persistence compatibility', () => {
     expect(persistence.loadSelectedModelMap()).toEqual({})
   })
 
-  it('keeps context-specific collaboration and untrimmed reasoning preferences', () => {
+  it('keeps context-specific collaboration preferences', () => {
     const mock = storage({
       [persistence.COLLABORATION_MODE_STORAGE_KEY]: '{"t":"plan","other":"default","__proto__":"plan"}',
-      [persistence.LEGACY_COLLABORATION_MODE_STORAGE_KEY]: 'plan',
-      [persistence.REASONING_BY_MODEL_STORAGE_KEY]: '{"codex::m":" high ","__proto__":"low","invalid":4}',
     })
     const state = persistence.loadSelectedCollaborationModeMap()
     expect(persistence.readSelectedCollaborationMode(state, 't')).toBe('plan')
@@ -66,11 +62,6 @@ describe('desktop persistence compatibility', () => {
     expect(next).not.toBe(state)
     expect(next.t).toBeUndefined()
     persistence.saveSelectedCollaborationModeMap(next, state)
-    expect(mock.removeItem).not.toHaveBeenCalledWith(persistence.LEGACY_COLLABORATION_MODE_STORAGE_KEY)
-    const reasoning = persistence.loadReasoningPreferences()
-    expect(Object.getPrototypeOf(reasoning)).toBeNull()
-    expect(reasoning['codex::m']).toBe(' high ')
-    expect(reasoning.__proto__).toBe('low')
     mock.removeItem(persistence.COLLABORATION_MODE_STORAGE_KEY)
     expect(Object.keys(persistence.loadSelectedCollaborationModeMap())).toEqual([])
   })
@@ -89,7 +80,7 @@ describe('desktop persistence compatibility', () => {
     expect(persistence.normalizeThreadTokenUsage({ total: {}, last: {} })?.remainingContextPercent).toBeNull()
   })
 
-  const forgivingLoaders = [persistence.loadReasoningPreferences, persistence.loadSelectedCollaborationModeMap]
+  const forgivingLoaders = [persistence.loadSelectedCollaborationModeMap]
   it('keeps malformed and unsupported values harmless for forgiving loaders', () => {
     for (const raw of ['{', 'null', '42', 'true', '"text"']) {
       const mock = storage()

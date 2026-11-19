@@ -54,9 +54,6 @@ Actions:
    Refresh discovery, reload, and then restore the provider and refresh again.
 7. With a paginated catalog, inspect subsequent `model/list` requests. Repeat
    against an older server that rejects provider listing or provider parameters.
-8. Repeat using legacy bare model and `reasoning-by-provider-model.v1` storage
-   preferences. Verify they are interpreted against the server's configured
-   provider without destroying saved preferences during failures.
 
 Expected results:
 - Options show `Provider display name — Model display name`; identical model IDs

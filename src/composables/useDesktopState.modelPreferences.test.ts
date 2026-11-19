@@ -52,13 +52,10 @@ beforeEach(() => {
   vi.mocked(getAvailableModelIds).mockReset().mockImplementation(async () => ({ ids: [key('openai', 'A'), key('openai', 'B')], models: reasoningCatalog.value }))
   vi.mocked(rpcCall).mockReset().mockImplementation(async (method, payload) => {
     const p = payload as any
-    if (method === 'model-preferences/migrate' && !backend.initialized) {
-      backend.initialized = true; backend.preferred = p.preferred ?? null; backend.reasoningByModel = p.reasoningByModel ?? {}; backend.revision++
-    }
     if (method === 'model-preferences/update') {
       if (p.preferred) backend.preferred = p.preferred
       if (p.reasoning) backend.reasoningByModel[preferenceModelKey(p.reasoning.providerId, p.reasoning.modelId)] = p.reasoning.effort
-      backend.initialized = true; backend.revision++; notify()
+      backend.revision++; notify()
     }
     return structuredClone(backend)
   })
@@ -69,7 +66,7 @@ afterEach(async () => {
 })
 
 it('restores the last accepted model, effort and collaboration mode in a fresh browser over stale local preferences', async () => {
-  backend = { ...backend, initialized: true, revision: 4, lastUsed: settings(), preferred: settings('A') }
+  backend = { ...backend, revision: 4, lastUsed: settings(), preferred: settings('A') }
   local.set(modelKey, JSON.stringify({ '__new-thread-provider__::codex': key('openai', 'A') }))
   local.set(effortKey, JSON.stringify({ '["openai","B"]': 'medium' }))
   const state = create(), displayed = computed(() => state.readModelIdForThread(''))
@@ -78,20 +75,6 @@ it('restores the last accepted model, effort and collaboration mode in a fresh b
   expect(state.readReasoningEffortForThread('')).toBe('high')
   expect(state.readCollaborationModeForThread('').toString()).toBe('plan')
   expect(vi.mocked(rpcCall).mock.calls.map(([m]) => m)).toEqual(['model-preferences/read'])
-})
-
-it('migrates legacy defaults and provider-scoped reasoning once without importing fake usage', async () => {
-  local.set(modelKey, JSON.stringify({ '__new-thread-provider__::codex': 'B', existing: key('openai', 'A') }))
-  local.set(effortKey, JSON.stringify({ '["codex","B"]': 'high' }))
-  local.set(usageKey, '["B", "A"]')
-  const state = create(); await state.refreshAll(options)
-  expect(state.readModelIdForThread('')).toBe(key('openai', 'B'))
-  expect(state.readReasoningEffortForThread('')).toBe('high')
-  expect(backend.modelUsage).toEqual({})
-  local.set(modelKey, JSON.stringify({ '__new-thread-provider__::codex': 'A' }))
-  const reopened = create(); await reopened.refreshAll(options)
-  expect(reopened.readModelIdForThread('')).toBe(key('openai', 'B'))
-  expect(vi.mocked(rpcCall).mock.calls.filter(([m]) => m.endsWith('/migrate'))).toHaveLength(1)
 })
 
 it('synchronizes two live sessions through revisioned notifications with no polling', async () => {
@@ -127,7 +110,6 @@ it('preserves per-thread choices and the provider guard when shared defaults cha
 })
 
 it('keeps the full catalog, orders accepted usage, and never records usage on selection', async () => {
-  backend.initialized = true
   backend.modelUsage[preferenceModelKey('openai', 'B')] = { providerId: 'openai', modelId: 'B', lastUsedAt: '2026-11-16T01:30:00.000Z', usageCount: 2 }
   const state = create(); await state.refreshAll(options)
   expect(state.availableModelIds.value).toEqual([key('openai', 'B'), key('openai', 'A')])
@@ -138,7 +120,7 @@ it('keeps the full catalog, orders accepted usage, and never records usage on se
 })
 
 it('restores an unavailable saved provider/model when it returns without replacing the saved preference', async () => {
-  backend.initialized = true; backend.lastUsed = settings('missing', 'offline')
+  backend.lastUsed = settings('missing', 'offline')
   const state = create(); await state.refreshAll(options)
   expect(state.readModelIdForThread('')).toBe(key('openai', 'A'))
   expect(state.availableModelIds.value).not.toContain(key('offline', 'missing'))
@@ -164,14 +146,14 @@ it('restores provider-specific efforts after recreation without writing global b
 })
 
 it('uses capability defaults for unsupported saved effort without destroying it', async () => {
-  backend.initialized = true; backend.preferred = settings('A'); backend.reasoningByModel['["openai","A"]'] = 'xhigh'
+  backend.preferred = settings('A'); backend.reasoningByModel['["openai","A"]'] = 'xhigh'
   const state = create(); await state.refreshAll(options)
   expect(state.readReasoningEffortForThread('')).toBe('low')
   expect(backend.reasoningByModel['["openai","A"]']).toBe('xhigh')
 })
 
 it('recovers communication failures on reconnect and does not write stale browser defaults', async () => {
-  backend.initialized = true; backend.lastUsed = settings()
+  backend.lastUsed = settings()
   const request = vi.mocked(rpcCall); request.mockRejectedValueOnce(new Error('offline'))
   const state = create(); await state.refreshAll(options)
   expect(state.modelPreferencesError.value).toContain('offline')
@@ -183,7 +165,7 @@ it('recovers communication failures on reconnect and does not write stale browse
 
 
 it('uses restored accepted settings when creating a new conversation', async () => {
-  backend.initialized = true; backend.lastUsed = settings()
+  backend.lastUsed = settings()
   const gateway = await import('../api/codexGateway')
   const start = vi.spyOn(gateway, 'startThread').mockResolvedValue({ threadId: 'new', model: 'B', modelProvider: 'openai' })
   const turn = vi.spyOn(gateway, 'startThreadTurn').mockResolvedValue('accepted')
@@ -195,7 +177,6 @@ it('uses restored accepted settings when creating a new conversation', async () 
 })
 
 it('does not reorder usage or write browser state on rejected submissions', async () => {
-  backend.initialized = true
   local.set(modelKey, JSON.stringify({ existing: key('openai', 'A') }))
   const gateway = await import('../api/codexGateway')
   vi.spyOn(gateway, 'resumeThread').mockResolvedValue({ model: 'A', modelProvider: 'openai' } as Awaited<ReturnType<typeof gateway.resumeThread>>)
@@ -225,7 +206,7 @@ it('isolates remembered reasoning for duplicate model IDs across providers', asy
 })
 
 it('keeps accepted Plan usage historical while restoring Default for subsequent composers', async () => {
-  backend = { ...backend, initialized: true, revision: 4, lastUsed: settings(), preferred: settings('A') }
+  backend = { ...backend, revision: 4, lastUsed: settings(), preferred: settings('A') }
   const state = create()
   await state.refreshAll(options)
   state.setSelectedCollaborationModeForThread('existing', 'plan')

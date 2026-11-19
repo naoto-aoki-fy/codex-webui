@@ -68,7 +68,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (rpc === 'account/read') result = { account: { type: 'apiKey' } }
     if (rpc === 'native-authentication/read') result = { phase: 'ready', blocking: false, revision: 1 }
     if (rpc === 'config/read') result = { config: { model: 'A', model_provider: 'P' } }
-    if (rpc === 'model-preferences/read') result = { schemaVersion: 1, revision: 1, initialized: true,
+    if (rpc === 'model-preferences/read') result = { schemaVersion: 1, revision: 1,
       preferred: { providerId: 'P', modelId: 'A', reasoningEffort: '', collaborationMode: 'default' },
       lastUsed: null, reasoningByModel: {}, modelUsage: {} }
     if (rpc === 'threadSection/list') result = { data: [] }
@@ -203,7 +203,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     assert.equal(calls.filter(call => mutations.has(call.method)).length, 0, 'cancel must not create or generate')
     assert.equal(await page.locator('textarea').inputValue(), 'Unsent source draft')
     assert.equal(await page.locator('.thread-composer').getByRole('button', { name: composerModelLabel, exact: true }).count(), 1, 'cancel must preserve the composer selection')
-    assert.equal(calls.filter(call => ['config/value/write', 'config/batchWrite', 'model-preferences/update', 'model-preferences/migrate'].includes(call.method)).length, 0, 'opening and cancellation must not write global preferences')
+    assert.equal(calls.filter(call => ['config/value/write', 'config/batchWrite', 'model-preferences/update'].includes(call.method)).length, 0, 'opening and cancellation must not write global preferences')
     await choosePortable()
     if (pendingPreparation) await releasePreparation()
     if (prepareFails) {
