@@ -30,7 +30,7 @@ const help = `Usage:
 Dry run is the default. A profile must be supplied with --profile or CODEXUI_CONNECTION_PROFILE unless using --all-profiles.
 --shared includes backend-wide login sessions. --build adds generated artifacts in this checkout.
 Local reset preserves upload ledgers. Run remote mode on the App Server host to remove explicitly named uploads.
---offline confirms that all writers for the selected paths are stopped. Execution requires Linux.`
+--offline confirms that all writers for the selected paths are stopped. Linux-only execution uses /proc for directory anchors and mount checks.`
 
 const quote = value => JSON.stringify(value)
 const line = (verb, path, detail = '') => console.log(`${verb} ${quote(path)}${detail ? ` (${detail})` : ''}`)

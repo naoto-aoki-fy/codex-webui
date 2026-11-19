@@ -2,8 +2,12 @@
 
 Run the reset tool from the source checkout with the same OS account and storage
 environment as the WebUI backend. On Linux that includes any XDG overrides.
-The default is a dry run. Review the listed paths before executing on Linux,
-after stopping WebUI processes and builds that use the selected directories.
+The default is a dry run. Reset execution is **Linux-only** for both WebUI data
+and App Server uploads. It uses `/proc/self/fd` to anchor deletion to opened
+directories, `/proc/self/mountinfo` to reject mounted targets, and per-user
+maintenance leases to exclude active writers. WebUI storage paths still
+resolve on Windows and macOS. On Linux, review the listed paths and stop WebUI
+processes and builds that use the selected directories before executing.
 
 ```sh
 pnpm reset:webui --profile workstation-b
