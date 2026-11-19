@@ -8,7 +8,7 @@ it('recovers a lost create acknowledgement using only a durable receipt', async 
     const method = JSON.parse(init.body).method
     calls.push(method)
     if (method === 'conversation-transfer/create') throw new Error('lost acknowledgement')
-    return new Response(JSON.stringify({ result: { stage: 'ready', threadId: 'destination', model: 'C', modelProvider: 'Q', warnings: [], draftText: 'Restored prompt' } }))
+    return new Response(JSON.stringify({ result: { stage: 'ready', threadId: 'destination', model: 'C', modelProvider: 'Q', draftText: 'Restored prompt' } }))
   }))
   await expect(createConversationTransfer('snapshot', key)).resolves.toMatchObject({ threadId: 'destination', draftText: 'Restored prompt' })
   expect(calls).toEqual(['conversation-transfer/create', 'conversation-transfer/status'])

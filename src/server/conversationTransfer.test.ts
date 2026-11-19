@@ -122,19 +122,18 @@ describe('portable conversation transfer', () => {
       { type: 'agentMessage', text: '' },
       { type: 'agentMessage', text: '  \n  ' },
     ] }]
-    const result = convertTransferHistory(history, 'source')
-    const items = portableItems(result.messages)
+    const messages = convertTransferHistory(history, 'source')
+    const items = portableItems(messages)
     expect(items.map(i => i.role)).toEqual(['user', 'assistant'])
     expect(items[0]?.content).toEqual([{ type: 'input_text', text: 'question 0' }])
     expect(items[1]?.content).toEqual([{ type: 'output_text', text: 'answer 0' }])
     expect(JSON.stringify(items)).not.toContain('SECRET')
     expect(items.every(i => i.type === 'message' && Object.keys(i).length === 3)).toBe(true)
-    expect(result.warnings).toEqual([])
-    expect(result.messages.map(message => message.text)).toEqual(['question 0', 'answer 0'])
+    expect(messages.map(message => message.text)).toEqual(['question 0', 'answer 0'])
   })
   it('keeps adjacent messages, Markdown, code blocks and whitespace unchanged around excluded content', () => {
     const texts = ['  Hello\n\n**Explain** this code.  ', '```ts\nconst value = 1\n```\n', 'Imported: user-authored text [Attachment omitted] stays verbatim.', 'A separate consecutive user message.']
-    const { messages, warnings } = convertTransferHistory([{ items: [
+    const messages = convertTransferHistory([{ items: [
       { type: 'userMessage', content: [{ type: 'image', url: 'SECRET' }, { type: 'text', text: texts[0] }, { type: 'attachment', path: 'SECRET' }] },
       { type: 'commandExecution', aggregatedOutput: 'SECRET' },
       { type: 'agentMessage', text: texts[1] },
@@ -144,7 +143,6 @@ describe('portable conversation transfer', () => {
     expect(messages.map(message => message.text)).toEqual(texts)
     expect(messages.map(message => message.role)).toEqual(['user', 'assistant', 'user', 'user'])
     expect(portableItems(messages).map(item => item.content[0]?.text)).toEqual(texts)
-    expect(warnings).toEqual([])
   })
   it('injects and persists exactly the same text-only cutoff through reopening and a later transfer', async () => {
     const rpc = server()
@@ -157,7 +155,6 @@ describe('portable conversation transfer', () => {
     rpc.mockImplementationOnce(async () => ({ thread: { cwd: '/workspace', turns: sourceTurns } }))
     const transfers = createConversationTransfers(rpc)
     const prepared = await transfers.prepare('source', { turnId: 'turn-1' })
-    expect(prepared.warnings).toEqual([])
     expect(prepared.messageCount).toBe(4)
     await transfers.create(prepared.id, 'model', 'provider')
     const items = rpc.mock.calls.find(call => call[0] === 'thread/inject_items')![1].items
@@ -166,19 +163,19 @@ describe('portable conversation transfer', () => {
     const payload = await reopened.decorate({ thread: { id: 'destination', turns: [] } })
     expect(normalizeThreadMessagesV2(payload).map(message => message.text)).toEqual(items.map((item: any) => item.content[0].text))
     expect(JSON.stringify(payload)).not.toContain('SECRET')
-    expect((await reopened.status(prepared.id)).warnings).toEqual([])
+    expect(await reopened.status(prepared.id)).toMatchObject({ stage: 'ready', threadId: 'destination' })
     const readOnlyCalls = rpc.mock.calls.length
     await reopened.assertReady('destination')
     expect(rpc.mock.calls).toHaveLength(readOnlyCalls)
     rpc.mockImplementationOnce(async () => ({ thread: { cwd: '/workspace', turns: [] } }))
     const next = await reopened.prepare('destination', { importedMessageIndex: 3 })
     expect(next.messageCount).toBe(4)
-    expect(next.warnings).toEqual([])
   })
   it('prepares before selection and cancellation creates nothing', async () => {
     const rpc = server(); const transfers = createConversationTransfers(rpc)
     const prepared = await transfers.prepare('source')
-    expect(prepared.messageCount).toBe(50)
+    expect(prepared).toEqual({ id: expect.any(String), messageCount: 50, sourceModelProvider: undefined })
+    expect(disk.state['conversation-transfers-v1'][prepared.id]).not.toHaveProperty('warnings')
     expect(rpc.mock.calls.map(c => c[0])).toEqual(['thread/read'])
     await transfers.cancel(prepared.id)
     await expect(transfers.create(prepared.id, 'model', 'provider')).rejects.toThrow('consumed')
@@ -220,18 +217,19 @@ describe('portable conversation transfer', () => {
     expect(normalizeThreadMessagesV2(decorated)[1]?.text).toBe('answer 0')
     expect(rpc.mock.calls).toHaveLength(3)
   })
-  it('imports an existing imported prefix exactly once', async () => {
+  it('imports valid text from an existing prefix exactly once and preserves the source receipt', async () => {
     const rpc = server(); const transfers = createConversationTransfers(rpc)
     const first = await transfers.prepare('source', { turnId: 'turn-0' })
     await transfers.create(first.id, 'model', 'provider')
-    const stored = Object.values(disk.state['conversation-transfers-v1'] as Record<string, any>)[0]!
+    const stored = disk.state['conversation-transfers-v1'][first.id]
     stored.warnings = ['Legacy omission notice']
     stored.messages.push({ role: 'tool', text: 'SECRET', source: 'source' }, { role: 'assistant', text: '', source: 'source' })
+    const original = structuredClone(stored)
     const second = await transfers.prepare('destination', { turnId: 'turn-0' })
-    expect(second.warnings).toEqual([])
     expect(second.messageCount).toBe(4)
     const response = await transfers.prepare('destination', { importedMessageIndex: 1 })
     expect(response.messageCount).toBe(2)
+    expect(disk.state['conversation-transfers-v1'][first.id]).toEqual(original)
   })
   it.each(['unsupported method thread/inject_items', 'timeout: acknowledgement lost'])('fences duplicate creation and uncertain injection: %s', async message => {
     const rpc = server(); const transfers = createConversationTransfers(rpc)
@@ -285,9 +283,9 @@ describe('portable conversation transfer', () => {
 it('converts a 2000-turn history in one bounded linear pass', () => {
   const turns = Array.from({ length: 2000 }, (_, index) => turn(index))
   const start = performance.now()
-  const result = convertTransferHistory(turns, 'source')
-  const bytes = Buffer.byteLength(JSON.stringify(portableItems(result.messages)))
-  expect(result.messages).toHaveLength(4000)
+  const messages = convertTransferHistory(turns, 'source')
+  const bytes = Buffer.byteLength(JSON.stringify(portableItems(messages)))
+  expect(messages).toHaveLength(4000)
   console.log(`Transfer audit: 2000 turns, ${bytes} bytes, ${(performance.now() - start).toFixed(2)}ms; zero RPCs during conversion`)
 })
 it('protects every imported prefix stage from native deletion without modifying receipts or native resources',async()=>{

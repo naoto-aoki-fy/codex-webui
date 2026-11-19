@@ -13,7 +13,7 @@ export function portableItems(messages: PortableMessage[]): PortableItem[] {
 }
 
 /** Construct fresh text-only items. No source item IDs, instructions or tool calls cross this boundary. */
-export function convertTransferHistory(turns: unknown[], source: string): { messages: PortableMessage[]; warnings: string[] } {
+export function convertTransferHistory(turns: unknown[], source: string): PortableMessage[] {
   const messages: PortableMessage[] = []
   for (const value of turns) {
     const turn = record(value)
@@ -31,11 +31,10 @@ export function convertTransferHistory(turns: unknown[], source: string): { mess
       }
     }
   }
-  // Retain the response shape for older clients; omissions never create notices.
-  return { messages, warnings: [] }
+  return messages
 }
 
-type Transfer = { projectId?: string | null; sourceId: string; cwd: string; messages: PortableMessage[]; warnings: string[]; stage: string; destinationId?: string; model?: string; modelProvider?: string; failure?: string; draftText?: string }
+type Transfer = { projectId?: string | null; sourceId: string; cwd: string; messages: PortableMessage[]; stage: string; destinationId?: string; model?: string; modelProvider?: string; failure?: string; draftText?: string }
 const KEY = 'conversation-transfers-v1'
 async function transfers(): Promise<Record<string, Transfer>> { return (await readCodexGlobalState())[KEY] as Record<string, Transfer> || {} }
 async function save(id: string, transfer: Transfer) {
@@ -85,20 +84,19 @@ export function createConversationTransfers(rpc: Rpc) {
       const prefix = importedCutoff === undefined ? imported?.messages || [] : imported!.messages.slice(0, importedCutoff + 1)
       const retainedPrefix = prefix.filter(message => (message.role === 'user' || message.role === 'assistant') && typeof message.text === 'string' && message.text.trim())
         .map(({ role, text, source }) => ({ role, text, source }))
-      const messages = [...retainedPrefix, ...converted.messages]
-      const warnings: string[] = []
+      const messages = [...retainedPrefix, ...converted]
       // Explicit bounded request, never truncate. Destination context limits can be smaller.
       if (Buffer.byteLength(JSON.stringify(portableItems(messages))) > 8 * 1024 * 1024) throw new Error('History exceeds the 8 MiB transfer request limit. No thread was created.')
       if (!messages.length && draftText === undefined) throw new Error('There is no portable conversation history to import. No thread was created.')
       if (typeof thread.cwd !== 'string' || !thread.cwd.trim()) throw new Error('The source has no working directory. Select a source with an existing workspace before transferring.')
       const id = randomUUID()
-      await save(id, { sourceId, cwd: thread.cwd, ...(thread.projectId ? { projectId: thread.projectId } : {}), messages, warnings, ...(draftText !== undefined ? { draftText } : {}), stage: 'prepared' })
-      return { id, warnings, messageCount: messages.length, sourceModelProvider: typeof thread.modelProvider === 'string' ? thread.modelProvider : undefined }
+      await save(id, { sourceId, cwd: thread.cwd, ...(thread.projectId ? { projectId: thread.projectId } : {}), messages, ...(draftText !== undefined ? { draftText } : {}), stage: 'prepared' })
+      return { id, messageCount: messages.length, sourceModelProvider: typeof thread.modelProvider === 'string' ? thread.modelProvider : undefined }
     },
     async status(id: string) {
       const transfer = (await transfers())[id]
       if (!transfer) throw new Error('Transfer record not found')
-      return { stage: transfer.stage, threadId: transfer.destinationId, model: transfer.model, modelProvider: transfer.modelProvider, warnings: [], failure: transfer.failure, ...(transfer.draftText !== undefined ? { draftText: transfer.draftText } : {}) }
+      return { stage: transfer.stage, threadId: transfer.destinationId, model: transfer.model, modelProvider: transfer.modelProvider, failure: transfer.failure, ...(transfer.draftText !== undefined ? { draftText: transfer.draftText } : {}) }
     },
     async cancel(id: string) {
       await updateCodexGlobalState(state => { const rows = state[KEY] as Record<string, Transfer> || {}; if (rows[id]?.stage === 'prepared') delete rows[id] })
@@ -130,7 +128,7 @@ export function createConversationTransfers(rpc: Rpc) {
         if (transfer.messages.length) await rpc('thread/inject_items', { threadId: transfer.destinationId, items: portableItems(transfer.messages) })
         transfer.stage = 'ready'
         await save(id, transfer)
-        return { threadId: transfer.destinationId, ...(transfer.projectId ? { projectId: transfer.projectId } : {}), model, modelProvider, warnings: [], ...(transfer.draftText !== undefined ? { draftText: transfer.draftText } : {}) }
+        return { threadId: transfer.destinationId, ...(transfer.projectId ? { projectId: transfer.projectId } : {}), model, modelProvider, ...(transfer.draftText !== undefined ? { draftText: transfer.draftText } : {}) }
       } catch (error) {
         if (transfer && claimed) {
           transfer.failure = String(error)

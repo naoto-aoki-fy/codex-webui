@@ -883,7 +883,7 @@ describe('response fork publication', () => {
     await vi.waitFor(() => expect(gatewayMocks.createConversationTransfer).toHaveBeenCalled())
     expect(await state.forkThreadById('source', 'snapshot', 'selected-model')).toBe('')
     expect(loadPersistedDraftForThread('fork')).toBeNull()
-    finish({ threadId: 'fork', model: 'different-model', modelProvider: 'Q', draftText: 'Restored **prompt**\nnext line', warnings: [] })
+    finish({ threadId: 'fork', model: 'different-model', modelProvider: 'Q', draftText: 'Restored **prompt**\nnext line' })
     expect(await pending).toBe('fork')
     expect(loadPersistedDraftForThread('fork')?.text).toBe('Restored **prompt**\nnext line')
     state.selectedThreadId.value = 'source'
@@ -922,7 +922,7 @@ describe('response fork publication', () => {
     const pending = state.forkThreadById('source', 'snapshot', 'selected-model')
     await vi.waitFor(() => expect(gatewayMocks.createConversationTransfer).toHaveBeenCalledWith('snapshot', 'selected-model'))
     expect(state.selectedThreadId.value).not.toBe('fork')
-    finish({ threadId: 'fork', cwd: '', model: '', warnings: [], messages: [], hasMoreOlder: true, turnIndexByTurnId: {} })
+    finish({ threadId: 'fork', cwd: '', model: '', messages: [], hasMoreOlder: true, turnIndexByTurnId: {} })
     expect(await pending).toBe('fork')
     expect(state.selectedThreadId.value).toBe('fork')
     expect(gatewayMocks.revertThreadHistory).not.toHaveBeenCalled()
