@@ -52,8 +52,15 @@ async function run() {
         assert.equal(frame.params.modelProvider, 'fixture-provider')
         assert.equal(frame.params.includeHidden, true)
       }
+      if (frame.method === 'process/spawn') {
+        socket.send(JSON.stringify({ id: frame.id, result: {} }))
+        socket.send(JSON.stringify({ method: 'process/exited', params: {
+          processHandle: frame.params.processHandle, exitCode: 0, stdout: '/fixture/remote-user\n', stdoutCapReached: false,
+        } }))
+        return
+      }
       if (frame.method === 'fs/writeFile') files.set(frame.params.path, Buffer.from(frame.params.dataBase64, 'base64'))
-      const result = frame.method === 'initialize' ? { codexHome: '/fixture/core' }
+      const result = frame.method === 'initialize' ? { codexHome: '/fixture/core', platformOs: 'linux' }
         : frame.method === 'fs/getMetadata' ? { isDirectory: true, isSymlink: false }
         : frame.method === 'thread/name/set' ? {}
         : frame.method === 'account/read' ? { account: { type: 'apiKey', apiKey: 'fixture-secret' }, requiresOpenaiAuth: true, authToken: 'fixture-secret' }
@@ -79,9 +86,9 @@ async function run() {
     }
     const shortHostname = hostname().split('.', 1)[0]
     const profileRuns = new Map()
-    for (const { dev, flagProfile, envProfile, profile } of [
-      { dev: false, flagProfile: 'fixture-cli', envProfile: 'fixture-vite', profile: 'fixture-cli' },
-      { dev: true, envProfile: 'fixture-vite', profile: 'fixture-vite' },
+    for (const { dev, flagProfile, envProfile, profile, uploadOverride } of [
+      { dev: false, flagProfile: 'fixture-cli', envProfile: 'fixture-vite', profile: 'fixture-cli', uploadOverride: '/fixture/attachments' },
+      { dev: true, envProfile: 'fixture-vite', profile: 'fixture-vite', uploadOverride: '' },
       { dev: false, profile: shortHostname },
       { dev: true, profile: shortHostname },
     ]) {
@@ -89,8 +96,9 @@ async function run() {
       // Codex is absent on this host; CLI precedence deliberately overrides a refused env URL.
       const env = {
         ...process.env, ...storageEnv, CODEXUI_APP_SERVER_URL: dev ? endpoint : 'ws://127.0.0.1:1',
-        CODEXUI_REMOTE_UPLOAD_DIR: '/fixture/attachments',
       }
+      if (uploadOverride === undefined) delete env.CODEXUI_REMOTE_UPLOAD_DIR
+      else env.CODEXUI_REMOTE_UPLOAD_DIR = uploadOverride
       if (envProfile === undefined) delete env.CODEXUI_CONNECTION_PROFILE
       else env.CODEXUI_CONNECTION_PROFILE = envProfile
       const profileArgs = flagProfile === undefined ? [] : ['--connection-profile', flagProfile]
@@ -162,17 +170,20 @@ async function run() {
         const { path: uploaded, error } = await uploadResponse.json()
         assert.equal(uploadResponse.status, 200, error)
         const uploadMethods = frames.slice(beforeUpload).map(frame => frame.method)
-        assert.equal(uploadMethods.filter(method => method === 'fs/getMetadata').length, 6)
+        assert.equal(uploadMethods.filter(method => method === 'process/spawn').length, uploadOverride ? 0 : 1)
+        assert.equal(uploadMethods.filter(method => method === 'fs/getMetadata').length, uploadOverride ? 6 : 7)
         assert.equal(uploadMethods.includes('config/read'), false)
         assert.deepEqual(uploadMethods.slice(-2), ['fs/createDirectory', 'fs/writeFile'])
         const hash = profileDirectoryName(profile)
-        assert(uploaded.startsWith('/fixture/attachments/codexapp-uploads/' + hash + '/'))
+        const uploadRoot = uploadOverride || '/fixture/remote-user/.codex-webui-uploads'
+        const profileUploadDirectory = uploadRoot + '/codexapp-uploads/' + hash + '/'
+        assert(uploaded.startsWith(profileUploadDirectory))
         assert.equal(files.get(uploaded).toString(), profile)
         const { data } = resolveWebuiStorage({ ...process.env, ...storageEnv }, process.platform, storageEnv.HOME)
         const ledger = JSON.parse(readFileSync(join(data, 'app-servers', hash, 'uploads', 'inventory.json'), 'utf8'))
         assert.equal(ledger.records.length, previousRuns + 1)
         profileRuns.set(profile, previousRuns + 1)
-        assert(ledger.records.every(record => record.path.startsWith('/fixture/attachments/codexapp-uploads/' + hash + '/')))
+        assert(ledger.records.every(record => record.path.startsWith(profileUploadDirectory)))
         assert.deepEqual(readdirSync(storageEnv.CODEX_HOME).sort(), Object.keys(oldFiles).sort())
         for (const [name, raw] of Object.entries(oldFiles)) {
           assert.equal(readFileSync(join(storageEnv.CODEX_HOME, name), 'utf8'), raw)

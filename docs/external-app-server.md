@@ -19,7 +19,6 @@ On A, provide a tunnel in another terminal, then start the built application:
 ```sh
 ssh -N -L 127.0.0.1:14500:127.0.0.1:4500 user@machine-b
 CODEXUI_REMOTE_INITIAL_DIRECTORY=/home/user/projects \
-CODEXUI_REMOTE_UPLOAD_DIR=/home/user/webui-attachments \
   node dist-cli/index.js --host 127.0.0.1 --port 5900 \
   --app-server-url ws://127.0.0.1:14500 --connection-profile machine-b --no-open
 ```
@@ -83,9 +82,11 @@ The returned path is used for both previews
 attachment. A timeout may still have created a file on B; it is never retried.
 
 Uploads have a 20 MiB file limit (21 MiB total multipart request limit) and UUID
-names. Set `CODEXUI_REMOTE_UPLOAD_DIR` on A to an absolute path on B outside its
-Codex home. The dedicated staging area is
-`<CODEXUI_REMOTE_UPLOAD_DIR>/codexapp-uploads/<sha256(ID)>/`.
+names. The upload root defaults to the OS user's `~/.codex-webui-uploads` on B,
+using the native path syntax. Set `CODEXUI_REMOTE_UPLOAD_DIR` on A to override it
+with an absolute path on B outside its Codex home. The staging area is
+`codexapp-uploads/<sha256(ID)>/` under the selected root. See
+[storage and upload configuration](connection-profiles-uploads.md#uploads-on-the-app-server).
 
 Retention is **indefinite**, including abandoned and unknown-outcome uploads.
 A reserves attempted bytes in a locked inventory and appends an intent journal
