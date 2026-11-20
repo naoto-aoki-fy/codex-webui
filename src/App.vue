@@ -236,7 +236,7 @@
                   :live-overlay="liveOverlay"
                   :is-revert-disabled="isForkOperationPending || isRollingBack || isSelectedThreadInProgress || compaction.selectedBusy.value || review.selectedBusy.value"
                   :is-fork-disabled="isForkOperationPending || isRollingBack"
-                  :pending-requests="selectedThreadServerRequests"
+                  :pending-requests="selectedThreadLiveRequests"
                   :pending-question="selectedThreadPendingQuestion"
                   :question-draft="selectedThreadPendingQuestion ? readQuestionDraft(selectedThreadPendingQuestion) : undefined"
                   :question-responses="selectedQuestionResponses"
@@ -258,9 +258,9 @@
                   :in-progress="isSelectedThreadInProgress"
                 />
                 <ThreadPendingRequestPanel
-                  v-if="selectedThreadPendingRequest && !selectedThreadPendingQuestion"
+                  v-if="selectedThreadPendingRequest && selectedThreadPendingRequest !== selectedThreadPendingQuestion"
                   :request="selectedThreadPendingRequest"
-                  :request-count="selectedThreadServerRequests.length"
+                  :request-count="selectedThreadLiveRequests.length"
                   @respond-server-request="onRespondServerRequest"
                 />
                 <p v-if="composerSendMode.queue.value && (nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value)" class="composer-runtime-error" role="alert">
@@ -721,13 +721,12 @@ const composerReasoningEffort = computed(() => readReasoningEffortForThread(comp
 const composerReasoningOptions = computed(() => readReasoningOptionsForThread(composerThreadContextId.value))
 const composerCollaborationMode = computed(() => readCollaborationModeForThread(composerThreadContextId.value))
 const composerSelectedModelId = computed(() => readModelIdForThread(composerThreadContextId.value))
-const selectedThreadPendingRequest = computed<UiServerRequest | null>(() => {
-  const rows = selectedThreadServerRequests.value
-  return rows.length > 0 ? rows[rows.length - 1] : null
-})
+const selectedThreadLiveRequests = computed(() => selectedThreadServerRequests.value.filter(request => !request.questionClosed))
+const selectedThreadPendingRequest = computed<UiServerRequest | null>(() => selectedThreadLiveRequests.value.at(-1) ?? null)
 const selectedThreadPendingQuestion = computed(() => {
   const request = selectedThreadPendingRequest.value
-  return request?.method === 'item/tool/requestUserInput' ? request : null
+  if (request?.method === 'item/tool/requestUserInput') return request
+  return selectedThreadServerRequests.value.filter(row => row.questionClosed).at(-1) ?? null
 })
 function onUpdateQuestionDraft(questionId: string, field: 'choice' | 'text', value: string): void {
   const request = selectedThreadPendingQuestion.value

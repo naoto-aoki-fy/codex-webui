@@ -72,11 +72,12 @@ question must match in order. The bridge consumes raw question results before
 notification delivery and diagnostic buffering.
 
 The initial deadline covers sending the reply and native request closure. Once
-both occur, the attempt stays in memory for the rest of the turn. Successful
-completion starts a fresh deadline for the rollout check. Interruption, failure,
-disconnect, rollback and deletion retire unconfirmed attempts. A closed draft
-stays in the conversation while confirmation is pending. The composer restores
-**Stop** while the turn runs and the sidebar clears its pending-question indicator.
+both occur, the attempt stays in memory until an exact raw result or a terminal
+event arrives. Successful completion starts a fresh deadline for the rollout
+check. Interruption, failure, disconnect, rollback and deletion retire
+unconfirmed attempts. A closed draft stays in the conversation while confirmation
+is pending. The composer restores **Stop** while the turn runs and the sidebar
+clears its pending-question indicator.
 
 WebUI saves ordered, redacted records under
 `app-servers/<sha256(ID)>/question-responses/<sha256(threadId)>.json`

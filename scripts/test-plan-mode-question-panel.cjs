@@ -1,6 +1,6 @@
 // Requires the current checkout on 127.0.0.1:4173. Protocol traffic is stubbed.
 const { mkdirSync, writeFileSync } = require('node:fs')
-const { join } = require('node:path')
+const { join, resolve } = require('node:path')
 const { chromium } = require('playwright')
 const { setup, assert, thread } = require('./approved-fixture.cjs')
 
@@ -109,6 +109,7 @@ async function verify(page, viewport, theme) {
   let historyResponse = null
   let secondHistoryResponse = null
   let finishFailedReply
+  let finishInterruptedReply
   let retryableAttempts = 0
   const turns = [
     { id: 'first-turn', status: 'completed', items: [{ type: 'agentMessage', id: 'first', text: 'Fixture start' }] },
@@ -135,6 +136,7 @@ async function verify(page, viewport, theme) {
   const { calls, emit, errors } = await setup(page, async (body, _page, url) => {
     if (url.pathname.endsWith('/server-requests/respond')) {
       if (body.id === 260) return new Promise(resolve => { finishFailedReply = resolve })
+      if (body.id === 263) return new Promise(resolve => { finishInterruptedReply = resolve })
       if (body.id === 262 && ++retryableAttempts === 1) return { status: 502, json: {
         error: 'Question reply was not sent. Your draft is kept. You can retry.', code: 'question_reply_not_sent',
       } }
@@ -167,11 +169,16 @@ async function verify(page, viewport, theme) {
       if (response && response.json.result.nextCursor !== body.params.cursor) return response
       return { json: { result: { data: [], nextCursor: null } } }
     }
+    if (body.method === 'turn/interrupt') {
+      emit('turn/completed', { threadId: thread.id, turn: { id: body.params.turnId, status: 'interrupted', items: [] } })
+      finishInterruptedReply({ status: 502, json: { error: 'Question reply could not be confirmed. Your draft is kept.' } })
+    }
+    if (body.method === 'turn/start') return { json: { result: { turn: { id: 'follow-up' } } } }
   }, false)
 
   const panel = page.locator('.conversation-list .thread-pending-request')
   const footer = page.locator('.composer-container .thread-pending-request')
-  const heading = panel.getByRole('button', { name: 'Awaiting response', exact: true })
+  const heading = panel.locator('[data-pending-question-heading]')
   const input = page.locator('.thread-composer-input')
   const list = page.locator('.conversation-list')
   const choice = panel.locator('.composer-dropdown-trigger')
@@ -267,8 +274,9 @@ async function verify(page, viewport, theme) {
   }))
   const positionBefore = await readingPosition()
   const requestsBefore = requests.length
+  await heading.evaluate(element => element.focus({ preventScroll: true }))
   await page.keyboard.press('Enter')
-  assert.equal(await heading.getAttribute('aria-expanded'), 'false')
+  await heading.and(page.locator('[aria-expanded="false"]')).waitFor()
   assert.equal(await panel.innerText(), 'Awaiting response')
   assert.equal(await input.isVisible(), false)
   assert.equal(await heading.evaluate(element => element === document.activeElement), true)
@@ -276,7 +284,7 @@ async function verify(page, viewport, theme) {
   assert.deepEqual(await readingPosition(), positionBefore)
   await page.screenshot({ path: minimized })
   await page.keyboard.press('Space')
-  assert.equal(await heading.getAttribute('aria-expanded'), 'true')
+  await heading.and(page.locator('[aria-expanded="true"]')).waitFor()
   assert.equal(await heading.evaluate(element => element === document.activeElement), true)
   assert.equal(await choice.innerText(), 'Full review')
   assert.equal(await other.inputValue(), draft)
@@ -654,8 +662,53 @@ async function verify(page, viewport, theme) {
     ['Full review', draft], [defaultChoice],
   ])
 
+  pendingOnReload = null
+  const runningTurnId = 'running-after-question'
+  emit('turn/started', { threadId: thread.id, turn: { id: runningTurnId, status: 'inProgress', items: [] } })
+  const closedQuestion = questionRequest(263, runningTurnId)
+  closedQuestion.params.questions[0].isSecret = true
+  emit('server/request', closedQuestion)
+  await heading.waitFor()
+  const stop = page.getByRole('button', { name: 'Stop', exact: true })
+  const pendingChip = page.locator('.thread-row[data-active="true"] .thread-row-request-chip[data-state="response"]')
+  if (viewport.width === 1280) await pendingChip.waitFor()
+  assert.equal(await stop.isVisible(), false)
+  await other.fill(draft)
+  await send.click()
+  const confirming = panel.getByRole('button', { name: 'Awaiting confirmation…', exact: true })
+  await confirming.waitFor()
+  emit('server/request/resolved', { id: 263, threadId: thread.id })
+  await stop.waitFor()
+  await pendingChip.waitFor({ state: 'hidden' })
+  await panel.getByRole('button', { name: 'Question closed', exact: true }).waitFor()
+  assert.equal(await stop.isEnabled(), true)
+  assert.equal(await other.inputValue(), draft)
+  assert.equal(await confirming.isDisabled(), true)
+  if (await jumpLatest.isVisible()) await jumpLatest.click()
+  const stopScreenshot = resolve(output, `question-confirmation-stop-${viewport.width}-${theme}.png`)
+  await page.waitForTimeout(2200)
+  await page.screenshot({ path: stopScreenshot })
+  await stop.click()
+  await unconfirmed.waitFor()
+  assert.deepEqual(calls.filter(call => call.method === 'turn/interrupt').map(call => call.params), [
+    { threadId: thread.id, turnId: runningTurnId },
+  ])
+  assert.equal(replies().filter(reply => reply.id === 263).length, 1)
+  assert.equal(await other.inputValue(), draft)
+  const nextTurn = page.waitForRequest(request => new URL(request.url()).pathname === '/codex-api/rpc' &&
+    request.postDataJSON()?.method === 'turn/start')
+  await input.fill('Continue after the interrupted turn')
+  await page.getByRole('button', { name: 'Send message', exact: true }).click()
+  const nextPrompt = (await nextTurn).postDataJSON()
+  assert.equal(nextPrompt.params.threadId, thread.id)
+  assert.deepEqual(nextPrompt.params.input, [{ type: 'text', text: 'Continue after the interrupted turn' }])
+  assert.equal(replies().filter(reply => reply.id === 263).length, 1)
+  await dismiss.click()
+  await panel.waitFor({ state: 'hidden' })
+  await input.waitFor()
+
   assert.deepEqual(errors, [])
-  return { url, viewport, theme, failedScreenshot, dismissedScreenshot, answerScreenshot, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
+  return { url, viewport, theme, stopScreenshot, failedScreenshot, dismissedScreenshot, answerScreenshot, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
 }
 
 async function main() {

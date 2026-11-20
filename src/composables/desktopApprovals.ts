@@ -57,7 +57,7 @@ export function createDesktopApprovals(deps: {
     function confirmQuestionResponses(responses: QuestionResponse[]): void {
         for (const response of responses) {
             clearQuestionDraft(response.threadId, response.id);
-            for (const request of getThreadPendingRequests(response.threadId)) {
+            for (const request of getThreadRequests(response.threadId)) {
                 if (request.responseId === response.id) rememberClosed(request.id, request);
             }
         }
@@ -79,7 +79,7 @@ export function createDesktopApprovals(deps: {
     }
     function clearThreadQuestions(threadId: string): void {
         questionDrafts.delete(threadId);
-        for (const request of getThreadPendingRequests(threadId)) {
+        for (const request of getThreadRequests(threadId)) {
             if (request.method === QUESTION_REQUEST) rememberClosed(request.id, request);
         }
         questionSaveWarnings.delete(threadId);
@@ -91,12 +91,15 @@ export function createDesktopApprovals(deps: {
         closedRequestIds.clear();
         questionSaveWarnings.clear();
     }
-    function getThreadPendingRequests(threadId: string): UiServerRequest[] {
+    function getThreadRequests(threadId: string): UiServerRequest[] {
         if (!threadId)
             return [];
         return Array.isArray(pendingServerRequestsByThreadId.value[threadId])
             ? pendingServerRequestsByThreadId.value[threadId]
             : [];
+    }
+    function getThreadPendingRequests(threadId: string): UiServerRequest[] {
+        return getThreadRequests(threadId).filter(request => !request.questionClosed);
     }
     function isApprovalRequestMethod(method: string): boolean {
         return (method === 'item/commandExecution/requestApproval' ||
@@ -109,7 +112,7 @@ export function createDesktopApprovals(deps: {
         if (requests.some((request) => isApprovalRequestMethod(request.method))) {
             return 'approval';
         }
-        return requests.length > 0 ? 'response' : null;
+        return requests.some(request => !request.questionClosed) ? 'response' : null;
     }
     function normalizeServerRequest(params: unknown): UiServerRequest | null {
         const row = asRecord(params);
