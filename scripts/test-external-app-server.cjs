@@ -96,6 +96,12 @@ async function run() {
   const olderCursor = 'native-opaque-cursor'
   const questionCases = new Map()
   const rolloutPath = '/fixture/core/sessions/2026/11/20/rollout-fixture.jsonl'
+  const defaultThread = { ...historyThread, id: 'default-question-thread',
+    path: '/fixture/core/sessions/2026/11/20/rollout-default-question.jsonl' }
+  const rolloutRow = (type, payload) => JSON.stringify({ type, payload }) + '\n'
+  const defaultTurns = []
+  let questionRollout = ''
+  let questionStamp = 1
   let heldRollout
   let rolloutRead
   let connections = 0
@@ -105,11 +111,26 @@ async function run() {
     socket.on('message', raw => {
       const frame = JSON.parse(String(raw)); frames.push(frame)
       if (!frame.method && questionCases.has(frame.id)) {
-        const { turnId, outcome } = questionCases.get(frame.id)
-        socket.send(JSON.stringify({ method: 'serverRequest/resolved', params: { threadId: historyId, requestId: frame.id } }))
-        if (outcome === 'cancelled') socket.send(JSON.stringify({ method: 'turn/completed', params: {
-          threadId: historyId, turn: { id: turnId, status: 'interrupted', items: [] },
-        } }))
+        const { threadId, turnId, callId, outcome } = questionCases.get(frame.id)
+        const fromRollout = outcome.startsWith('rollout')
+        socket.send(JSON.stringify({ method: 'serverRequest/resolved', params: { threadId, requestId: frame.id } }))
+        if (outcome === 'cancelled' || fromRollout) {
+          if (fromRollout) {
+            const result = outcome === 'rollout-mismatch'
+              ? { answers: { ...frame.result.answers, choice: { answers: ['Keep examples', 'Full'] } } } : frame.result
+            questionRollout += rolloutRow('event_msg', { type: 'task_started', turn_id: turnId }) +
+              rolloutRow('response_item', { type: 'function_call', call_id: callId, name: 'request_user_input' }) +
+              rolloutRow('response_item', { type: 'function_call_output', call_id: callId, output: JSON.stringify(result) }) +
+              rolloutRow('event_msg', { type: 'task_complete', turn_id: turnId })
+            questionStamp++
+            defaultTurns.unshift({ id: turnId, status: 'completed', items: [] })
+          }
+          const terminal = JSON.stringify({ method: 'turn/completed', params: {
+            threadId, turn: { id: turnId, status: fromRollout ? 'completed' : 'interrupted', items: [] },
+          } })
+          socket.send(terminal)
+          if (outcome === 'rollout') socket.send(terminal)
+        }
         if (outcome === 'disconnect') socket.close()
         return
       }
@@ -148,9 +169,18 @@ async function run() {
         return
       }
       if (frame.method === 'fs/writeFile') files.set(frame.params.path, Buffer.from(frame.params.dataBase64, 'base64'))
+      if (frame.method === 'thread/start' && frame.params.cwd === defaultThread.cwd) {
+        assert.equal(Object.hasOwn(frame.params, 'experimentalRawEvents'), false)
+        questionRollout = rolloutRow('session_meta', { id: defaultThread.id })
+        defaultTurns.length = 0
+      }
       const result = frame.method === 'initialize' ? { codexHome: '/fixture/core', platformOs: 'linux' }
+        : frame.method === 'fs/readFile' && frame.params.path === defaultThread.path
+          ? { dataBase64: Buffer.from(questionRollout).toString('base64') }
+        : frame.method === 'fs/getMetadata' && frame.params.path === defaultThread.path
+          ? { isFile: true, modifiedAtMs: questionStamp }
         : frame.method === 'fs/getMetadata' ? frame.params.path === rolloutPath
-          ? { isFile: true, modifiedAtMs: 1 } : { isDirectory: true, isSymlink: false }
+          ? { isFile: true, modifiedAtMs: 1 } : { isDirectory: true, isFile: false, isSymlink: false }
         : frame.method === 'thread/name/set' ? {}
         : frame.method === 'account/read' ? { account: { type: 'apiKey', apiKey: 'fixture-secret' }, requiresOpenaiAuth: true, authToken: 'fixture-secret' }
         : frame.method === 'account/login/start' ? { type: 'chatgpt', loginId: 'fixture-login', authUrl: 'https://example.invalid/sign-in', accessToken: 'fixture-secret' }
@@ -158,6 +188,11 @@ async function run() {
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
         : frame.method === 'model/list' ? { data: [{ id: frame.params.cursor ? 'fixture-hidden' : 'fixture-model', hidden: Boolean(frame.params.cursor), isDefault: !frame.params.cursor }], nextCursor: frame.params.cursor ? null : 'fixture-next' }
         : ['thread/list', 'project/list'].includes(frame.method) ? { data: heldRollout && frame.method === 'thread/list' ? [historyThread] : [], nextCursor: null }
+        : (frame.method === 'thread/start' && frame.params.cwd === defaultThread.cwd ||
+          ['thread/read', 'thread/resume'].includes(frame.method) && frame.params.threadId === defaultThread.id)
+          ? { thread: { ...defaultThread, turns: [] }, modelProvider: 'fixture-provider', model: 'fixture-model' }
+        : frame.method === 'thread/turns/list' && frame.params.threadId === defaultThread.id
+          ? { data: defaultTurns, nextCursor: null }
         : ['thread/read', 'thread/resume'].includes(frame.method) && frame.params.threadId === historyId
           ? { thread: { ...historyThread, turns: [], path: heldRollout ? rolloutPath : null }, modelProvider: 'fixture-provider', model: 'fixture-model' }
         : frame.method === 'thread/turns/list' && frame.params.threadId === historyId
@@ -365,14 +400,14 @@ async function run() {
           assert.fail('Expected a question event on the WebUI stream')
         }
         const privateValue = 'private fixture value'
-        const submitAnswer = async (turnId, method = 'item/tool/requestUserInput', outcome = 'confirmed') => {
+        const submitAnswer = async (turnId, method = 'item/tool/requestUserInput', outcome = 'confirmed', threadId = historyId) => {
           const wireId = `question-${turnId}-${outcome}`
           const callId = `call-${turnId}-${outcome}`
-          questionCases.set(wireId, { turnId, outcome })
+          questionCases.set(wireId, { threadId, turnId, callId, outcome })
           const questions = [{ id: 'choice', header: 'Scope' }, { id: 'secret', header: 'Private', isSecret: true }]
           const params = method === 'request_user_input'
-            ? { thread_id: historyId, turn_id: turnId, call_id: callId, questions }
-            : { threadId: historyId, turnId, itemId: callId, questions }
+            ? { thread_id: threadId, turn_id: turnId, call_id: callId, questions }
+            : { threadId, turnId, itemId: callId, questions }
           nativeSocket.send(JSON.stringify({ id: wireId, method, params }))
           const pending = (await waitForQuestionEvent(event => event.method === 'server/request' && event.params.wireId === wireId)).params
           assert.equal(pending.method, 'item/tool/requestUserInput')
@@ -382,7 +417,7 @@ async function run() {
             body: JSON.stringify({ id: pending.id, result: { answers } }),
           })
           const emitResult = (output, overrides = {}, resultCallId = callId) => nativeSocket.send(JSON.stringify({
-            method: 'rawResponseItem/completed', params: { threadId: historyId, turnId, ...overrides,
+            method: 'rawResponseItem/completed', params: { threadId, turnId, ...overrides,
               item: { type: 'function_call_output', call_id: resultCallId, output: JSON.stringify({ answers: output }) },
             },
           }))
@@ -407,13 +442,19 @@ async function run() {
           const result = await response.json()
           assert.equal(JSON.stringify(result).includes(privateValue), false)
           assert.equal(frames.slice(sentAt).filter(frame => frame.id === wireId).length, 1)
-          if (outcome !== 'confirmed') {
+          if (outcome.startsWith('rollout')) {
+            const recovery = frames.slice(sentAt).filter(frame => frame.params?.path === defaultThread.path ||
+              frame.method === 'thread/read' && frame.params?.threadId === threadId)
+            assert.deepEqual(recovery.map(frame => frame.method), ['thread/read', 'fs/getMetadata', 'fs/readFile', 'fs/getMetadata'])
+          }
+          if (outcome !== 'confirmed' && outcome !== 'rollout') {
             assert.equal(response.status, 502, JSON.stringify(result))
             assert.match(result.error, /could not be confirmed/)
             if (outcome !== 'disconnect') {
-              emitResult(answers)
+              if (!outcome.startsWith('rollout')) emitResult(answers)
               assert.equal((await sendReply()).status, 502)
             }
+            assert.equal(questionEvents.filter(event => event.params?.id === pending.id && event.params.response).length, 0)
             return
           }
           assert.equal(response.status, 200, JSON.stringify(result))
@@ -424,6 +465,7 @@ async function run() {
           ])
           await waitForQuestionEvent(event => event.params?.id === pending.id && event.params.response)
           assert.equal(questionEvents.filter(event => event.params?.id === pending.id && event.params.response).length, 1)
+          return result.response
         }
         if (!previousRuns) {
           assert.equal(latest.questionResponses, undefined)
@@ -432,9 +474,23 @@ async function run() {
           await submitAnswer('turn-13', 'legacy-question-shaped-request')
           await submitAnswer('turn-10', undefined, 'cancelled')
           await submitAnswer('turn-11', undefined, 'timeout')
+          const started = await call('thread/start', { cwd: defaultThread.cwd })
+          assert.equal(started.status, 200, JSON.stringify(started.body))
+          assert.equal(started.body.result.thread.id, defaultThread.id)
+          const created = await submitAnswer('default-created', undefined, 'rollout', defaultThread.id)
+          const restored = await call('thread/resume', { threadId: defaultThread.id })
+          assert.equal(restored.status, 200, JSON.stringify(restored.body))
+          assert.deepEqual(restored.body.result.questionResponses, [created])
+          const resumed = await submitAnswer('default-resumed', undefined, 'rollout', defaultThread.id)
+          await submitAnswer('default-mismatched', undefined, 'rollout-mismatch', defaultThread.id)
+          assert.equal(created.threadId, defaultThread.id)
+          assert.equal(resumed.threadId, defaultThread.id)
+          const defaultHistory = await call('thread/read', { threadId: defaultThread.id, includeTurns: true })
+          assert.deepEqual(defaultHistory.body.result?.questionResponses, [resumed, created])
           assert.equal(JSON.stringify(questionEvents).includes(privateValue), false)
           assert.equal(questionEvents.some(event => event.method === 'rawResponseItem/completed'), false)
           console.log('PASS question closure, matching result, mismatches, duplicates, aliases, cancellation, timeout and private output')
+          console.log('PASS default question stream after thread start and resume; one rollout transfer and one saved reply per turn')
         }
         const populatedAt = frames.length
         const populated = await historyRequest('thread/read', { includeTurns: true })

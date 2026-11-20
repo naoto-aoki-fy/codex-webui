@@ -8,6 +8,7 @@ import { projectPath } from './appServerFileSystem.js'
 import { updateCodexGlobalState, type CodexGlobalState } from './codexGlobalState.js'
 import type { CollaborationModeKind } from '../types/codex.js'
 import { readCollaborationMode, readGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata.js'
+import { observeRolloutQuestionReplies, type RolloutQuestionReply } from './questionResponses.js'
 
 const MAX_SOURCE_BYTES = 16 * 1024 * 1024
 const MAX_CACHE_BYTES = 2 * 1024 * 1024
@@ -16,13 +17,14 @@ const record = (v: any): Record<string, any> | undefined => v && typeof v === 'o
 
 /** Use complete rollout records with exact IDs. A mode conflict must
  * explicitly clear submitted evidence already visible in a browser. */
-export function parseRolloutMetadata(raw: string): Map<string, TurnGenerationMetadata> {
+export function parseRolloutMetadata(raw: string, observe?: (type: unknown, payload: Record<string, unknown>) => void): Map<string, TurnGenerationMetadata> {
   const turns = new Map<string, TurnGenerationMetadata>()
   const conflicts = new Map<string, Set<string>>()
   for (const line of raw.slice(0, raw.lastIndexOf('\n') + 1).split('\n')) {
     try {
       const row = JSON.parse(line)
       const p = record(row?.payload)
+      if (p) observe?.(row.type, p)
       const isContext = row?.type === 'turn_context'
       const isStart = row?.type === 'event_msg' && p?.type === 'task_started'
       if ((!isContext && !isStart) || !p || typeof p.turn_id !== 'string' || !p.turn_id || p.turn_id.length > 256) continue
@@ -127,10 +129,18 @@ type Client = {
   home(): string | undefined | Promise<string>
 }
 
+type RolloutRead = {
+  force: boolean
+  snapshotStarted: boolean
+  metadataRequested: boolean
+  replies: RolloutQuestionReply[]
+  promise: Promise<Map<string, TurnGenerationMetadata>>
+}
+
 /** One full-file transfer at a time, at most 16 queued/coalesced threads.
  * No session contents are retained. Cache validation always stats the source. */
 export class RolloutGenerationMetadata {
-  private readonly pending = new Map<string, Promise<Map<string, TurnGenerationMetadata>>>()
+  private readonly pending = new Map<string, RolloutRead>()
   private readonly pendingCacheReads = new Map<string, Promise<ReturnType<typeof record>>>()
   private tail: Promise<unknown> = Promise.resolve()
   constructor(private readonly client: Client) {}
@@ -147,19 +157,31 @@ export class RolloutGenerationMetadata {
     return submittedModes(await this.readLocalCache(cachePath(threadId, profileId)))
   }
 
-  recover(threadId: string, force = false): Promise<Map<string, TurnGenerationMetadata>> {
+  recover(threadId: string, force = false, reply?: RolloutQuestionReply): Promise<Map<string, TurnGenerationMetadata>> {
     const generation = this.client.generation()
     const profileId = getConnectionProfileId()
-    const key = `${generation}:${profileId}:${threadId}:${force}`
-    const old = this.pending.get(key)
-    if (old) return old
-    if (this.pending.size >= 16) return Promise.resolve(new Map())
-    const promise = this.tail.then(() => this.read(threadId, profileId, generation, force)).catch(() => new Map<string, TurnGenerationMetadata>()).finally(() => {
-      if (this.pending.get(key) === promise) this.pending.delete(key)
-    })
-    this.tail = promise
-    this.pending.set(key, promise)
-    return promise
+    const key = `${generation}:${profileId}:${threadId}`
+    const pending = this.pending.get(key)
+    if (pending && (!pending.snapshotStarted || (!reply && (!force || pending.force)))) {
+      pending.force ||= force || Boolean(reply)
+      if (reply) pending.replies.push(reply)
+      else pending.metadataRequested = true
+      return pending.promise
+    }
+    if (!pending && this.pending.size >= 16) return Promise.resolve(new Map())
+    // A snapshot that started before turn completion may not contain the result.
+    const job: RolloutRead = {
+      force: force || Boolean(reply),
+      snapshotStarted: false,
+      metadataRequested: !reply,
+      replies: reply ? [reply] : [],
+      promise: this.tail.then(() => this.read(threadId, profileId, generation, job)).catch(() => new Map<string, TurnGenerationMetadata>()).finally(() => {
+        if (this.pending.get(key) === job) this.pending.delete(key)
+      }),
+    }
+    this.tail = job.promise
+    this.pending.set(key, job)
+    return job.promise
   }
 
   async rememberSubmittedMode(threadId: string, turnId: string, mode: CollaborationModeKind, profileId: string): Promise<TurnGenerationMetadata | undefined> {
@@ -181,15 +203,17 @@ export class RolloutGenerationMetadata {
     }, cachePath(threadId, profileId), true, MAX_CACHE_BYTES)
   }
 
-  private async read(threadId: string, profileId: string, generation: number, force: boolean) {
+  private async read(threadId: string, profileId: string, generation: number, job: RolloutRead) {
     const destination = cachePath(threadId, profileId)
     const cached = await this.readLocalCache(destination)
     let submitted = submittedModes(cached)
-    const fallback = () => generation === this.client.generation() ? combineEvidence(new Map(), submitted) : new Map<string, TurnGenerationMetadata>()
+    const current = () => generation === this.client.generation() && getConnectionProfileId() === profileId
+    const fallback = () => current() ? combineEvidence(new Map(), submitted) : new Map<string, TurnGenerationMetadata>()
+    const needed = () => job.metadataRequested || job.replies.some(reply => reply.answers)
     const rpc = async (method: string, params: unknown) => {
-      if (generation !== this.client.generation()) throw new Error('Retired rollout recovery')
+      if (!current()) throw new Error('Retired rollout recovery')
       const result = await this.client.rpc(method, params)
-      if (generation !== this.client.generation()) throw new Error('Retired rollout recovery')
+      if (!current()) throw new Error('Retired rollout recovery')
       return record(result)!
     }
     const readFile = async (path: string, max: number) => {
@@ -198,30 +222,35 @@ export class RolloutGenerationMetadata {
       return Buffer.from(response.dataBase64, 'base64').toString('utf8')
     }
     try {
+      if (!needed()) return fallback()
       const thread = await rpc('thread/read', { threadId, includeTurns: false })
       const home = await this.client.home()
-      if (generation !== this.client.generation() || !home) return fallback()
-      const path = rolloutSourcePath(thread?.thread?.path, home)
+      if (!current() || !home || thread?.thread?.id !== threadId) return fallback()
+      const path = rolloutSourcePath(thread.thread.path, home)
       if (!path) return fallback()
+      job.snapshotStarted = true
       const before = await rpc('fs/getMetadata', { path })
-      if (!before?.isFile) return fallback()
+      if (!before?.isFile || !needed()) return fallback()
       const stamp = before.modifiedAtMs
       const reliable = typeof stamp === 'number' && Number.isFinite(stamp) && stamp > 0
-      if (!force && reliable && cached?.version === 2 && cached.rolloutModeScanned === true &&
+      if (!job.force && reliable && cached?.version === 2 && cached.rolloutModeScanned === true &&
         cached.sourcePath === path && cached.modifiedAtMs === stamp) {
         const evidence = cachedEvidence(cached)
         if (evidence) return combineEvidence(evidence, submitted)
       }
-      const rollout = parseRolloutMetadata(await readFile(path, MAX_SOURCE_BYTES))
+      const raw = await readFile(path, MAX_SOURCE_BYTES)
       const after = await rpc('fs/getMetadata', { path })
       if (!after?.isFile || (reliable && after.modifiedAtMs !== stamp)) return fallback()
+      const replies = job.replies.filter(reply => reply.answers)
+      const observe = replies.length ? observeRolloutQuestionReplies(threadId, replies) : undefined
+      const rollout = parseRolloutMetadata(raw, observe)
 
       const submittedCount = submitted.size
       discardContradictions(submitted, rollout)
       if (reliable || submitted.size !== submittedCount) {
         try {
           await updateCodexGlobalState(state => {
-            if (generation !== this.client.generation()) return
+            if (!current()) return
             submitted = submittedModes(state)
             discardContradictions(submitted, rollout)
             const submittedModesByTurn = Object.fromEntries(submitted)
@@ -241,8 +270,9 @@ export class RolloutGenerationMetadata {
           }, destination, true, MAX_CACHE_BYTES)
         } catch { /* Local cache failure does not change validated execution evidence. */ }
       }
-      return generation === this.client.generation() ? combineEvidence(rollout, submitted) : new Map<string, TurnGenerationMetadata>()
+      return current() ? combineEvidence(rollout, submitted) : new Map<string, TurnGenerationMetadata>()
     } catch {
+      for (const reply of job.replies) reply.confirmed = false
       return fallback()
     }
   }

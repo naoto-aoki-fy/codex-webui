@@ -4,6 +4,7 @@ import { normalizePendingServerRequestMethod, QUESTION_REQUEST } from '../server
 import {
   isQuestionToolCall, isQuestionToolOutput, questionAnswersMatch, questionRequestParams,
   questionResponseId, questionResponses, readQuestionToolAnswers, validateQuestionResponse,
+  type RolloutQuestionReply,
 } from './questionResponses.js'
 import { CodexHomeResolver } from './codexHomeResolver.js'
 import { getConnectionProfileId } from './connectionProfile.js'
@@ -77,6 +78,7 @@ type QuestionAttempt = {
   turnId: string
   callId: string
   match: (answers: ReturnType<typeof readQuestionToolAnswers>) => void
+  complete: () => void
   fail: () => void
 }
 
@@ -301,8 +303,9 @@ export class AppServerClient {
         isQuestionToolOutput(asRecord(asRecord(message.params)?.item))) return
       if (message.method === 'serverRequest/resolved') this.closeQuestionRequest(message.params)
       if (message.method === 'turn/completed') {
-        const turnId = readNonEmptyString(asRecord(asRecord(message.params)?.turn)?.id)
-        if (turnId) this.retireQuestionRequests(this.extractThreadIdFromParams(message.params), turnId)
+        const turn = asRecord(asRecord(message.params)?.turn)
+        const turnId = readNonEmptyString(turn?.id)
+        if (turnId) this.retireQuestionRequests(this.extractThreadIdFromParams(message.params), turnId, turn?.status === 'completed')
       }
       this.emitNotification({
         method: message.method,
@@ -322,6 +325,7 @@ export class AppServerClient {
     const nThreadId = this.extractThreadIdFromParams(notification.params)
     if (nThreadId && notification.method !== 'turn/generationMetadata') {
       if (notification.method === 'thread/reverted' || notification.method === 'thread/deleted') {
+        this.retireQuestionRequests(nThreadId)
         this.snapshotEpoch = {}
         this.submittedModeRequests.delete(nThreadId)
         this.lastThreadReadSnapshotByThreadId.delete(nThreadId)
@@ -335,7 +339,6 @@ export class AppServerClient {
         }
       }
       if(notification.method==='thread/deleted'){
-        this.retireQuestionRequests(nThreadId)
         void questionResponses.delete(nThreadId).catch(error => console.warn('Could not remove saved question responses:', error))
         this.subscribedThreads.delete(nThreadId)
         this.recovery.forget(nThreadId)
@@ -470,9 +473,11 @@ export class AppServerClient {
     }
   }
 
-  private retireQuestionRequests(threadId: string, turnId?: string): void {
+  private retireQuestionRequests(threadId: string, turnId?: string, completed = false): void {
     for (const attempt of this.questionAttempts.values()) {
-      if (attempt.threadId === threadId && (turnId === undefined || attempt.turnId === turnId)) attempt.fail()
+      if (attempt.threadId !== threadId || (turnId !== undefined && attempt.turnId !== turnId)) continue
+      if (completed) attempt.complete()
+      else attempt.fail()
     }
     for (const [id, pending] of this.pendingServerRequests) {
       const params = asRecord(pending.params)
@@ -526,17 +531,20 @@ export class AppServerClient {
     return new Promise((resolve, reject) => {
       let sent = false
       let matched = false
+      let completed = false
+      let rolloutReply: RolloutQuestionReply | undefined
       const retire = () => {
         if (this.questionAttempts.get(request.id) !== attempt) return false
         this.questionAttempts.delete(request.id)
+        if (rolloutReply) rolloutReply.answers = undefined
         clearTimeout(timer)
         return true
       }
       const confirm = () => {
-        if (!sent || !matched || generation !== this.connectionGeneration || !retire()) return
+        if (!sent || !matched || generation !== this.connectionGeneration || getConnectionProfileId() !== profileId || !retire()) return
         this.pendingServerRequests.delete(request.id)
         const finish = (submission: QuestionSubmission) => {
-          if (generation === this.connectionGeneration) this.publishRequestResolution(request, submission)
+          if (generation === this.connectionGeneration && getConnectionProfileId() === profileId) this.publishRequestResolution(request, submission)
           resolve(submission)
         }
         void questionResponses.save(response, profileId).then(
@@ -544,12 +552,29 @@ export class AppServerClient {
           () => finish({ response, saved: false }),
         )
       }
+      const checkRollout = () => {
+        if (!sent || !completed || !callId || rolloutReply || this.questionAttempts.get(request.id) !== attempt) return
+        const reply: RolloutQuestionReply = { turnId, callId, answers: wireResult.answers, confirmed: false }
+        rolloutReply = reply
+        void this.rolloutMetadata.recover(threadId, true, reply).then(() => {
+          if (reply.confirmed) {
+            matched = true
+            confirm()
+          }
+          attempt.fail()
+        }, attempt.fail)
+      }
       const attempt: QuestionAttempt = {
         request, threadId, turnId, callId,
         match: answers => {
           if (!answers || !questionAnswersMatch(wireResult.answers, answers)) return
           matched = true
           confirm()
+        },
+        complete: () => {
+          completed = true
+          checkRollout()
+          if (!callId) attempt.fail()
         },
         fail: () => {
           if (retire()) reject(new Error(QUESTION_REPLY_UNCONFIRMED))
@@ -563,6 +588,7 @@ export class AppServerClient {
           if (error) { attempt.fail(); return }
           sent = true
           confirm()
+          checkRollout()
         })
         if (!queued && retire()) {
           if (this.pendingServerRequests.get(request.id) !== request) {
@@ -734,6 +760,7 @@ export class AppServerClient {
     if (method === 'thread/revert') {
       this.snapshotEpoch = {}
       const id = readNonEmptyString(asRecord(params)?.threadId)
+      this.retireQuestionRequests(id)
       this.submittedModeRequests.delete(id)
       this.lastThreadReadSnapshotByThreadId.delete(id)
       this.streamEventsByThreadId.delete(id)
