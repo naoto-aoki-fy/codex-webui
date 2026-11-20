@@ -730,7 +730,7 @@
 }
 
 :root.dark .plan-card {
-  @apply border-sky-700/70 bg-slate-900/78;
+  @apply border-sky-700/70 bg-slate-900/78 text-zinc-200;
 }
 
 :root.dark .plan-card-title {
@@ -770,6 +770,55 @@
 
 :root.dark .plan-card-markdown .message-table {
   @apply bg-zinc-900/90;
+}
+
+:root.dark .plan-card-markdown .message-code-block {
+  @apply border-zinc-700 bg-zinc-950 text-zinc-100;
+}
+
+:root.dark .plan-card-markdown .message-code-language {
+  @apply border-zinc-800 bg-zinc-900 text-zinc-400;
+}
+
+.plan-card-markdown .hljs {
+  @apply bg-transparent text-inherit;
+}
+
+/* Light syntax colors for Plan's light code surface. */
+:root:not(.dark) .plan-card-markdown .hljs span {
+  @apply text-inherit;
+}
+
+:root:not(.dark) .plan-card-markdown .hljs :is(.hljs-keyword, .hljs-doctag, .hljs-type, .hljs-template-tag) {
+  @apply text-rose-700;
+}
+
+:root:not(.dark) .plan-card-markdown .hljs :is(.hljs-title, .hljs-template-variable) {
+  @apply text-violet-700;
+}
+
+:root:not(.dark) .plan-card-markdown .hljs :is(.hljs-attr, .hljs-attribute, .hljs-literal, .hljs-meta, .hljs-number, .hljs-variable, .hljs-section) {
+  @apply text-sky-800;
+}
+
+:root:not(.dark) .plan-card-markdown .hljs :is(.hljs-string, .hljs-regexp, .hljs-name, .hljs-selector-tag) {
+  @apply text-emerald-800;
+}
+
+:root:not(.dark) .plan-card-markdown .hljs :is(.hljs-comment, .hljs-code, .hljs-formula) {
+  @apply text-slate-600;
+}
+
+:root:not(.dark) .plan-card-markdown .hljs :is(.hljs-built_in, .hljs-symbol, .hljs-bullet) {
+  @apply text-amber-800;
+}
+
+:root:not(.dark) .plan-card-markdown .hljs .hljs-addition {
+  @apply bg-emerald-100 text-emerald-900;
+}
+
+:root:not(.dark) .plan-card-markdown .hljs .hljs-deletion {
+  @apply bg-rose-100 text-rose-900;
 }
 
 :root.dark .plan-step-item {

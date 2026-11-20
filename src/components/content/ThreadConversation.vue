@@ -1791,11 +1791,11 @@ onBeforeUnmount(() => {
 }
 
 .plan-card-markdown :deep(.message-code-block) {
-  @apply overflow-hidden rounded-xl border border-slate-200 bg-slate-950/95 text-slate-100;
+  @apply overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-900;
 }
 
 .plan-card-markdown :deep(.message-code-language) {
-  @apply border-b border-slate-800 bg-slate-900/90 px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400;
+  @apply border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-600;
 }
 
 .plan-card-markdown :deep(.message-code-pre) {
