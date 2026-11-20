@@ -1,6 +1,7 @@
 import { backendInstanceId } from './backendInstance'
 import { EventEmitter } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { Readable } from 'node:stream'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createCodexBridgeMiddleware } from './codexAppServerBridge'
 import { connectBrowserNotifications } from './browserNotificationTransport'
@@ -33,8 +34,8 @@ afterEach(() => {
   vi.clearAllTimers()
   vi.useRealTimers()
 })
-function streams(method = 'GET', url = '/codex-api/events') {
-  const req = Object.assign(new EventEmitter(), { method, url, headers: {}, socket: { remoteAddress: '127.0.0.1' } })
+function streams(method = 'GET', url = '/codex-api/events', request = new EventEmitter()) {
+  const req = Object.assign(request, { method, url, headers: {}, socket: { remoteAddress: '127.0.0.1' } })
   const res = Object.assign(new EventEmitter(), { statusCode: 0, setHeader: vi.fn(), write: vi.fn(), end: vi.fn(), writableEnded: false, destroyed: false })
   const next = vi.fn()
   return { req, res, write: res.write, end: res.end, next, args: [req as unknown as IncomingMessage, res as unknown as ServerResponse, next] as const }
@@ -336,11 +337,10 @@ it('forwards native provider model lists through the existing RPC connection', a
   const result = { data: [{ id: 'remote-only', displayName: 'Remote', hidden: false }], nextCursor: 'next' }
   const rpc = vi.fn().mockResolvedValue(result)
   Object.assign(appServer, { rpc, getSnapshotEpoch: () => 0 })
-  const s = streams('POST', '/codex-api/rpc')
   const params = { modelProvider: 'local', includeHidden: true, cursor: 'previous' }
-  Object.assign(s.req, { async *[Symbol.asyncIterator]() {
-    yield Buffer.from(JSON.stringify({ method: 'model/list', params }))
-  } })
+  const s = streams('POST', '/codex-api/rpc', Readable.from([
+    Buffer.from(JSON.stringify({ method: 'model/list', params })),
+  ]))
   await createCodexBridgeMiddleware()(...s.args)
   expect(s.res.statusCode).toBe(200)
   expect(rpc).toHaveBeenCalledExactlyOnceWith('model/list', params)
