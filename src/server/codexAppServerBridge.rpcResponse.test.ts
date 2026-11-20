@@ -1,5 +1,6 @@
 import { once } from 'node:events'
 import { createServer, request, type IncomingMessage, type OutgoingHttpHeaders, type Server } from 'node:http'
+import { setImmediate } from 'node:timers/promises'
 import { brotliDecompressSync, gzip } from 'node:zlib'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
@@ -81,6 +82,19 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+function observeUpload(req: IncomingMessage, expectedBytes: number) {
+  return new Promise<number>(resolve => {
+    let bytesRead = 0
+    const receive = (chunk: Buffer) => {
+      bytesRead += chunk.length
+      if (bytesRead < expectedBytes) return
+      req.off('data', receive)
+      resolve(bytesRead)
+    }
+    req.on('data', receive)
+  })
+}
+
 it('logs the same decoded body size for identity and Brotli above the size threshold', async () => {
   const log = vi.spyOn(console, 'info').mockImplementation(() => {})
   const result = { data: ['日本語'.repeat(122_000)] }
@@ -152,14 +166,9 @@ it.each(['fixed-length', 'chunked'])('logs only the received bytes of an aborted
   client.flushHeaders()
   const req = await incoming
 
-  const received = deferred<number>()
-  let bytesRead = 0
-  req.on('data', (chunk: Buffer) => {
-    bytesRead += chunk.length
-    if (bytesRead >= partial.length) received.resolve(bytesRead)
-  })
+  const received = observeUpload(req, partial.length)
   client.write(partial)
-  expect(await received.promise).toBe(partial.length)
+  expect(await received).toBe(partial.length)
   client.destroy()
   await serving.closed
   await serving.done
@@ -168,6 +177,45 @@ it.each(['fixed-length', 'chunked'])('logs only the received bytes of an aborted
   expect(log.mock.calls[0]![0]).toMatch(/POST \/codex-api\/rpc -> aborted \(\d+ms, bodyMB=1\.5\)$/)
   expect(rpc).not.toHaveBeenCalled()
   serving.expectNoWrite()
+})
+
+it.each([
+  { framing: 'fixed-length', abort: false },
+  { framing: 'chunked', abort: false },
+  { framing: 'fixed-length', abort: true },
+  { framing: 'chunked', abort: true },
+])('logs the drained body of a $framing 406 request (abort: $abort)', async ({ framing, abort }) => {
+  const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+  const mb = 1024 * 1024
+  const body = Buffer.alloc(1.5 * mb, 32)
+  const headers: OutgoingHttpHeaders = framing === 'chunked'
+    ? { 'Transfer-Encoding': 'chunked' }
+    : { 'Content-Length': abort ? 3 * mb : body.length }
+  const client = openRpcRequest('*;q=0', { ...headers, Connection: 'keep-alive' })
+  client.on('error', () => {})
+  client.flushHeaders()
+  const [response] = await once(client, 'response') as [IncomingMessage]
+  response.resume()
+  await once(response, 'end')
+
+  expect(response.statusCode).toBe(406)
+  expect(rpc).not.toHaveBeenCalled()
+  expect(log).not.toHaveBeenCalled()
+  const req = await incoming
+  const drainEnded = abort
+    ? new Promise<void>(resolve => { req.socket.once('close', resolve) })
+    : once(req, 'end')
+  const received = observeUpload(req, body.length)
+  if (abort) client.write(body)
+  else client.end(body)
+  expect(await received).toBe(body.length)
+  if (abort) client.destroy()
+  await drainEnded
+  await setImmediate()
+
+  expect(log).toHaveBeenCalledOnce()
+  expect(log.mock.calls[0]![0]).toMatch(/POST \/codex-api\/rpc -> 406 \(\d+ms, bodyMB=1\.5\)$/)
+  expect(rpc).not.toHaveBeenCalled()
 })
 
 it.each(['identity', 'gzip'])('skips %s serialization after the client disconnects before its RPC result', async encoding => {

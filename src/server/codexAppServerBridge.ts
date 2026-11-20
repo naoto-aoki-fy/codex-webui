@@ -9,7 +9,7 @@ import { stageRemoteUpload } from './remoteUploads.js'
 import { projectPath, ProjectFileService } from './appServerFileSystem.js'
 import { handleSseRequest } from './bridgeSse.js'
 import { readPinnedThreadIds } from './nativeThreadPins.js'
-import { asRecord, getErrorMessage, setJson, readJsonBody, isEmptyThreadReadError, isThreadMaterializationPendingError } from './bridgeHttpUtils.js'
+import { asRecord, drainRequestBody, getErrorMessage, setJson, readJsonBody, isEmptyThreadReadError, isThreadMaterializationPendingError } from './bridgeHttpUtils.js'
 export { isEmptyThreadReadError, isThreadMaterializationPendingError } from './bridgeHttpUtils.js'
 import { sanitizeThreadTurnsInlinePayloads, THREAD_METHODS_WITH_TURNS } from './threadInlinePayloads.js'
 export { sanitizeThreadTurnsInlinePayloads } from './threadInlinePayloads.js'
@@ -524,6 +524,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       ? parsedContentLength
       : 0
     let requestBodyBytes = isRpcRequest ? 0 : declaredRequestBytes
+    let rejectedBodyDrain: Promise<void> | undefined
     let responseBodyBytes = 0
     let decodedResponseBodyBytes: number | undefined
     let rpcMethod: string | null = null
@@ -540,18 +541,25 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       responseBodyBytes += getChunkByteLength(chunk, resolvedEncoding)
       return originalEnd(chunk as never, encoding as never, cb as never)
     }) as typeof res.end
-    let didLog = false
+    let logHandled = false
     const logApiRequestDuration = (aborted = false) => {
-      if (!API_PERF_LOGGING_ENABLED || didLog || !requestPath.startsWith('/codex-api/')) return
+      if (!API_PERF_LOGGING_ENABLED || logHandled || !requestPath.startsWith('/codex-api/')) return
       const durationMs = Number((process.hrtime.bigint() - requestStartNs) / 1_000_000n)
-      const bodyMbValue = (requestBodyBytes + (decodedResponseBodyBytes ?? responseBodyBytes)) / MB_DIVISOR
-      const shouldLog = durationMs > API_PERF_MS_THRESHOLD || bodyMbValue > API_PERF_BODY_MB_THRESHOLD
-      if (!shouldLog) return
-      didLog = true
-      const rpcPart = rpcMethod ? `, rpcMethod=${rpcMethod}` : ''
-      const encodedPart = decodedResponseBodyBytes === undefined ? '' : `, encodedResponseBytes=${responseBodyBytes}`
       const outcome = aborted ? 'aborted' : res.statusCode
-      console.info(`[codex-api-perf] ${requestMethod} ${requestPath} -> ${outcome} (${durationMs}ms, bodyMB=${bodyMbValue.toFixed(1)}${rpcPart}${encodedPart})`)
+      const logIfOverThreshold = () => {
+        const bodyMbValue = (requestBodyBytes + (decodedResponseBodyBytes ?? responseBodyBytes)) / MB_DIVISOR
+        if (durationMs <= API_PERF_MS_THRESHOLD && bodyMbValue <= API_PERF_BODY_MB_THRESHOLD) return
+        logHandled = true
+        const rpcPart = rpcMethod ? `, rpcMethod=${rpcMethod}` : ''
+        const encodedPart = decodedResponseBodyBytes === undefined ? '' : `, encodedResponseBytes=${responseBodyBytes}`
+        console.info(`[codex-api-perf] ${requestMethod} ${requestPath} -> ${outcome} (${durationMs}ms, bodyMB=${bodyMbValue.toFixed(1)}${rpcPart}${encodedPart})`)
+      }
+      if (rejectedBodyDrain) {
+        logHandled = true
+        void rejectedBodyDrain.then(logIfOverThreshold)
+      } else {
+        logIfOverThreshold()
+      }
     }
     res.once('finish', logApiRequestDuration)
     res.once('close', () => logApiRequestDuration(isRpcRequest && !res.writableFinished))
@@ -580,17 +588,19 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       if (isRpcRequest) {
+        const recordRequestBytes = (bytes: number) => { requestBodyBytes += bytes }
         sendRpcJson = createRpcJsonWriter(req, res, decodedBytes => {
           decodedResponseBodyBytes = decodedBytes
         })
         if (!sendRpcJson) {
-          req.resume()
+          if (API_PERF_LOGGING_ENABLED) rejectedBodyDrain = drainRequestBody(req, recordRequestBytes)
+          else req.resume()
           res.statusCode = 406
           res.setHeader('Cache-Control', 'no-store')
           res.end()
           return
         }
-        const payload = await readJsonBody(req, bytes => { requestBodyBytes += bytes })
+        const payload = await readJsonBody(req, recordRequestBytes)
         const body = asRecord(payload) as RpcProxyRequest | null
         rpcMethod = body?.method && typeof body.method === 'string' ? body.method : null
 

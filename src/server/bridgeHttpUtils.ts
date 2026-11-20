@@ -55,25 +55,49 @@ export async function readJsonBody(
   return JSON.parse(text) as unknown
 }
 
+function consumeRequestBody(
+  req: IncomingMessage,
+  onChunk: (chunk: Uint8Array | string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = finished(req, { writable: false, signal }, error => {
+      req.off('data', onChunk)
+      cleanup()
+      if (error) reject(error)
+      else resolve()
+    })
+    req.on('data', onChunk)
+  })
+}
+
 export async function readRawBody(
   req: IncomingMessage,
   onBodyChunkBytes?: (bytes: number) => void,
 ): Promise<Buffer> {
   const chunks: Uint8Array[] = []
-  const collect = (chunk: Uint8Array | string) => {
+  await consumeRequestBody(req, chunk => {
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
     chunks.push(bytes)
     onBodyChunkBytes?.(bytes.length)
-  }
-  await new Promise<void>((resolve, reject) => {
-    const cleanup = finished(req, { writable: false }, error => {
-      req.off('data', collect)
-      cleanup()
-      if (error) reject(error)
-      else resolve()
-    })
-    req.on('data', collect)
   })
   return Buffer.concat(chunks)
 }
 
+export async function drainRequestBody(req: IncomingMessage, onBodyChunkBytes: (bytes: number) => void): Promise<void> {
+  // After an early response, a disconnect can close the socket without closing the request stream.
+  const socket = req.socket
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  socket.once('close', abort)
+  if (socket.destroyed) abort()
+  try {
+    await consumeRequestBody(req, chunk => {
+      onBodyChunkBytes(typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.byteLength)
+    }, controller.signal)
+  } catch {
+    // An interrupted drain still contributes the bytes received so far.
+  } finally {
+    socket.off('close', abort)
+  }
+}
