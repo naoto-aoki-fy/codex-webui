@@ -65,26 +65,45 @@ async function selectRepresentation(file: string, preferences: Encoding[][], ori
 }
 
 export async function sendPrecompressed(req: Request, res: Response, next: NextFunction, file: string, immutable = false, originalMetadata?: Stats) {
-  if (extname(file) === '.html') res.setHeader('Cache-Control', 'no-cache')
+  const extension = extname(file)
+  if (extension === '.html') res.setHeader('Cache-Control', 'no-cache')
   else if (immutable) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
   res.vary('Accept-Encoding')
-  const selected = await selectRepresentation(file, encodingPreferences(req.headers['accept-encoding']), originalMetadata)
-  if (!selected) {
-    res.status(406).end()
-    return
+
+  const sendAvailable = async (preferences: Encoding[][]) => {
+    const selected = await selectRepresentation(file, preferences, originalMetadata)
+    if (!selected) {
+      res.setHeader('Cache-Control', 'no-store')
+      res.status(406).end()
+      return
+    }
+
+    const { encoding, path, metadata } = selected
+    res.setHeader('ETag', 'W/"' + encoding + '-' + metadata.size.toString(16) + '-' + metadata.mtimeMs.toString(16) + '"')
+    res.type(extension)
+    if (encoding !== 'identity') res.setHeader('Content-Encoding', encoding)
+    const originalStatus = res.statusCode
+    // sendFile computes length, modification date, ranges and freshness for the selected file.
+    res.sendFile(path, (error) => {
+      if (!error) return
+      if (res.headersSent) return next(error)
+      res.removeHeader('Content-Encoding')
+      const code = (error as NodeJS.ErrnoException).code
+      if (encoding === 'identity' || !['ENOENT', 'ENOTDIR', 'EISDIR'].includes(code ?? '')) {
+        return next(error)
+      }
+
+      // A sidecar disappeared after negotiation. Discard its headers before trying another file.
+      for (const header of ['Accept-Ranges', 'Content-Length', 'Content-Range', 'Content-Type', 'ETag', 'Last-Modified']) {
+        res.removeHeader(header)
+      }
+      res.status(originalStatus)
+      const remaining = preferences.map(group => group.filter(candidate => candidate !== encoding))
+      void sendAvailable(remaining).catch(next)
+    })
   }
 
-  const { encoding, path, metadata } = selected
-  res.setHeader('ETag', 'W/"' + encoding + '-' + metadata.size.toString(16) + '-' + metadata.mtimeMs.toString(16) + '"')
-  res.type(extname(file))
-  if (encoding !== 'identity') res.setHeader('Content-Encoding', encoding)
-  // sendFile computes length, modification date, ranges and freshness for the selected file.
-  res.sendFile(path, (error) => {
-    if (!error) return
-    if (res.headersSent) return next(error)
-    res.removeHeader('Content-Encoding')
-    next(error)
-  })
+  return sendAvailable(encodingPreferences(req.headers['accept-encoding']))
 }
 
 export function precompressedStatic(root: string) {
