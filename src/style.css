@@ -765,6 +765,10 @@
   .thread-pending-request-primary {
     @apply border-zinc-900 bg-zinc-900 text-zinc-50 hover:bg-zinc-700;
   }
+
+  .thread-pending-request-secondary {
+    @apply border-zinc-300 text-zinc-700 hover:border-zinc-500 hover:bg-zinc-100 hover:text-zinc-900;
+  }
 }
 
 :root.dark .thread-pending-request--user-input {
@@ -797,7 +801,7 @@
     @apply transition-none;
   }
 
-  :is(.thread-pending-request-input, .composer-dropdown-trigger, .composer-dropdown-option, .thread-pending-request-primary):focus-visible {
+  :is(.thread-pending-request-input, .composer-dropdown-trigger, .composer-dropdown-option, .thread-pending-request-primary, .thread-pending-request-secondary):focus-visible {
     outline: 2px solid var(--pending-request-focus-color, var(--color-zinc-700));
     outline-offset: 2px;
   }

@@ -606,11 +606,14 @@ async function verify(page, viewport, theme) {
   assert.equal(await list.locator('[data-message-id="question-response-answer-260"]').count(), 0)
   assert.equal(await page.evaluate(value => [localStorage, sessionStorage].some(storage =>
     Object.values(storage).some(row => row.includes(value))), draft), false)
-  await panel.getByRole('button', { name: 'Dismiss draft' }).scrollIntoViewIfNeeded()
+  const dismiss = panel.getByRole('button', { name: 'Dismiss draft' })
+  const dismissColor = await dismiss.evaluate(element => getComputedStyle(element).color)
+  assert.ok(theme === 'dark' ? lightness(dismissColor) > 0.65 : lightness(dismissColor) < 0.55, dismissColor)
+  await panel.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
   const failedScreenshot = join(output, `question-draft-unconfirmed-${viewport.width}-${theme}.png`)
   await page.waitForTimeout(2200)
   await page.screenshot({ path: failedScreenshot })
-  await panel.getByRole('button', { name: 'Dismiss draft' }).click()
+  await dismiss.click()
   await heading.waitFor({ state: 'hidden' })
 
   assert.deepEqual(errors, [])
