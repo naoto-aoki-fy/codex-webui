@@ -1,4 +1,4 @@
-import type { QuestionSubmission } from '../questionResponses'
+import { QUESTION_REPLY_NOT_SENT, type QuestionSubmission } from '../questionResponses'
 import type { RpcEnvelope } from '../types/codex'
 import { CodexApiError, extractErrorMessage } from './codexErrors'
 
@@ -403,7 +403,7 @@ export async function respondServerRequest(body: ServerRequestReplyBody): Promis
     throw new CodexApiError(
       extractErrorMessage(payload, `Server request reply failed with HTTP ${response.status}`),
       {
-        code: 'http_error',
+        code: asRecord(payload)?.code === QUESTION_REPLY_NOT_SENT ? QUESTION_REPLY_NOT_SENT : 'http_error',
         method: 'server-requests/respond',
         status: response.status,
       },

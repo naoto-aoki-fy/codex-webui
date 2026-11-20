@@ -6,6 +6,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 type CodexErrorCode =
   | 'http_error'
+  | 'question_reply_not_sent'
   | 'rpc_error'
   | 'network_error'
   | 'invalid_response'

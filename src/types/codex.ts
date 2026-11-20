@@ -102,6 +102,7 @@ export type UiServerRequest = {
   receivedAtIso: string
   responseId?: string
   answerAttempted?: boolean
+  questionClosed?: boolean
   params: unknown
 }
 

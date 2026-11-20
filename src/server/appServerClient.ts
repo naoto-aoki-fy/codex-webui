@@ -1,6 +1,10 @@
 import { readCollaborationMode } from '../turnGenerationMetadata.js'
-import type { QuestionSubmission } from '../questionResponses.js'
-import { QUESTION_REQUEST, questionResponseId, questionResponses, validateQuestionResponse } from './questionResponses.js'
+import { QUESTION_REPLY_NOT_SENT, QUESTION_REPLY_UNCONFIRMED, type QuestionSubmission } from '../questionResponses.js'
+import { normalizePendingServerRequestMethod, QUESTION_REQUEST } from '../serverRequestMethod.js'
+import {
+  isQuestionToolCall, isQuestionToolOutput, questionAnswersMatch, questionRequestParams,
+  questionResponseId, questionResponses, readQuestionToolAnswers, validateQuestionResponse,
+} from './questionResponses.js'
 import { CodexHomeResolver } from './codexHomeResolver.js'
 import { getConnectionProfileId } from './connectionProfile.js'
 import { SubscriptionRecovery } from './subscriptionRecovery.js'
@@ -65,6 +69,15 @@ type PendingServerRequest = {
   responseId?: string
   anchorItemId?: string
   answerAttempted?: boolean
+}
+
+type QuestionAttempt = {
+  request: PendingServerRequest
+  threadId: string
+  turnId: string
+  callId: string
+  match: (answers: ReturnType<typeof readQuestionToolAnswers>) => void
+  fail: () => void
 }
 
 export const STREAM_EVENT_BUFFER_LIMIT = 400
@@ -168,7 +181,8 @@ export class AppServerClient {
   private nextId = 1
   private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }>()
   private readonly notificationListeners = new Set<(value: { method: string; params: unknown }) => void>()
-  private readonly questionClosures = new Map<number | string, { threadId: string; close: () => void; disconnect: () => void; deleted: boolean }>()
+  private readonly questionAttempts = new Map<number | string, QuestionAttempt>()
+  private readonly recentQuestionCallIds = new Set<string>()
   private readonly pendingServerRequests = new Map<number | string, PendingServerRequest>()
   private readonly streamEventsByThreadId = new Map<string, StreamEventFrame[]>()
   private snapshotEpoch = {}
@@ -192,8 +206,7 @@ export class AppServerClient {
     this.recovery.cancel()
     for (const request of this.pending.values()) request.reject(new Error('App-server disconnected. Retry to reconnect; inspect the thread before resending a turn.'))
     this.pending.clear()
-    for (const question of this.questionClosures.values()) question.disconnect()
-    this.questionClosures.clear()
+    for (const attempt of this.questionAttempts.values()) attempt.fail()
     this.pendingServerRequests.clear()
     this.streamEventsByThreadId.clear()
     this.lastThreadReadSnapshotByThreadId.clear()
@@ -237,7 +250,14 @@ export class AppServerClient {
     }
 
     if (typeof message.method === 'string' && message.id === undefined) {
+      if (message.method === 'rawResponseItem/completed' && this.consumeQuestionToolResult(message.params)) return
+      if ((message.method === 'item/started' || message.method === 'item/completed') &&
+        isQuestionToolOutput(asRecord(asRecord(message.params)?.item))) return
       if (message.method === 'serverRequest/resolved') this.closeQuestionRequest(message.params)
+      if (message.method === 'turn/completed') {
+        const turnId = readNonEmptyString(asRecord(asRecord(message.params)?.turn)?.id)
+        if (turnId) this.retireQuestionRequests(this.extractThreadIdFromParams(message.params), turnId)
+      }
       this.emitNotification({
         method: message.method,
         params: message.params ?? null,
@@ -261,12 +281,7 @@ export class AppServerClient {
         this.streamEventsByThreadId.delete(nThreadId)
       }
       if(notification.method==='thread/deleted'){
-        for (const [id, request] of this.pendingServerRequests) {
-          if (request.method !== QUESTION_REQUEST || this.extractThreadIdFromParams(request.params) !== nThreadId) continue
-          this.pendingServerRequests.delete(id)
-          const closure = this.questionClosures.get(request.wireId!)
-          if (closure) { closure.deleted = true; closure.disconnect() }
-        }
+        this.retireQuestionRequests(nThreadId)
         void questionResponses.delete(nThreadId).catch(error => console.warn('Could not remove saved question responses:', error))
         this.subscribedThreads.delete(nThreadId)
         this.recovery.forget(nThreadId)
@@ -383,7 +398,7 @@ export class AppServerClient {
         threadId: this.extractThreadIdFromParams(request.params),
         mode: 'manual',
         resolvedAtIso: new Date().toISOString(),
-        ...(submission ? { response: submission.response } : {}),
+        ...submission,
       },
     })
   }
@@ -392,11 +407,6 @@ export class AppServerClient {
     const event = asRecord(params)
     const requestId = event?.requestId
     if (typeof requestId !== 'number' && typeof requestId !== 'string') return
-    const awaiting = this.questionClosures.get(requestId)
-    if (awaiting && awaiting.threadId === event?.threadId) {
-      awaiting.close()
-      return
-    }
     for (const pending of this.pendingServerRequests.values()) {
       if (pending.method !== QUESTION_REQUEST || pending.wireId !== requestId ||
         this.extractThreadIdFromParams(pending.params) !== event?.threadId) continue
@@ -406,45 +416,112 @@ export class AppServerClient {
     }
   }
 
-  private async submitQuestionResponse(request: PendingServerRequest, result: unknown): Promise<QuestionSubmission> {
+  private retireQuestionRequests(threadId: string, turnId?: string): void {
+    for (const attempt of this.questionAttempts.values()) {
+      if (attempt.threadId === threadId && (turnId === undefined || attempt.turnId === turnId)) attempt.fail()
+    }
+    for (const [id, pending] of this.pendingServerRequests) {
+      const params = asRecord(pending.params)
+      if (pending.method !== QUESTION_REQUEST || params?.threadId !== threadId ||
+        (turnId !== undefined && params.turnId !== turnId)) continue
+      this.pendingServerRequests.delete(id)
+      this.publishRequestResolution(pending)
+    }
+  }
+
+  private rememberQuestionCallId(callId: string): void {
+    if (!callId) return
+    this.recentQuestionCallIds.add(callId)
+    if (this.recentQuestionCallIds.size > STREAM_EVENT_BUFFER_LIMIT) {
+      this.recentQuestionCallIds.delete(this.recentQuestionCallIds.values().next().value!)
+    }
+  }
+
+  private consumeQuestionToolResult(params: unknown): boolean {
+    const event = asRecord(params)
+    const item = asRecord(event?.item)
+    const callId = readNonEmptyString(item?.call_id)
+    if (isQuestionToolCall(item)) this.rememberQuestionCallId(callId)
+    if (item?.type !== 'function_call_output') return isQuestionToolOutput(item)
+
+    const answers = readQuestionToolAnswers(item.output)
+    // The answer envelope also protects results for external replies or calls
+    // observed before this connection subscribed to the thread.
+    if (!answers && !this.recentQuestionCallIds.has(callId)) return false
+    this.rememberQuestionCallId(callId)
+    if (callId && answers) {
+      for (const attempt of this.questionAttempts.values()) {
+        if (attempt.threadId === event?.threadId && attempt.turnId === event?.turnId && attempt.callId === callId) {
+          attempt.match(answers)
+          break
+        }
+      }
+    }
+    return true
+  }
+
+  private submitQuestionResponse(request: PendingServerRequest, result: unknown): Promise<QuestionSubmission> {
     if (request.answerAttempted) throw new Error('This question reply has already been sent or attempted')
     const { response, result: wireResult } = validateQuestionResponse(request.responseId!, request.params, result, request.anchorItemId)
-    const wireId = request.wireId!
+    const { threadId, turnId } = response
+    const callId = readNonEmptyString(asRecord(request.params)?.itemId)
     const profileId = getConnectionProfileId()
     const generation = this.connectionGeneration
     request.answerAttempted = true
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const unconfirmed = () => new Error('Question reply could not be confirmed. Your draft is kept. Inspect the conversation before continuing.')
-    const closure = { threadId: response.threadId, close: () => {}, disconnect: () => {}, deleted: false }
-    const nativeResolution = new Promise<void>(resolve => { closure.close = resolve })
-    const deadline = new Promise<never>((_, reject) => {
-      closure.disconnect = () => reject(unconfirmed())
-      timer = setTimeout(closure.disconnect, positiveEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', 60_000))
+
+    return new Promise((resolve, reject) => {
+      let sent = false
+      let matched = false
+      const retire = () => {
+        if (this.questionAttempts.get(request.id) !== attempt) return false
+        this.questionAttempts.delete(request.id)
+        clearTimeout(timer)
+        return true
+      }
+      const confirm = () => {
+        if (!sent || !matched || generation !== this.connectionGeneration || !retire()) return
+        this.pendingServerRequests.delete(request.id)
+        const finish = (submission: QuestionSubmission) => {
+          if (generation === this.connectionGeneration) this.publishRequestResolution(request, submission)
+          resolve(submission)
+        }
+        void questionResponses.save(response, profileId).then(
+          saved => finish({ response: saved, saved: true }),
+          () => finish({ response, saved: false }),
+        )
+      }
+      const attempt: QuestionAttempt = {
+        request, threadId, turnId, callId,
+        match: answers => {
+          if (!answers || !questionAnswersMatch(wireResult.answers, answers)) return
+          matched = true
+          confirm()
+        },
+        fail: () => {
+          if (retire()) reject(new Error(QUESTION_REPLY_UNCONFIRMED))
+        },
+      }
+      const timer = setTimeout(attempt.fail, positiveEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', 60_000))
       timer.unref()
+      this.questionAttempts.set(request.id, attempt)
+      try {
+        const queued = this.transport.trySend({ id: request.wireId!, result: wireResult }, error => {
+          if (error) { attempt.fail(); return }
+          sent = true
+          confirm()
+        })
+        if (!queued && retire()) {
+          if (this.pendingServerRequests.get(request.id) !== request) {
+            reject(new Error(QUESTION_REPLY_UNCONFIRMED))
+            return
+          }
+          request.answerAttempted = false
+          reject(Object.assign(new Error('Question reply was not sent. Your draft is kept. You can retry.'), {
+            code: QUESTION_REPLY_NOT_SENT,
+          }))
+        }
+      } catch { attempt.fail() }
     })
-    this.questionClosures.set(wireId, closure)
-    try {
-      const sent = new Promise<void>((resolve, reject) => {
-        try {
-          this.transport.send({ id: wireId, result: wireResult }, error => error ? reject(unconfirmed()) : resolve())
-        } catch { reject(unconfirmed()) }
-      })
-      // Codex sends resolution before delivering the answer to the turn.
-      await Promise.race([Promise.all([sent, nativeResolution]), deadline])
-      if (generation !== this.connectionGeneration || closure.deleted) throw unconfirmed()
-    } finally {
-      clearTimeout(timer)
-      if (this.questionClosures.get(wireId) === closure) this.questionClosures.delete(wireId)
-    }
-    this.pendingServerRequests.delete(request.id)
-    let submission: QuestionSubmission
-    try {
-      submission = { response: await questionResponses.save(response, profileId), saved: true }
-    } catch {
-      submission = { response, saved: false }
-    }
-    this.publishRequestResolution(request, submission)
-    return submission
   }
 
   private precedingQuestionItem(params: unknown): string | undefined {
@@ -474,6 +551,13 @@ export class AppServerClient {
       return
     }
 
+    method = normalizePendingServerRequestMethod(method, asRecord(params))
+    if (method === QUESTION_REQUEST) {
+      if ([...this.pendingServerRequests.values()].some(request => request.method === QUESTION_REQUEST && request.wireId === requestId) ||
+        [...this.questionAttempts.values()].some(attempt => attempt.request.wireId === requestId)) return
+      params = questionRequestParams(asRecord(params))
+      this.rememberQuestionCallId(readNonEmptyString(asRecord(params)?.itemId))
+    }
     const pendingRequest: PendingServerRequest = {
       id: this.nextApprovalId++,
       method,
@@ -486,7 +570,7 @@ export class AppServerClient {
 
     this.emitNotification({
       method: 'server/request',
-      params: pendingRequest,
+      params: { ...pendingRequest },
     })
   }
 

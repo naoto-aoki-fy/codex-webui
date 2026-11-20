@@ -121,12 +121,17 @@ export class AppServerWebSocketClient {
   }
 
   send(payload: Record<string, unknown>, onSent?: (error?: Error) => void): void {
+    if (!this.trySend(payload, onSent)) throw new Error('App-server is disconnected; retry to reconnect')
+  }
+
+  trySend(payload: Record<string, unknown>, onSent?: (error?: Error) => void): boolean {
     const socket = this.socket
-    if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('App-server is disconnected; retry to reconnect')
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false
     socket.send(JSON.stringify(payload), (error) => {
       if (error) this.fail(socket, error)
       onSent?.(error)
     })
+    return true
   }
 
   reconnect(): Promise<void> {

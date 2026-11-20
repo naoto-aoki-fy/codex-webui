@@ -1,9 +1,13 @@
-import type { QuestionResponse } from '../questionResponses';
+import {
+    QUESTION_REPLY_NOT_SENT, QUESTION_REPLY_UNCONFIRMED, type QuestionDraft, type QuestionResponse, type QuestionSubmission,
+} from '../questionResponses';
+import { normalizePendingServerRequestMethod, QUESTION_REQUEST } from '../serverRequestMethod';
+import { CodexApiError } from '../api/codexErrors';
 import type { Ref } from 'vue';
-import { ref } from 'vue';
+import { reactive, ref } from 'vue';
 import { getPendingServerRequests, replyToServerRequest, type RpcNotification } from '../api/codexGateway';
 import type { UiPendingRequestState, UiServerRequest, UiServerRequestReply } from '../types/codex';
-import { asRecord, normalizePendingServerRequestMethod, readString } from './desktopNotificationReaders';
+import { asRecord, readString } from './desktopNotificationReaders';
 const GLOBAL_SERVER_REQUEST_SCOPE = '__global__';
 /** Owns pending approvals and response correlation. No subscription or timer. The desktop lifecycle invalidates pending reads through lifecycleGeneration. */
 export function createDesktopApprovals(deps: {
@@ -14,27 +18,73 @@ export function createDesktopApprovals(deps: {
 }) {
     const pendingServerRequestsByThreadId = ref<Record<string, UiServerRequest[]>>({});
     let pendingServerRequestsVersion = 0;
-    const questionAttempts = ref<Record<number, { error?: string }>>({});
-    const questionSaveWarning = ref<{ threadId: string; message: string } | null>(null);
+    const questionDrafts = reactive(new Map<string, Map<string | number, QuestionDraft>>());
+    const questionSaveWarnings = reactive(new Map<string, string>());
     const closedRequestIds = new Set<number>();
-    function rememberClosed(id: number): void {
-        closedRequestIds.add(id);
-        if (closedRequestIds.size > 400) closedRequestIds.delete(closedRequestIds.values().next().value!);
-        const next = { ...questionAttempts.value };
-        delete next[id];
-        questionAttempts.value = next;
+    const nativeClosedQuestionIds = new Set<number>();
+
+    function rememberId(ids: Set<number>, id: number): void {
+        ids.add(id);
+        if (ids.size > 400) ids.delete(ids.values().next().value!);
+    }
+    function questionDraftKey(request: UiServerRequest): string | number {
+        return request.responseId ?? request.id;
+    }
+    function readQuestionDraft(request: UiServerRequest): QuestionDraft | undefined {
+        return questionDrafts.get(request.threadId)?.get(questionDraftKey(request));
+    }
+    function ensureQuestionDraft(request: UiServerRequest): QuestionDraft {
+        if (!questionDrafts.has(request.threadId)) questionDrafts.set(request.threadId, new Map());
+        const drafts = questionDrafts.get(request.threadId)!;
+        const key = questionDraftKey(request);
+        if (!drafts.has(key)) drafts.set(key, { fields: new Map() });
+        return drafts.get(key)!;
+    }
+    function updateQuestionDraft(request: UiServerRequest, questionId: string, field: 'choice' | 'text', value: string): void {
+        const draft = ensureQuestionDraft(request);
+        draft.fields.set(questionId, { ...draft.fields.get(questionId), [field]: value });
+    }
+    function clearQuestionDraft(threadId: string, key: string | number): void {
+        const drafts = questionDrafts.get(threadId);
+        drafts?.delete(key);
+        if (drafts?.size === 0) questionDrafts.delete(threadId);
+    }
+    function rememberClosed(id: number, request = findPendingRequest(id)): void {
+        rememberId(closedRequestIds, id);
+        if (request) clearQuestionDraft(request.threadId, questionDraftKey(request));
         removePendingServerRequestById(id);
     }
     function confirmQuestionResponses(responses: QuestionResponse[]): void {
-        const confirmed = new Set(responses.map(response => response.id));
-        for (const requests of Object.values(pendingServerRequestsByThreadId.value)) {
-            for (const request of requests) {
-                if (request.responseId && confirmed.has(request.responseId)) rememberClosed(request.id);
+        for (const response of responses) {
+            clearQuestionDraft(response.threadId, response.id);
+            for (const request of getThreadPendingRequests(response.threadId)) {
+                if (request.responseId === response.id) rememberClosed(request.id, request);
             }
         }
     }
+    function findPendingRequest(id: number): UiServerRequest | undefined {
+        for (const rows of Object.values(pendingServerRequestsByThreadId.value)) {
+            const request = rows.find(row => row.id === id);
+            if (request) return request;
+        }
+    }
     function dismissQuestionDraft(id: number): void {
-        if (questionAttempts.value[id]?.error) rememberClosed(id);
+        const request = findPendingRequest(id);
+        if (request && (request.questionClosed || readQuestionDraft(request)?.attempt?.error)) rememberClosed(id, request);
+    }
+    function clearThreadQuestions(threadId: string): void {
+        questionDrafts.delete(threadId);
+        for (const request of getThreadPendingRequests(threadId)) {
+            if (request.method === QUESTION_REQUEST) rememberClosed(request.id, request);
+        }
+        questionSaveWarnings.delete(threadId);
+    }
+    function clearQuestionState(): void {
+        for (const threadId of Object.keys(pendingServerRequestsByThreadId.value)) clearThreadQuestions(threadId);
+        questionDrafts.clear();
+        nativeClosedQuestionIds.clear();
+        closedRequestIds.clear();
+        questionSaveWarnings.clear();
     }
     function getThreadPendingRequests(threadId: string): UiServerRequest[] {
         if (!threadId)
@@ -92,7 +142,7 @@ export function createDesktopApprovals(deps: {
         };
     }
     function readToolRequestUserInputQuestionIds(request: UiServerRequest): string[] {
-        if (request.method !== 'item/tool/requestUserInput')
+        if (request.method !== QUESTION_REQUEST)
             return [];
         const params = asRecord(request.params);
         const questions = Array.isArray(params?.questions) ? params.questions : [];
@@ -109,7 +159,8 @@ export function createDesktopApprovals(deps: {
     function upsertPendingServerRequest(request: UiServerRequest): void {
         const threadId = request.threadId || GLOBAL_SERVER_REQUEST_SCOPE;
         const current = pendingServerRequestsByThreadId.value[threadId] ?? [];
-        const index = current.findIndex((row) => row.id === request.id);
+        const index = current.findIndex(row => row.id === request.id ||
+            (row.questionClosed && request.responseId && row.responseId === request.responseId));
         const nextRows = [...current];
         if (index >= 0) {
             nextRows.splice(index, 1, request);
@@ -136,9 +187,10 @@ export function createDesktopApprovals(deps: {
     }
     function replacePendingServerRequests(requests: UiServerRequest[]): void {
         const next: Record<string, UiServerRequest[]> = {};
-        const incoming = new Set(requests.map(request => request.id));
-        const drafts = Object.values(pendingServerRequestsByThreadId.value).flat().filter(request =>
-            questionAttempts.value[request.id] && !incoming.has(request.id));
+        const incoming = new Set(requests.map(request => JSON.stringify([request.threadId, questionDraftKey(request)])));
+        const drafts = Object.values(pendingServerRequestsByThreadId.value).flat()
+            .filter(request => readQuestionDraft(request) && !incoming.has(JSON.stringify([request.threadId, questionDraftKey(request)])))
+            .map(request => ({ ...request, questionClosed: true }));
         for (const request of [...requests, ...drafts]) {
             const threadId = request.threadId || GLOBAL_SERVER_REQUEST_SCOPE;
             const current = next[threadId] ?? [];
@@ -153,7 +205,7 @@ export function createDesktopApprovals(deps: {
     function handleServerRequestNotification(notification: RpcNotification): boolean {
         if (notification.method === 'server/request') {
             const request = normalizeServerRequest(notification.params);
-            if (!request || closedRequestIds.has(request.id))
+            if (!request || closedRequestIds.has(request.id) || nativeClosedQuestionIds.has(request.id))
                 return true;
             upsertPendingServerRequest(request);
             return true;
@@ -163,8 +215,18 @@ export function createDesktopApprovals(deps: {
             const id = row?.id;
             if (typeof id === 'number' && Number.isInteger(id)) {
                 const response = row?.response as QuestionResponse | undefined;
-                if (response) deps.retainQuestionResponse(response);
-                if (response || !questionAttempts.value[id]) rememberClosed(id);
+                const request = findPendingRequest(id);
+                if (response) {
+                    rememberClosed(id, request);
+                    retainSubmission({ response, saved: row?.saved !== false });
+                } else {
+                    rememberId(nativeClosedQuestionIds, id);
+                    if (request?.method === QUESTION_REQUEST && readQuestionDraft(request)) {
+                        upsertPendingServerRequest({ ...request, questionClosed: true });
+                    } else {
+                        rememberClosed(id, request);
+                    }
+                }
             }
             return true;
         }
@@ -179,61 +241,75 @@ export function createDesktopApprovals(deps: {
                 return;
             const normalizedRequests = rows
                 .map((row) => normalizeServerRequest(row))
-                .filter((request): request is UiServerRequest => request !== null && !closedRequestIds.has(request.id));
+                .filter((request): request is UiServerRequest => request !== null && !closedRequestIds.has(request.id) && !nativeClosedQuestionIds.has(request.id));
             replacePendingServerRequests(normalizedRequests);
         }
         catch {
             // Keep UI usable when pending request endpoint is temporarily unavailable.
         }
     }
+    function retainSubmission(submission: QuestionSubmission): void {
+        deps.retainQuestionResponse(submission.response);
+        if (!submission.saved) {
+            questionSaveWarnings.set(submission.response.threadId, 'Answer submitted. WebUI could not save it to history.');
+        }
+    }
     async function respondToPendingServerRequest(reply: UiServerRequestReply): Promise<boolean> {
         const generation = deps.lifecycleGeneration;
-        const request = Object.values(pendingServerRequestsByThreadId.value).flat().find(row => row.id === reply.id);
-        const isQuestion = request?.method === 'item/tool/requestUserInput';
-        if (isQuestion && (request.answerAttempted || questionAttempts.value[reply.id])) return false;
+        const request = findPendingRequest(reply.id);
+        const isQuestion = request?.method === QUESTION_REQUEST;
+        let draft: QuestionDraft | undefined;
         if (isQuestion) {
-            questionSaveWarning.value = null;
-            questionAttempts.value = { ...questionAttempts.value, [reply.id]: {} };
+            const previous = readQuestionDraft(request)?.attempt;
+            if (request.answerAttempted || request.questionClosed || (previous && !previous.retryable)) return false;
+            draft = ensureQuestionDraft(request);
+            draft.attempt = {};
         }
         try {
             const submission = await replyToServerRequest(reply.id, {
                 result: reply.result,
                 error: reply.error,
             });
-            if (isQuestion && !submission) throw new Error('Question reply could not be confirmed. Your draft is kept.');
+            if (isQuestion && !submission) throw new Error(QUESTION_REPLY_UNCONFIRMED);
             if (generation !== deps.lifecycleGeneration) return true;
-            rememberClosed(reply.id);
-            if (submission) {
-                deps.retainQuestionResponse(submission.response);
-                if (!submission.saved) {
-                    const message = 'Answer submitted. WebUI could not save it to history.';
-                    questionSaveWarning.value = { threadId: submission.response.threadId, message };
-                }
-            }
+            if (submission && (findPendingRequest(reply.id) || !closedRequestIds.has(reply.id))) retainSubmission(submission);
+            rememberClosed(reply.id, request);
             return true;
         }
         catch (unknownError) {
-            if (generation !== deps.lifecycleGeneration)
-                return false;
-            const message = unknownError instanceof Error ? unknownError.message : 'Failed to reply to server request';
+            if (generation !== deps.lifecycleGeneration) return false;
             if (isQuestion && closedRequestIds.has(reply.id)) return true;
-            if (isQuestion) questionAttempts.value = { ...questionAttempts.value, [reply.id]: { error: message } };
-            deps.error.value = message;
+            if (draft) {
+                const pending = findPendingRequest(reply.id);
+                const retryable = Boolean(pending && !pending.questionClosed && unknownError instanceof CodexApiError &&
+                    unknownError.code === QUESTION_REPLY_NOT_SENT);
+                const message = retryable && unknownError instanceof Error ? unknownError.message : QUESTION_REPLY_UNCONFIRMED;
+                draft.attempt = { error: message, retryable };
+                deps.error.value = message;
+                return false;
+            }
+            deps.error.value = unknownError instanceof Error ? unknownError.message : 'Failed to reply to server request';
             return false;
         }
     }
     return {
-questionAttempts,
-questionSaveWarning,
-confirmQuestionResponses,
-dismissQuestionDraft,
-clearPendingAfterDisconnect: () => replacePendingServerRequests([]),
-pendingServerRequestsByThreadId,
-getThreadPendingRequests,
-readPendingRequestState,
-readToolRequestUserInputQuestionIds,
-handleServerRequestNotification,
-loadPendingServerRequestsFromBridge,
-respondToPendingServerRequest
-};
+        readQuestionDraft,
+        updateQuestionDraft,
+        readQuestionSaveWarning: (threadId: string) => questionSaveWarnings.get(threadId),
+        confirmQuestionResponses,
+        dismissQuestionDraft,
+        clearThreadQuestions,
+        clearQuestionState,
+        clearPendingAfterDisconnect: () => {
+            ++pendingServerRequestsVersion;
+            replacePendingServerRequests([]);
+        },
+        pendingServerRequestsByThreadId,
+        getThreadPendingRequests,
+        readPendingRequestState,
+        readToolRequestUserInputQuestionIds,
+        handleServerRequestNotification,
+        loadPendingServerRequestsFromBridge,
+        respondToPendingServerRequest,
+    };
 }

@@ -33,14 +33,20 @@ async function run() {
   const historyId = 'history-cursor-fixture'
   const historyTurns = Array.from({ length: 15 }, (_, index) => ({ id: 'turn-' + index, items: [] }))
   const olderCursor = 'native-opaque-cursor'
+  const questionCases = new Map()
   let connections = 0
   server.on('connection', socket => {
     connections++
     let metadataFixtureRead=false
     socket.on('message', raw => {
       const frame = JSON.parse(String(raw)); frames.push(frame)
-      if (!frame.method && typeof frame.id === 'string' && frame.id.startsWith('question-')) {
+      if (!frame.method && questionCases.has(frame.id)) {
+        const { turnId, outcome } = questionCases.get(frame.id)
         socket.send(JSON.stringify({ method: 'serverRequest/resolved', params: { threadId: historyId, requestId: frame.id } }))
+        if (outcome === 'cancelled') socket.send(JSON.stringify({ method: 'turn/completed', params: {
+          threadId: historyId, turn: { id: turnId, status: 'interrupted', items: [] },
+        } }))
+        if (outcome === 'disconnect') socket.close()
         return
       }
       if (!frame.method || frame.method === 'initialized') return
@@ -111,6 +117,7 @@ async function run() {
       // Codex is absent on this host; CLI precedence deliberately overrides a refused env URL.
       const env = {
         ...process.env, ...storageEnv, CODEXUI_APP_SERVER_URL: dev ? endpoint : 'ws://127.0.0.1:1',
+        CODEXUI_APP_SERVER_RPC_DEADLINE_MS: '500',
       }
       if (uploadOverride === undefined) delete env.CODEXUI_REMOTE_UPLOAD_DIR
       else env.CODEXUI_REMOTE_UPLOAD_DIR = uploadOverride
@@ -126,6 +133,7 @@ async function run() {
         detached: true,
       })
       let output = ''
+      let questionStream
       child.stdout.on('data', data => { output += data })
       child.stderr.on('data', data => { output += data })
       try {
@@ -273,41 +281,89 @@ async function run() {
         assert(historyFrames.filter(frame => frame.method === 'thread/read').every(frame => frame.params.includeTurns === false))
         console.log('PASS', dev ? 'pnpm run dev' : 'built CLI', 'two bounded native content pages, opaque cursor and no full thread read')
         const nativeSocket = [...server.clients].find(socket => socket.readyState === WebSocket.OPEN)
-        const submitAnswer = async turnId => {
-          const wireId = 'question-' + turnId
-          nativeSocket.send(JSON.stringify({
-            id: wireId, method: 'item/tool/requestUserInput',
-            params: { threadId: historyId, turnId, itemId: wireId, questions: [
-              { id: 'choice', header: 'Scope' }, { id: 'secret', header: 'Private', isSecret: true },
-            ] },
-          }))
-          let pending
-          for (let attempt = 0; attempt < 30 && !pending; attempt++) {
-            const list = await (await fetch(url + '/codex-api/server-requests/pending')).json()
-            pending = list.data.find(row => row.wireId === wireId)
-            if (!pending) await new Promise(resolve => setTimeout(resolve, 10))
+        questionStream = new WebSocket(url.replace('http:', 'ws:') + '/codex-api/ws')
+        await once(questionStream, 'message', { signal: AbortSignal.timeout(5000) })
+        const questionEvents = []
+        questionStream.on('message', raw => questionEvents.push(JSON.parse(String(raw))))
+        const waitForQuestionEvent = async test => {
+          for (let attempt = 0; attempt < 40; attempt++) {
+            const event = questionEvents.find(test)
+            if (event) return event
+            await new Promise(resolve => setTimeout(resolve, 10))
           }
-          assert(pending, 'expected question on the current connection')
-          const reply = await fetch(url + '/codex-api/server-requests/respond', {
+          assert.fail('Expected a question event on the WebUI stream')
+        }
+        const privateValue = 'private fixture value'
+        const submitAnswer = async (turnId, method = 'item/tool/requestUserInput', outcome = 'confirmed') => {
+          const wireId = `question-${turnId}-${outcome}`
+          const callId = `call-${turnId}-${outcome}`
+          questionCases.set(wireId, { turnId, outcome })
+          const questions = [{ id: 'choice', header: 'Scope' }, { id: 'secret', header: 'Private', isSecret: true }]
+          const params = method === 'request_user_input'
+            ? { thread_id: historyId, turn_id: turnId, call_id: callId, questions }
+            : { threadId: historyId, turnId, itemId: callId, questions }
+          nativeSocket.send(JSON.stringify({ id: wireId, method, params }))
+          const pending = (await waitForQuestionEvent(event => event.method === 'server/request' && event.params.wireId === wireId)).params
+          assert.equal(pending.method, 'item/tool/requestUserInput')
+          const answers = { choice: { answers: ['Full', 'Keep examples'] }, secret: { answers: [privateValue] } }
+          const sendReply = () => fetch(url + '/codex-api/server-requests/respond', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: pending.id, result: { answers: {
-              choice: { answers: ['Full', 'Keep examples'] }, secret: { answers: ['private fixture value'] },
-            } } }),
+            body: JSON.stringify({ id: pending.id, result: { answers } }),
           })
-          const result = await reply.json()
-          assert.equal(reply.status, 200, JSON.stringify(result))
+          const emitResult = (output, overrides = {}, resultCallId = callId) => nativeSocket.send(JSON.stringify({
+            method: 'rawResponseItem/completed', params: { threadId: historyId, turnId, ...overrides,
+              item: { type: 'function_call_output', call_id: resultCallId, output: JSON.stringify({ answers: output }) },
+            },
+          }))
+          const sentAt = frames.length
+          let finished = false
+          const reply = sendReply().then(response => { finished = true; return response })
+          await waitForQuestionEvent(event => event.method === 'server/request/resolved' && event.params.id === pending.id)
+          if (outcome === 'confirmed') {
+            emitResult(answers, { threadId: 'wrong-thread' })
+            emitResult(answers, { turnId: 'wrong-turn' })
+            emitResult(answers, {}, 'wrong-call')
+            emitResult({ ...answers, choice: { answers: ['Keep examples', 'Full'] } })
+            const marker = `after-mismatches-${wireId}`
+            nativeSocket.send(JSON.stringify({ method: marker, params: { threadId: historyId } }))
+            await waitForQuestionEvent(event => event.method === marker)
+            assert.equal(finished, false, 'closure and mismatches cannot confirm the reply')
+            assert.equal(questionEvents.filter(event => event.params?.id === pending.id && event.params.response).length, 0)
+            emitResult({ secret: answers.secret, choice: answers.choice })
+            emitResult(answers)
+          }
+          const response = await reply
+          const result = await response.json()
+          assert.equal(JSON.stringify(result).includes(privateValue), false)
+          assert.equal(frames.slice(sentAt).filter(frame => frame.id === wireId).length, 1)
+          if (outcome !== 'confirmed') {
+            assert.equal(response.status, 502, JSON.stringify(result))
+            assert.match(result.error, /could not be confirmed/)
+            if (outcome !== 'disconnect') {
+              emitResult(answers)
+              assert.equal((await sendReply()).status, 502)
+            }
+            return
+          }
+          assert.equal(response.status, 200, JSON.stringify(result))
           assert.equal(result.saved, true)
           assert.deepEqual(result.response.questions, [
             { id: 'choice', heading: 'Scope', answers: ['Full', 'Keep examples'] },
             { id: 'secret', heading: 'Private', provided: true },
           ])
-          return result.response
+          await waitForQuestionEvent(event => event.params?.id === pending.id && event.params.response)
+          assert.equal(questionEvents.filter(event => event.params?.id === pending.id && event.params.response).length, 1)
         }
         if (!previousRuns) {
           assert.equal(latest.questionResponses, undefined)
           await submitAnswer('turn-2')
-          await submitAnswer('turn-3')
-          await submitAnswer('turn-13')
+          await submitAnswer('turn-3', 'request_user_input')
+          await submitAnswer('turn-13', 'legacy-question-shaped-request')
+          await submitAnswer('turn-10', undefined, 'cancelled')
+          await submitAnswer('turn-11', undefined, 'timeout')
+          assert.equal(JSON.stringify(questionEvents).includes(privateValue), false)
+          assert.equal(questionEvents.some(event => event.method === 'rawResponseItem/completed'), false)
+          console.log('PASS question closure, matching result, mismatches, duplicates, aliases, cancellation, timeout and private output')
         }
         const populatedAt = frames.length
         const populated = await historyRequest('thread/read', { includeTurns: true })
@@ -401,7 +457,16 @@ async function run() {
         ws.terminate()
         assert.equal(connections - before, 1)
         console.log('PASS', dev ? 'pnpm run dev' : 'built CLI', 'HTTP RPC and browser WS; one upstream connection')
+        if (!previousRuns) {
+          await submitAnswer('turn-9', undefined, 'disconnect')
+          assert.equal(questionEvents.some(event => event.params?.response?.turnId === 'turn-9'), false)
+          assert.equal(JSON.stringify(questionEvents).includes(privateValue), false)
+          assert.equal(output.includes(privateValue), false)
+          console.log('PASS question disconnect leaves an unconfirmed reply with no private output')
+        }
+        questionStream.terminate()
       } finally {
+        questionStream?.terminate()
         const exited = once(child, 'exit')
         process.kill(-child.pid, 'SIGTERM')
         await exited

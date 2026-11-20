@@ -1146,6 +1146,9 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     for (const [threadId, requests] of Object.entries(approvals.pendingServerRequestsByThreadId.value)) {
       if (threadId === GLOBAL_SERVER_REQUEST_SCOPE || activeThreadIds.has(threadId)) {
         nextPending[threadId] = requests
+      } else {
+        const drafts = requests.filter(request => approvals.readQuestionDraft(request))
+        if (drafts.length) nextPending[threadId] = drafts
       }
     }
     approvals.pendingServerRequestsByThreadId.value = nextPending
@@ -1842,6 +1845,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     if(notification.method==='thread/deleted'){
       const id=readString(asRecord(notification.params)?.threadId)
       if(id){
+        approvals.clearThreadQuestions(id)
         invalidateThreadListGeneration();removeArchivedThreadFromLoadedLists(id);invalidateResumeThread(id)
         history.invalidateThreadHistory(id)
         setLiveAgentMessagesForThread(id,[]);clearLiveReasoningForThread(id)
@@ -2855,6 +2859,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     connectionNotices.dispose()
     backendPreferences.dispose()
     ++connection.lifecycleGeneration
+    approvals.clearQuestionState()
     ++connection.eventSyncGeneration
     ++threadListLoadGeneration
     loadThreadsPromise = null
@@ -2964,8 +2969,9 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     isSelectedThreadInterruptPending,
     selectedThreadServerRequests,
     selectedQuestionResponses,
-    questionAttempts: approvals.questionAttempts,
-    questionSaveWarning: approvals.questionSaveWarning,
+    readQuestionDraft: approvals.readQuestionDraft,
+    updateQuestionDraft: approvals.updateQuestionDraft,
+    questionSaveWarning: computed(() => approvals.readQuestionSaveWarning(selectedThreadId.value)),
     dismissQuestionDraft: approvals.dismissQuestionDraft,
     selectedLiveOverlay,
     codexQuota,

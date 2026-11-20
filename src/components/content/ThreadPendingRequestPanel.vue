@@ -197,19 +197,19 @@
                 <span class="thread-pending-request-select-label">{{ ('Choice') }}</span>
                 <ComposerDropdown
                   class="thread-pending-request-dropdown"
-                  :model-value="readQuestionAnswer(request.id, question.id, question.options[0]?.label || '')"
+                  :model-value="readQuestionAnswer(question.id, question.options[0]?.label || '')"
                   :options="toolQuestionOptions(question)"
                   :placeholder="('Choice')"
                   :disabled="!isQuestionExpanded"
-                  @update:model-value="onQuestionAnswerChange(request.id, question.id, $event)"
+                  @update:model-value="emit('updateQuestionDraft', question.id, 'choice', $event)"
                 />
               </div>
 
               <p
-                v-if="selectedOptionDescription(request.id, question.id, question.options)"
+                v-if="selectedOptionDescription(question.id, question.options)"
                 class="thread-pending-request-question-description"
               >
-                {{ selectedOptionDescription(request.id, question.id, question.options) }}
+                {{ selectedOptionDescription(question.id, question.options) }}
               </p>
             </div>
 
@@ -218,21 +218,21 @@
               <input
                 class="thread-pending-request-input"
                 :type="question.isSecret ? 'password' : 'text'"
-                :value="readQuestionOtherAnswer(request.id, question.id)"
+                :value="readQuestionOtherAnswer(question.id)"
                 :placeholder="('Other answer')"
-                @input="onQuestionOtherAnswerInput(request.id, question.id, $event)"
+                @input="onQuestionOtherAnswerInput(question.id, $event)"
               />
             </label>
           </div>
 
-          <footer class="thread-pending-request-footer">
-            <p v-if="questionAttempt?.error" role="alert">{{ questionAttempt.error }}</p>
-            <button v-if="questionAttempt?.error" type="button" class="thread-pending-request-secondary"
+          <footer class="thread-pending-request-footer thread-pending-request-footer--question">
+            <p v-if="questionError" class="thread-pending-request-question-error" role="alert">{{ questionError }}</p>
+            <button v-if="questionError" type="button" class="thread-pending-request-secondary"
               @click="emit('dismissQuestionDraft', request.id)">Dismiss draft</button>
-            <button v-else type="button" class="thread-pending-request-primary"
-              :disabled="Boolean(questionAttempt || request.answerAttempted) || !hasToolAnswer"
+            <button v-if="!questionError || canRetryQuestion" type="button" class="thread-pending-request-primary"
+              :disabled="isAwaitingQuestionConfirmation || !hasToolAnswer"
               @click="onRespondToolRequestUserInput(request)">
-              {{ questionAttempt || request.answerAttempted ? 'Awaiting confirmation…' : 'Send' }}
+              {{ isAwaitingQuestionConfirmation ? 'Awaiting confirmation…' : (canRetryQuestion ? 'Retry' : 'Send') }}
             </button>
           </footer>
         </section>
@@ -262,6 +262,8 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from 'vue'
 import type { UiServerRequest, UiServerRequestReply } from '../../types/codex'
+import type { QuestionDraft } from '../../questionResponses'
+import { QUESTION_REQUEST } from '../../serverRequestMethod'
 import ComposerDropdown from './ComposerDropdown.vue'
 import IconTablerChevronRight from '../icons/IconTablerChevronRight.vue'
 
@@ -301,26 +303,30 @@ type McpElicitationField = {
 const props = defineProps<{
   request: UiServerRequest | null
   requestCount?: number
-  questionAttempt?: { error?: string }
+  questionDraft?: QuestionDraft
 }>()
 
 const emit = defineEmits<{
   respondServerRequest: [payload: UiServerRequestReply]
   dismissQuestionDraft: [id: number]
+  updateQuestionDraft: [questionId: string, field: 'choice' | 'text', value: string]
 }>()
 
-const isToolQuestion = computed(() => props.request?.method === 'item/tool/requestUserInput')
+const isToolQuestion = computed(() => props.request?.method === QUESTION_REQUEST)
 const isQuestionExpanded = ref(true)
 const questionBodyId = useId()
 const selectedApprovalDecision = ref<ApprovalDecision>('accept')
 const approvalFreeformText = ref('')
-const toolQuestionAnswers = ref<Record<string, string>>({})
-const toolQuestionOtherAnswers = ref<Record<string, string>>({})
+const questionAttempt = computed(() => props.questionDraft?.attempt)
+const questionError = computed(() => questionAttempt.value?.error ||
+  (props.request?.questionClosed && !questionAttempt.value ? 'Question closed. Your draft is kept.' : ''))
+const canRetryQuestion = computed(() => questionAttempt.value?.retryable && !props.request?.questionClosed && !props.request?.answerAttempted)
+const isAwaitingQuestionConfirmation = computed(() => !questionError.value && Boolean(questionAttempt.value || props.request?.answerAttempted))
 const hasToolAnswer = computed(() => {
   const request = props.request
   return request && readToolQuestions(request).some(question =>
-    readQuestionAnswer(request.id, question.id, question.options[0]?.label || '').trim() ||
-      readQuestionOtherAnswer(request.id, question.id).trim())
+    readQuestionAnswer(question.id, question.options[0]?.label || '').trim() ||
+      readQuestionOtherAnswer(question.id).trim())
 })
 const mcpElicitationAnswers = ref<Record<string, string | number | boolean | string[] | null>>({})
 const mcpElicitationValidationError = ref('')
@@ -392,7 +398,7 @@ function readRequestReason(request: UiServerRequest): string {
 function requestPanelTitle(request: UiServerRequest): string {
   if (isApprovalRequest(request)) return 'Awaiting approval'
   if (isMcpElicitationRequest(request)) return 'MCP server input required'
-  if (request.method === 'item/tool/requestUserInput') return 'Awaiting response'
+  if (request.method === QUESTION_REQUEST) return 'Awaiting response'
   if (request.method === 'item/tool/call') return 'Tool call waiting for response'
   return request.method
 }
@@ -404,7 +410,7 @@ function requestPanelPrompt(request: UiServerRequest): string {
   if (isFileApprovalRequest(request)) return 'Do you want to make these changes?'
   if (isPermissionsApprovalRequest(request)) return 'Do you want to grant these permissions?'
   if (isMcpElicitationRequest(request)) return 'An MCP server needs your input before Codex can continue.'
-  if (request.method === 'item/tool/requestUserInput') return 'Codex needs your answer before it can continue.'
+  if (request.method === QUESTION_REQUEST) return 'Codex needs your answer before it can continue.'
   return 'Codex is waiting for a response before it can continue.'
 }
 
@@ -488,8 +494,6 @@ watch(
   () => {
     isQuestionExpanded.value = true
     approvalFreeformText.value = ''
-    toolQuestionAnswers.value = {}
-    toolQuestionOtherAnswers.value = {}
     mcpElicitationAnswers.value = {}
     mcpElicitationValidationError.value = ''
     selectedApprovalDecision.value = approvalOptions.value[0]?.id ?? 'accept'
@@ -507,10 +511,6 @@ watch(
   },
   { immediate: true },
 )
-
-function toolQuestionKey(requestId: number, questionId: string): string {
-  return `${String(requestId)}:${questionId}`
-}
 
 function readToolQuestions(request: UiServerRequest): ParsedToolQuestion[] {
   const params = asRecord(request.params)
@@ -547,45 +547,27 @@ function readToolQuestions(request: UiServerRequest): ParsedToolQuestion[] {
   return parsed
 }
 
-function readQuestionAnswer(requestId: number, questionId: string, fallback: string): string {
-  const key = toolQuestionKey(requestId, questionId)
-  const saved = toolQuestionAnswers.value[key]
-  if (typeof saved === 'string' && saved.length > 0) return saved
-  return fallback
+function readQuestionAnswer(questionId: string, fallback: string): string {
+  return props.questionDraft?.fields.get(questionId)?.choice || fallback
 }
 
-function readQuestionOtherAnswer(requestId: number, questionId: string): string {
-  return toolQuestionOtherAnswers.value[toolQuestionKey(requestId, questionId)] ?? ''
-}
-
-function onQuestionAnswerChange(requestId: number, questionId: string, value: string): void {
-  const key = toolQuestionKey(requestId, questionId)
-  toolQuestionAnswers.value = {
-    ...toolQuestionAnswers.value,
-    [key]: value,
-  }
+function readQuestionOtherAnswer(questionId: string): string {
+  return props.questionDraft?.fields.get(questionId)?.text ?? ''
 }
 
 function toolQuestionOptions(question: ParsedToolQuestion): Array<{ value: string; label: string }> {
   return question.options.map((option) => ({ value: option.label, label: option.label }))
 }
 
-function onQuestionOtherAnswerInput(requestId: number, questionId: string, event: Event): void {
-  const target = event.target
-  if (!(target instanceof HTMLInputElement)) return
-  const key = toolQuestionKey(requestId, questionId)
-  toolQuestionOtherAnswers.value = {
-    ...toolQuestionOtherAnswers.value,
-    [key]: target.value,
-  }
+function onQuestionOtherAnswerInput(questionId: string, event: Event): void {
+  if (event.target instanceof HTMLInputElement) emit('updateQuestionDraft', questionId, 'text', event.target.value)
 }
 
 function selectedOptionDescription(
-  requestId: number,
   questionId: string,
   options: Array<{ label: string; description: string }>,
 ): string {
-  const selected = readQuestionAnswer(requestId, questionId, options[0]?.label || '')
+  const selected = readQuestionAnswer(questionId, options[0]?.label || '')
   return options.find((option) => option.label === selected)?.description ?? ''
 }
 
@@ -961,11 +943,11 @@ function onRespondMcpElicitation(request: UiServerRequest, action: 'accept' | 'd
 
 function onRespondToolRequestUserInput(request: UiServerRequest): void {
   const questions = readToolQuestions(request)
-  const answers: Record<string, { answers: string[] }> = {}
+  const answers: Record<string, { answers: string[] }> = Object.create(null)
 
   for (const question of questions) {
-    const selected = readQuestionAnswer(request.id, question.id, question.options[0]?.label || '')
-    const other = readQuestionOtherAnswer(request.id, question.id).trim()
+    const selected = readQuestionAnswer(question.id, question.options[0]?.label || '')
+    const other = readQuestionOtherAnswer(question.id).trim()
     const values = [selected, other].map((value) => value.trim()).filter((value) => value.length > 0)
     answers[question.id] = { answers: values }
   }
@@ -1176,6 +1158,14 @@ function onRejectUnknownRequest(request: UiServerRequest): void {
 
 .thread-pending-request-footer--approval {
   @apply mt-0 items-stretch gap-2.5;
+}
+
+.thread-pending-request-footer--question {
+  @apply flex-wrap;
+}
+
+.thread-pending-request-question-error {
+  @apply basis-full text-sm;
 }
 
 .thread-pending-request-primary,

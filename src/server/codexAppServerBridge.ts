@@ -1,4 +1,5 @@
 import { questionResponses } from './questionResponses.js'
+import { QUESTION_REPLY_NOT_SENT } from '../questionResponses.js'
 import { ModelPreferencesStore } from './modelPreferencesStore.js'
 import { createModelPreferenceUsage } from './modelPreferenceUsage.js'
 import type { ModelPreferences } from '../modelPreferences.js'
@@ -833,7 +834,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       next()
     } catch (error) {
       const message = getErrorMessage(error, 'Unknown bridge error')
-      setJson(res, 502, { error: message })
+      const code = (error as { code?: unknown } | null)?.code
+      setJson(res, 502, { error: message, ...(code === QUESTION_REPLY_NOT_SENT ? { code } : {}) })
     }
   }
 

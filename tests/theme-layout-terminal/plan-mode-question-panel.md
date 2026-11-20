@@ -138,6 +138,30 @@ Close the fixture browser. Its theme preference and response are isolated from y
 
 1. With a Codex App Server connected, open a persisted thread and prompt in Plan mode for multiple questions with choices, free text and a private field. Tab through the question, enter a choice, visible free text and private text. Submit once while clicking Send twice. Confirm a single WebSocket reply to Codex and one user-style bubble after the item preceding the question. Check each heading, answer order, **Answer hidden**, Sent time and **Copy answers**. Paste the copied content into a scratch editor and search for the private value. The bubble has no Fork or Revert controls. Repeat in light and dark at desktop and mobile widths.
 2. Reload, open a fresh browser on the same WebUI profile and restart the WebUI backend while keeping Codex running. Check the same ID, placement, time and redacted content. Load an older page containing a saved answer. Disconnect its browser stream, submit a different old-turn response in another browser, then reconnect. Inspect the ordinary history response for records from the current page and the retained older turns only. Compare native page counts with an empty history response.
-3. Stop the App Server connection just after Send, or fixture a missing native resolution. The pending draft remains available with an error and no automatic retry. Simulate WebUI data-directory write failure after a valid native closure. The bubble appears with the same redaction and the submitting browser warns that history saving failed.
+3. Stop the App Server connection just after Send, or fixture a native closure with no matching tool result. The pending draft remains available with an error and no automatic retry. Simulate WebUI data-directory write failure after a matching native tool result. The bubble appears with the same redaction and the submitting browser warns that history saving failed.
 4. Archive and reopen the thread, then compare the same thread ID on another profile. The archive keeps the saved bubble, and the other profile has its own records. Native and Portable Fork retain eligible prompt and assistant behavior, with saved answers displayed only in the source. Revert through an answered turn and confirm its bubble disappears. Use the protocol fixture to observe confirmed native permanent deletion and check that the stored answers disappear.
 5. Close fixture browsers, remove temporary fixture profile data, and unarchive any live thread used for the check if needed.
+
+#### Delivery confirmation and in-session drafts
+
+1. Run the question panel browser fixture in light and dark at 1280×900,
+   768×1024 and 375×812. Choose **Full review** and enter text in the private
+   field. Submit, let an approval replace the panel, switch threads and release
+   the failed reply. Return and resolve the approval. The original choice and
+   masked text return. The error reports unconfirmed delivery, no answer bubble
+   appears, and the browser sends one reply.
+2. Simulate App Server disconnect and reconnect in the same tab. Verify the
+   unconfirmed form still has both values. Inspect local and session storage for
+   the test value. Dismiss the draft and confirm the panel disappears. Reloading
+   the page starts a new in-memory draft.
+3. Run the external App Server protocol fixture. Inspect a native closure before
+   a matching result and expect an empty history until confirmation. Check that
+   mismatched IDs, changed answer ordering, cancellation, connection loss and
+   closure without a result save nothing. Check that an identical duplicate
+   result yields a single redacted saved answer and that browser events and
+   backend output contain no private value.
+4. When the bridge certifies that the socket did not send the frame and the
+   request remains pending, **Retry** is available. Use it once and look for the
+   same confirmation before a bubble appears. Simulate a confirmed reply with a
+   failed history write and check the visible redacted bubble and save warning.
+5. Close the fixture browser and stop only the temporary App Server fixture.
