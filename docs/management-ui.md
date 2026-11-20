@@ -57,25 +57,26 @@ metadata and unknown-outcome handling are covered by their existing workflows.
 
 ## Send modes
 
-Immediate mode is the default for every new conversation and has no persistent
-composer label. The + menu marks either Immediate mode or Queue mode. Queue shows
-a compact indicator; keyboard arrows switch its radio selection in the menu.
-Selection affects subsequent submissions only, never queued payloads or active work.
+Queue mode starts off. In the composer **+** menu, click the **Queue mode** switch
+or press Enter or Space while it has focus. The menu stays open and shows the
+current state. When Queue mode is on, **Queue ×** appears above the draft, after
+**Plan ×** if Plan mode is also on. Select **Queue ×** to turn Queue mode off
+independently. With Queue mode off, submissions send immediately or use Steer
+during an active turn. Switching modes affects future submissions.
 
 The selection is session UI state in App, shared across the Home and thread
 composer instances. It remains through sends, dialog use, pending requests and
-connection changes. A choice made before the first message is explicitly carried
-across the first persistent thread ID. Native Queue needs an existing thread:
-the first message still creates the conversation through the established initial
-turn path, and a preselected Queue mode applies to subsequent submissions. The
-menu explains this boundary.
+connection changes. The first message creates the conversation and starts a turn.
+If Queue mode was enabled before that message, it carries over to the created
+conversation and applies to subsequent submissions. The menu explains when Queue
+mode takes effect.
 
 Switching to another existing conversation, revisiting a conversation, or reloading
-resets to Immediate, preserving the previous reset-on-entry behavior. Starting a
-new conversation while already on Home also resets it. No per-thread preference
-store or persistence redesign is introduced. Selecting Queue performs the existing
-guarded read-only readiness check without opening tools; unavailable/uncertain
-queue state blocks sends and links to inspection, without falling back to Immediate.
+turns Queue mode off. Starting a new conversation while already on Home also
+turns it off. Enabling Queue mode checks whether the native queue is ready.
+If the queue is unavailable or an earlier submission has an uncertain outcome,
+the notice below the composer links to queue inspection and blocks submission
+while Queue mode is on.
 
 ## Historical verification
 

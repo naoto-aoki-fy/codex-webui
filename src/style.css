@@ -259,8 +259,7 @@
   @apply border-rose-800/70 bg-rose-950/70 text-rose-100 shadow-none;
 }
 
-:root.dark .composer-dropdown-trigger,
-:root.dark .thread-composer-queue-mode {
+:root.dark .composer-dropdown-trigger {
   @apply text-zinc-400;
 }
 
@@ -1387,7 +1386,6 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .feature-panel p { margin: 8px 0; }
 .feature-panel pre { font-size: 12px; text-align: left; }
 .execution-details { width: 100%; min-width: 0; text-align: left; }
-.thread-composer-queue-mode { @apply text-sm leading-tight text-zinc-500; white-space: nowrap; padding: 3px; }
 .feature-panel button { border: 1px solid #d4d4d8; border-radius: 6px; padding: 4px 8px; margin: 4px 0; background: #fff; }
 .feature-panel button:disabled { opacity: .55; cursor: default; }
 .feature-panel ul { list-style: none; padding: 0; max-height: 280px; overflow: auto; }
@@ -1486,11 +1484,7 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .skills-management-entry { padding: 12px 24px; }
 :root.dark .conversation-header-menu-body, :root.dark .composer-apps-popover { background: #18181b; color: #d4d4d8; border-color: #3f3f46; }
 :root.dark .conversation-header-menu-body button:hover, :root.dark .conversation-header-menu > summary:hover { background: #27272a; }
-.composer-send-modes { border: 0; min-width: 0; margin: 4px 0; padding: 4px 0; }
-.composer-send-modes legend { padding: 0 12px; font-size: 12px; color: #71717a; }
-.composer-send-modes p { margin: 4px 12px; font-size: 12px; line-height: 1.4; color: #71717a; }
 .thread-composer-attach-menu { max-height: min(70dvh, 620px); overflow-y: auto; }
-:root.dark .composer-send-modes legend, :root.dark .composer-send-modes p { color: #a1a1aa; }
 .management-dialog .directory-hub { height: auto; overflow: visible; padding: 0; }
 .management-dialog .directory-title { font-size: 18px; line-height: 1.5; font-weight: 500; }
 .management-dialog .skills-embedded-toggle { min-height: 36px; gap: 8px; }
@@ -1499,7 +1493,6 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
   .management-dialog .directory-header { flex-wrap: wrap; }
   .management-dialog .directory-header > div { min-width: 0; overflow-wrap: anywhere; }
 }
-.thread-composer-control.thread-composer-queue-mode { flex-shrink: 0; }
 .thread-composer .thread-composer-actions { flex-shrink: 0; }
 @media (max-width: 400px) {
   .thread-composer .thread-composer-controls { flex-wrap: wrap; gap: 6px; }
