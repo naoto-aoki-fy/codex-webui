@@ -235,6 +235,7 @@
         <div v-else class="message-row" :data-role="message.role" :data-message-type="message.messageType || ''">
           <div class="message-stack" :data-role="message.role">
             <article class="message-body" :data-role="message.role">
+              <span v-if="message.role === 'user' && message.generationMetadata?.collaborationMode === 'plan'" class="message-plan-badge">Plan</span>
               <ul
                 v-if="message.images && message.images.length > 0"
                 class="message-image-list"
@@ -2155,6 +2156,10 @@ onBeforeUnmount(() => {
   width: fit-content;
   margin-left: auto;
   align-self: flex-end;
+}
+
+.message-plan-badge {
+  @apply mb-1.5 inline-flex self-end rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700;
 }
 
 .question-response-card section + section {

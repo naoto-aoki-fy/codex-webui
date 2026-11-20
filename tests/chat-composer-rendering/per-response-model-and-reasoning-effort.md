@@ -34,3 +34,32 @@ Actions and expected results:
 
 Cleanup: archive only disposable conversations. Restore permissions/theme and
 network conditions. Do not delete original rollouts or old metadata stores.
+
+## Plan mode on the submitted prompt
+
+Use the same external App Server and disposable history described above. The
+browser fixture at `node scripts/test-turn-mode-history.cjs` covers light and
+dark themes at 1280 × 900, 768 × 1024 and 375 × 812.
+
+1. Send identical text in Default and Plan modes. Check that Plan is visible on
+   the optimistic Plan prompt before approval or turn completion and remains on
+   that exact native prompt when it replaces the optimistic row. Check that
+   Default has no badge. Repeat with a file-only prompt and with **Implement**
+   on a plan while the composer is set to Plan. Inspect the collaboration mode
+   in each `turn/start` call and compare it with the prompt row.
+2. Hold the start acknowledgment, reject the request, or return a response
+   without a turn ID. Check that the optimistic badge clears when acceptance
+   cannot be confirmed. Check that the browser sends a single start and does
+   not assign the badge to another prompt with identical content.
+3. Reload, restart WebUI and revisit an older turn. Observe an accepted WebUI
+   Plan turn with rollout reads unavailable, then enable rollout access. In
+   the fixture, make `task_started` and `turn_context` disagree for that ID.
+   Check that the badge clears and the submitted fallback stays cleared after
+   a restart. For an unrelated turn with neither exact evidence nor a saved
+   explicit mode, check for the ordinary prompt bubble.
+4. Load an older page before briefly disconnecting the browser stream. Reconnect
+   without reloading and confirm the older badge can be recovered through the
+   same history request. Verify assistant model, effort and the Sent/Answered
+   timestamps before and after. Check destination-owned evidence on Native Fork
+   and that Portable Fork retains its ordinary transcript attribution.
+5. Archive the disposable threads and remove temporary fixture profiles when done.

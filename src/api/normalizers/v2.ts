@@ -561,7 +561,10 @@ export function normalizeThreadMessagesV2(payload: Pick<ThreadReadResponse, 'thr
     const turn = turns[turnOffset]
     const rawTurnId = typeof turn?.id === 'string' ? turn.id.trim() : ''
     const turnId = rawTurnId.length > 0 ? rawTurnId : undefined
-    const generationMetadata = readGenerationMetadata((turn as Turn & { generationMetadata?: unknown }).generationMetadata)
+    const metadata = readGenerationMetadata((turn as Turn & { generationMetadata?: unknown }).generationMetadata)
+    const { collaborationMode, collaborationModeSource, ...responseMetadata } = metadata ?? {}
+    const modeMetadata = collaborationMode === undefined ? undefined : { collaborationMode, collaborationModeSource }
+    const generationMetadata = Object.keys(responseMetadata).length ? responseMetadata : undefined
     const items = Array.isArray(turn.items) ? turn.items : []
     const lastAgentItem = items.filter(candidate => candidate.type === 'agentMessage').at(-1)
     for (const item of items) {
@@ -581,7 +584,7 @@ export function normalizeThreadMessagesV2(payload: Pick<ThreadReadResponse, 'thr
         const timelineAt = !submittedAt && !completedAt
           ? readMessageMilliseconds(itemTiming.startedAtMs) ?? readMessageMilliseconds(itemTiming.completedAtMs)
           : undefined
-        messages.push({ ...msg, submittedAt, completedAt: completedAt ?? reviewCompletedAt, ...(timelineAt ? { timelineAt } : {}), turnId, turnIndex, ...(msg.role === 'assistant' ? { generationMetadata } : {}) })
+        messages.push({ ...msg, submittedAt, completedAt: completedAt ?? reviewCompletedAt, ...(timelineAt ? { timelineAt } : {}), turnId, turnIndex, ...(msg.role === 'assistant' ? { generationMetadata } : msg.role === 'user' && modeMetadata ? { generationMetadata: modeMetadata } : {}) })
       }
     }
     const errorText = readTurnErrorText(turn)

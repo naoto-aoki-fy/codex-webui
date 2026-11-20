@@ -48,6 +48,11 @@ async function run() {
         const reply=metadataFixtureRead?{error:{code:-32603,message:'failed to read thread: rollout at /fixture/rollout.jsonl is empty'}}:{result:{thread:{id:'metadata-status-fixture',cwd:'/fixture',status:{type:'idle'},turns:[]}}}
         metadataFixtureRead=true;socket.send(JSON.stringify({id:frame.id,...reply}));return
       }
+      if (frame.method === 'turn/start' && frame.params.threadId === historyId) {
+        const id = frame.params.collaborationMode?.mode === 'plan' ? 'turn-2' : 'turn-12'
+        socket.send(JSON.stringify({ id: frame.id, result: { turn: { id } } }))
+        return
+      }
       if (['turn/start', 'turn/steer'].includes(frame.method)) {
         socket.send(JSON.stringify({ id: frame.id, error: { code: -32600, message: 'Sign in on the App Server to send messages' } }))
         return
@@ -77,7 +82,7 @@ async function run() {
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
         : frame.method === 'model/list' ? { data: [{ id: frame.params.cursor ? 'fixture-hidden' : 'fixture-model', hidden: Boolean(frame.params.cursor), isDefault: !frame.params.cursor }], nextCursor: frame.params.cursor ? null : 'fixture-next' }
         : ['thread/list', 'project/list'].includes(frame.method) ? { data: [], nextCursor: null }
-        : frame.method === 'thread/read' && frame.params.threadId === historyId ? { thread: { id: historyId, turns: [] } }
+        : frame.method === 'thread/read' && frame.params.threadId === historyId ? { thread: { id: historyId, turns: [] }, modelProvider: 'fixture-provider', model: 'fixture-model' }
         : frame.method === 'thread/turns/list' && frame.params.threadId === historyId
           ? { data: frame.params.cursor ? historyTurns.slice(0, 5).reverse() : historyTurns.slice(5).reverse(), nextCursor: frame.params.cursor ? null : olderCursor }
           : {}
@@ -319,6 +324,45 @@ async function run() {
         assert(populatedWire.every(frame => !('retainedTurnIds' in frame.params)))
         console.log('PASS', profile, previousRuns ? 'restart' : 'capture', 'one native turn page per request',
           'answer-only bytes latest/retained/older', ...[populated, retained, earlier].map(page => Buffer.byteLength(JSON.stringify(page.questionResponses))))
+        const metadataStream = new WebSocket(url.replace('http:', 'ws:') + '/codex-api/ws')
+        await once(metadataStream, 'message', { signal: AbortSignal.timeout(5000) })
+        const modes = new Map()
+        metadataStream.on('message', raw => {
+          const message = JSON.parse(String(raw))
+          if (message.method === 'turn/generationMetadata' && message.params.threadId === historyId) {
+            modes.set(message.params.turnId, message.params.generationMetadata)
+          }
+        })
+        const waitForModes = async ids => {
+          for (let attempt = 0; attempt < 50 && ids.some(id => !modes.has(id)); attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 20))
+          }
+          assert.deepEqual([...modes.keys()].sort(), [...ids].sort())
+        }
+        try {
+          if (!previousRuns) {
+            const beforeModes = frames.length
+            for (const [mode, id] of [['plan', 'turn-2'], ['default', 'turn-12']]) {
+              const result = await historyRequest('turn/start', { input: [], collaborationMode: { mode } })
+              assert.equal(result.turn.id, id)
+            }
+            assert.deepEqual(frames.slice(beforeModes).map(frame => frame.method), ['turn/start', 'turn/start'])
+            await waitForModes(['turn-2', 'turn-12'])
+            await preferences('update', { preferred })
+          }
+          modes.clear()
+          const beforeModeRecovery = frames.length
+          await historyRequest('thread/read', { includeTurns: true, retainedTurnIds: ['turn-2'] })
+          await waitForModes(['turn-2', 'turn-12'])
+          assert.deepEqual(Object.fromEntries(modes), {
+            'turn-2': { collaborationMode: 'plan', collaborationModeSource: 'submitted' },
+            'turn-12': { collaborationMode: 'default', collaborationModeSource: 'submitted' },
+          })
+          assert.deepEqual(frames.slice(beforeModeRecovery).map(frame => frame.method).sort(),
+            ['thread/read', 'thread/read', 'thread/turns/list'])
+          assert(!frames.slice(beforeModeRecovery).some(frame => 'retainedTurnIds' in frame.params))
+          console.log('PASS', profile, previousRuns ? 'restart' : 'acceptance', 'exact retained Plan and Default mode, unavailable rollout, no extra native calls')
+        } finally { metadataStream.terminate() }
         if (previousRuns) nativeSocket.send(JSON.stringify({ method: 'thread/deleted', params: { threadId: historyId } }))
         const metadataRead=async(includeTurns)=>{
           const response=await fetch(url+'/codex-api/rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({method:'thread/read',params:{threadId:'metadata-status-fixture',...(includeTurns===undefined?{}:{includeTurns})}})})

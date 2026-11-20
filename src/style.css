@@ -477,6 +477,10 @@
   @apply bg-zinc-700;
 }
 
+:root.dark .message-plan-badge {
+  @apply border-zinc-700 bg-zinc-900 text-zinc-200;
+}
+
 :root.dark .automation-message-label {
   @apply text-zinc-400;
 }

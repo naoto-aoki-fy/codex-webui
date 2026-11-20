@@ -1,51 +1,52 @@
 # Per-turn generation metadata
 
 Product guarantees: [CAP-003 Historical Response Metadata](product-requirements.md#cap-003-historical-response-metadata).
-This document owns current model/effort recovery implementation details.
-
-Codex-generated rollout JSONL is the source of historical model and reasoning
-metadata. Parsed results are cached on the WebUI backend per App Server ID. The
-application no longer records settings from turn submissions, RPC responses, or
-notifications into a separate persistent metadata store. It no longer copies
-metadata between source and forked conversations.
+Codex rollout JSONL supplies historical model, reasoning effort and collaboration
+mode by exact turn ID. The WebUI cache is scoped to the App Server profile and
+thread. Accepted WebUI submissions can also supply an explicit collaboration mode.
 
 ## Read and write path
 
-1. `AppServerClient.rpc` observes content-bearing `thread/read`, `thread/resume`,
-   `thread/fork` and `thread/turns/list` results. It starts optional asynchronous
-   recovery through `RolloutGenerationMetadata.recover(threadId)`.
-2. The reader calls `thread/read` with `includeTurns: false` to resolve the native
-   rollout path, checks that it is a normalized absolute path under the resolved
-   Codex home's `sessions/YYYY/MM/DD/` or `archived_sessions/`, and calls `fs/getMetadata`.
-3. It reads `app-servers/<sha256(ID)>/model-history/v1/<sha256(threadId)>.json`
-   under the WebUI cache directory. Version 1, source path, positive modification timestamp,
-   exact turn IDs and execution provenance must validate before reuse.
-4. On a miss or changed timestamp it reads the rollout through `fs/readFile` and
-   parses complete `turn_context` rows. Only exact `payload.turn_id` values are
-   used. Model and effort are independent; missing fields stay unknown, null
-   means unspecified, and `none` is a real effort value. Conflicting duplicates
-   suppress the conflicting field. A second source stat prevents caching a
-   snapshot observed changing during the read.
-5. The WebUI backend atomically replaces its compact cache file. The App Server
-   rollout is read-only. Unknown timestamps
-   cannot validate or persist a cache. Explicit refresh bypasses cached data.
-6. The client emits `turn/generationMetadata` only for requested exact turn IDs.
-   `useDesktopState` merges this evidence into history/live messages; the V2
-   normalizer and `ThreadConversation` retain the per-response display. No
-   currently selected model or effort substitutes for missing history.
+1. Content-bearing thread reads, resumes, forks and turn pages start asynchronous
+   recovery. On reconnect, the same history request carries IDs for locally
+   retained older pages. The bridge uses those IDs to scope recovery and strips
+   them before calling Codex.
+2. The reader resolves and validates the native rollout path under the Codex
+   home's session or archive directory, then checks its modification timestamp.
+   It validates the cached source path, timestamp, exact turn IDs and execution
+   provenance before reuse.
+3. The cache stays at
+   `app-servers/<sha256(ID)>/model-history/v1/<sha256(threadId)>.json`.
+   Its version 2 schema stores the rollout snapshot and submitted modes separately.
+   A version 1 cache is rescanned for mode evidence when a rollout is available.
+4. The parser reads complete `turn_context` records for model, effort and
+   `payload.collaboration_mode.mode`, and `event_msg` records with
+   `payload.type = "task_started"` for `payload.collaboration_mode_kind`.
+   All fields use exact `payload.turn_id` values. Model and effort are independent.
+   Null means unspecified effort and `none` is a recorded value. Conflicting
+   values suppress the affected field. Conflicting modes explicitly clear an
+   existing badge. A second source stat checks that the rollout stayed stable.
+5. After Codex accepts `turn/start` with an explicit mode, the bridge makes a
+   best-effort write keyed by the returned turn ID before acknowledging the send.
+   Cache updates serialize and atomically replace the local file. Validated
+   rollout mode supersedes submitted mode, and contradictory or conflicting
+   evidence removes the submitted fallback.
+6. `turn/generationMetadata` carries exact-turn evidence for the requested or
+   retained turns. Prompt bubbles render a badge for Plan mode. The optimistic
+   badge starts with the sent mode, transfers to the acknowledged turn ID and
+   clears when the submission cannot be confirmed. Assistant metadata and
+   timestamps continue to use their established evidence.
 
-Missing paths, malformed rows, unsupported filesystem APIs, denied reads and cache
-write failures do not block conversation loading. A restart validates and reuses
-an unchanged persistent cache without transferring the original rollout again.
-The pinned metadata API exposes mtime but no file length: changes preserving the
-same timestamp require explicit refresh. This limitation is unchanged.
+When rollout reads fail, an available accepted mode can still be recovered across
+a backend restart. Unchanged valid rollout caches skip the remote source transfer.
+An unknown mtime cannot validate or cache rollout evidence. Explicit refresh
+rereads the source, including when a change preserves the recorded mtime. Missing
+paths, malformed rows and local cache failures leave native history available.
 
 ## Forks and existing data
 
 Native Fork and Fork and Revert use each destination's own rollout/cache. No
-parent lookup, transcript matching or custom metadata inheritance remains. If
-native fork/revert output lacks inherited `turn_context` rows with matching IDs,
-those responses show unknown metadata; their content remains visible. Portable
+parent lookup, transcript matching or custom metadata inheritance remains. A destination displays the mode and response metadata supported by its own exact-turn rollout evidence. Portable
 Fork and existing imported transcripts remain in `ConversationTransferService`;
 imported transcript attribution does not become execution metadata.
 
@@ -56,6 +57,24 @@ UI compatibility. Old browser fresh-fork/recovery keys are not deleted. A legacy
 recovery draft can still be read by the composer, but new fresh-fork state is not
 created. Ordinary drafts and ambiguous-send protection remain active.
 
+## Saved question responses
+
+WebUI starts capturing replies when this feature ships. The server reply requires
+both a successful WebSocket send and the matching native request closure on that
+connection. Codex emits the closure before delivering the answer to the turn.
+WebUI saves ordered, redacted records under
+`app-servers/<sha256(ID)>/question-responses/<sha256(threadId)>.json`
+in the profile data directory. Each record has the native turn ID and a stable
+response ID. Private answers retain only a boolean indicating whether an answer
+was provided. The submitting browser receives a warning if the confirmed answer
+could not be saved.
+
+Existing history responses contain only records for their page or retained turn
+IDs. The browser merges these with submission and completion records, by ID.
+The renderer uses the preceding native item, then submission time, then the end
+of the turn for placement. Saved answers stay in the originating thread and its
+archive, and the bridge removes them when it observes permanent deletion.
+
 ## Performance and verification
 
 Recovery coalesces concurrent reads, serializes source transfers and admits at
@@ -63,14 +82,15 @@ most 16 queued threads. Bounds remain 16 MiB per source, 2 MiB per cache, 10,000
 turn IDs and 512 characters per field. No session traversal, per-message RPC,
 source-to-fork history read, synchronous filesystem work or new request fanout is
 introduced. Native metadata-only pagination does not trigger rollout recovery.
+Answer history reads one profile/thread file asynchronously, filters by exact turn
+IDs before serialization and uses the existing native page. File read and write
+cost grows with the number of saved answers in that thread.
 
-The fixture verifies four cold RPCs and two warm/restarted RPCs, with exactly
-one source transfer across cold plus restart. It also covers append invalidation,
-explicit refresh, changing-source rejection, read failures, malformed records,
-thread isolation, revert-shaped replacement data and rejection of request-derived
-cache values. Run `pnpm exec vitest run src/server/rolloutGenerationMetadata.test.ts
-src/server/turnGenerationMetadata.test.ts`. These are protocol fixtures, not proof
-of live provider execution or fork rollout behavior on every server version.
+The protocol fixtures compare cold and warm RPC counts and cover cache upgrade,
+concurrent writes, accepted mode without rollout access, conflicting evidence,
+profile isolation, reconnect recovery and older pages. See the
+[Plan-mode and metadata checks](../tests/chat-composer-rendering/per-response-model-and-reasoning-effort.md)
+and [question history checks](../tests/theme-layout-terminal/plan-mode-question-panel.md#answer-history).
 
 ## Remote home discovery
 

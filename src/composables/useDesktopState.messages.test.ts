@@ -2669,3 +2669,94 @@ describe('one-shot Plan mode', () => {
     expect(state.readCollaborationModeForThread('')).toBe('plan')
   })
 })
+
+it('binds an optimistic Plan badge to the accepted ID when an identical Default prompt already exists', async () => {
+  const state = await loadState()
+  const identicalPrompt = 'Same prompt'
+  const previous: UiMessage = { ...oldUser, text: identicalPrompt }
+  const accepted: UiMessage = { ...nextUser, text: identicalPrompt }
+  const history = { ...activeDetail, messages: [previous, accepted] }
+  let accept!: (turnId: string) => void
+  gateway.startThreadTurn.mockReturnValue(new Promise<string>(resolve => { accept = resolve }))
+  gateway.getThreadDetail.mockResolvedValue(history)
+  const sent = state.sendMessageToSelectedThread(identicalPrompt, [], [], [], 'plan')
+  await vi.advanceTimersByTimeAsync(0)
+  expect(state.messages.value.filter(row => row.generationMetadata?.collaborationMode === 'plan').map(row => row.messageType))
+    .toEqual(['userMessage.optimistic'])
+  expect(gateway.startThreadTurn.mock.calls[0]?.[7]).toBe('plan')
+  await state.reconcileSelectedHistory()
+  expect(state.messages.value.find(row => row.id === accepted.id)?.generationMetadata).toBeUndefined()
+  expect(state.messages.value.filter(row => row.generationMetadata?.collaborationMode === 'plan')).toHaveLength(1)
+  accept('turn-2')
+  await sent
+  expect(state.messages.value.filter(row => row.generationMetadata?.collaborationMode === 'plan').map(row => row.id)).toEqual([accepted.id])
+  notify({ method: 'turn/generationMetadata', params: { threadId: thread.id, turnId: 'turn-2',
+    generationMetadata: { collaborationMode: null, collaborationModeSource: 'execution' } } })
+  expect(state.messages.value.some(row => row.generationMetadata?.collaborationMode === 'plan')).toBe(false)
+})
+
+it.each(['rejected', 'without ID'] as const)('clears the provisional Plan badge on an attachment-only submission %s', async outcome => {
+  const state = await loadState()
+  let settle!: () => void
+  gateway.startThreadTurn.mockReturnValue(new Promise<string>((resolve, reject) => {
+    settle = outcome === 'rejected' ? () => reject(new Error('rejected')) : () => resolve('')
+  }))
+  const sent = state.sendMessageToSelectedThread('', [], [], [{ label: 'notes.md', path: '/notes.md', fsPath: '/notes.md' }], 'plan')
+  const result = sent.catch(error => error)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(state.messages.value.find(row => row.messageType === 'userMessage.optimistic')).toMatchObject({
+    text: '', generationMetadata: { collaborationMode: 'plan' },
+  })
+  settle()
+  await result
+  expect(state.messages.value.some(row => row.generationMetadata?.collaborationMode === 'plan')).toBe(false)
+  expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
+})
+
+it('passes retained older IDs through the existing reconnect read and merges missed answers and mode notifications', async () => {
+  const olderPrompt: UiMessage = { ...oldUser, id: 'older-prompt', turnId: 'older', turnIndex: -1 }
+  const recent = { ...oldDetail, olderCursor: 'before-recent' }
+  const response = {
+    id: 'question-response', threadId: thread.id, turnId: 'older', anchorItemId: olderPrompt.id,
+    submittedAt: '2026-10-30T00:00:00.000Z', questions: [{ id: 'scope', heading: 'Scope', answers: ['Full'] }],
+  }
+  gateway.resumeThread.mockResolvedValue(recent)
+  gateway.getThreadDetail.mockResolvedValue(recent)
+  gateway.getOlderThreadMessages.mockResolvedValueOnce({ messages: [olderPrompt], olderCursor: null, turnIndexByTurnId: { older: -1 } })
+  const state = await loadState()
+  await state.loadOlderMessages()
+  expect(state.selectedQuestionResponses.value).toEqual([])
+  const before = gateway.getThreadDetail.mock.calls.length
+  gateway.getThreadDetail.mockResolvedValue({ ...recent, questionResponses: [response] })
+  await notificationReady()
+  notify({ method: 'ready', params: { reconnected: true } })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(gateway.getThreadDetail.mock.calls.slice(before)).toEqual([[thread.id, ['older']]])
+  expect(state.selectedQuestionResponses.value).toEqual([{ ...response, turnIndex: -1 }])
+  notify({ method: 'server/request/resolved', params: { threadId: thread.id, id: 99, response } })
+  expect(state.selectedQuestionResponses.value).toHaveLength(1)
+  notify({ method: 'turn/generationMetadata', params: { threadId: thread.id, turnId: 'older',
+    generationMetadata: { collaborationMode: 'plan', collaborationModeSource: 'execution' } } })
+  expect(state.messages.value.find(row => row.id === olderPrompt.id)?.generationMetadata?.collaborationMode).toBe('plan')
+  notify({ method: 'thread/reverted', params: { threadId: thread.id } })
+  expect(state.selectedQuestionResponses.value).toEqual([])
+})
+
+it('uses the explicit Default override even when the composer is set to Plan', async () => {
+  const state = await loadState()
+  state.setSelectedCollaborationMode('plan')
+  expect(state.selectedCollaborationMode.value).toBe('plan')
+  gateway.getThreadDetail.mockResolvedValue(completedDetail)
+  await state.sendMessageToSelectedThread(nextUser.text, [], [], [], 'default')
+  expect(gateway.startThreadTurn.mock.calls[0]?.[7]).toBe('default')
+  expect(state.messages.value.some(row => row.generationMetadata?.collaborationMode === 'plan')).toBe(false)
+})
+
+it('transfers the Plan badge to the native replacement for an accepted attachment-only prompt', async () => {
+  const state = await loadState()
+  const files = [{ label: 'notes.md', path: '/notes.md', fsPath: '/notes.md' }]
+  const native: UiMessage = { ...nextUser, text: '', fileAttachments: [{ label: 'notes.md', path: '/notes.md' }] }
+  gateway.getThreadDetail.mockResolvedValue({ ...activeDetail, messages: [oldUser, native] })
+  await state.sendMessageToSelectedThread('', [], [], files, 'plan')
+  expect(state.messages.value.filter(row => row.generationMetadata?.collaborationMode === 'plan').map(row => row.id)).toEqual([native.id])
+})

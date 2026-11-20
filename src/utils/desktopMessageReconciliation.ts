@@ -60,6 +60,8 @@ export function areMessageFieldsEqual(first: UiMessage, second: UiMessage): bool
     first.generationMetadata?.effort === second.generationMetadata?.effort &&
     first.generationMetadata?.modelSource === second.generationMetadata?.modelSource &&
     first.generationMetadata?.effortSource === second.generationMetadata?.effortSource &&
+    first.generationMetadata?.collaborationMode === second.generationMetadata?.collaborationMode &&
+    first.generationMetadata?.collaborationModeSource === second.generationMetadata?.collaborationModeSource &&
     first.turnIndex === second.turnIndex &&
     first.isAutomationRun === second.isAutomationRun &&
     first.automationDisplayName === second.automationDisplayName
@@ -161,6 +163,10 @@ export function hasEquivalentUserMessage(target: UiMessage, messages: UiMessage[
       message.turnId === target.turnId,
     )
   }
+
+  // A provisional Plan badge stays on its own submission until Codex supplies
+  // the turn ID. A same-text message may belong to another client or turn.
+  if (isOptimisticUserMessage(target) && target.generationMetadata?.collaborationMode === 'plan') return false
 
   const targetText = normalizeMessageText(target.text)
   const targetImages = Array.isArray(target.images) ? target.images : []

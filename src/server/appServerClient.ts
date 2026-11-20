@@ -1,3 +1,4 @@
+import { readCollaborationMode } from '../turnGenerationMetadata.js'
 import type { QuestionSubmission } from '../questionResponses.js'
 import { QUESTION_REQUEST, questionResponseId, questionResponses, validateQuestionResponse } from './questionResponses.js'
 import { CodexHomeResolver } from './codexHomeResolver.js'
@@ -144,10 +145,11 @@ export class AppServerClient {
     home: () => this.resolveCodexHome(),
   })
   private readonly rolloutRequests = new Map<string, Set<string> | null>()
-  private recoverRolloutMetadata(threadId: string, turns: unknown[] | null, force = false): void {
+  private recoverRolloutMetadata(threadId: string, turns: unknown[] | null, force = false, retainedTurnIds: string[] = []): void {
     const generation = this.getConnectionGeneration()
     const key = `${generation}:${threadId}:${force}`
     const ids = turns ? new Set(turns.map(turn => readNonEmptyString(asRecord(turn)?.id)).filter(Boolean)) : null
+    if (ids) for (const id of retainedTurnIds) ids.add(id)
     if (this.rolloutRequests.has(key)) {
       const existing = this.rolloutRequests.get(key)
       if (!ids) this.rolloutRequests.set(key, null)
@@ -553,7 +555,7 @@ export class AppServerClient {
     }
   }
 
-  async rpc(method: string, params: unknown): Promise<unknown> {
+  async rpc(method: string, params: unknown, retainedTurnIds: string[] = []): Promise<unknown> {
     const homeToken = this.codexHome.token()
     await this.ensureInitialized()
     if (method === 'thread/generationMetadata/refresh') {
@@ -569,8 +571,21 @@ export class AppServerClient {
     if (joiningBackgroundRecovery) result = await this.call('thread/read', { threadId: resumeId, includeTurns: true })
     if (method === 'thread/read') this.codexHome.observeThreadRead(result, homeToken)
     const record = asRecord(result)
+    if (method === 'turn/start') {
+      const mode = readCollaborationMode(asRecord(asRecord(params)?.collaborationMode)?.mode)
+      const turnId = readNonEmptyString(asRecord(record?.turn)?.id)
+      if (mode && resumeId && turnId) {
+        const generation = this.connectionGeneration
+        try {
+          const generationMetadata = await this.rolloutMetadata.rememberSubmittedMode(resumeId, turnId, mode, getConnectionProfileId())
+          if (generationMetadata && generation === this.connectionGeneration) {
+            this.emitNotification({ method: 'turn/generationMetadata', params: { threadId: resumeId, turnId, generationMetadata } })
+          }
+        } catch { /* A best-effort cache write must never change native acceptance. */ }
+      }
+    }
     if (method === 'thread/turns/list' && Array.isArray(record?.data)) {
-      if (record.data.length && asRecord(params)?.itemsView !== 'notLoaded') this.recoverRolloutMetadata(resumeId, record.data)
+      if (record.data.length && asRecord(params)?.itemsView !== 'notLoaded') this.recoverRolloutMetadata(resumeId, record.data, false, retainedTurnIds)
     }
     const thread = asRecord(record?.thread)
     if (thread && typeof thread.id === 'string' && Array.isArray(thread.turns)) {
