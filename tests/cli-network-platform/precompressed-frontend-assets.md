@@ -5,11 +5,11 @@ Prerequisites: install dependencies and run `pnpm run build`. Start the producti
 1. Request `/` and a JavaScript asset using `curl -sS -D /tmp/asset-headers -o /tmp/asset-body -H 'Accept-Encoding: gzip, deflate, br, zstd' http://127.0.0.1:4192/`.
    Compare the matching `.zst`, `.br`, and `.gz` files with `wc -c`. Expect the smallest sidecar's Content-Encoding and Content-Length, the original MIME type, and `Vary: Accept-Encoding`.
 2. Repeat with `zstd`, `br`, and `gzip` individually. Expect the requested encoding. With `gzip;q=1,br;q=0.9,zstd;q=0.5` or `*;q=1,br;q=0,zstd;q=0`, expect gzip.
-3. Repeat without an encoding header. Expect original content without Content-Encoding. With `*;q=0`, expect 406; with `*;q=0,identity;q=1`, expect original content.
+3. Repeat without an encoding header. Expect original content without Content-Encoding. With `*;q=0`, expect 406 and `Cache-Control: no-store`. With `*;q=0,identity;q=1`, expect original content.
 4. Request a SPA route such as `/thread/example`. Expect the negotiated index HTML. Repeat with HEAD: expect identical representation headers and no body.
 5. Send the selected ETag in If-None-Match with the same encoding. Expect 304; change encoding and expect 200.
 6. In a temporary deployment, remove the preferred sidecar for one asset and request it again with all three encodings. Expect the next acceptable sidecar. Remove the other sidecars and expect identity, or 406 with explicit `identity;q=0`.
-7. Run `pnpm exec vitest run src/server/precompressedStatic.test.ts` for round-trip decompression, MIME, fallback and binary exclusion checks.
+7. Run `pnpm exec vitest run src/server/precompressedStatic.test.ts` for round-trip decompression, MIME, fallback and binary exclusion checks. The fallback tests also remove a sidecar during a request and verify the replacement's headers and body.
 
 Cleanup: stop only the test server, remove temporary files/copies, and rebuild if changing dist directly. No source or configuration rollback is needed.
 

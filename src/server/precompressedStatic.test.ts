@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, expect, it } from 'vitest'
+import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import express from 'express'
 import { request } from 'node:http'
-import { mkdtemp, writeFile, rm, readFile, mkdir, unlink } from 'node:fs/promises'
+import fs from 'node:fs'
+import { mkdtemp, writeFile, rm, readFile, mkdir, unlink, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { brotliDecompressSync, gunzipSync } from 'node:zlib'
@@ -27,10 +28,15 @@ beforeAll(async () => {
   await writeFile(join(root, 'ties.js'), 'console.log("hello");'.repeat(128))
   await writeFile(join(root, 'tiny.txt'), 'a')
   await writeFile(join(root, 'partial.txt'), content)
+  await writeFile(join(root, 'open-race.txt'), content)
   await writeFile(join(root, 'image.png'), Buffer.from([1, 2, 3]))
   for (const extension of assetTypes) await writeFile(join(root, `fixture.${extension}`), content)
   await mkdir(join(root, 'assets'), { recursive: true })
   await mkdir(join(root, '.vite'), { recursive: true })
+  await mkdir(join(root, 'removed'))
+  for (const name of ['compressed', 'identity', 'unacceptable']) {
+    await writeFile(join(root, `removed/${name}.txt`), content)
+  }
   await writeFile(join(root, 'assets/app-Abcd123_.js'), 'const built = true;'.repeat(100))
   await writeFile(join(root, 'assets/manual-Abcd123_.js'), 'const manual = true;')
   await writeFile(join(root, '.vite/manifest.json'), JSON.stringify({
@@ -45,6 +51,14 @@ beforeAll(async () => {
   app.get('/codex-api/test', (_req, res) => res.set('Cache-Control', 'private, no-store').json({ ok: true }))
   app.get('/auth/test', (_req, res) => res.status(401).end())
   app.get('/local/test', (_req, res) => res.set('Cache-Control', 'private, max-age=300').send('local'))
+  app.use('/removed', (_req, res, next) => {
+    const sendFile = res.sendFile
+    vi.spyOn(res, 'sendFile').mockImplementationOnce((file, ...args) => {
+      fs.unlinkSync(file)
+      Reflect.apply(sendFile, res, [file, ...args])
+    })
+    next()
+  })
   app.use('/legacy', precompressedStatic(join(root, 'assets')))
   app.use(precompressedStatic(root))
   app.use((req, res, next) => sendPrecompressed(req, res, next, join(root, 'index.html')))
@@ -136,6 +150,54 @@ it('falls back for missing sidecars and refuses unacceptable representations', a
     expect(response.headers['content-encoding']).toBeUndefined()
   }
 })
+
+it.each([
+  ['compressed', 'br, gzip;q=0.5', 'gzip', 200],
+  ['identity', 'br, gzip;q=0', undefined, 200],
+  ['unacceptable', 'br, gzip;q=0, identity;q=0', undefined, 406],
+] as const)('serves %s when the selected sidecar is removed during the request', async (name, header, encoding, status) => {
+  const response = await get(header, `/removed/${name}.txt`)
+  expect(response.status).toBe(status)
+  expect(response.headers['content-encoding']).toBe(encoding)
+  expect(response.headers.vary).toBe('Accept-Encoding')
+  if (status === 200) {
+    expect(response.headers.etag).toMatch(encoding === 'gzip' ? /^W\/"gzip-/ : /^W\/"identity-/)
+    expect(Number(response.headers['content-length'])).toBe(response.body.length)
+    expect((encoding === 'gzip' ? gunzipSync(response.body) : response.body).toString()).toBe(content)
+  } else {
+    expect(response.headers['cache-control']).toBe('no-store')
+  }
+})
+
+it('clears range headers and revalidates against the selected fallback when opening the sidecar fails', async () => {
+  const file = join(root, 'open-race.txt')
+  const before = new Date('2025-01-01T00:00:00Z')
+  const after = new Date('2025-01-02T00:00:00Z')
+  await utimes(file + '.br', before, before)
+  await utimes(file + '.gz', after, after)
+  const gzip = await get('gzip', '/open-race.txt')
+  const createReadStream = fs.createReadStream
+  const open = vi.spyOn(fs, 'createReadStream').mockImplementation((path, options) => {
+    if (path === file + '.br') fs.unlinkSync(path)
+    return createReadStream(path, options)
+  })
+  try {
+    const response = await get('br, gzip;q=0.5', '/open-race.txt', 'GET', {
+      Range: 'bytes=0-4',
+      'If-Range': before.toUTCString(),
+    })
+    expect(open).toHaveBeenCalledWith(file + '.br', expect.objectContaining({ start: 0, end: 4 }))
+    expect(response.status).toBe(200)
+    expect(response.headers['content-range']).toBeUndefined()
+    for (const header of ['content-encoding', 'content-length', 'etag', 'last-modified']) {
+      expect(response.headers[header]).toBe(gzip.headers[header])
+    }
+    expect(response.body).toEqual(gzip.body)
+  } finally {
+    open.mockRestore()
+  }
+})
+
 it('serves SPA routes, JavaScript MIME, HEAD and representation-specific validators', async () => {
   expect((await get('br', '/thread/example')).headers['content-encoding']).toBe('br')
   expect((await get('gzip', '/app.js')).headers['content-type']).toMatch(/javascript/)
@@ -160,6 +222,27 @@ it('skips binary assets', async () => {
   for (const { suffix } of compression) {
     await expect(readFile(join(root, 'image.png' + suffix))).rejects.toMatchObject({ code: 'ENOENT' })
   }
+})
+
+it('prevents a missing sidecar from caching a 406 for an immutable URL', async () => {
+  const path = '/assets/app-Abcd123_.js'
+  const file = join(root, path + '.br')
+  const brotli = await readFile(file)
+  await unlink(file)
+  try {
+    const unavailable = await get('br, *;q=0', path)
+    expect(unavailable.status).toBe(406)
+    expect(unavailable.headers['cache-control']).toBe('no-store')
+    expect(unavailable.headers.vary).toBe('Accept-Encoding')
+  } finally {
+    await writeFile(file, brotli)
+  }
+
+  const available = await get('br, *;q=0', path)
+  expect(available.status).toBe(200)
+  expect(available.headers['cache-control']).toBe('public, max-age=31536000, immutable')
+  expect(available.headers['content-encoding']).toBe('br')
+  expect(available.body).toEqual(brotli)
 })
 
 it.each(['identity', 'gzip', 'br', 'zstd'])('caches only build-generated JavaScript with %s', async encoding => {
