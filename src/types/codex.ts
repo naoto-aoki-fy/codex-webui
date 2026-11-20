@@ -70,6 +70,7 @@ export type UiMessage = {
   importMetadata?: { source: string }
   submittedAt?: string
   completedAt?: string
+  timelineAt?: string
   generationMetadata?: import('../turnGenerationMetadata').TurnGenerationMetadata
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -99,6 +100,8 @@ export type UiServerRequest = {
   turnId: string
   itemId: string
   receivedAtIso: string
+  responseId?: string
+  answerAttempted?: boolean
   params: unknown
 }
 

@@ -238,6 +238,9 @@
                   :is-fork-disabled="isForkOperationPending || isRollingBack"
                   :pending-requests="selectedThreadServerRequests"
                   :pending-question="selectedThreadPendingQuestion"
+                  :question-attempt="selectedThreadPendingQuestion ? questionAttempts[selectedThreadPendingQuestion.id] : undefined"
+                  :question-responses="selectedQuestionResponses"
+                  @dismiss-question-draft="dismissQuestionDraft"
                   :has-more-persisted-above="hasMoreOlderMessages"
                   :is-loading-persisted-above="isLoadingOlderMessages"
                   :load-earlier-messages="loadOlderMessages"
@@ -263,6 +266,7 @@
                   {{ nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value }}
                   <button type="button" @click="openNativeQueue">Inspect native prompt queue</button>
                 </p>
+                <p v-if="questionSaveWarning?.threadId === selectedThreadId" class="composer-runtime-error" role="alert">{{ questionSaveWarning.message }}</p>
                 <p v-if="modelSelectionNotice" class="composer-model-notice" role="status">{{ (modelSelectionNotice) }}</p>
                 <ThreadComposer
                   @update:expanded="isComposerExpanded=$event"
@@ -483,6 +487,10 @@ const {
   selectedThread,
   selectedThreadTokenUsage,
   selectedThreadServerRequests,
+  selectedQuestionResponses,
+  questionAttempts,
+  questionSaveWarning,
+  dismissQuestionDraft,
   selectedLiveOverlay,
   selectedThreadId,
   availableCollaborationModes,

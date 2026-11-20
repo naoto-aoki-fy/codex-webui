@@ -55,6 +55,7 @@ export function areMessageFieldsEqual(first: UiMessage, second: UiMessage): bool
     JSON.stringify(first.apps) === JSON.stringify(second.apps) &&
     first.executionLabel === second.executionLabel &&
     first.turnId === second.turnId &&
+    first.timelineAt === second.timelineAt &&
     first.generationMetadata?.model === second.generationMetadata?.model &&
     first.generationMetadata?.effort === second.generationMetadata?.effort &&
     first.generationMetadata?.modelSource === second.generationMetadata?.modelSource &&

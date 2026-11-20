@@ -39,6 +39,10 @@ async function run() {
     let metadataFixtureRead=false
     socket.on('message', raw => {
       const frame = JSON.parse(String(raw)); frames.push(frame)
+      if (!frame.method && typeof frame.id === 'string' && frame.id.startsWith('question-')) {
+        socket.send(JSON.stringify({ method: 'serverRequest/resolved', params: { threadId: historyId, requestId: frame.id } }))
+        return
+      }
       if (!frame.method || frame.method === 'initialized') return
       if(frame.method==='thread/read'&&frame.params?.threadId==='metadata-status-fixture'){
         const reply=metadataFixtureRead?{error:{code:-32603,message:'failed to read thread: rollout at /fixture/rollout.jsonl is empty'}}:{result:{thread:{id:'metadata-status-fixture',cwd:'/fixture',status:{type:'idle'},turns:[]}}}
@@ -251,7 +255,7 @@ async function run() {
         assert.equal(latest.olderCursor, olderCursor)
         assert.deepEqual(latest.thread.turns, historyTurns.slice(5))
         const older = await historyRequest('thread/turns/list', { cursor: latest.olderCursor, itemsView: 'full', sortDirection: 'desc', limit: 10 })
-        assert.deepEqual(older, { data: historyTurns.slice(0, 5).reverse(), nextCursor: null })
+        assert.deepEqual({ ...older, questionResponses: undefined }, { data: historyTurns.slice(0, 5).reverse(), nextCursor: null, questionResponses: undefined })
         const historyFrames = frames.slice(historyStart).filter(frame => frame.params?.threadId === historyId)
         const { method: firstMethod, params: firstParams } = historyFrames[0]
         assert.deepEqual({ method: firstMethod, params: firstParams },
@@ -263,6 +267,59 @@ async function run() {
         // Historical execution metadata may independently request the rollout path.
         assert(historyFrames.filter(frame => frame.method === 'thread/read').every(frame => frame.params.includeTurns === false))
         console.log('PASS', dev ? 'pnpm run dev' : 'built CLI', 'two bounded native content pages, opaque cursor and no full thread read')
+        const nativeSocket = [...server.clients].find(socket => socket.readyState === WebSocket.OPEN)
+        const submitAnswer = async turnId => {
+          const wireId = 'question-' + turnId
+          nativeSocket.send(JSON.stringify({
+            id: wireId, method: 'item/tool/requestUserInput',
+            params: { threadId: historyId, turnId, itemId: wireId, questions: [
+              { id: 'choice', header: 'Scope' }, { id: 'secret', header: 'Private', isSecret: true },
+            ] },
+          }))
+          let pending
+          for (let attempt = 0; attempt < 30 && !pending; attempt++) {
+            const list = await (await fetch(url + '/codex-api/server-requests/pending')).json()
+            pending = list.data.find(row => row.wireId === wireId)
+            if (!pending) await new Promise(resolve => setTimeout(resolve, 10))
+          }
+          assert(pending, 'expected question on the current connection')
+          const reply = await fetch(url + '/codex-api/server-requests/respond', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: pending.id, result: { answers: {
+              choice: { answers: ['Full', 'Keep examples'] }, secret: { answers: ['private fixture value'] },
+            } } }),
+          })
+          const result = await reply.json()
+          assert.equal(reply.status, 200, JSON.stringify(result))
+          assert.equal(result.saved, true)
+          assert.deepEqual(result.response.questions, [
+            { id: 'choice', heading: 'Scope', answers: ['Full', 'Keep examples'] },
+            { id: 'secret', heading: 'Private', provided: true },
+          ])
+          return result.response
+        }
+        if (!previousRuns) {
+          assert.equal(latest.questionResponses, undefined)
+          await submitAnswer('turn-2')
+          await submitAnswer('turn-3')
+          await submitAnswer('turn-13')
+        }
+        const populatedAt = frames.length
+        const populated = await historyRequest('thread/read', { includeTurns: true })
+        const retained = await historyRequest('thread/read', { includeTurns: true, retainedTurnIds: ['turn-2'] })
+        const earlier = await historyRequest('thread/turns/list', { cursor: olderCursor, itemsView: 'full', sortDirection: 'desc', limit: 10 })
+        assert.deepEqual(populated.questionResponses.map(record => record.turnId), ['turn-13'])
+        assert.deepEqual(retained.questionResponses.map(record => record.turnId), ['turn-13', 'turn-2'])
+        assert.deepEqual(earlier.questionResponses.map(record => record.turnId), ['turn-3', 'turn-2'])
+        assert.deepEqual(earlier.questionResponses[1], retained.questionResponses[1])
+        assert.deepEqual(populated.questionResponses[0], retained.questionResponses[0])
+        assert.equal(JSON.stringify([populated, retained, earlier]).includes('private fixture value'), false)
+        const populatedWire = frames.slice(populatedAt).filter(frame => frame.params?.threadId === historyId)
+        assert.equal(populatedWire.filter(frame => frame.method === 'thread/turns/list').length, 3)
+        assert(populatedWire.every(frame => !('retainedTurnIds' in frame.params)))
+        console.log('PASS', profile, previousRuns ? 'restart' : 'capture', 'one native turn page per request',
+          'answer-only bytes latest/retained/older', ...[populated, retained, earlier].map(page => Buffer.byteLength(JSON.stringify(page.questionResponses))))
+        if (previousRuns) nativeSocket.send(JSON.stringify({ method: 'thread/deleted', params: { threadId: historyId } }))
         const metadataRead=async(includeTurns)=>{
           const response=await fetch(url+'/codex-api/rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({method:'thread/read',params:{threadId:'metadata-status-fixture',...(includeTurns===undefined?{}:{includeTurns})}})})
           return {status:response.status,body:await response.json()}

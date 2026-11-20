@@ -1,3 +1,4 @@
+import type { QuestionResponse, QuestionSubmission } from '../questionResponses'
 import { listNativeProjects } from '../nativeProjects'
 import type { Project } from '../server/protocol/0.167.2/v2/Project'
 import type { TurnsPage } from '../server/protocol/0.167.2/v2/TurnsPage'
@@ -145,6 +146,7 @@ type ThreadGroupsPage = {
 }
 
 type ThreadTurnPage = {
+  questionResponses?: QuestionResponse[]
   messages: UiMessage[]
   olderCursor: string | null
   turnIndexByTurnId: ThreadTurnIndexById
@@ -174,7 +176,8 @@ async function getThreadSummaryV2(threadId: string): Promise<UiThread> {
   return normalizeThreadSummaryV2(payload)
 }
 
-async function getThreadDetailV2(threadId: string): Promise<{
+async function getThreadDetailV2(threadId: string, retainedTurnIds: string[]): Promise<{
+  questionResponses?: QuestionResponse[]
   turnOutcomes?: ThreadTurnOutcomes
   nativeReadState?: import('../types/codex').NativeThreadReadState
   model: string
@@ -185,9 +188,10 @@ async function getThreadDetailV2(threadId: string): Promise<{
   olderCursor: string | null
   turnIndexByTurnId: ThreadTurnIndexById
 }> {
-  const payload = await callRpc<ThreadReadResponse>('thread/read', {
+  const payload = await callRpc<ThreadReadResponse & { questionResponses?: QuestionResponse[] }>('thread/read', {
     threadId,
     includeTurns: true,
+    ...(retainedTurnIds.length ? { retainedTurnIds } : {}),
   })
   const normalized = normalizeThreadMessagesV2(payload)
   return {
@@ -195,6 +199,7 @@ async function getThreadDetailV2(threadId: string): Promise<{
     modelProvider: normalizeThreadModelProviderFromPayload(payload),
     nativeReadState: (payload as ThreadReadResponse & { readState?: import('../types/codex').NativeThreadReadState | null }).readState ?? undefined,
     messages: normalized,
+    ...(payload.questionResponses ? { questionResponses: payload.questionResponses } : {}),
     turnOutcomes: readThreadTurnOutcomes(payload),
     inProgress: readThreadInProgressFromResponse(payload),
     activeTurnId: readActiveTurnIdFromResponse(payload),
@@ -209,7 +214,7 @@ function readOlderCursor(payload: unknown): string | null {
 }
 
 async function readTurnsPage(threadId: string, cursor: string, limit: number, itemsView: 'full' | 'notLoaded') {
-  const page = await callRpc<TurnsPage>('thread/turns/list', { threadId, cursor: cursor || null, limit, itemsView, sortDirection: 'desc' })
+  const page = await callRpc<TurnsPage & { questionResponses?: QuestionResponse[] }>('thread/turns/list', { threadId, cursor: cursor || null, limit, itemsView, sortDirection: 'desc' })
   if (!Array.isArray(page?.data) || (page.nextCursor != null && typeof page.nextCursor !== 'string')) {
     throw new Error('Invalid native history page')
   }
@@ -251,7 +256,8 @@ export async function getThreadSummary(threadId: string): Promise<UiThread> {
   }
 }
 
-export async function getThreadDetail(threadId: string): Promise<{
+export async function getThreadDetail(threadId: string, retainedTurnIds: string[] = []): Promise<{
+  questionResponses?: QuestionResponse[]
   turnOutcomes?: ThreadTurnOutcomes
   nativeReadState?: import('../types/codex').NativeThreadReadState
   model: string
@@ -263,7 +269,7 @@ export async function getThreadDetail(threadId: string): Promise<{
   turnIndexByTurnId: ThreadTurnIndexById
 }> {
   try {
-    return await getThreadDetailV2(threadId)
+    return await getThreadDetailV2(threadId, retainedTurnIds)
   } catch (error) {
     throw normalizeCodexApiError(error, `Failed to load thread ${threadId}`, 'thread/read')
   }
@@ -276,6 +282,7 @@ export async function getOlderThreadMessages(threadId: string, cursor: string, l
     const baseTurnIndex = endTurnIndex - page.data.length
     return {
       messages: normalizeThreadMessagesV2(payload, baseTurnIndex),
+      ...(page.questionResponses ? { questionResponses: page.questionResponses } : {}),
       olderCursor: page.nextCursor ?? null,
       turnIndexByTurnId: buildTurnIndexByTurnId(payload, baseTurnIndex),
     }
@@ -296,8 +303,8 @@ export type { RpcNotification }
 export async function replyToServerRequest(
   id: number,
   payload: { result?: unknown; error?: { code?: number; message: string } },
-): Promise<void> {
-  await respondServerRequest({
+): Promise<QuestionSubmission | undefined> {
+  return respondServerRequest({
     id,
     ...payload,
   })
@@ -317,6 +324,7 @@ export async function getAccountRateLimits(): Promise<UiRateLimitSnapshot | null
 }
 
 export type ResumedThread = {
+  questionResponses?: QuestionResponse[]
   security?: import('./threadSecurity').ThreadSecurity | null
   turnOutcomes?: ThreadTurnOutcomes
   nativeReadState?: import('../types/codex').NativeThreadReadState
@@ -337,18 +345,21 @@ export async function resumeThreadSubscription(threadId: string): Promise<void> 
   await callRpc('thread/resume', { threadId, excludeTurns: true })
 }
 
-export async function resumeThread(threadId: string): Promise<ResumedThread> {
-  const existing = recentResumeThreadById.get(threadId)
+export async function resumeThread(threadId: string, retainedTurnIds: string[] = []): Promise<ResumedThread> {
+  const existing = retainedTurnIds.length ? undefined : recentResumeThreadById.get(threadId)
   if (existing) return existing
 
   const promise = (async () => {
-    const payload = await callRpc<ThreadResumeResponse>('thread/resume', { threadId })
+    const payload = await callRpc<ThreadResumeResponse & { questionResponses?: QuestionResponse[] }>('thread/resume', {
+      threadId, ...(retainedTurnIds.length ? { retainedTurnIds } : {}),
+    })
     const messages = normalizeThreadMessagesV2(payload)
     return {
       security: threadSecurity(payload),
       model: normalizeThreadModelFromPayload(payload),
       modelProvider: normalizeThreadModelProviderFromPayload(payload),
       messages,
+      ...(payload.questionResponses ? { questionResponses: payload.questionResponses } : {}),
       turnOutcomes: readThreadTurnOutcomes(payload),
       inProgress: readThreadInProgressFromResponse(payload),
       activeTurnId: readActiveTurnIdFromResponse(payload),

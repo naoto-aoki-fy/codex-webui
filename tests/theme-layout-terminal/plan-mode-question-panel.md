@@ -40,6 +40,12 @@ async function main() {
             params: { threadId: thread.id, turnId: 'latest', command: 'echo approved' },
           }), 500)
         }
+        if (body.id === 200) {
+          const response = { id: 'saved-scope', threadId: thread.id, turnId: 'question-turn',
+            anchorItemId: 'before-question', submittedAt: new Date().toISOString(),
+            questions: [{ id: 'scope', heading: 'Documentation scope', answers: body.result.answers.scope.answers }] }
+          return { json: { ok: true, response, saved: true } }
+        }
         return { json: { ok: true } }
       }
       if (body.method === 'thread/resume' || body.method === 'thread/read') {
@@ -127,3 +133,11 @@ Run `node scripts/test-plan-mode-question-panel.cjs` against the same developmen
 #### Cleanup
 
 Close the fixture browser. Its theme preference and response are isolated from your regular browser session.
+
+#### Answer history
+
+1. With a Codex App Server connected, open a persisted thread and prompt in Plan mode for multiple questions with choices, free text and a private field. Tab through the question, enter a choice, visible free text and private text. Submit once while clicking Send twice. Confirm a single WebSocket reply to Codex and one user-style bubble after the item preceding the question. Check each heading, answer order, **Answer hidden**, Sent time and **Copy answers**. Paste the copied content into a scratch editor and search for the private value. The bubble has no Fork or Revert controls. Repeat in light and dark at desktop and mobile widths.
+2. Reload, open a fresh browser on the same WebUI profile and restart the WebUI backend while keeping Codex running. Check the same ID, placement, time and redacted content. Load an older page containing a saved answer. Disconnect its browser stream, submit a different old-turn response in another browser, then reconnect. Inspect the ordinary history response for records from the current page and the retained older turns only. Compare native page counts with an empty history response.
+3. Stop the App Server connection just after Send, or fixture a missing native resolution. The pending draft remains available with an error and no automatic retry. Simulate WebUI data-directory write failure after a valid native closure. The bubble appears with the same redaction and the submitting browser warns that history saving failed.
+4. Archive and reopen the thread, then compare the same thread ID on another profile. The archive keeps the saved bubble, and the other profile has its own records. Native and Portable Fork retain eligible prompt and assistant behavior, with saved answers displayed only in the source. Revert through an answered turn and confirm its bubble disappears. Use the protocol fixture to observe confirmed native permanent deletion and check that the stored answers disappear.
+5. Close fixture browsers, remove temporary fixture profile data, and unarchive any live thread used for the check if needed.

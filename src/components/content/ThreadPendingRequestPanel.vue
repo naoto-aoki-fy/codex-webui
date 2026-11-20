@@ -213,11 +213,11 @@
               </p>
             </div>
 
-            <label v-if="question.isOther" class="thread-pending-request-input-wrap">
+            <label v-if="question.isOther || question.options.length === 0" class="thread-pending-request-input-wrap">
               <span class="thread-pending-request-select-label">{{ ('Other answer') }}</span>
               <input
                 class="thread-pending-request-input"
-                type="text"
+                :type="question.isSecret ? 'password' : 'text'"
                 :value="readQuestionOtherAnswer(request.id, question.id)"
                 :placeholder="('Other answer')"
                 @input="onQuestionOtherAnswerInput(request.id, question.id, $event)"
@@ -226,8 +226,13 @@
           </div>
 
           <footer class="thread-pending-request-footer">
-            <button type="button" class="thread-pending-request-primary" @click="onRespondToolRequestUserInput(request)">
-              {{ ('Send') }}
+            <p v-if="questionAttempt?.error" role="alert">{{ questionAttempt.error }}</p>
+            <button v-if="questionAttempt?.error" type="button" class="thread-pending-request-secondary"
+              @click="emit('dismissQuestionDraft', request.id)">Dismiss draft</button>
+            <button v-else type="button" class="thread-pending-request-primary"
+              :disabled="Boolean(questionAttempt || request.answerAttempted) || !hasToolAnswer"
+              @click="onRespondToolRequestUserInput(request)">
+              {{ questionAttempt || request.answerAttempted ? 'Awaiting confirmation…' : 'Send' }}
             </button>
           </footer>
         </section>
@@ -272,6 +277,7 @@ type ParsedToolQuestion = {
   header: string
   question: string
   isOther: boolean
+  isSecret: boolean
   options: Array<{ label: string; description: string }>
 }
 
@@ -295,10 +301,12 @@ type McpElicitationField = {
 const props = defineProps<{
   request: UiServerRequest | null
   requestCount?: number
+  questionAttempt?: { error?: string }
 }>()
 
 const emit = defineEmits<{
   respondServerRequest: [payload: UiServerRequestReply]
+  dismissQuestionDraft: [id: number]
 }>()
 
 const isToolQuestion = computed(() => props.request?.method === 'item/tool/requestUserInput')
@@ -308,6 +316,12 @@ const selectedApprovalDecision = ref<ApprovalDecision>('accept')
 const approvalFreeformText = ref('')
 const toolQuestionAnswers = ref<Record<string, string>>({})
 const toolQuestionOtherAnswers = ref<Record<string, string>>({})
+const hasToolAnswer = computed(() => {
+  const request = props.request
+  return request && readToolQuestions(request).some(question =>
+    readQuestionAnswer(request.id, question.id, question.options[0]?.label || '').trim() ||
+      readQuestionOtherAnswer(request.id, question.id).trim())
+})
 const mcpElicitationAnswers = ref<Record<string, string | number | boolean | string[] | null>>({})
 const mcpElicitationValidationError = ref('')
 
@@ -525,6 +539,7 @@ function readToolQuestions(request: UiServerRequest): ParsedToolQuestion[] {
       header: readString(question.header),
       question: readString(question.question),
       isOther: question.isOther === true,
+      isSecret: question.isSecret === true,
       options,
     })
   }

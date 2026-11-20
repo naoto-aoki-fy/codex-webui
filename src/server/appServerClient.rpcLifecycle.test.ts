@@ -513,3 +513,106 @@ it('rejects obsolete initialization and cannot seed the replacement cache from i
     expect(fresh.frames.filter((f: any) => f.method === 'config/read')).toHaveLength(0)
   } finally { client.dispose() }
 })
+
+const question = {
+  threadId: 'question-thread', turnId: 'question-turn', itemId: 'question-call',
+  questions: [
+    { id: 'scope', header: 'Scope', isOther: true, options: [{ label: 'Full' }] },
+    { id: 'secret', header: 'Private answer', isSecret: true, isOther: true },
+  ],
+}
+const questionReply = { answers: { secret: { answers: ['never save this'] }, scope: { answers: ['Full', 'Keep examples'] } } }
+
+it('validates the pending question and confirms exactly one reply by native request ID and thread', async () => {
+  const client = new AppServerClient()
+  const listener = vi.fn()
+  const { questionResponses, QuestionResponseStore } = await import('./questionResponses')
+  const profile = process.env.CODEXUI_CONNECTION_PROFILE!
+  client.onNotification(listener)
+  try {
+    await client.reconnect()
+    const socket = wire.sockets[0]!
+    socket.notify('item/completed', { threadId: question.threadId, turnId: question.turnId, item: { id: 'before', type: 'agentMessage' } })
+    socket.emit('message', Buffer.from(JSON.stringify({ id: 'native-42', method: 'item/tool/requestUserInput', params: question })), false)
+    const pending = client.listPendingServerRequests()[0]!
+    await expect(client.respondToServerRequest({ id: pending.id, result: { answers: { wrong: { answers: ['oops'] } } } })).rejects.toThrow('IDs')
+    const response = client.respondToServerRequest({ id: pending.id, result: questionReply })
+    const duplicate = expect(client.respondToServerRequest({ id: pending.id, result: questionReply })).rejects.toThrow('already')
+    await flush()
+    expect(socket.frames.slice(2)).toEqual([{ id: 'native-42', result: questionReply }])
+    socket.notify('serverRequest/resolved', { threadId: 'another-thread', requestId: 'native-42' })
+    socket.notify('serverRequest/resolved', { threadId: question.threadId, requestId: 'some-other-id' })
+    await flush()
+    expect(client.listPendingServerRequests()).toHaveLength(1)
+    expect(listener.mock.calls.some(([event]) => event.method === 'server/request/resolved')).toBe(false)
+    socket.notify('serverRequest/resolved', { threadId: question.threadId, requestId: 'native-42' })
+    const result = await response
+    await duplicate
+    expect(result).toMatchObject({ saved: true, response: {
+      anchorItemId: 'before', turnId: question.turnId, questions: [
+        { id: 'scope', heading: 'Scope', answers: ['Full', 'Keep examples'] },
+        { id: 'secret', heading: 'Private answer', provided: true },
+      ],
+    } })
+    expect(listener.mock.calls.filter(([event]) => event.method === 'server/request/resolved')).toEqual([
+      [{ method: 'server/request/resolved', params: expect.objectContaining({ id: pending.id, response: result!.response }) }],
+    ])
+    const restarted = new QuestionResponseStore()
+    expect(await restarted.read(question.threadId, new Set([question.turnId]), profile)).toEqual([result!.response])
+    expect(await restarted.read(question.threadId, new Set(['older']), profile)).toEqual([])
+    expect(await restarted.read(question.threadId, new Set([question.turnId]), 'other-profile')).toEqual([])
+    socket.notify('thread/archived', { threadId: question.threadId })
+    expect(await questionResponses.read(question.threadId, new Set([question.turnId]))).toEqual([result!.response])
+    socket.notify('thread/deleted', { threadId: question.threadId })
+    expect(await questionResponses.read(question.threadId, new Set([question.turnId]))).toEqual([])
+  } finally { client.dispose() }
+})
+
+it.each(['disconnect', 'timeout', 'send failure'])('does not save, publish, or retry an unconfirmed reply after %s', async cause => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  vi.stubEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', '30')
+  const client = new AppServerClient()
+  const listener = vi.fn()
+  client.onNotification(listener)
+  try {
+    await client.reconnect()
+    const socket = wire.sockets[0]!
+    socket.emit('message', Buffer.from(JSON.stringify({ id: 4, method: 'item/tool/requestUserInput', params: question })), false)
+    const { id } = client.listPendingServerRequests()[0]!
+    if (cause === 'send failure') vi.spyOn(socket, 'send').mockImplementationOnce((_raw, callback) => (callback as (error: Error) => void)(new Error('write failure')))
+    const failed = expect(client.respondToServerRequest({ id, result: questionReply })).rejects.toThrow('could not be confirmed')
+    await flush()
+    if (cause === 'disconnect') {
+      await client.reconnect()
+      socket.notify('serverRequest/resolved', { threadId: question.threadId, requestId: 4 })
+    } else if (cause === 'timeout') {
+      await vi.advanceTimersByTimeAsync(35)
+      await expect(client.respondToServerRequest({ id, result: questionReply })).rejects.toThrow('already')
+    }
+    await failed
+    expect(wire.sockets.flatMap(socket => socket.frames).filter(frame => frame.id === 4)).toHaveLength(cause === 'send failure' ? 0 : 1)
+    expect(listener.mock.calls.some(([event]) => event.method === 'server/request/resolved')).toBe(false)
+  } finally { client.dispose() }
+})
+
+it('publishes and returns the same redacted answer when local persistence fails', async () => {
+  const client = new AppServerClient()
+  const listener = vi.fn()
+  const { questionResponses } = await import('./questionResponses')
+  const save = vi.spyOn(questionResponses, 'save').mockRejectedValueOnce(new Error('full disk'))
+  client.onNotification(listener)
+  try {
+    await client.reconnect()
+    const socket = wire.sockets[0]!
+    socket.emit('message', Buffer.from(JSON.stringify({ id: 4, method: 'item/tool/requestUserInput', params: question })), false)
+    const { id } = client.listPendingServerRequests()[0]!
+    const response = client.respondToServerRequest({ id, result: questionReply })
+    await flush()
+    socket.notify('serverRequest/resolved', { threadId: question.threadId, requestId: 4 })
+    const submission = await response
+    expect(submission?.saved).toBe(false)
+    expect(listener.mock.calls.find(([event]) => event.method === 'server/request/resolved')?.[0].params.response).toEqual(submission?.response)
+    expect(JSON.stringify(submission)).not.toContain('never save this')
+    expect(JSON.stringify(save.mock.calls)).not.toContain('never save this')
+  } finally { save.mockRestore(); client.dispose() }
+})

@@ -1,3 +1,4 @@
+import type { QuestionResponse } from '../questionResponses';
 import type { Ref } from 'vue';
 import { ref } from 'vue';
 import { getPendingServerRequests, replyToServerRequest, type RpcNotification } from '../api/codexGateway';
@@ -8,10 +9,33 @@ const GLOBAL_SERVER_REQUEST_SCOPE = '__global__';
 export function createDesktopApprovals(deps: {
     applyThreadFlags: () => void;
     lifecycleGeneration: number;
+    retainQuestionResponse: (response: QuestionResponse) => void;
     error: Ref<string, string>;
 }) {
     const pendingServerRequestsByThreadId = ref<Record<string, UiServerRequest[]>>({});
     let pendingServerRequestsVersion = 0;
+    const questionAttempts = ref<Record<number, { error?: string }>>({});
+    const questionSaveWarning = ref<{ threadId: string; message: string } | null>(null);
+    const closedRequestIds = new Set<number>();
+    function rememberClosed(id: number): void {
+        closedRequestIds.add(id);
+        if (closedRequestIds.size > 400) closedRequestIds.delete(closedRequestIds.values().next().value!);
+        const next = { ...questionAttempts.value };
+        delete next[id];
+        questionAttempts.value = next;
+        removePendingServerRequestById(id);
+    }
+    function confirmQuestionResponses(responses: QuestionResponse[]): void {
+        const confirmed = new Set(responses.map(response => response.id));
+        for (const requests of Object.values(pendingServerRequestsByThreadId.value)) {
+            for (const request of requests) {
+                if (request.responseId && confirmed.has(request.responseId)) rememberClosed(request.id);
+            }
+        }
+    }
+    function dismissQuestionDraft(id: number): void {
+        if (questionAttempts.value[id]?.error) rememberClosed(id);
+    }
     function getThreadPendingRequests(threadId: string): UiServerRequest[] {
         if (!threadId)
             return [];
@@ -62,6 +86,8 @@ export function createDesktopApprovals(deps: {
             turnId,
             itemId,
             receivedAtIso,
+            ...(readString(row.responseId) ? { responseId: readString(row.responseId) } : {}),
+            ...(row.answerAttempted === true ? { answerAttempted: true } : {}),
             params: requestParams ?? null,
         };
     }
@@ -110,7 +136,10 @@ export function createDesktopApprovals(deps: {
     }
     function replacePendingServerRequests(requests: UiServerRequest[]): void {
         const next: Record<string, UiServerRequest[]> = {};
-        for (const request of requests) {
+        const incoming = new Set(requests.map(request => request.id));
+        const drafts = Object.values(pendingServerRequestsByThreadId.value).flat().filter(request =>
+            questionAttempts.value[request.id] && !incoming.has(request.id));
+        for (const request of [...requests, ...drafts]) {
             const threadId = request.threadId || GLOBAL_SERVER_REQUEST_SCOPE;
             const current = next[threadId] ?? [];
             current.push(request);
@@ -124,7 +153,7 @@ export function createDesktopApprovals(deps: {
     function handleServerRequestNotification(notification: RpcNotification): boolean {
         if (notification.method === 'server/request') {
             const request = normalizeServerRequest(notification.params);
-            if (!request)
+            if (!request || closedRequestIds.has(request.id))
                 return true;
             upsertPendingServerRequest(request);
             return true;
@@ -133,7 +162,9 @@ export function createDesktopApprovals(deps: {
             const row = asRecord(notification.params);
             const id = row?.id;
             if (typeof id === 'number' && Number.isInteger(id)) {
-                removePendingServerRequestById(id);
+                const response = row?.response as QuestionResponse | undefined;
+                if (response) deps.retainQuestionResponse(response);
+                if (response || !questionAttempts.value[id]) rememberClosed(id);
             }
             return true;
         }
@@ -148,7 +179,7 @@ export function createDesktopApprovals(deps: {
                 return;
             const normalizedRequests = rows
                 .map((row) => normalizeServerRequest(row))
-                .filter((request): request is UiServerRequest => request !== null);
+                .filter((request): request is UiServerRequest => request !== null && !closedRequestIds.has(request.id));
             replacePendingServerRequests(normalizedRequests);
         }
         catch {
@@ -157,23 +188,46 @@ export function createDesktopApprovals(deps: {
     }
     async function respondToPendingServerRequest(reply: UiServerRequestReply): Promise<boolean> {
         const generation = deps.lifecycleGeneration;
+        const request = Object.values(pendingServerRequestsByThreadId.value).flat().find(row => row.id === reply.id);
+        const isQuestion = request?.method === 'item/tool/requestUserInput';
+        if (isQuestion && (request.answerAttempted || questionAttempts.value[reply.id])) return false;
+        if (isQuestion) {
+            questionSaveWarning.value = null;
+            questionAttempts.value = { ...questionAttempts.value, [reply.id]: {} };
+        }
         try {
-            await replyToServerRequest(reply.id, {
+            const submission = await replyToServerRequest(reply.id, {
                 result: reply.result,
                 error: reply.error,
             });
-            if (generation === deps.lifecycleGeneration)
-                removePendingServerRequestById(reply.id);
+            if (isQuestion && !submission) throw new Error('Question reply could not be confirmed. Your draft is kept.');
+            if (generation !== deps.lifecycleGeneration) return true;
+            rememberClosed(reply.id);
+            if (submission) {
+                deps.retainQuestionResponse(submission.response);
+                if (!submission.saved) {
+                    const message = 'Answer submitted. WebUI could not save it to history.';
+                    questionSaveWarning.value = { threadId: submission.response.threadId, message };
+                }
+            }
             return true;
         }
         catch (unknownError) {
             if (generation !== deps.lifecycleGeneration)
                 return false;
-            deps.error.value = unknownError instanceof Error ? unknownError.message : 'Failed to reply to server request';
+            const message = unknownError instanceof Error ? unknownError.message : 'Failed to reply to server request';
+            if (isQuestion && closedRequestIds.has(reply.id)) return true;
+            if (isQuestion) questionAttempts.value = { ...questionAttempts.value, [reply.id]: { error: message } };
+            deps.error.value = message;
             return false;
         }
     }
     return {
+questionAttempts,
+questionSaveWarning,
+confirmQuestionResponses,
+dismissQuestionDraft,
+clearPendingAfterDisconnect: () => replacePendingServerRequests([]),
 pendingServerRequestsByThreadId,
 getThreadPendingRequests,
 readPendingRequestState,
