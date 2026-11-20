@@ -3,7 +3,6 @@
 ## Prerequisites
 
 - Open a thread with alternating user messages and assistant replies, including a long reply, command rows, and more than 50 messages for pagination.
-- For the pending-question case, use the [delayed-history Plan Mode fixture](../theme-layout-terminal/plan-mode-question-panel.md#jump-to-question-while-earlier-history-loads) with `HISTORY_DELAY_MS=30000`. In the browser Network panel, inspect the `/codex-api/` RPCs for `thread/turns/list`.
 - Repeat at 1280 × 900, 768 × 1024, and 375 × 812 in light and dark themes.
 
 ## Actions and expected results
@@ -13,17 +12,34 @@
 3. Focus the composer and repeat. Navigation works without changing input text or focus. Open a composer suggestion menu: its arrow handling retains priority.
 4. Reach the final short messages and reverse direction. Each message remains reachable even when the scroll position is clamped at the bottom. At either boundary, navigation does not wrap.
 5. Scroll manually with a wheel, touch, or scrollbar, then navigate again. Navigation starts from the current viewport position.
-6. Press Ctrl+ArrowUp from the start of the conversation to load earlier messages. Let the response arrive without intervening actions. The previous message aligns with the top of the conversation viewport. Press Ctrl+ArrowUp again to move to the preceding message.
-7. In the delayed-history fixture, use Ctrl+ArrowUp from the beginning to load earlier messages. Click **Jump to question** while **Loading…** is shown. When the history arrives, the question moves to its turn. Verify that all of **Awaiting response** is visible, the heading still has keyboard focus, and the Network panel shows only the initial history request.
-8. With a delayed history request running in one thread, switch to a second thread that also has earlier history. Press Ctrl+ArrowUp from its beginning while the first request is pending. Let the first request finish before the second. The second thread stays in place until its own history arrives, then moves to its previous message. The Network panel shows one history request per thread.
-9. Press unmodified arrows, Ctrl+Shift+arrows, and Alt+arrows. Existing behavior is preserved. With a modal dialog open, Ctrl+arrows do not navigate the underlying conversation.
-10. While reading older messages, let a reply stream. Navigation does not force the viewport back to the latest output. Click the existing jump-to-latest button to resume following output.
+6. Press unmodified arrows, Ctrl+Shift+arrows, and Alt+arrows. Existing behavior is preserved. With a modal dialog open, Ctrl+arrows do not navigate the underlying conversation.
+7. While reading older messages, let a reply stream. Navigation does not force the viewport back to the latest output. Click the existing jump-to-latest button to resume following output.
 
-Run `node scripts/test-plan-mode-question-panel.cjs` against the fixture development server to exercise the delayed-response cases with controlled response ordering.
+Scrolling near the beginning of the conversation can automatically fetch earlier history before you press **Ctrl+↑**. Use the automated regression test below to control when the request starts and when each response arrives.
+
+## Automated regression testing
+
+With Playwright Chromium installed, start the development server from the repository root.
+
+```bash
+pnpm run dev --host 127.0.0.1 --port 4173
+```
+
+Leave the server running and open another terminal at the repository root.
+
+```bash
+node scripts/test-plan-mode-question-panel.cjs
+```
+
+The Playwright fixture suppresses the setup scroll event while positioning the conversation at the beginning. It then presses **Ctrl+↑** to start the `thread/turns/list` request and controls when the response is released. The script should report `PASS` in both themes at all three viewport sizes.
+
+1. **Question jump during history loading.** Click **Jump to question** while **Loading…** is shown, then release the history response. The question moves to its turn, the entire **Awaiting response** heading remains visible and keyboard-focused, and the shortcut accounts for the only history request.
+2. **Uninterrupted navigation.** Let the **Ctrl+↑** history response arrive without intervening actions. The previous message aligns with the top of the conversation viewport. Press **Ctrl+↑** again to align the preceding message. Only one history request is made.
+3. **Thread switching.** Start a **Ctrl+↑** history request in the first thread, switch to a second thread, and start its request with the same shortcut. Release the first response while the second is pending. The second thread stays at the top until its own history arrives, then aligns its previous message with the top of the viewport. Each thread makes one history request.
 
 ## Cleanup
 
-Close the fixture browser or return the test thread to the latest output.
+Return the manual test thread to the latest output. The automated script closes its browser when it finishes.
 
 ## Performance audit
 
