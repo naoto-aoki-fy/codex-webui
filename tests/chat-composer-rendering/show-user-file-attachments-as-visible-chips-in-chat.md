@@ -6,7 +6,7 @@
 - Have at least one local file available to attach.
 
 #### Steps
-1. Attach one or more files via composer (file picker, paste long text as `.txt`, or other file attachment flow).
+1. Attach one or more files via composer (**Add files** in the `+` menu, paste long text as `.txt`, or another file attachment flow).
 2. Send the message.
 3. Locate the sent user message in conversation.
 4. Verify file attachment chips are rendered above message text.

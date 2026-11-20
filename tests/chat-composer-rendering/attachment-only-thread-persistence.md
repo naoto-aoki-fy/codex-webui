@@ -7,7 +7,7 @@
 
 ## Actions
 
-1. Create a new chat, explicitly attach a text file using the file picker and submit with an empty composer.
+1. Create a new chat, choose **Add files** from the composer’s `+` menu, select a text file, and submit with an empty composer.
 2. Record the thread URL. Wait for completion, refresh the thread list, reload the page, then restart the application with the same `CODEX_HOME` and reopen it.
 3. Confirm the persisted turn is available through native history and the first user request is empty after `## My request for Codex:` and the file references remain intact. Ask Codex to read the file and report its unique marker.
 4. Repeat with only a manually uploaded `notes.txt`, then with whitespace-only composer content, then with both prepared files and no request text.

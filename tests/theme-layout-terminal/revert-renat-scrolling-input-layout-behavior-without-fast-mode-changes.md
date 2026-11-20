@@ -11,7 +11,7 @@
 3. Confirm message list horizontal overflow behavior in conversation and desktop main area.
 4. In composer, verify there is no drag/drop overlay UI when dragging files over the input.
 5. In composer, paste an image from clipboard and verify it is not auto-attached through paste handler.
-6. Use file picker attach button and confirm attachments still work.
+6. Choose **Add files** from the composer’s `+` menu and confirm attachments still work.
 7. Confirm Fast mode UI/toggle remains present and unchanged.
 
 #### Expected Results
