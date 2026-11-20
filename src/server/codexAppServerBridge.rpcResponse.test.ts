@@ -1,5 +1,5 @@
 import { once } from 'node:events'
-import { createServer, request, type IncomingMessage, type Server } from 'node:http'
+import { createServer, request, type IncomingMessage, type OutgoingHttpHeaders, type Server } from 'node:http'
 import { brotliDecompressSync, gzip } from 'node:zlib'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
@@ -58,10 +58,10 @@ afterEach(async () => {
   rpc.mockReset()
 })
 
-function requestRpc(encoding: string, body = '{"method":"thread/list"}') {
+function requestRpc(encoding: string, body = '{"method":"thread/list"}', headers: OutgoingHttpHeaders = {}) {
   const client = request(url, {
     method: 'POST',
-    headers: { 'Accept-Encoding': encoding, 'Content-Type': 'application/json', Connection: 'close' },
+    headers: { 'Accept-Encoding': encoding, 'Content-Type': 'application/json', Connection: 'close', ...headers },
   })
   client.end(body)
   return client
@@ -108,6 +108,28 @@ it('logs the same decoded body size for identity and Brotli above the size thres
     }
   }
   expect(rpc).toHaveBeenCalledTimes(2)
+})
+
+it.each(['fixed-length', 'chunked'])('counts the original JSON bytes of a %s request', async framing => {
+  const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+  const requestBody = '{\n' + ' '.repeat(1_150_000) + '"method": "thread/list"\n}'
+  const requestBytes = Buffer.byteLength(requestBody)
+  const headers: OutgoingHttpHeaders = framing === 'chunked'
+    ? { 'Transfer-Encoding': 'chunked' }
+    : { 'Content-Length': requestBytes }
+  rpc.mockResolvedValue({ data: [] })
+
+  const client = requestRpc('identity', requestBody, headers)
+  const [response] = await once(client, 'response') as [IncomingMessage]
+  response.resume()
+  await once(response, 'end')
+  await serving.closed
+
+  expect(response.statusCode).toBe(200)
+  expect(rpc).toHaveBeenCalledExactlyOnceWith('thread/list', null)
+  expect(log).toHaveBeenCalledOnce()
+  const bodyMB = ((requestBytes + Number(response.headers['content-length'])) / (1024 * 1024)).toFixed(1)
+  expect(log.mock.calls[0]![0]).toContain(`bodyMB=${bodyMB}, rpcMethod=thread/list)`)
 })
 
 it.each(['identity', 'gzip'])('skips %s serialization after the client disconnects before its RPC result', async encoding => {
