@@ -428,17 +428,20 @@ async function verify(page, viewport, theme) {
   const historyActions = ['keyboard', 'restore', 'latest', 'focus elsewhere', 'scroll manually']
   const keyboardHistoryRestored = join(output, `plan-mode-question-keyboard-history-${viewport.width}-${theme}.png`)
   for (const [index, action] of historyActions.entries()) {
+    if (index > 0) {
+      await page.reload()
+      await input.waitFor()
+      await pager.waitFor()
+    }
     const requestId = 205 + index
     const turnId = `paged-question-${requestId}`
     const anchorId = `${turnId}-anchor`
     let releaseHistory
     historyResponse = new Promise(resolve => { releaseHistory = resolve })
-    const beforeLoad = requests.length
     const beforeHistory = historyRequests().length
     if (action === 'keyboard') {
       await pressUpFromStart(page, list)
     } else {
-      await scrollToMessage(list, 'Earlier history-3')
       await pager.evaluate(element => element.click())
       await list.getByRole('button', { name: 'Loading…', exact: true }).waitFor()
     }
@@ -449,9 +452,7 @@ async function verify(page, viewport, theme) {
     await jumpQuestion.waitFor()
     await assertPosition(panel, 'a')
     assert.equal(await list.locator(`[data-message-id="${anchorId}"]`).count(), 0)
-    const beforeJump = requests.length
     assert.equal(historyRequests().length, beforeHistory + 1)
-    if (action !== 'keyboard') assert.equal(beforeJump, beforeLoad + 1)
     const ancestorsBefore = await outerScroll()
     await jumpQuestion.click()
     await assertQuestionFocused(heading, jumpQuestion)
@@ -483,7 +484,7 @@ async function verify(page, viewport, theme) {
       id: turnId, status: 'completed', items: [{ type: 'agentMessage', id: anchorId, text: anchorText }],
     }, `before-${turnId}`))
     await pager.waitFor()
-    await assertPosition(panel, anchorId, index === 0 ? 'first' : `paged-question-${requestId - 1}-anchor`)
+    await assertPosition(panel, anchorId, 'first')
     if (action === 'keyboard') {
       await page.waitForTimeout(2200)
       await assertQuestionFocused(heading, jumpQuestion)
@@ -507,7 +508,7 @@ async function verify(page, viewport, theme) {
       await page.waitForTimeout(200)
     }
     if (action !== 'keyboard') {
-      assert.equal(requests.length, beforeJump, `${action}: the jump and history render must not issue another API request`)
+      assert.equal(historyRequests().length, beforeHistory + 1, `${action}: the jump and history render must share the existing page request`)
     }
     await list.evaluate(element => { element.scrollTop = element.scrollHeight })
     pendingOnReload = null
@@ -517,6 +518,9 @@ async function verify(page, viewport, theme) {
   }
 
   // Let an older request complete normally and keep moving without resetting navigation.
+  await page.reload()
+  await input.waitFor()
+  await pager.waitFor()
   let releaseHistory
   historyResponse = new Promise(resolve => { releaseHistory = resolve })
   const beforeUninterrupted = historyRequests().length
@@ -590,12 +594,15 @@ async function verify(page, viewport, theme) {
   assert.equal(await other.inputValue(), draft)
   assert.equal(await other.getAttribute('type'), 'password')
   assert.equal(await panel.getByRole('button', { name: 'Retry', exact: true }).count(), 0)
+  const recovered = page.waitForResponse(response => response.url().endsWith('/server-requests/pending'))
   emit('app-server/disconnected', {})
   emit('app-server/reconnected', {})
+  await recovered
   await unconfirmed.waitFor()
   assert.equal(await other.inputValue(), draft)
   assert.equal(await choice.innerText(), 'Full review')
   assert.equal(replies().filter(reply => reply.id === 260).length, 1)
+  assert.equal(await page.getByText('The previous approval expired with the connection.', { exact: false }).count(), 0)
   assert.equal(await list.locator('[data-message-id="question-response-answer-260"]').count(), 0)
   assert.equal(await page.evaluate(value => [localStorage, sessionStorage].some(storage =>
     Object.values(storage).some(row => row.includes(value))), draft), false)

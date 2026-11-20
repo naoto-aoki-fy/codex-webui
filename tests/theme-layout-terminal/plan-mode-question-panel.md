@@ -165,3 +165,9 @@ Close the fixture browser. Its theme preference and response are isolated from y
    same confirmation before a bubble appears. Simulate a confirmed reply with a
    failed history write and check the visible redacted bubble and save warning.
 5. Close the fixture browser and stop only the temporary App Server fixture.
+
+On Codex 0.170.0, a live positive check uses a disposable thread created with
+`experimentalRawEvents: true` on `thread/start`. Start a Plan turn, answer its
+question, and observe the closure followed by one redacted saved-answer event.
+Repeat with the server's default event settings and expect unconfirmed delivery
+if the stream omits the matching raw tool result.
