@@ -803,6 +803,10 @@
   }
 }
 
+:root.dark .conversation-jump-button {
+  @apply border-zinc-700 bg-zinc-900/96 text-zinc-200 hover:bg-zinc-800 hover:text-zinc-50;
+}
+
 .plan-card-title {
   @apply flex flex-1 cursor-pointer items-center gap-1.5 rounded-sm text-left text-sm font-semibold leading-5 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current;
 }

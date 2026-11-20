@@ -4,6 +4,7 @@ import ts from 'typescript'
 import * as vue from 'vue'
 import hljs from 'highlight.js/lib/common'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createConversationViewport } from './conversationViewport'
 
 // Execute the real setup script with reactive props and controlled async/DOM boundaries.
 const source = readFileSync(resolve('src/components/content/ThreadConversation.vue'), 'utf8').split('<script setup lang="ts">')[1]!.split('</script>')[0]!
@@ -129,6 +130,34 @@ describe('conversation thread state isolation', () => {
     await current
     expect(container.scrollTop).toBe(110)
     expect(s.isLoadingMore.value).toBe(false)
+  })
+  it('does not move away from the question when an in-flight history page finishes', async () => {
+    const page = deferred()
+    const loadEarlierMessages = vi.fn().mockReturnValue(page.promise)
+    const viewport = createConversationViewport({
+      props: {
+        activeThreadId: 'A', cwd: '/tmp', messages: [], pendingRequests: [], liveOverlay: null,
+        isLoading: false, hasMorePersistedAbove: true, loadEarlierMessages,
+      },
+    })
+    const container = {
+      clientTop: 0,
+      scrollHeight: 1000,
+      scrollTop: 450,
+      getBoundingClientRect: () => ({ top: 0 }),
+      scrollTo({ top = 0 }: ScrollToOptions) { this.scrollTop = top },
+    }
+    viewport.conversationListRef.value = container as unknown as HTMLElement
+    const loading = viewport.loadMoreAbove()
+    const heading = { focus: vi.fn(), getBoundingClientRect: () => ({ top: -360 }) }
+    viewport.jumpToQuestion(heading as unknown as HTMLButtonElement)
+    expect(heading.focus).toHaveBeenCalledWith({ preventScroll: true })
+    const jumpedTo = container.scrollTop
+    container.scrollHeight = 1200
+    page.resolve(undefined)
+    await loading
+    expect(container.scrollTop).toBe(jumpedTo)
+    expect(viewport.isLoadingMore.value).toBe(false)
   })
   it('ignores old image-settled callbacks and rebinds reused DOM images for the new visit', async () => {
     const { props, state: s, frames } = setup()

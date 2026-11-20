@@ -53,9 +53,29 @@ async function assertPosition(panel, previousId, nextId = null) {
   }), { parentClass: 'conversation-list', previousId, nextId })
 }
 
+async function scrollToMessage(list, id) {
+  await list.evaluate((element, messageId) => {
+    const row = element.querySelector(`[data-message-id="${messageId}"]`)
+    element.scrollTop += row.getBoundingClientRect().top - element.getBoundingClientRect().top - 30
+  }, id)
+}
+
+async function assertQuestionFocused(heading, jumpQuestion) {
+  await jumpQuestion.waitFor({ state: 'hidden' })
+  assert.deepEqual(await heading.evaluate(element => {
+    const list = element.closest('.conversation-list').getBoundingClientRect()
+    const heading = element.getBoundingClientRect()
+    return {
+      focused: document.activeElement === element,
+      visible: heading.top >= list.top && heading.bottom <= list.bottom,
+    }
+  }), { focused: true, visible: true })
+}
+
 async function verify(page, viewport, theme) {
   let pendingOnReload = null
   const turns = [
+    { id: 'first-turn', status: 'completed', items: [{ type: 'agentMessage', id: 'first', text: 'Fixture start' }] },
     history('Earlier history'),
     {
       id: 'question-turn',
@@ -82,8 +102,9 @@ async function verify(page, viewport, theme) {
       return { json: { data: [pendingOnReload] } }
     }
     if (body.method === 'thread/resume' || body.method === 'thread/read') {
-      return { json: { result: { thread: { ...thread, turns }, model: 'fixture-model', modelProvider: 'fixture' } } }
+      return { json: { result: { thread: { ...thread, turns }, model: 'fixture-model', modelProvider: 'fixture', olderCursor: 'older-fixture' } } }
     }
+    if (body.method === 'thread/turns/list') return { json: { result: { data: [], nextCursor: null } } }
   }, false)
 
   const panel = page.locator('.conversation-list .thread-pending-request')
@@ -94,25 +115,65 @@ async function verify(page, viewport, theme) {
   const choice = panel.locator('.composer-dropdown-trigger')
   const other = panel.getByPlaceholder('Other answer')
   const send = panel.getByRole('button', { name: 'Send', exact: true })
+  const jumpQuestion = page.getByRole('button', { name: 'Jump to question', exact: true })
+  const jumpLatest = page.getByRole('button', { name: 'Jump to latest output', exact: true })
+  const pager = list.getByRole('button', { name: 'Load earlier messages', exact: true })
+  const bottomGap = () => list.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)
+  const outerScroll = () => list.evaluate(element => {
+    const positions = []
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) positions.push(parent.scrollTop)
+    return positions
+  })
   const replies = () => calls.filter(call => call.path.endsWith('/server-requests/respond'))
+  const lightness = color => {
+    const oklab = color.match(/^okl(?:ab|ch)\(([\d.]+)/)
+    return oklab ? Number(oklab[1]) : Number(color.match(/\d+/)?.[0]) / 255
+  }
 
   await input.waitFor()
+  await pager.waitFor()
+  await list.evaluate(element => { element.scrollTop = element.scrollHeight })
+  assert.ok(Math.abs(await bottomGap()) <= 1)
   emit('server/request', questionRequest(200, 'question-turn'))
   await heading.waitFor()
+  await jumpQuestion.waitFor()
+  assert.ok(Math.abs(await bottomGap()) <= 1, 'an earlier question should keep the latest output in view')
+  assert.equal(await jumpLatest.count(), 0)
   assert.equal(await heading.getAttribute('aria-expanded'), 'true')
   assert.equal(await footer.count(), 0)
   assert.equal(await input.isVisible(), false)
   assert.equal(await list.locator('[data-message-id="question-file-change"]').count(), 0)
   await assertPosition(panel, 'question-agent', 'Later history-0')
 
+  await scrollToMessage(list, 'Later history-4')
+  await jumpLatest.waitFor()
+  const jumpBounds = await jumpQuestion.boundingBox()
+  const latestBounds = await jumpLatest.boundingBox()
+  assert.equal(jumpBounds.y, latestBounds.y)
+  assert.ok(jumpBounds.x >= 0 && jumpBounds.x + jumpBounds.width < latestBounds.x)
+  assert.ok(latestBounds.x + latestBounds.width <= viewport.width)
+  for (const button of [jumpQuestion, jumpLatest]) {
+    const surface = await button.evaluate(element => getComputedStyle(element).backgroundColor)
+    assert.ok(theme === 'dark' ? lightness(surface) < 0.35 : lightness(surface) > 0.9, surface)
+  }
+  const jumpActions = join(output, `plan-mode-question-jump-actions-${viewport.width}-${theme}.png`)
+  await page.waitForTimeout(2200)
+  await page.screenshot({ path: jumpActions })
+
+  const requestsBeforeClick = requests.length
+  const outerPosition = await outerScroll()
+  await jumpQuestion.click()
+  await assertQuestionFocused(heading, jumpQuestion)
+  assert.equal(await heading.getAttribute('aria-expanded'), 'true')
+  assert.deepEqual(await outerScroll(), outerPosition)
+  await page.waitForTimeout(200)
+  assert.equal(requests.length, requestsBeforeClick, 'clicking Jump to question must not make API requests')
+
   await choice.click()
   await panel.getByRole('button', { name: 'Full review', exact: true }).click()
   assert.equal(await panel.getByText('Review the whole guide.').isVisible(), true)
   await other.fill(draft)
-  await list.evaluate(element => {
-    const row = element.querySelector('[data-message-id="question-agent"]')
-    element.scrollTop += row.getBoundingClientRect().top - element.getBoundingClientRect().top - 30
-  })
+  await scrollToMessage(list, 'question-agent')
   await heading.evaluate(element => element.focus({ preventScroll: true }))
   await page.waitForTimeout(2200)
 
@@ -129,10 +190,8 @@ async function verify(page, viewport, theme) {
   })
   assert.equal(colors.dark, theme === 'dark')
   assert.equal(colors.fits, true)
-  const luminance = color => color.startsWith('oklch(') ? Number(color.slice(6).split(' ')[0]) :
-    Number(color.match(/\d+/)?.[0]) / 255
   for (const surface of [colors.panel, colors.question, colors.input]) {
-    assert.ok(theme === 'dark' ? luminance(surface) < 0.35 : luminance(surface) > 0.9, surface)
+    assert.ok(theme === 'dark' ? lightness(surface) < 0.35 : lightness(surface) > 0.9, surface)
   }
   const expanded = join(output, `plan-mode-question-expanded-${viewport.width}-${theme}.png`)
   const minimized = join(output, `plan-mode-question-minimized-${viewport.width}-${theme}.png`)
@@ -225,9 +284,71 @@ async function verify(page, viewport, theme) {
   await footer.getByRole('button', { name: 'Cancel', exact: true }).click()
   await input.waitFor()
   assert.deepEqual(replies().at(-1).result, { action: 'cancel' })
-  assert.equal(replies().length, 4)
+
+  // A long question can have a visible Send button and an offscreen heading near pageable history.
+  await scrollToMessage(list, 'Later history-4')
+  await jumpLatest.waitFor()
+  const laterRow = list.locator('[data-message-id="Later history-4"]')
+  const laterRowTop = () => laterRow.evaluate(row => row.getBoundingClientRect().top)
+  const laterPosition = await laterRowTop()
+  const longQuestion = questionRequest(204, 'first-turn')
+  const scope = longQuestion.params.questions[0]
+  longQuestion.params.questions.push(...Array.from({ length: 12 }, (_, index) => ({
+    ...scope,
+    id: `section-${index}`,
+    header: `Review section ${index + 1}`,
+    isOther: false,
+  })))
+  emit('server/request', longQuestion)
+  await jumpQuestion.waitFor()
+  assert.ok(Math.abs(await laterRowTop() - laterPosition) <= 1, 'a question above the viewport should preserve the reading position')
+  const showCardEnd = () => send.evaluate(element => {
+    const list = element.closest('.conversation-list')
+    list.scrollTop += element.getBoundingClientRect().bottom - list.getBoundingClientRect().bottom + 90
+  })
+  await showCardEnd()
+  await page.waitForFunction(() => {
+    const list = document.querySelector('.conversation-list').getBoundingClientRect()
+    const heading = document.querySelector('[data-pending-question-heading]').getBoundingClientRect()
+    const send = document.querySelector('.conversation-list .thread-pending-request-primary').getBoundingClientRect()
+    return heading.bottom < list.top && send.top >= list.top && send.bottom <= list.bottom
+  })
+  await jumpQuestion.waitFor()
+  const requestsBeforeKeyboard = requests.length
+  await jumpLatest.focus()
+  await page.keyboard.press('Shift+Tab')
+  assert.equal(await jumpQuestion.evaluate(element => document.activeElement === element), true)
+  await page.keyboard.press('Enter')
+  await assertQuestionFocused(heading, jumpQuestion)
+  assert.ok(await list.evaluate(element => element.scrollTop < 200), 'jump must land inside the history-loading threshold')
+  await page.waitForTimeout(200)
+  assert.equal(requests.length, requestsBeforeKeyboard, 'keyboard jump must not make API requests, including pagination')
+  assert.equal(await pager.count(), 1)
+
+  await other.fill(draft)
+  await heading.click()
+  await jumpLatest.click()
+  await jumpQuestion.waitFor()
+  const requestsBeforeMinimizedJump = requests.length
+  await jumpQuestion.click()
+  await assertQuestionFocused(heading, jumpQuestion)
+  assert.equal(await heading.getAttribute('aria-expanded'), 'false')
+  assert.equal(await other.isVisible(), false)
+  await page.waitForTimeout(200)
+  assert.equal(requests.length, requestsBeforeMinimizedJump, 'jumping to a minimized card must not make API requests')
+  await page.keyboard.press('Space')
+  assert.equal(await other.inputValue(), draft)
+
+  await showCardEnd()
+  await jumpQuestion.waitFor()
+  await send.click()
+  await jumpQuestion.waitFor({ state: 'hidden' })
+  await input.waitFor()
+  assert.equal(await heading.count(), 0)
+  assert.deepEqual(replies().at(-1).result.answers.scope.answers, ['Quick update', draft])
+  assert.equal(replies().length, 5)
   assert.deepEqual(errors, [])
-  return { url: page.url(), viewport, theme, expanded, minimized, colors, readingPosition: positionBefore, toggleApiRequests: 0 }
+  return { url: page.url(), viewport, theme, jumpActions, expanded, minimized, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0 }
 }
 
 async function main() {

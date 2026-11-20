@@ -65,6 +65,7 @@
           v-if="isToolQuestion"
           type="button"
           class="plan-card-title w-full"
+          data-pending-question-heading
           :aria-expanded="isQuestionExpanded"
           :aria-controls="questionBodyId"
           @click="isQuestionExpanded = !isQuestionExpanded"
