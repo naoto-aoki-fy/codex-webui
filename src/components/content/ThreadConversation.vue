@@ -1500,7 +1500,6 @@ watch(
   () => props.activeThreadId,
   async () => {
     viewport.autoFollowOutput.value = true
-    viewport.resetMessageNavigation()
     // Apply immediately for cached threads where isLoading never toggles.
     viewport.renderWindowStart.value = Math.max(0, props.messages.length - viewport.RENDER_WINDOW_SIZE)
     await viewport.scheduleConversationScroll()
