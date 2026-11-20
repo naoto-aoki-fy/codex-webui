@@ -16,14 +16,15 @@ Prerequisites: run the app with a working app-server and a writable project. Ope
 
 Cleanup: delete the disposable thread and restore the original theme. These steps are a manual checklist, not a record of an automated browser run.
 
-## Background turn completion in the tab title
+## Background turn completion in the tab title and favicon
 
-Prerequisites: open the same disposable conversation in two tabs, A and B, in the same browser window. Keep both connected to the app-server and use a prompt that takes long enough to switch tabs before it finishes. Record the initial conversation tab title.
+Prerequisites: open the same disposable conversation in two tabs, A and B, in the same browser window. Keep both connected to the app-server and use a prompt that takes long enough to switch tabs before it finishes. Record the initial title and favicon in the tab strip.
 
-1. In tab A, send a prompt and stay on A until the turn completes. Tab A's title should have no marker.
-2. Send another prompt in A and switch to B while it runs. After the turn completes, check the browser tab strip without activating A. Tab A should have exactly one `*` before the title, and the visible tab B should stay unmarked.
-3. With A still hidden, send another prompt from B and let it finish. Tab A should still have one `*`. Rename the conversation from B and wait for the updated title to appear in A. The new title should retain the prefix.
-4. Return to A. The `*` should disappear immediately and the renamed title should remain. Open another conversation and return to confirm that the marker stays cleared.
-5. Repeat in both light and dark themes.
+1. In tab A, send a prompt and stay on A until the turn completes. The title and favicon should stay unmarked.
+2. Send another prompt in A and switch to B while it runs. After the turn completes, check the browser tab strip without activating A. Tab A should have one `*` before the title and a red dot in the upper-right corner of the favicon. Tab B should stay unmarked.
+3. With A still hidden, send another prompt from B and let it finish. Tab A should still have one `*` and one dot. Rename the conversation from B and wait for the updated title to appear in A. Both indicators should remain active.
+4. Return to A. The `*` should disappear immediately, the renamed title should remain, and the original favicon should return. Open another conversation and return to confirm that both indicators stay cleared.
+5. In B, open a different disposable conversation and let a turn finish while A is hidden. Tab A should stay unmarked.
+6. Repeat in both light and dark themes.
 
 Cleanup: close the duplicate tab, delete the disposable conversation, and restore the original theme.

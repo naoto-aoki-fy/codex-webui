@@ -397,6 +397,7 @@ import { parseModelSelection } from './api/modelCapabilities'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNewThreadCwdRoute } from './composables/useNewThreadCwdRoute'
+import { useTurnCompletionTabIndicator } from './composables/useTurnCompletionTabIndicator'
 import DesktopLayout from './components/layout/DesktopLayout.vue'
 import GeneralPreferencesSettings from './components/sidebar/GeneralPreferencesSettings.vue'
 import AboutSettings from './components/sidebar/AboutSettings.vue'
@@ -481,7 +482,6 @@ const CHAT_WIDTH_PRESETS: Record<ChatWidthMode, ChatWidthPreset> = {
   },
 }
 
-const markedThreadId = ref<string | null>(null)
 const {
   projectGroups,
   projectDisplayNameById, projects,
@@ -562,7 +562,7 @@ const {
   primeSelectedThread,
   executeThreadRevert,
   isRollingBack,
-} = useDesktopState({ onSelectedTurnCompleted: markBackgroundTurnCompletion })
+} = useDesktopState({ onSelectedTurnCompleted: (threadId) => markBackgroundTurnCompletion(threadId) })
 
 const route = useRoute()
 const router = useRouter()
@@ -664,17 +664,6 @@ const routeThreadId = computed(() => {
   const rawThreadId = route.params.threadId
   return typeof rawThreadId === 'string' ? rawThreadId : ''
 })
-watch(routeThreadId, () => { markedThreadId.value = null }, { flush: 'sync' })
-
-function markBackgroundTurnCompletion(threadId: string): void {
-  if (document.hidden && route.name === 'thread' && routeThreadId.value === threadId) {
-    markedThreadId.value = threadId
-  }
-}
-
-function clearTurnMarkerWhenVisible(): void {
-  if (!document.hidden) markedThreadId.value = null
-}
 
 const isHomeRoute = computed(() => route.name === 'home')
 const isSkillsRoute = computed(() => route.name === 'skills')
@@ -696,10 +685,10 @@ const contentContextLabel = computed(() => {
   if (isHomeRoute.value || isSkillsRoute.value) return ''
   return getThreadContextLabel(selectedThread.value, projectDisplayNameById.value)
 })
-const pageTitle = computed(() => {
-  const title = formatChatPageTitle(selectedThread.value?.title, contentContextLabel.value)
-  return markedThreadId.value === routeThreadId.value ? `* ${title}` : title
-})
+const { markBackgroundTurnCompletion } = useTurnCompletionTabIndicator(
+  () => route.name === 'thread' ? routeThreadId.value : null,
+  computed(() => formatChatPageTitle(selectedThread.value?.title, contentContextLabel.value)),
+)
 const filteredMessages = computed(() =>
   messages.value.filter((message) => {
     const type = normalizeMessageType(message.messageType, message.role)
@@ -824,7 +813,6 @@ const contentStyle = computed(() => {
   }
 })
 onMounted(() => {
-  document.addEventListener('visibilitychange', clearTurnMarkerWhenVisible)
   window.addEventListener('storage', onUiPreferenceStorage)
   window.addEventListener('keydown', onWindowKeyDown)
   window.addEventListener('resize', updateVisualViewportState)
@@ -837,7 +825,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  document.removeEventListener('visibilitychange', clearTurnMarkerWhenVisible)
   window.removeEventListener('storage', onUiPreferenceStorage)
   window.removeEventListener('keydown', onWindowKeyDown)
   window.removeEventListener('resize', updateVisualViewportState)
@@ -1442,15 +1429,6 @@ watch(
     if (route.name === 'thread' && routeThreadId.value === threadId) return
     await router.replace({ name: 'thread', params: { threadId } })
   },
-)
-
-watch(
-  pageTitle,
-  (value) => {
-    if (typeof document === 'undefined') return
-    document.title = value
-  },
-  { immediate: true },
 )
 
 watch(isMobile, (mobile) => {
