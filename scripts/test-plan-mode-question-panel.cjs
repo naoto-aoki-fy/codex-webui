@@ -74,6 +74,7 @@ async function assertQuestionFocused(heading, jumpQuestion) {
 
 async function verify(page, viewport, theme) {
   let pendingOnReload = null
+  let historyResponse = null
   const turns = [
     { id: 'first-turn', status: 'completed', items: [{ type: 'agentMessage', id: 'first', text: 'Fixture start' }] },
     history('Earlier history'),
@@ -104,7 +105,7 @@ async function verify(page, viewport, theme) {
     if (body.method === 'thread/resume' || body.method === 'thread/read') {
       return { json: { result: { thread: { ...thread, turns }, model: 'fixture-model', modelProvider: 'fixture', olderCursor: 'older-fixture' } } }
     }
-    if (body.method === 'thread/turns/list') return { json: { result: { data: [], nextCursor: null } } }
+    if (body.method === 'thread/turns/list') return historyResponse ?? { json: { result: { data: [], nextCursor: null } } }
   }, false)
 
   const panel = page.locator('.conversation-list .thread-pending-request')
@@ -347,8 +348,86 @@ async function verify(page, viewport, theme) {
   assert.equal(await heading.count(), 0)
   assert.deepEqual(replies().at(-1).result.answers.scope.answers, ['Quick update', draft])
   assert.equal(replies().length, 5)
+
+  // Start with an unused cursor after the earlier question and submission flows.
+  await page.reload()
+  await input.waitFor()
+  await pager.waitFor()
+  const historyRestored = join(output, `plan-mode-question-history-${viewport.width}-${theme}.png`)
+  const historyActions = ['restore', 'latest', 'focus elsewhere', 'scroll manually']
+  for (const [index, action] of historyActions.entries()) {
+    const requestId = 205 + index
+    const turnId = `paged-question-${requestId}`
+    const anchorId = `${turnId}-anchor`
+    let releaseHistory
+    historyResponse = new Promise(resolve => { releaseHistory = resolve })
+    await scrollToMessage(list, 'Earlier history-3')
+    const beforeLoad = requests.length
+    await pager.evaluate(element => element.click())
+    await list.getByRole('button', { name: 'Loading…', exact: true }).waitFor()
+    pendingOnReload = questionRequest(requestId, turnId)
+    emit('server/request', pendingOnReload)
+    await jumpQuestion.waitFor()
+    await assertPosition(panel, 'a')
+    assert.equal(await list.locator(`[data-message-id="${anchorId}"]`).count(), 0)
+    const beforeJump = requests.length
+    assert.equal(beforeJump, beforeLoad + 1)
+    const ancestorsBefore = await outerScroll()
+    await jumpQuestion.click()
+    await assertQuestionFocused(heading, jumpQuestion)
+
+    const headerMenu = page.locator('.conversation-header-menu > summary')
+    if (action === 'restore') {
+      // Set a draft and minimize before jumping again to the same temporary position.
+      await other.fill(draft)
+      await heading.click()
+      await scrollToMessage(list, 'Later history-4')
+      await jumpQuestion.click()
+      await assertQuestionFocused(heading, jumpQuestion)
+      assert.equal(await heading.getAttribute('aria-expanded'), 'false')
+    } else if (action === 'latest') {
+      await jumpLatest.click()
+    } else if (action === 'focus elsewhere') {
+      await headerMenu.evaluate(element => element.focus({ preventScroll: true }))
+    } else {
+      // Use a real wheel event and leave keyboard focus on the old heading.
+      await list.hover()
+      const start = await list.evaluate(element => element.scrollTop)
+      await page.mouse.wheel(0, -120)
+      await page.waitForFunction(top => document.querySelector('.conversation-list').scrollTop < top, start)
+      assert.equal(await heading.evaluate(element => document.activeElement === element), true)
+    }
+
+    releaseHistory({ json: { result: {
+      data: [{ id: turnId, status: 'completed', items: [{ type: 'agentMessage', id: anchorId, text: `History page ${requestId}` }] }],
+      nextCursor: `before-${turnId}`,
+    } } })
+    await pager.waitFor()
+    await assertPosition(panel, anchorId, index === 0 ? 'first' : `paged-question-${requestId - 1}-anchor`)
+    if (action === 'restore') {
+      await assertQuestionFocused(heading, jumpQuestion)
+      assert.equal(await heading.getAttribute('aria-expanded'), 'false')
+      assert.ok(await list.evaluate(element => element.scrollTop < 200), 'restoration must land inside the history-loading threshold')
+      assert.deepEqual(await outerScroll(), ancestorsBefore)
+      await page.waitForTimeout(2200)
+      await page.screenshot({ path: historyRestored })
+      await page.keyboard.press('Enter')
+      assert.equal(await other.inputValue(), draft)
+    } else {
+      await jumpQuestion.waitFor()
+      assert.equal(await heading.evaluate(element => document.activeElement === element), false)
+      if (action === 'latest') assert.ok(Math.abs(await bottomGap()) <= 1, 'Jump to latest takes precedence over question restoration')
+      if (action === 'focus elsewhere') assert.equal(await headerMenu.evaluate(element => document.activeElement === element), true)
+      await page.waitForTimeout(200)
+    }
+    assert.equal(requests.length, beforeJump, `${action}: the jump and history render must not issue another API request`)
+    await list.evaluate(element => { element.scrollTop = element.scrollHeight })
+    pendingOnReload = null
+    emit('server/request/resolved', { id: requestId, threadId: thread.id })
+    await heading.waitFor({ state: 'hidden' })
+  }
   assert.deepEqual(errors, [])
-  return { url: page.url(), viewport, theme, jumpActions, expanded, minimized, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0 }
+  return { url: page.url(), viewport, theme, jumpActions, expanded, minimized, historyRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
 }
 
 async function main() {

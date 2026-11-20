@@ -22,7 +22,15 @@ async function main() {
         text: text + ' ' + (index + 1) + '. ' + 'Read this conversation history. '.repeat(10),
       })),
     })
-    const { emit } = await setup(page, (body, _page, url) => {
+    const historyDelay = Number(process.env.HISTORY_DELAY_MS ?? 0)
+    const questionTurn = {
+      id: 'question-turn', status: 'completed',
+      items: [
+        { type: 'userMessage', id: 'prompt', content: [{ type: 'text', text: 'Prepare a documentation plan.' }] },
+        { type: 'agentMessage', id: 'before-question', text: 'The plan depends on the documentation scope.' },
+      ],
+    }
+    const { emit } = await setup(page, async (body, _page, url) => {
       if (url.pathname.endsWith('/server-requests/respond')) {
         console.log('Request reply', JSON.stringify(body))
         if (body.id === 200) {
@@ -37,17 +45,16 @@ async function main() {
       if (body.method === 'thread/resume' || body.method === 'thread/read') {
         const turns = [
           history('earlier', 'Earlier message'),
-          {
-            id: 'question-turn', status: 'completed',
-            items: [
-              { type: 'userMessage', id: 'prompt', content: [{ type: 'text', text: 'Prepare a documentation plan.' }] },
-              { type: 'agentMessage', id: 'before-question', text: 'The plan depends on the documentation scope.' },
-            ],
-          },
+          ...(historyDelay ? [] : [questionTurn]),
           history('later', 'Later message'),
           { id: 'latest', status: 'completed', items: [{ type: 'agentMessage', id: 'answer', text: 'Fixture answer' }] },
         ]
-        return { json: { result: { thread: { ...thread, turns }, model: 'fixture-model', modelProvider: 'fixture' } } }
+        return { json: { result: { thread: { ...thread, turns }, model: 'fixture-model', modelProvider: 'fixture', olderCursor: historyDelay ? 'older-fixture' : null } } }
+      }
+      if (body.method === 'thread/turns/list' && historyDelay) {
+        console.log(`Returning the question turn in ${historyDelay} ms`)
+        await new Promise(resolve => setTimeout(resolve, historyDelay))
+        return { json: { result: { data: [questionTurn], nextCursor: null } } }
       }
     }, false)
 
@@ -106,9 +113,16 @@ NODE
 3. Repeat with `LONG_QUESTION=1 node` in the fixture command. Jump to the question, type a draft in **Other answer**, then scroll until **Send** is visible and the heading is above the viewport. Verify that **Jump to question** is available. Activate it, minimize the card via **Enter** on the focused heading, and use **Jump to latest** to move away. Jump back and verify that the card is still minimized. Reopen it and check the draft. None of the jumps should make API requests.
 4. Scroll until **Send** is visible and the heading is offscreen again. Submit the response. Verify the card and **Jump to question** disappear and the Network panel shows one response submission. Close the fixture to clear its state. Repeat at **1280 × 900**, **768 × 1024**, and **375 × 812** in both light and dark themes. Check that the jump controls fit side by side and their text, icon, and keyboard focus indicators are visible.
 
+#### Jump to question while earlier history loads
+
+1. Start a fresh fixture by replacing `node` in the setup command with `HISTORY_DELAY_MS=30000 node`. Open the Network panel and filter for `/codex-api/`. Verify **Awaiting response** initially sits below **Fixture answer**. Optionally enter a draft in **Other answer** and minimize the card.
+2. Scroll to the top to start loading earlier messages. The terminal prints when the delayed response is scheduled. While **Loading…** is shown, activate **Jump to question** and verify that **Awaiting response** immediately becomes visible and focused.
+3. Wait for the history response. Verify that the card moves directly after “The plan depends on the documentation scope.” and before **Earlier message 1**. The entire heading remains visible and has keyboard focus. Check that its expanded or minimized state is preserved, and reopen it to verify any draft. The Network panel should show one history request for the original scroll and zero from the jump or restoration.
+4. Start a fresh delayed fixture for each variation. After the initial jump, use **Jump to latest**, use **Tab** to focus a different control, or scroll away without moving focus. When history arrives, the card still moves after its turn. The conversation stays at the latest output or the new reading position, and any newly focused control retains focus if it remains present. Close each fixture after verifying the result.
+
 #### Automated fixture
 
-Run `node scripts/test-plan-mode-question-panel.cjs` against the same development server. It checks question placement, draft retention, keyboard toggles, reopening, approval and MCP input in the footer, and the jump flows above. The keyboard jump also lands inside the history pagination threshold and verifies zero API requests. It saves screenshots of the two jump controls and of the expanded and minimized card for each theme and viewport under `output/playwright/`.
+Run `node scripts/test-plan-mode-question-panel.cjs` against the same development server. It checks question placement, draft retention, keyboard toggles, reopening, approval and MCP input in the footer, and the jump flows above. The keyboard jump and history restoration both land inside the history pagination threshold and verify zero additional API requests. It saves screenshots of the jump controls, expanded and minimized cards, and the restored heading for each theme and viewport under `output/playwright/`.
 
 #### Cleanup
 

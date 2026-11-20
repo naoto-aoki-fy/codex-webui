@@ -1162,7 +1162,7 @@ const questionHeading = ref<HTMLButtonElement | null>(null)
 const showJumpToQuestionButton = ref(false)
 
 watch([conversationListRef, () => props.activeThreadId, () => props.pendingQuestion?.id], ([root, , questionId], _, onCleanup) => {
-  const heading = questionId === undefined ? null : root?.querySelector<HTMLButtonElement>('[data-pending-question-heading]') ?? null
+  const heading = questionId === undefined ? null : viewport.findQuestionHeading()
   questionHeading.value = heading
   showJumpToQuestionButton.value = false
   if (!root || !heading) return
@@ -1534,6 +1534,7 @@ function closeImageModal(): void {
 }
 
 onMounted(() => {
+  window.addEventListener('focusin', viewport.onQuestionFocusIn, true)
   window.addEventListener('keydown', viewport.onMessageNavigationKeydown)
   window.addEventListener('pointerdown', onWindowPointerDownForFileLinkContextMenu)
   window.addEventListener('blur', onWindowBlurForFileLinkContextMenu)
@@ -1556,6 +1557,7 @@ onBeforeUnmount(() => {
     clearTimeout(actions.copiedPlanResetTimer)
     actions.copiedPlanResetTimer = null
   }
+  window.removeEventListener('focusin', viewport.onQuestionFocusIn, true)
   window.removeEventListener('keydown', viewport.onMessageNavigationKeydown)
   window.removeEventListener('pointerdown', onWindowPointerDownForFileLinkContextMenu)
   window.removeEventListener('blur', onWindowBlurForFileLinkContextMenu)
