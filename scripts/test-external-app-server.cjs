@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { spawn, spawnSync } = require('node:child_process')
+const { createHash } = require('node:crypto')
 const { once } = require('node:events')
 const { createServer } = require('node:http')
 const { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } = require('node:fs')
@@ -96,6 +97,9 @@ async function run() {
   const olderCursor = 'native-opaque-cursor'
   const questionCases = new Map()
   const rolloutPath = '/fixture/core/sessions/2026/11/20/rollout-fixture.jsonl'
+  const activeQueueThread = 'queued-metadata-0'
+  const queuedRolloutPath = '/fixture/core/sessions/2026/11/20/rollout-queued.jsonl'
+  let releaseQueuedRollout
   const defaultThread = { ...historyThread, id: 'default-question-thread',
     path: '/fixture/core/sessions/2026/11/20/rollout-default-question.jsonl' }
   const rolloutRow = (type, payload) => JSON.stringify({ type, payload }) + '\n'
@@ -111,10 +115,12 @@ async function run() {
     socket.on('message', raw => {
       const frame = JSON.parse(String(raw)); frames.push(frame)
       if (!frame.method && questionCases.has(frame.id)) {
-        const { threadId, turnId, callId, outcome } = questionCases.get(frame.id)
+        const question = questionCases.get(frame.id)
+        const { threadId, turnId, callId, outcome } = question
         const fromRollout = outcome.startsWith('rollout')
+        if (outcome === 'timeout') return
         socket.send(JSON.stringify({ method: 'serverRequest/resolved', params: { threadId, requestId: frame.id } }))
-        if (outcome === 'cancelled' || fromRollout) {
+        const complete = () => {
           if (fromRollout) {
             const result = outcome === 'rollout-mismatch'
               ? { answers: { ...frame.result.answers, choice: { answers: ['Keep examples', 'Full'] } } } : frame.result
@@ -129,8 +135,10 @@ async function run() {
             threadId, turn: { id: turnId, status: fromRollout ? 'completed' : 'interrupted', items: [] },
           } })
           socket.send(terminal)
-          if (outcome === 'rollout') socket.send(terminal)
+          if (fromRollout) socket.send(terminal)
         }
+        if (outcome === 'rollout-long' || outcome === 'cancelled') question.complete = complete
+        else if (fromRollout) complete()
         if (outcome === 'disconnect') socket.close()
         return
       }
@@ -147,6 +155,13 @@ async function run() {
       }
       if (heldRollout && frame.method === 'fs/readFile' && frame.params.path === rolloutPath) {
         rolloutRead = raw => socket.send(JSON.stringify({ id: frame.id, result: { dataBase64: Buffer.from(raw).toString('base64') } }))
+        return
+      }
+      if (frame.method === 'fs/readFile' && frame.params.path === queuedRolloutPath) {
+        releaseQueuedRollout = () => {
+          releaseQueuedRollout = undefined
+          socket.send(JSON.stringify({ id: frame.id, result: { dataBase64: '' } }))
+        }
         return
       }
       if (['turn/start', 'turn/steer'].includes(frame.method)) {
@@ -179,6 +194,8 @@ async function run() {
           ? { dataBase64: Buffer.from(questionRollout).toString('base64') }
         : frame.method === 'fs/getMetadata' && frame.params.path === defaultThread.path
           ? { isFile: true, modifiedAtMs: questionStamp }
+        : frame.method === 'fs/getMetadata' && frame.params.path === queuedRolloutPath
+          ? { isFile: true, modifiedAtMs: 1 }
         : frame.method === 'fs/getMetadata' ? frame.params.path === rolloutPath
           ? { isFile: true, modifiedAtMs: 1 } : { isDirectory: true, isFile: false, isSymlink: false }
         : frame.method === 'thread/name/set' ? {}
@@ -193,6 +210,11 @@ async function run() {
           ? { thread: { ...defaultThread, turns: [] }, modelProvider: 'fixture-provider', model: 'fixture-model' }
         : frame.method === 'thread/turns/list' && frame.params.threadId === defaultThread.id
           ? { data: defaultTurns, nextCursor: null }
+        : frame.method === 'thread/turns/list' && frame.params.threadId?.startsWith('queued-metadata-')
+          ? { data: [{ id: 'queued-turn', status: 'completed', items: [] }], nextCursor: null }
+        : frame.method === 'thread/read' && frame.params.threadId?.startsWith('queued-metadata-')
+          ? { thread: { ...historyThread, id: frame.params.threadId, turns: [],
+            path: frame.params.threadId === activeQueueThread ? queuedRolloutPath : null } }
         : ['thread/read', 'thread/resume'].includes(frame.method) && frame.params.threadId === historyId
           ? { thread: { ...historyThread, turns: [], path: heldRollout ? rolloutPath : null }, modelProvider: 'fixture-provider', model: 'fixture-model' }
         : frame.method === 'thread/turns/list' && frame.params.threadId === historyId
@@ -220,10 +242,11 @@ async function run() {
       { dev: true, profile: shortHostname },
     ]) {
       const port = dev ? 4199 : 4198
+      const rpcDeadlineMs = verifyBrowser && dev && profile === shortHostname ? 15_000 : 500
       // Codex is absent on this host; CLI precedence deliberately overrides a refused env URL.
       const env = {
         ...process.env, ...storageEnv, CODEXUI_APP_SERVER_URL: dev ? endpoint : 'ws://127.0.0.1:1',
-        CODEXUI_APP_SERVER_RPC_DEADLINE_MS: verifyBrowser && dev && profile === shortHostname ? '15000' : '500',
+        CODEXUI_APP_SERVER_RPC_DEADLINE_MS: String(rpcDeadlineMs),
       }
       if (uploadOverride === undefined) delete env.CODEXUI_REMOTE_UPLOAD_DIR
       else env.CODEXUI_REMOTE_UPLOAD_DIR = uploadOverride
@@ -400,6 +423,14 @@ async function run() {
           assert.fail('Expected a question event on the WebUI stream')
         }
         const privateValue = 'private fixture value'
+        const waitForFrame = async (start, predicate) => {
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const frame = frames.slice(start).find(predicate)
+            if (frame) return frame
+            await new Promise(resolve => setTimeout(resolve, 5))
+          }
+          assert.fail('Expected an App Server request')
+        }
         const submitAnswer = async (turnId, method = 'item/tool/requestUserInput', outcome = 'confirmed', threadId = historyId) => {
           const wireId = `question-${turnId}-${outcome}`
           const callId = `call-${turnId}-${outcome}`
@@ -424,7 +455,35 @@ async function run() {
           const sentAt = frames.length
           let finished = false
           const reply = sendReply().then(response => { finished = true; return response })
-          await waitForQuestionEvent(event => event.method === 'server/request/resolved' && event.params.id === pending.id)
+          if (outcome !== 'timeout') {
+            await waitForQuestionEvent(event => event.method === 'server/request/resolved' && event.params.id === pending.id)
+          }
+          if (outcome === 'rollout-long' || outcome === 'cancelled') {
+            await new Promise(resolve => setTimeout(resolve, rpcDeadlineMs + 50))
+            assert.equal(finished, false, 'native closure keeps the reply confirmable past the send deadline')
+            const complete = questionCases.get(wireId).complete
+            if (outcome === 'rollout-long') {
+              const queueAt = frames.length
+              const recover = index => call('thread/turns/list', { threadId: 'queued-metadata-' + index, itemsView: 'full' })
+              assert.equal((await recover(0)).status, 200)
+              await waitForFrame(queueAt, frame => frame.method === 'fs/readFile' && frame.params.path === queuedRolloutPath)
+              assert(releaseQueuedRollout, 'metadata transfer is held open')
+              const queued = await Promise.all(Array.from({ length: 15 }, (_, index) => recover(index + 1)))
+              assert(queued.every(result => result.status === 200))
+              assert.equal((await recover(16)).status, 200)
+              complete()
+              await waitForQuestionEvent(event => event.method === 'turn/completed' && event.params.turn.id === turnId)
+              const recoveryOrder = () => frames.slice(queueAt).filter(frame => frame.method === 'thread/read').map(frame => frame.params.threadId)
+              assert.deepEqual(recoveryOrder(), [activeQueueThread], 'only one rollout transfer can be active')
+              releaseQueuedRollout()
+              const terminal = await reply
+              assert.equal(terminal.status, 200)
+              await waitForFrame(queueAt, frame => frame.method === 'thread/read' && /^queued-metadata-[1-9]/.test(frame.params.threadId))
+              assert.deepEqual(recoveryOrder().slice(0, 2), [activeQueueThread, threadId])
+            } else {
+              complete()
+            }
+          }
           if (outcome === 'confirmed') {
             emitResult(answers, { threadId: 'wrong-thread' })
             emitResult(answers, { turnId: 'wrong-turn' })
@@ -447,7 +506,7 @@ async function run() {
               frame.method === 'thread/read' && frame.params?.threadId === threadId)
             assert.deepEqual(recovery.map(frame => frame.method), ['thread/read', 'fs/getMetadata', 'fs/readFile', 'fs/getMetadata'])
           }
-          if (outcome !== 'confirmed' && outcome !== 'rollout') {
+          if (!['confirmed', 'rollout', 'rollout-long', 'rollout-save-failure'].includes(outcome)) {
             assert.equal(response.status, 502, JSON.stringify(result))
             assert.match(result.error, /could not be confirmed/)
             if (outcome !== 'disconnect') {
@@ -458,7 +517,7 @@ async function run() {
             return
           }
           assert.equal(response.status, 200, JSON.stringify(result))
-          assert.equal(result.saved, true)
+          assert.equal(result.saved, outcome !== 'rollout-save-failure')
           assert.deepEqual(result.response.questions, [
             { id: 'choice', heading: 'Scope', answers: ['Full', 'Keep examples'] },
             { id: 'secret', heading: 'Private', provided: true },
@@ -477,12 +536,23 @@ async function run() {
           const started = await call('thread/start', { cwd: defaultThread.cwd })
           assert.equal(started.status, 200, JSON.stringify(started.body))
           assert.equal(started.body.result.thread.id, defaultThread.id)
-          const created = await submitAnswer('default-created', undefined, 'rollout', defaultThread.id)
+          const created = await submitAnswer('default-created', undefined, 'rollout-long', defaultThread.id)
           const restored = await call('thread/resume', { threadId: defaultThread.id })
           assert.equal(restored.status, 200, JSON.stringify(restored.body))
           assert.deepEqual(restored.body.result.questionResponses, [created])
           const resumed = await submitAnswer('default-resumed', undefined, 'rollout', defaultThread.id)
           await submitAnswer('default-mismatched', undefined, 'rollout-mismatch', defaultThread.id)
+          const answersFile = join(data, 'app-servers', hash, 'question-responses',
+            createHash('sha256').update(defaultThread.id).digest('hex') + '.json')
+          const savedAnswers = readFileSync(answersFile)
+          rmSync(answersFile)
+          mkdirSync(answersFile)
+          try {
+            await submitAnswer('default-save-fail', undefined, 'rollout-save-failure', defaultThread.id)
+          } finally {
+            rmSync(answersFile, { recursive: true })
+            writeFileSync(answersFile, savedAnswers)
+          }
           assert.equal(created.threadId, defaultThread.id)
           assert.equal(resumed.threadId, defaultThread.id)
           const defaultHistory = await call('thread/read', { threadId: defaultThread.id, includeTurns: true })
@@ -490,7 +560,7 @@ async function run() {
           assert.equal(JSON.stringify(questionEvents).includes(privateValue), false)
           assert.equal(questionEvents.some(event => event.method === 'rawResponseItem/completed'), false)
           console.log('PASS question closure, matching result, mismatches, duplicates, aliases, cancellation, timeout and private output')
-          console.log('PASS default question stream after thread start and resume; one rollout transfer and one saved reply per turn')
+          console.log('PASS default question stream after thread start and resume; long turn, saturated metadata queue, one transfer per reply and redacted save failure')
         }
         const populatedAt = frames.length
         const populated = await historyRequest('thread/read', { includeTurns: true })

@@ -78,6 +78,7 @@ type QuestionAttempt = {
   turnId: string
   callId: string
   match: (answers: ReturnType<typeof readQuestionToolAnswers>) => void
+  close: () => void
   complete: () => void
   fail: () => void
 }
@@ -468,6 +469,7 @@ export class AppServerClient {
       if (pending.method !== QUESTION_REQUEST || pending.wireId !== requestId ||
         this.extractThreadIdFromParams(pending.params) !== event?.threadId) continue
       this.pendingServerRequests.delete(pending.id)
+      this.questionAttempts.get(pending.id)?.close()
       this.publishRequestResolution(pending)
       break
     }
@@ -526,13 +528,16 @@ export class AppServerClient {
     const callId = readNonEmptyString(asRecord(request.params)?.itemId)
     const profileId = getConnectionProfileId()
     const generation = this.connectionGeneration
+    const deadlineMs = positiveEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', 60_000)
     request.answerAttempted = true
 
     return new Promise((resolve, reject) => {
       let sent = false
       let matched = false
+      let closed = false
       let completed = false
       let rolloutReply: RolloutQuestionReply | undefined
+      let timer: ReturnType<typeof setTimeout>
       const retire = () => {
         if (this.questionAttempts.get(request.id) !== attempt) return false
         this.questionAttempts.delete(request.id)
@@ -552,8 +557,13 @@ export class AppServerClient {
           () => finish({ response, saved: false }),
         )
       }
-      const checkRollout = () => {
-        if (!sent || !completed || !callId || rolloutReply || this.questionAttempts.get(request.id) !== attempt) return
+      const advanceConfirmation = () => {
+        if (!sent || !closed || this.questionAttempts.get(request.id) !== attempt || rolloutReply) return
+        clearTimeout(timer)
+        if (!completed) return
+        if (!callId) { attempt.fail(); return }
+        timer = setTimeout(attempt.fail, deadlineMs)
+        timer.unref()
         const reply: RolloutQuestionReply = { turnId, callId, answers: wireResult.answers, confirmed: false }
         rolloutReply = reply
         void this.rolloutMetadata.recover(threadId, true, reply).then(() => {
@@ -571,16 +581,19 @@ export class AppServerClient {
           matched = true
           confirm()
         },
+        close: () => {
+          closed = true
+          advanceConfirmation()
+        },
         complete: () => {
           completed = true
-          checkRollout()
-          if (!callId) attempt.fail()
+          attempt.close()
         },
         fail: () => {
           if (retire()) reject(new Error(QUESTION_REPLY_UNCONFIRMED))
         },
       }
-      const timer = setTimeout(attempt.fail, positiveEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', 60_000))
+      timer = setTimeout(attempt.fail, deadlineMs)
       timer.unref()
       this.questionAttempts.set(request.id, attempt)
       try {
@@ -588,7 +601,7 @@ export class AppServerClient {
           if (error) { attempt.fail(); return }
           sent = true
           confirm()
-          checkRollout()
+          advanceConfirmation()
         })
         if (!queued && retire()) {
           if (this.pendingServerRequests.get(request.id) !== request) {

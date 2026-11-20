@@ -29,6 +29,7 @@ vi.mock('ws', async () => {
   return { default: Socket }
 })
 import { AppServerClient } from './appServerClient'
+import { RolloutGenerationMetadata } from './rolloutGenerationMetadata'
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); wire.sockets.length = 0; wire.metadata = {}; wire.holdHandshake = false; wire.autoFs = false; vi.unstubAllEnvs() })
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve() }
@@ -588,7 +589,45 @@ it('saves once after the matching result, filtering mismatches, duplicates and p
   } finally { save.mockRestore(); client.dispose() }
 })
 
-it.each(['disconnect', 'timeout', 'send failure', 'cancelled turn'])('does not save, publish, or retry an unconfirmed reply after %s', async cause => {
+it('starts a fresh, bounded rollout deadline when a long turn completes', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  vi.stubEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', '30')
+  let release!: (value: Map<string, never>) => void
+  const held = new Promise<Map<string, never>>(resolve => { release = resolve })
+  const recover = vi.spyOn(RolloutGenerationMetadata.prototype, 'recover').mockReturnValue(held)
+  const client = new AppServerClient()
+  try {
+    await client.reconnect()
+    const socket = wire.sockets[0]!
+    socket.emit('message', Buffer.from(JSON.stringify({ id: 4, method: 'item/tool/requestUserInput', params: question })), false)
+    const { id } = client.listPendingServerRequests()[0]!
+    const response = client.respondToServerRequest({ id, result: questionReply })
+    const failed = expect(response).rejects.toThrow('could not be confirmed')
+    await flush()
+    socket.notify('serverRequest/resolved', { threadId: question.threadId, requestId: 4 })
+    await vi.advanceTimersByTimeAsync(100)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(recover).not.toHaveBeenCalled()
+    const terminal = { threadId: question.threadId, turn: { id: question.turnId, status: 'completed' } }
+    socket.notify('turn/completed', terminal)
+    expect(recover).toHaveBeenCalledTimes(1)
+    const reply = recover.mock.calls[0]![2]!
+    await vi.advanceTimersByTimeAsync(29)
+    socket.notify('turn/completed', terminal)
+    expect(reply.answers).toEqual(questionReply.answers)
+    await vi.advanceTimersByTimeAsync(1)
+    await failed
+    expect(recover).toHaveBeenCalledTimes(1)
+    expect(reply.answers).toBeUndefined()
+    expect(socket.frames.filter((frame: any) => frame.id === 4)).toHaveLength(1)
+  } finally {
+    release(new Map<string, never>())
+    recover.mockRestore()
+    client.dispose()
+  }
+})
+
+it.each(['disconnect', 'timeout', 'send failure', 'interrupted', 'failed', 'reverted', 'deleted'])('does not save, publish, or retry an unconfirmed reply after %s', async cause => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   vi.stubEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', '30')
   const client = new AppServerClient()
@@ -602,13 +641,19 @@ it.each(['disconnect', 'timeout', 'send failure', 'cancelled turn'])('does not s
     if (cause === 'send failure') vi.spyOn(socket, 'send').mockImplementationOnce((_raw, callback) => (callback as (error: Error) => void)(new Error('write failure')))
     const failed = expect(client.respondToServerRequest({ id, result: questionReply })).rejects.toThrow('could not be confirmed')
     await flush()
+    if (cause !== 'timeout' && cause !== 'send failure') {
+      socket.notify('serverRequest/resolved', { threadId: question.threadId, requestId: 4 })
+      await vi.advanceTimersByTimeAsync(100)
+    }
     if (cause === 'disconnect') {
       await client.reconnect()
       notifyQuestionResult(socket)
       notifyQuestionResult(wire.sockets[1]!)
-    } else if (cause === 'cancelled turn') {
-      socket.notify('serverRequest/resolved', { threadId: question.threadId, requestId: 4 })
-      socket.notify('turn/completed', { threadId: question.threadId, turn: { id: question.turnId, status: 'interrupted' } })
+    } else if (cause === 'interrupted' || cause === 'failed') {
+      socket.notify('turn/completed', { threadId: question.threadId, turn: { id: question.turnId, status: cause } })
+      notifyQuestionResult(socket)
+    } else if (cause === 'reverted' || cause === 'deleted') {
+      socket.notify(`thread/${cause}`, { threadId: question.threadId })
       notifyQuestionResult(socket)
     } else if (cause === 'timeout') {
       await vi.advanceTimersByTimeAsync(35)
