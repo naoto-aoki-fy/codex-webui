@@ -2,7 +2,7 @@
   <section
     v-if="request"
     class="thread-pending-request"
-    :class="{ 'thread-pending-request--user-input': request.method === 'item/tool/requestUserInput' }"
+    :class="{ 'thread-pending-request--user-input': isToolQuestion }"
   >
     <article
       class="thread-pending-request-shell"
@@ -61,15 +61,26 @@
       </template>
 
       <template v-else>
-        <header class="thread-pending-request-header">
+        <button
+          v-if="isToolQuestion"
+          type="button"
+          class="plan-card-title w-full"
+          :aria-expanded="isQuestionExpanded"
+          :aria-controls="questionBodyId"
+          @click="isQuestionExpanded = !isQuestionExpanded"
+        >
+          <IconTablerChevronRight class="plan-card-chevron" />
+          {{ requestPanelTitle(request) }}
+        </button>
+        <header v-if="!isToolQuestion || isQuestionExpanded" class="thread-pending-request-header">
           <div class="thread-pending-request-heading">
-            <p class="thread-pending-request-eyebrow">{{ requestPanelTitle(request) }}</p>
+            <p v-if="!isToolQuestion" class="thread-pending-request-eyebrow">{{ requestPanelTitle(request) }}</p>
             <p class="thread-pending-request-title">{{ requestPanelPrompt(request) }}</p>
           </div>
           <span v-if="(requestCount ?? 0) > 1" class="thread-pending-request-counter">{{ requestCount ?? 0 }} pending</span>
         </header>
 
-        <div v-if="requestPreview(request)" class="thread-pending-request-preview">
+        <div v-if="(!isToolQuestion || isQuestionExpanded) && requestPreview(request)" class="thread-pending-request-preview">
           <code class="thread-pending-request-preview-code">{{ requestPreview(request) }}</code>
         </div>
 
@@ -166,7 +177,12 @@
           </footer>
         </section>
 
-        <section v-else-if="request.method === 'item/tool/requestUserInput'" class="thread-pending-request-user-input">
+        <section
+          v-else-if="isToolQuestion"
+          v-show="isQuestionExpanded"
+          :id="questionBodyId"
+          class="thread-pending-request-user-input"
+        >
           <div
             v-for="question in readToolQuestions(request)"
             :key="`${request.id}:${question.id}`"
@@ -183,6 +199,7 @@
                   :model-value="readQuestionAnswer(request.id, question.id, question.options[0]?.label || '')"
                   :options="toolQuestionOptions(question)"
                   :placeholder="('Choice')"
+                  :disabled="!isQuestionExpanded"
                   @update:model-value="onQuestionAnswerChange(request.id, question.id, $event)"
                 />
               </div>
@@ -237,9 +254,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import type { UiServerRequest, UiServerRequestReply } from '../../types/codex'
 import ComposerDropdown from './ComposerDropdown.vue'
+import IconTablerChevronRight from '../icons/IconTablerChevronRight.vue'
 
 type ApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel'
 
@@ -282,6 +300,9 @@ const emit = defineEmits<{
   respondServerRequest: [payload: UiServerRequestReply]
 }>()
 
+const isToolQuestion = computed(() => props.request?.method === 'item/tool/requestUserInput')
+const isQuestionExpanded = ref(true)
+const questionBodyId = useId()
 const selectedApprovalDecision = ref<ApprovalDecision>('accept')
 const approvalFreeformText = ref('')
 const toolQuestionAnswers = ref<Record<string, string>>({})
@@ -450,6 +471,7 @@ const approvalOptions = computed(() => approvalOptionsForRequest(props.request))
 watch(
   () => props.request?.id ?? 0,
   () => {
+    isQuestionExpanded.value = true
     approvalFreeformText.value = ''
     toolQuestionAnswers.value = {}
     toolQuestionOtherAnswers.value = {}
@@ -995,6 +1017,10 @@ function onRejectUnknownRequest(request: UiServerRequest): void {
 
 .thread-pending-request-header {
   @apply flex items-start justify-between gap-3;
+}
+
+.thread-pending-request--user-input .thread-pending-request-header {
+  @apply mt-1;
 }
 
 .thread-pending-request-heading {

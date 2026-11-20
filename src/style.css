@@ -803,11 +803,27 @@
   }
 }
 
+.plan-card-title {
+  @apply flex flex-1 cursor-pointer items-center gap-1.5 rounded-sm text-left text-sm font-semibold leading-5 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current;
+}
+
+.plan-card-chevron {
+  @apply size-3.5 shrink-0 motion-safe:transition-transform;
+}
+
+.plan-card-title[aria-expanded='true'] .plan-card-chevron {
+  @apply rotate-90;
+}
+
+.plan-card .plan-card-title {
+  @apply text-sky-900;
+}
+
 :root.dark .plan-card {
   @apply border-sky-700/70 bg-slate-900/78 text-zinc-200;
 }
 
-:root.dark .plan-card-title {
+:root.dark .plan-card .plan-card-title {
   @apply text-sky-200;
 }
 

@@ -41,8 +41,9 @@
    With saving/interrupting pending, expect the existing disabled/spinner behavior;
    runtime restrictions must still disable Stop unless interruption is allowed.
 6. While collapsed, trigger an approval and a tool user-input request. Expect the
-   pending panel to replace the composer, remain visible and accept responses.
-   Both floating controls must disappear while the panel is active.
+   approval to appear in the footer and the tool question to appear in the
+   conversation with an **Awaiting response** heading. Both floating controls must
+   disappear while either request is pending, including when the question is minimized.
    After resolution, expect the floating restore icon (and Stop if running) again.
    Restore and verify the draft, attachments and selections. Repeat with a Skills menu or prompt dialog open:
    no floating composer menu/dialog should cover the pending request.

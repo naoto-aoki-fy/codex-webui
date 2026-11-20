@@ -3,14 +3,14 @@
     <p v-if="isLoading" class="conversation-loading">Loading messages...</p>
 
     <p
-      v-else-if="messages.length === 0 && pendingRequests.length === 0 && !liveOverlay"
+      v-else-if="!hasConversationContent"
       class="conversation-empty"
     >
       No messages in this thread yet.
     </p>
 
     <ul
-      v-else
+      v-if="pendingQuestion || (!isLoading && hasConversationContent)"
       ref="conversationListRef"
       class="conversation-list"
       @scroll="onConversationScroll"
@@ -18,7 +18,7 @@
       @pointerdown="resetMessageNavigation"
       @touchstart.passive="resetMessageNavigation"
     >
-      <li v-if="hasMoreAbove" class="conversation-load-more">
+      <li v-if="!isLoading && hasMoreAbove" class="conversation-load-more">
         <button
           type="button"
           class="load-more-button"
@@ -28,9 +28,9 @@
           {{ isLoadingMore || isLoadingPersistedAbove ? 'Loading…' : 'Load earlier messages' }}
         </button>
       </li>
-      <template v-for="message in visibleMessages" :key="message.id">
+      <template v-for="message in conversationRows" :key="message ? message.id : pendingQuestionRowKey">
       <li
-        v-if="!hiddenGroupedCommandIds.has(message.id) && !hiddenFileChangeMessageIds.has(message.id)"
+        v-if="message"
         class="conversation-item"
         :data-message-id="message.id"
         :data-navigation-message="(message.role === 'user' || message.role === 'assistant') && !isCommandMessage(message) && message.messageType !== 'fileChange'"
@@ -747,8 +747,16 @@
           </div>
         </div>
       </li>
+      <li v-else-if="pendingQuestion" class="conversation-item">
+        <ThreadPendingRequestPanel
+          :key="JSON.stringify([activeThreadId, pendingQuestion.id])"
+          :request="pendingQuestion"
+          :request-count="pendingRequests.length"
+          @respond-server-request="emit('respondServerRequest', $event)"
+        />
+      </li>
       </template>
-      <li v-if="liveOverlay" class="conversation-item conversation-item-overlay">
+      <li v-if="!isLoading && liveOverlay" class="conversation-item conversation-item-overlay">
         <div class="message-row">
           <div class="message-stack">
             <article class="live-overlay-inline" aria-live="polite">
@@ -836,7 +844,7 @@ import ComposerDropdown from './ComposerDropdown.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { generationMetadataLabel } from '../../turnGenerationMetadata'
 import { formatMessageTimestamp } from '../../messageTimestamps'
-import type { UiFileChange, UiMessage } from '../../types/codex'
+import type { UiFileChange, UiMessage, UiServerRequestReply } from '../../types/codex'
 import { useMobile } from '../../composables/useMobile'
 import { copyTextToClipboard } from '../../utils/clipboard'
 
@@ -846,6 +854,7 @@ import { indexConversationPlans, interpretConversationPlan, isPlanMessage, showI
 import { fileChangeKey } from '../../utils/diffViewerLines'
 
 import ThreadDiffViewer from './ThreadDiffViewer.vue'
+import ThreadPendingRequestPanel from './ThreadPendingRequestPanel.vue'
 
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
@@ -1120,6 +1129,7 @@ const emit = defineEmits<{
   forkThread: [payload: { threadId: string; target: import('../../types/codex').ResponseForkTarget; method: ForkMethod }]
   rollback: [payload: { threadId: string; turnId: string; operation: import('../../types/codex').RevertOperation; messageId?: string }]
   implementPlan: [payload: { turnId: string }]
+  respondServerRequest: [payload: UiServerRequestReply]
 }>()
 
 const viewport = createConversationViewport({
@@ -1189,6 +1199,31 @@ const fileChangeSummaryIndex = computed(() => indexConversationFileChanges(props
 const anchoredFileChangeSummaryByAnchorId = computed(() => fileChangeSummaryIndex.value.anchored)
 const standaloneFileChangeSummaryByMessageId = computed(() => fileChangeSummaryIndex.value.standalone)
 const hiddenFileChangeMessageIds = computed(() => fileChangeSummaryIndex.value.hiddenMessageIds)
+
+const hasConversationContent = computed(() =>
+  props.messages.length > 0 || props.pendingRequests.length > 0 || Boolean(props.pendingQuestion || props.liveOverlay),
+)
+const pendingQuestionRowKey = Symbol('pendingQuestion')
+const conversationRows = computed(() => {
+  const rows: Array<UiMessage | null> = props.isLoading ? [] : visibleMessages.value.filter((message) =>
+    !hiddenGroupedCommandIds.value.has(message.id) && !hiddenFileChangeMessageIds.value.has(message.id),
+  )
+  if (!props.pendingQuestion) return rows
+
+  const turnId = props.pendingQuestion.turnId
+  let insertAt = rows.length
+  if (turnId) {
+    for (let index = rows.length - 1; index >= 0; index--) {
+      if (rows[index]?.turnId === turnId) {
+        insertAt = index + 1
+        break
+      }
+    }
+  }
+  // Keep the question a keyed sibling of its anchor so a change in position keeps its draft.
+  rows.splice(insertAt, 0, null)
+  return rows
+})
 
 function readAnchoredFileChangeSummary(message: UiMessage): TurnFileChangeSummary | null {
   return anchoredFileChangeSummaryByAnchorId.value[message.id] ?? null
@@ -1712,18 +1747,6 @@ onBeforeUnmount(() => {
 
 .plan-card-header {
   @apply flex items-center justify-between gap-3;
-}
-
-.plan-card-title {
-  @apply flex flex-1 cursor-pointer items-center gap-1.5 rounded-sm text-left text-sm font-semibold leading-5 text-sky-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current;
-}
-
-.plan-card-chevron {
-  @apply size-3.5 shrink-0 motion-safe:transition-transform;
-}
-
-.plan-card-title[aria-expanded='true'] .plan-card-chevron {
-  @apply rotate-90;
 }
 
 .plan-card-badge {

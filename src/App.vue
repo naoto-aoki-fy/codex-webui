@@ -229,7 +229,7 @@
             </div>
           </template>
           <template v-else>
-            <div class="content-grid">
+            <div class="content-grid" :class="{ 'has-pending-request': selectedThreadPendingRequest }">
               <div class="content-thread">
                 <ThreadConversation ref="threadConversationRef" :messages="filteredMessages" :is-loading="isLoadingMessages"
                   :active-thread-id="composerThreadContextId" :cwd="composerCwd"
@@ -237,12 +237,14 @@
                   :is-revert-disabled="isForkOperationPending || isRollingBack || isSelectedThreadInProgress || compaction.selectedBusy.value || review.selectedBusy.value"
                   :is-fork-disabled="isForkOperationPending || isRollingBack"
                   :pending-requests="selectedThreadServerRequests"
+                  :pending-question="selectedThreadPendingQuestion"
                   :has-more-persisted-above="hasMoreOlderMessages"
                   :is-loading-persisted-above="isLoadingOlderMessages"
                   :load-earlier-messages="loadOlderMessages"
                   @fork-thread="onForkThreadFromMessage"
                   @rollback="onRollback"
-                  @implement-plan="onImplementPlan" />
+                  @implement-plan="onImplementPlan"
+                  @respond-server-request="onRespondServerRequest" />
               </div>
 
               <div class="composer-container">
@@ -252,7 +254,7 @@
                   :in-progress="isSelectedThreadInProgress"
                 />
                 <ThreadPendingRequestPanel
-                  v-if="selectedThreadPendingRequest"
+                  v-if="selectedThreadPendingRequest && !selectedThreadPendingQuestion"
                   :request="selectedThreadPendingRequest"
                   :request-count="selectedThreadServerRequests.length"
                   @respond-server-request="onRespondServerRequest"
@@ -697,6 +699,10 @@ const composerSelectedModelId = computed(() => readModelIdForThread(composerThre
 const selectedThreadPendingRequest = computed<UiServerRequest | null>(() => {
   const rows = selectedThreadServerRequests.value
   return rows.length > 0 ? rows[rows.length - 1] : null
+})
+const selectedThreadPendingQuestion = computed(() => {
+  const request = selectedThreadPendingRequest.value
+  return request?.method === 'item/tool/requestUserInput' ? request : null
 })
 const composerCwd = computed(() => {
   if (isHomeRoute.value) return newThreadCwd.value.trim()
@@ -1546,7 +1552,7 @@ watch(isMobile, (mobile) => {
 }
 
 /* Keep footer notices and goal actions clear of the floating restore/Stop buttons. */
-.composer-container:has(> .thread-composer--collapsed):not(:has(> .thread-pending-request)) {
+.content-grid:not(.has-pending-request) .composer-container:has(> .thread-composer--collapsed) {
   padding-right: calc(7rem + env(safe-area-inset-right, 0px));
 }
 
