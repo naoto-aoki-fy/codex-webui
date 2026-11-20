@@ -2,6 +2,7 @@ import type { UiLiveOverlay, UiMessage, UiServerRequest } from '../../types/code
 export type ConversationProps = {
     messages: UiMessage[];
     pendingRequests: UiServerRequest[];
+    pendingQuestion?: UiServerRequest | null;
     liveOverlay: UiLiveOverlay | null;
     isForkDisabled?: boolean;
     isRevertDisabled?: boolean;
