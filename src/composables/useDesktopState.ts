@@ -1945,8 +1945,10 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
       }
       transportState.value = 'disconnected'
       appServerConnection.update('disconnected')
-      for (const threadId of Object.keys(approvals.pendingServerRequestsByThreadId.value)) {
-        lostApprovalByThreadId.value = { ...lostApprovalByThreadId.value, [threadId]: true }
+      for (const [threadId, requests] of Object.entries(approvals.pendingServerRequestsByThreadId.value)) {
+        if (approvals.readPendingRequestState(requests) === 'approval') {
+          lostApprovalByThreadId.value = { ...lostApprovalByThreadId.value, [threadId]: true }
+        }
       }
       for (const threadId of Object.keys(resumedThreadById.value)) invalidateResumeThread(threadId)
       resumedThreadById.value = {}

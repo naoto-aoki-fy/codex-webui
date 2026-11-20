@@ -302,6 +302,12 @@ export function createDesktopApprovals(deps: {
         clearQuestionState,
         clearPendingAfterDisconnect: () => {
             ++pendingServerRequestsVersion;
+            for (const requests of Object.values(pendingServerRequestsByThreadId.value)) {
+                for (const request of requests) {
+                    const draft = readQuestionDraft(request);
+                    if (draft?.attempt && !draft.attempt.error) draft.attempt = { error: QUESTION_REPLY_UNCONFIRMED };
+                }
+            }
             replacePendingServerRequests([]);
         },
         pendingServerRequestsByThreadId,

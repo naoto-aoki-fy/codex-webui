@@ -59,15 +59,22 @@ created. Ordinary drafts and ambiguous-send protection remain active.
 
 ## Saved question responses
 
-WebUI starts capturing replies when this feature ships. The server reply requires
-both a successful WebSocket send and the matching native request closure on that
-connection. Codex emits the closure before delivering the answer to the turn.
+WebUI confirms a reply after the WebSocket send succeeds and Codex emits a
+`rawResponseItem/completed` function result with the same connection, thread,
+turn, tool call ID and answers. Question IDs are compared independently of their
+object order, and values for each question must match in order. Native request
+closure can precede the result or occur during cancellation. The bridge consumes
+question results before notification delivery and diagnostic buffering.
+
 WebUI saves ordered, redacted records under
 `app-servers/<sha256(ID)>/question-responses/<sha256(threadId)>.json`
 in the profile data directory. Each record has the native turn ID and a stable
 response ID. Private answers retain only a boolean indicating whether an answer
-was provided. The submitting browser receives a warning if the confirmed answer
-could not be saved.
+was provided. A confirmed answer remains visible with a warning when the local
+write fails. Unconfirmed replies retain their draft in memory through navigation,
+panel replacement and reconnect in the same tab. Retry is available when the
+bridge establishes the frame never entered the socket and the question is still
+pending. Confirmation, dismissal, deletion and profile teardown clear the draft.
 
 Existing history responses contain only records for their page or retained turn
 IDs. The browser merges these with submission and completion records, by ID.

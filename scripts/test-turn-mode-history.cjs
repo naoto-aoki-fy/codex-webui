@@ -25,6 +25,7 @@ const response = {
 async function verify(page, theme, viewport) {
   let accepted = false
   let reload = false
+  let retryAttempts = 0
   let release
   let emit
   const held = new Promise(resolve => { release = resolve })
@@ -32,6 +33,12 @@ async function verify(page, theme, viewport) {
     if (requestUrl.pathname.endsWith('/server-requests/respond')) {
       if (body.id === 302) return { status: 502, json: { error: 'Question reply could not be confirmed. Your draft is kept.' } }
       if (body.id === 303) return { json: { ok: true, response: { ...response, id: 'unsaved-answer' }, saved: false } }
+      if (body.id === 304) {
+        if (++retryAttempts === 1) return { status: 502, json: {
+          error: 'Question reply was not sent. Your draft is kept. You can retry.', code: 'question_reply_not_sent',
+        } }
+        return { json: { ok: true, response: { ...response, id: 'retried-answer' }, saved: true } }
+      }
     }
     if (body.method === 'turn/start') {
       await held
@@ -120,6 +127,19 @@ async function verify(page, theme, viewport) {
   await pending.getByRole('button', { name: 'Send', exact: true }).click()
   await page.getByRole('alert').getByText('Answer submitted. WebUI could not save it to history.').waitFor()
   await page.locator('[data-message-id="question-response-unsaved-answer"]').getByText('Answer hidden').waitFor()
+  pendingQuestion(304)
+  await pending.getByPlaceholder('Other answer').fill('Manual retry draft')
+  await pending.getByRole('button', { name: 'Send', exact: true }).click()
+  const retry = pending.getByRole('button', { name: 'Retry', exact: true })
+  await retry.waitFor()
+  assert.equal(await pending.getByPlaceholder('Other answer').inputValue(), 'Manual retry draft')
+  assert.equal(retryAttempts, 1)
+  await retry.click()
+  await page.locator('[data-message-id="question-response-retried-answer"]').waitFor()
+  assert.deepEqual(fixture.calls.filter(call => call.id === 304).map(call => call.result), [
+    { answers: { scope: { answers: ['Manual retry draft'] } } },
+    { answers: { scope: { answers: ['Manual retry draft'] } } },
+  ])
   if (viewport.width === 1280 && theme === 'light') {
     const second = await page.context().browser().newPage({ viewport })
     try {
