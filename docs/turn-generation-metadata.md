@@ -65,7 +65,8 @@ created. Ordinary drafts and ambiguous-send protection remain active.
 
 After the WebSocket send succeeds, WebUI can confirm a reply from the matching
 `rawResponseItem/completed` function result. On the default event stream, WebUI
-checks one fresh rollout snapshot after a successful terminal event. Both paths
+checks a fresh rollout snapshot after a successful terminal event. If the file
+changes during the read, WebUI retries once within the same deadline. Both paths
 require exact connection, thread, turn, tool call ID and answer values. Question
 IDs are compared independently of their object order, and values for each
 question must match in order. The bridge consumes raw question results before
@@ -75,9 +76,11 @@ The initial deadline covers sending the reply and native request closure. Once
 both occur, the attempt stays in memory until an exact raw result or a terminal
 event arrives. Successful completion starts a fresh deadline for the rollout
 check. Interruption, failure, disconnect, rollback and deletion retire
-unconfirmed attempts. A closed draft stays in the conversation while confirmation
-is pending. The composer restores **Stop** while the turn runs and the sidebar
-clears its pending-question indicator.
+unconfirmed attempts. Archive, thread closure and unsubscribe also settle an
+attempt if it was still waiting for the terminal event. They let an already
+completed turn finish its bounded rollout check. A closed draft stays in the
+conversation while confirmation is pending. The composer restores **Stop**
+while the turn runs and the sidebar clears its pending-question indicator.
 
 WebUI saves ordered, redacted records under
 `app-servers/<sha256(ID)>/question-responses/<sha256(threadId)>.json`
@@ -104,6 +107,8 @@ turn IDs and 512 characters per field. Local recovery adds an asynchronous,
 coalesced cache read and uses existing metadata notifications. No session traversal, per-message RPC,
 source-to-fork history read, synchronous filesystem work or new request fanout is
 introduced. Native metadata-only pagination does not trigger rollout recovery.
+The reply retry adds at most one file read and one file stat for a changing
+snapshot. Stable reads and metadata-only recovery keep their existing RPC counts.
 Answer history reads one profile/thread file asynchronously, filters by exact turn
 IDs before serialization and uses the existing native page. File read and write
 cost grows with the number of saved answers in that thread.

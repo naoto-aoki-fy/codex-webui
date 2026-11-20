@@ -173,7 +173,16 @@ Close the fixture browser. Its theme preference and response are isolated from y
    the discarded text was never sent again. Dismiss a closed draft and verify the
    panel disappears. Simulate a confirmed reply with a failed history write and
    check the visible redacted bubble and save warning.
-5. Close the fixture browser and stop only the temporary App Server fixture.
+5. With the bridge fixture, submit an answer and emit native request closure.
+   Before turn completion, unsubscribe or archive the thread, or emit native
+   thread closure. Expect the reply to settle as unconfirmed with one native
+   send and no saved answer. Repeat after a successful terminal event while
+   verification is in progress. Expect verification to keep its deadline.
+6. With the rollout fixture, append a follow-up turn during the first file read.
+   Expect a single retry and a redacted answer after a stable match. Append
+   again during the retry to verify that the reply remains unconfirmed. Check
+   the RPC trace for one extra file read and stat, with no extra history page.
+7. Close the fixture browser and stop only the temporary App Server fixture.
 
 For live acceptance, connect to an independently managed and signed-in Codex
 0.170.0 App Server. Start a disposable thread in WebUI and send a Plan prompt

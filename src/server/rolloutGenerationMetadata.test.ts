@@ -103,6 +103,29 @@ it('queues one fresh question scan when an older metadata transfer already start
   } finally { release(); await old }
 })
 
+it.each([false, true])('retries a question scan once after an append during verification (changes again: %s)', async changesAgain => {
+  const f = fixture()
+  const original = f.rpc.getMockImplementation()!
+  f.files.set(path, session() + boundary('task_started') + completeQuestion)
+  f.rpc.mockImplementation(async (method, params) => {
+    const result = await original(method, params)
+    if (method === 'fs/readFile' && (sourceReads(f) === 1 || changesAgain)) {
+      f.files.set(path, f.files.get(path)! + boundary('task_started', 'follow-up') + context('follow-up', { model: 'C' }))
+      f.change()
+    }
+    return result
+  })
+
+  const reply = questionReply()
+  const recovered = await f.service.recover('t', true, reply)
+
+  expect(reply.confirmed).toBe(!changesAgain)
+  expect(recovered.get('follow-up')).toEqual(changesAgain ? undefined : execution('C'))
+  expect(f.rpc.mock.calls.map(([method]) => method)).toEqual([
+    'thread/read', 'fs/getMetadata', 'fs/readFile', 'fs/getMetadata', 'fs/readFile', 'fs/getMetadata',
+  ])
+})
+
 it('parses exact IDs, missing/null/none, malformed and interrupted records; suppresses conflicting fields', () => {
   const raw = context('a', { model: 'A', effort: null }) + 'bad\n' + context('b', { model: 'B', effort: 'none' }) + context('a', { model: 'A' }) + context('conflict', { model: 'X', effort: 'high' }) + context('conflict', { model: 'Y', effort: 'high' }) + context('', { model: 'wrong' }) + JSON.stringify({ type: 'event_msg', payload: { turn_id: 'foreign', model: 'wrong' } }) + '\n' + context('partial', { model: 'wrong' }).trim()
   const data = parseRolloutMetadata(raw)
