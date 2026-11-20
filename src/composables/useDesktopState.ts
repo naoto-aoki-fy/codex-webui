@@ -160,7 +160,9 @@ function toForkedThreadTitle(title: string): string {
   return /^fork:\s+/iu.test(normalizedTitle) ? normalizedTitle : `Fork: ${normalizedTitle}`
 }
 
-export function useDesktopState() {
+export function useDesktopState({ onSelectedTurnCompleted }: {
+  onSelectedTurnCompleted?: (threadId: string) => void
+} = {}) {
   const projectGroups = ref<UiProjectGroup[]>([])
   const sourceGroups = ref<UiProjectGroup[]>([])
   const selectedThreadId = ref('')
@@ -2179,6 +2181,10 @@ export function useDesktopState() {
             liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, completedThreadId)
           }
         }
+      }
+      const status = asRecord(asRecord(notification.params)?.turn)?.status
+      if (status === 'completed' || status === 'failed') {
+        onSelectedTurnCompleted?.(notificationThreadId)
       }
     }
 

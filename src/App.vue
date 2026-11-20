@@ -476,6 +476,7 @@ const CHAT_WIDTH_PRESETS: Record<ChatWidthMode, ChatWidthPreset> = {
   },
 }
 
+const markedThreadId = ref<string | null>(null)
 const {
   projectGroups,
   projectDisplayNameById, projects,
@@ -551,7 +552,7 @@ const {
   primeSelectedThread,
   executeThreadRevert,
   isRollingBack,
-} = useDesktopState()
+} = useDesktopState({ onSelectedTurnCompleted: markBackgroundTurnCompletion })
 
 const route = useRoute()
 const router = useRouter()
@@ -653,6 +654,17 @@ const routeThreadId = computed(() => {
   const rawThreadId = route.params.threadId
   return typeof rawThreadId === 'string' ? rawThreadId : ''
 })
+watch(routeThreadId, () => { markedThreadId.value = null }, { flush: 'sync' })
+
+function markBackgroundTurnCompletion(threadId: string): void {
+  if (document.hidden && route.name === 'thread' && routeThreadId.value === threadId) {
+    markedThreadId.value = threadId
+  }
+}
+
+function clearTurnMarkerWhenVisible(): void {
+  if (!document.hidden) markedThreadId.value = null
+}
 
 const isHomeRoute = computed(() => route.name === 'home')
 const isSkillsRoute = computed(() => route.name === 'skills')
@@ -674,7 +686,10 @@ const contentContextLabel = computed(() => {
   if (isHomeRoute.value || isSkillsRoute.value) return ''
   return getThreadContextLabel(selectedThread.value, projectDisplayNameById.value)
 })
-const pageTitle = computed(() => formatChatPageTitle(selectedThread.value?.title, contentContextLabel.value))
+const pageTitle = computed(() => {
+  const title = formatChatPageTitle(selectedThread.value?.title, contentContextLabel.value)
+  return markedThreadId.value === routeThreadId.value ? `* ${title}` : title
+})
 const filteredMessages = computed(() =>
   messages.value.filter((message) => {
     const type = normalizeMessageType(message.messageType, message.role)
@@ -796,6 +811,7 @@ const contentStyle = computed(() => {
   }
 })
 onMounted(() => {
+  document.addEventListener('visibilitychange', clearTurnMarkerWhenVisible)
   window.addEventListener('storage', onUiPreferenceStorage)
   window.addEventListener('keydown', onWindowKeyDown)
   window.addEventListener('resize', updateVisualViewportState)
@@ -808,6 +824,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('visibilitychange', clearTurnMarkerWhenVisible)
   window.removeEventListener('storage', onUiPreferenceStorage)
   window.removeEventListener('keydown', onWindowKeyDown)
   window.removeEventListener('resize', updateVisualViewportState)

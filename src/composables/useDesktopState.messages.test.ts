@@ -77,15 +77,15 @@ function notify(notification: Omit<RpcNotification, 'atIso'>) {
 }
 const states: Array<ReturnType<typeof useDesktopState>> = []
 
-function createState() {
-  const state = useDesktopState()
+function createState(options?: Parameters<typeof useDesktopState>[0]) {
+  const state = useDesktopState(options)
   states.push(state)
   state.primeSelectedThread(thread.id)
   return state
 }
 
-async function loadState() {
-  const state = createState()
+async function loadState(options?: Parameters<typeof useDesktopState>[0]) {
+  const state = createState(options)
   await state.refreshAll({ includeSelectedThreadMessages: true, awaitAncillaryRefreshes: true })
   state.startPolling()
   return state
@@ -146,9 +146,32 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('selected turn completion notifications', () => {
+  it.each(['completed', 'failed', 'interrupted'])('handles a selected turn with status %s', async (status) => {
+    const onSelectedTurnCompleted = vi.fn()
+    const state = await loadState({ onSelectedTurnCompleted })
+    turnStarted()
+
+    notify({ method: 'turn/completed', params: { threadId: thread.id, turn: { id: 'turn-2', status } } })
+
+    expect(state.selectedThread.value?.inProgress).toBe(false)
+    expect(onSelectedTurnCompleted.mock.calls).toEqual(status === 'interrupted' ? [] : [[thread.id]])
+  })
+
+  it('ignores a completion for another thread', async () => {
+    const onSelectedTurnCompleted = vi.fn()
+    await loadState({ onSelectedTurnCompleted })
+
+    notify({ method: 'turn/completed', params: { threadId: 'another-thread', turn: { id: 'other-turn', status: 'completed' } } })
+
+    expect(onSelectedTurnCompleted).not.toHaveBeenCalled()
+  })
+})
+
 describe('browser notification reconnection recovery', () => {
   it('keeps the idle initial ready cheap but reloads cached history after a missed completion', async () => {
-    const state = await loadState()
+    const onSelectedTurnCompleted = vi.fn()
+    const state = await loadState({ onSelectedTurnCompleted })
     await notificationReady()
     expect(gateway.getThreadDetail).not.toHaveBeenCalled()
     expect(gateway.getThreadGroupsPage).toHaveBeenCalledTimes(1)
@@ -164,6 +187,7 @@ describe('browser notification reconnection recovery', () => {
     expect(gateway.getThreadGroupsPage).toHaveBeenCalledTimes(2)
     expect(state.messages.value).toEqual(completedDetail.messages)
     expect(state.selectedLiveOverlay.value).toBeNull()
+    expect(onSelectedTurnCompleted).not.toHaveBeenCalled()
     expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
     expect(gateway.resumeThread).toHaveBeenCalledTimes(1)
   })
@@ -1858,13 +1882,15 @@ describe('new-thread preference context across deferred creation', () => {
 })
 
 it('preserves active turn-B state on late turn-A completion', async () => {
-  const state = await loadState()
+  const onSelectedTurnCompleted = vi.fn()
+  const state = await loadState({ onSelectedTurnCompleted })
   notify({ method: 'turn/started', params: { threadId: thread.id, turn: { id: 'turn-A', status: 'inProgress' } } })
   notify({ method: 'turn/started', params: { threadId: thread.id, turn: { id: 'turn-B', status: 'inProgress' } } })
   expect(state.selectedThread.value?.inProgress).toBe(true)
   notify({ method: 'turn/completed', params: { threadId: thread.id, turn: { id: 'turn-A', status: 'completed' } } })
   // Assert before scheduled history synchronization can mask the transition.
   expect(state.selectedThread.value?.inProgress).toBe(true)
+  expect(onSelectedTurnCompleted).not.toHaveBeenCalled()
 })
 
 
