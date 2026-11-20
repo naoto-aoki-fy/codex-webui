@@ -612,6 +612,10 @@ it('starts a fresh, bounded rollout deadline when a long turn completes', async 
     socket.notify('turn/completed', terminal)
     expect(recover).toHaveBeenCalledTimes(1)
     const reply = recover.mock.calls[0]![2]!
+    const unsubscribe = client.rpc('thread/unsubscribe', { threadId: question.threadId })
+    await flush()
+    socket.reply(socket.frames.at(-1)!.id, { status: 'unsubscribed' })
+    await unsubscribe
     await vi.advanceTimersByTimeAsync(29)
     socket.notify('turn/completed', terminal)
     expect(reply.answers).toEqual(questionReply.answers)
@@ -627,7 +631,7 @@ it('starts a fresh, bounded rollout deadline when a long turn completes', async 
   }
 })
 
-it.each(['disconnect', 'timeout', 'send failure', 'interrupted', 'failed', 'reverted', 'deleted'])('does not save, publish, or retry an unconfirmed reply after %s', async cause => {
+it.each(['disconnect', 'timeout', 'send failure', 'interrupted', 'failed', 'reverted', 'deleted', 'closed', 'archived', 'archive', 'unsubscribe'])('does not save, publish, or retry an unconfirmed reply after %s', async cause => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   vi.stubEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', '30')
   const client = new AppServerClient()
@@ -652,8 +656,14 @@ it.each(['disconnect', 'timeout', 'send failure', 'interrupted', 'failed', 'reve
     } else if (cause === 'interrupted' || cause === 'failed') {
       socket.notify('turn/completed', { threadId: question.threadId, turn: { id: question.turnId, status: cause } })
       notifyQuestionResult(socket)
-    } else if (cause === 'reverted' || cause === 'deleted') {
+    } else if (cause === 'reverted' || cause === 'deleted' || cause === 'closed' || cause === 'archived') {
       socket.notify(`thread/${cause}`, { threadId: question.threadId })
+      notifyQuestionResult(socket)
+    } else if (cause === 'archive' || cause === 'unsubscribe') {
+      const subscriptionEnded = client.rpc(`thread/${cause}`, { threadId: question.threadId })
+      await flush()
+      socket.reply(socket.frames.at(-1)!.id, cause === 'unsubscribe' ? { status: 'unsubscribed' } : {})
+      await subscriptionEnded
       notifyQuestionResult(socket)
     } else if (cause === 'timeout') {
       await vi.advanceTimersByTimeAsync(35)
