@@ -63,12 +63,20 @@ created. Ordinary drafts and ambiguous-send protection remain active.
 
 ## Saved question responses
 
-WebUI confirms a reply after the WebSocket send succeeds and Codex emits a
-`rawResponseItem/completed` function result with the same connection, thread,
-turn, tool call ID and answers. Question IDs are compared independently of their
-object order, and values for each question must match in order. Native request
-closure can precede the result or occur during cancellation. The bridge consumes
-question results before notification delivery and diagnostic buffering.
+After the WebSocket send succeeds, WebUI can confirm a reply from the matching
+`rawResponseItem/completed` function result. On the default event stream, WebUI
+checks one fresh rollout snapshot after a successful terminal event. Both paths
+require exact connection, thread, turn, tool call ID and answer values. Question
+IDs are compared independently of their object order, and values for each
+question must match in order. The bridge consumes raw question results before
+notification delivery and diagnostic buffering.
+
+The initial deadline covers sending the reply and native request closure. Once
+both occur, the attempt stays in memory for the rest of the turn. Successful
+completion starts a fresh deadline for the rollout check. Interruption, failure,
+disconnect, rollback and deletion retire unconfirmed attempts. A closed draft
+stays in the conversation while confirmation is pending. The composer restores
+**Stop** while the turn runs and the sidebar clears its pending-question indicator.
 
 WebUI saves ordered, redacted records under
 `app-servers/<sha256(ID)>/question-responses/<sha256(threadId)>.json`
@@ -88,8 +96,9 @@ archive, and the bridge removes them when it observes permanent deletion.
 
 ## Performance and verification
 
-Recovery coalesces concurrent reads, serializes source transfers and admits at
-most 16 queued threads. Bounds remain 16 MiB per source, 2 MiB per cache, 10,000
+Recovery coalesces compatible same-thread reads, serializes source transfers and
+admits up to 16 metadata threads with one extra slot for reply confirmation.
+Confirmation runs ahead of waiting metadata reads. Bounds remain 16 MiB per source, 2 MiB per cache, 10,000
 turn IDs and 512 characters per field. Local recovery adds an asynchronous,
 coalesced cache read and uses existing metadata notifications. No session traversal, per-message RPC,
 source-to-fork history read, synchronous filesystem work or new request fanout is

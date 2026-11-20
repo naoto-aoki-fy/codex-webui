@@ -13,6 +13,7 @@ import { observeRolloutQuestionReplies, type RolloutQuestionReply } from './ques
 const MAX_SOURCE_BYTES = 16 * 1024 * 1024
 const MAX_CACHE_BYTES = 2 * 1024 * 1024
 const MAX_TURNS = 10_000
+const MAX_METADATA_READS = 16
 const record = (v: any): Record<string, any> | undefined => v && typeof v === 'object' && !Array.isArray(v) ? v : undefined
 
 /** Use complete rollout records with exact IDs. A mode conflict must
@@ -130,19 +131,22 @@ type Client = {
 }
 
 type RolloutRead = {
+  key: string
   force: boolean
   snapshotStarted: boolean
   metadataRequested: boolean
   replies: RolloutQuestionReply[]
   promise: Promise<Map<string, TurnGenerationMetadata>>
+  read: () => Promise<Map<string, TurnGenerationMetadata>>
+  resolve: (metadata: Map<string, TurnGenerationMetadata>) => void
 }
 
-/** One full-file transfer at a time, at most 16 queued/coalesced threads.
+/** One full-file transfer at a time, with one extra slot for reply confirmation.
  * No session contents are retained. Cache validation always stats the source. */
 export class RolloutGenerationMetadata {
-  private readonly pending = new Map<string, RolloutRead>()
+  private readonly waiting = new Map<string, RolloutRead>()
+  private active?: RolloutRead
   private readonly pendingCacheReads = new Map<string, Promise<ReturnType<typeof record>>>()
-  private tail: Promise<unknown> = Promise.resolve()
   constructor(private readonly client: Client) {}
 
   private readLocalCache(path: string): Promise<ReturnType<typeof record>> {
@@ -161,27 +165,46 @@ export class RolloutGenerationMetadata {
     const generation = this.client.generation()
     const profileId = getConnectionProfileId()
     const key = `${generation}:${profileId}:${threadId}`
-    const pending = this.pending.get(key)
+    const pending = this.waiting.get(key) ?? (this.active?.key === key ? this.active : undefined)
     if (pending && (!pending.snapshotStarted || (!reply && (!force || pending.force)))) {
       pending.force ||= force || Boolean(reply)
       if (reply) pending.replies.push(reply)
       else pending.metadataRequested = true
       return pending.promise
     }
-    if (!pending && this.pending.size >= 16) return Promise.resolve(new Map())
+    const limit = MAX_METADATA_READS + (reply ? 1 : 0)
+    const activeCount = this.active && !this.waiting.has(this.active.key) ? 1 : 0
+    if (!pending && this.waiting.size + activeCount >= limit) return Promise.resolve(new Map())
     // A snapshot that started before turn completion may not contain the result.
+    let resolve!: (metadata: Map<string, TurnGenerationMetadata>) => void
+    const promise = new Promise<Map<string, TurnGenerationMetadata>>(done => { resolve = done })
     const job: RolloutRead = {
+      key,
       force: force || Boolean(reply),
       snapshotStarted: false,
       metadataRequested: !reply,
       replies: reply ? [reply] : [],
-      promise: this.tail.then(() => this.read(threadId, profileId, generation, job)).catch(() => new Map<string, TurnGenerationMetadata>()).finally(() => {
-        if (this.pending.get(key) === job) this.pending.delete(key)
-      }),
+      promise,
+      read: () => this.read(threadId, profileId, generation, job),
+      resolve,
     }
-    this.tail = job.promise
-    this.pending.set(key, job)
-    return job.promise
+    this.waiting.set(key, job)
+    this.startNext()
+    return promise
+  }
+
+  private startNext(): void {
+    if (this.active) return
+    const jobs = [...this.waiting.values()]
+    const job = jobs.find(job => job.replies.some(reply => reply.answers)) ?? jobs[0]
+    if (!job) return
+    this.waiting.delete(job.key)
+    this.active = job
+    void job.read().catch(() => new Map<string, TurnGenerationMetadata>()).then(metadata => {
+      this.active = undefined
+      job.resolve(metadata)
+      this.startNext()
+    })
   }
 
   async rememberSubmittedMode(threadId: string, turnId: string, mode: CollaborationModeKind, profileId: string): Promise<TurnGenerationMetadata | undefined> {

@@ -124,7 +124,7 @@ settings on A:
 | --- | ---: | --- |
 | CODEXUI_APP_SERVER_PING_MS | 15000 | Transport ping cadence |
 | CODEXUI_APP_SERVER_PONG_TIMEOUT_MS | 30000 | Missing-pong deadline |
-| CODEXUI_APP_SERVER_RPC_DEADLINE_MS | 60000 | Ordinary RPC caller deadline |
+| CODEXUI_APP_SERVER_RPC_DEADLINE_MS | 60000 | Ordinary RPC caller deadline and separate deadlines for question closure and rollout confirmation |
 | CODEXUI_APP_SERVER_COMMAND_DEADLINE_MS | 600000 | Native command RPC caller deadline |
 
 Connection initialization has a 10-second deadline. Commands retain server-side
