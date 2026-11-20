@@ -8,6 +8,7 @@ const output = 'output/playwright'
 const viewports = [{ width: 1280, height: 900 }, { width: 768, height: 1024 }, { width: 375, height: 812 }]
 const draft = 'Keep the existing sections'
 const questionMethod = 'item/tool/requestUserInput'
+const secondThread = { ...thread, id: 'second-fixture', name: 'Second fixture' }
 
 function questionRequest(id, turnId) {
   return {
@@ -72,9 +73,41 @@ async function assertQuestionFocused(heading, jumpQuestion) {
   }), { focused: true, visible: true })
 }
 
+async function pressUpFromStart(page, list) {
+  const scrollTop = await list.evaluate(async element => {
+    const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve))
+    // Let the initial follow-to-bottom frames settle first.
+    for (let frame = 0; frame < 8; frame++) await nextFrame()
+    // Suppress the setup scroll event so Ctrl+ArrowUp owns the history request.
+    const suppressScroll = event => event.stopImmediatePropagation()
+    element.addEventListener('scroll', suppressScroll, true)
+    element.scrollTop = 0
+    await nextFrame()
+    await nextFrame()
+    element.removeEventListener('scroll', suppressScroll, true)
+    return element.scrollTop
+  })
+  assert.equal(scrollTop, 0)
+  await page.keyboard.press('Control+ArrowUp')
+  await list.getByRole('button', { name: 'Loading…', exact: true }).waitFor()
+}
+
+async function assertMessageAligned(page, messageId) {
+  await page.waitForFunction(id => {
+    const list = document.querySelector('.conversation-list')
+    const row = list?.querySelector(`[data-message-id="${id}"]`)
+    return row && Math.abs(row.getBoundingClientRect().top - list.getBoundingClientRect().top - list.clientTop) <= 1
+  }, messageId)
+}
+
+function historyPage(turn, nextCursor = null) {
+  return { json: { result: { data: [turn], nextCursor } } }
+}
+
 async function verify(page, viewport, theme) {
   let pendingOnReload = null
   let historyResponse = null
+  let secondHistoryResponse = null
   const turns = [
     { id: 'first-turn', status: 'completed', items: [{ type: 'agentMessage', id: 'first', text: 'Fixture start' }] },
     history('Earlier history'),
@@ -102,10 +135,17 @@ async function verify(page, viewport, theme) {
     if (url.pathname.endsWith('/server-requests/pending') && pendingOnReload) {
       return { json: { data: [pendingOnReload] } }
     }
+    if (body.method === 'thread/list') return { json: { result: { data: [thread, secondThread], nextCursor: null } } }
     if (body.method === 'thread/resume' || body.method === 'thread/read') {
-      return { json: { result: { thread: { ...thread, turns }, model: 'fixture-model', modelProvider: 'fixture', olderCursor: 'older-fixture' } } }
+      const detail = body.params.threadId === secondThread.id
+        ? { ...secondThread, turns: [history('second-initial')] }
+        : { ...thread, turns }
+      return { json: { result: { thread: detail, model: 'fixture-model', modelProvider: 'fixture', olderCursor: 'older-fixture' } } }
     }
-    if (body.method === 'thread/turns/list') return historyResponse ?? { json: { result: { data: [], nextCursor: null } } }
+    if (body.method === 'thread/turns/list') {
+      return (body.params.threadId === secondThread.id ? secondHistoryResponse : historyResponse)
+        ?? { json: { result: { data: [], nextCursor: null } } }
+    }
   }, false)
 
   const panel = page.locator('.conversation-list .thread-pending-request')
@@ -126,6 +166,7 @@ async function verify(page, viewport, theme) {
     return positions
   })
   const replies = () => calls.filter(call => call.path.endsWith('/server-requests/respond'))
+  const historyRequests = () => calls.filter(call => call.method === 'thread/turns/list')
   const lightness = color => {
     const oklab = color.match(/^okl(?:ab|ch)\(([\d.]+)/)
     return oklab ? Number(oklab[1]) : Number(color.match(/\d+/)?.[0]) / 255
@@ -354,24 +395,31 @@ async function verify(page, viewport, theme) {
   await input.waitFor()
   await pager.waitFor()
   const historyRestored = join(output, `plan-mode-question-history-${viewport.width}-${theme}.png`)
-  const historyActions = ['restore', 'latest', 'focus elsewhere', 'scroll manually']
+  const historyActions = ['keyboard', 'restore', 'latest', 'focus elsewhere', 'scroll manually']
+  const keyboardHistoryRestored = join(output, `plan-mode-question-keyboard-history-${viewport.width}-${theme}.png`)
   for (const [index, action] of historyActions.entries()) {
     const requestId = 205 + index
     const turnId = `paged-question-${requestId}`
     const anchorId = `${turnId}-anchor`
     let releaseHistory
     historyResponse = new Promise(resolve => { releaseHistory = resolve })
-    await scrollToMessage(list, 'Earlier history-3')
     const beforeLoad = requests.length
-    await pager.evaluate(element => element.click())
-    await list.getByRole('button', { name: 'Loading…', exact: true }).waitFor()
+    const beforeHistory = historyRequests().length
+    if (action === 'keyboard') {
+      await pressUpFromStart(page, list)
+    } else {
+      await scrollToMessage(list, 'Earlier history-3')
+      await pager.evaluate(element => element.click())
+      await list.getByRole('button', { name: 'Loading…', exact: true }).waitFor()
+    }
     pendingOnReload = questionRequest(requestId, turnId)
     emit('server/request', pendingOnReload)
     await jumpQuestion.waitFor()
     await assertPosition(panel, 'a')
     assert.equal(await list.locator(`[data-message-id="${anchorId}"]`).count(), 0)
     const beforeJump = requests.length
-    assert.equal(beforeJump, beforeLoad + 1)
+    assert.equal(historyRequests().length, beforeHistory + 1)
+    if (action !== 'keyboard') assert.equal(beforeJump, beforeLoad + 1)
     const ancestorsBefore = await outerScroll()
     await jumpQuestion.click()
     await assertQuestionFocused(heading, jumpQuestion)
@@ -389,7 +437,7 @@ async function verify(page, viewport, theme) {
       await jumpLatest.click()
     } else if (action === 'focus elsewhere') {
       await headerMenu.evaluate(element => element.focus({ preventScroll: true }))
-    } else {
+    } else if (action === 'scroll manually') {
       // Use a real wheel event and leave keyboard focus on the old heading.
       await list.hover()
       const start = await list.evaluate(element => element.scrollTop)
@@ -398,13 +446,19 @@ async function verify(page, viewport, theme) {
       assert.equal(await heading.evaluate(element => document.activeElement === element), true)
     }
 
-    releaseHistory({ json: { result: {
-      data: [{ id: turnId, status: 'completed', items: [{ type: 'agentMessage', id: anchorId, text: `History page ${requestId}` }] }],
-      nextCursor: `before-${turnId}`,
-    } } })
+    const anchorText = action === 'keyboard' ? `History page ${requestId}\n\n`.repeat(40) : `History page ${requestId}`
+    releaseHistory(historyPage({
+      id: turnId, status: 'completed', items: [{ type: 'agentMessage', id: anchorId, text: anchorText }],
+    }, `before-${turnId}`))
     await pager.waitFor()
     await assertPosition(panel, anchorId, index === 0 ? 'first' : `paged-question-${requestId - 1}-anchor`)
-    if (action === 'restore') {
+    if (action === 'keyboard') {
+      await page.waitForTimeout(2200)
+      await assertQuestionFocused(heading, jumpQuestion)
+      assert.deepEqual(await outerScroll(), ancestorsBefore)
+      assert.equal(historyRequests().length, beforeHistory + 1, 'the keyboard history request must be the only history request')
+      await page.screenshot({ path: keyboardHistoryRestored })
+    } else if (action === 'restore') {
       await assertQuestionFocused(heading, jumpQuestion)
       assert.equal(await heading.getAttribute('aria-expanded'), 'false')
       assert.ok(await list.evaluate(element => element.scrollTop < 200), 'restoration must land inside the history-loading threshold')
@@ -420,14 +474,59 @@ async function verify(page, viewport, theme) {
       if (action === 'focus elsewhere') assert.equal(await headerMenu.evaluate(element => document.activeElement === element), true)
       await page.waitForTimeout(200)
     }
-    assert.equal(requests.length, beforeJump, `${action}: the jump and history render must not issue another API request`)
+    if (action !== 'keyboard') {
+      assert.equal(requests.length, beforeJump, `${action}: the jump and history render must not issue another API request`)
+    }
     await list.evaluate(element => { element.scrollTop = element.scrollHeight })
     pendingOnReload = null
     emit('server/request/resolved', { id: requestId, threadId: thread.id })
     await heading.waitFor({ state: 'hidden' })
   }
+
+  // Let an older request complete normally and keep moving without resetting navigation.
+  let releaseHistory
+  historyResponse = new Promise(resolve => { releaseHistory = resolve })
+  const beforeUninterrupted = historyRequests().length
+  await pressUpFromStart(page, list)
+  releaseHistory(historyPage(history('uninterrupted')))
+  await assertMessageAligned(page, 'uninterrupted-11')
+  await page.keyboard.press('Control+ArrowUp')
+  await assertMessageAligned(page, 'uninterrupted-10')
+  assert.equal(historyRequests().length, beforeUninterrupted + 1)
+
+  const url = page.url()
+  // Complete the first thread's request while a second shortcut is still waiting.
+  await page.reload()
+  await input.waitFor()
+  await pager.waitFor()
+  historyResponse = new Promise(resolve => { releaseHistory = resolve })
+  const beforeSwitch = historyRequests().length
+  await pressUpFromStart(page, list)
+  await page.evaluate(id => { location.hash = `#/thread/${id}` }, secondThread.id)
+  await list.locator('[data-message-id="second-initial-11"]').waitFor()
+  await pager.waitFor()
+  let releaseSecondHistory
+  secondHistoryResponse = new Promise(resolve => { releaseSecondHistory = resolve })
+  await pressUpFromStart(page, list)
+  const firstResponse = page.waitForResponse(response => {
+    const request = response.request()
+    if (!request.url().includes('/codex-api/') || request.method() !== 'POST') return false
+    const body = request.postDataJSON()
+    return body.method === 'thread/turns/list' && body.params.threadId === thread.id
+  })
+  releaseHistory(historyPage(history('old-thread-page')))
+  await (await firstResponse).finished()
+  await page.waitForTimeout(200)
+  const secondPosition = await list.evaluate(element => element.scrollTop)
+  assert.equal(secondPosition, 0, 'the old completion must not scroll the second thread')
+  await page.keyboard.press('Control+ArrowDown')
+  assert.equal(await list.evaluate(element => element.scrollTop), secondPosition, 'the second shortcut must still be pending')
+  releaseSecondHistory(historyPage(history('new-thread-page')))
+  await assertMessageAligned(page, 'new-thread-page-11')
+  assert.deepEqual(historyRequests().slice(beforeSwitch).map(call => call.params.threadId), [thread.id, secondThread.id])
+
   assert.deepEqual(errors, [])
-  return { url: page.url(), viewport, theme, jumpActions, expanded, minimized, historyRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
+  return { url, viewport, theme, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
 }
 
 async function main() {

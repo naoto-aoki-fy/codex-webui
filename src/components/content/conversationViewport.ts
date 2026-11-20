@@ -78,16 +78,18 @@ export function createConversationViewport(deps: {
     const showJumpToLatestButton = computed(() => !autoFollowOutput.value && (deps.props.messages.length > 0 || deps.props.pendingRequests.length > 0 || Boolean(deps.props.liveOverlay)));
     let navigationMessageId: string | null = null;
     let navigationScrollTop = -1;
-    let messageNavigationPending = false;
+    let messageNavigationToken: symbol | null = null;
     function resetMessageNavigation(): void {
         navigationMessageId = null;
+        messageNavigationToken = null;
         historyQuestionJump = null;
     }
     async function navigateMessage(direction: -1 | 1): Promise<void> {
         const container = conversationListRef.value;
-        if (!container || messageNavigationPending)
+        if (!container || messageNavigationToken !== null)
             return;
-        messageNavigationPending = true;
+        const token = Symbol();
+        messageNavigationToken = token;
         historyQuestionJump = null;
         const generation = threadGeneration;
         autoFollowOutput.value = false;
@@ -110,7 +112,7 @@ export function createConversationViewport(deps: {
             let target = findTarget();
             if (!target && direction === -1 && hasMoreAbove.value) {
                 await loadMoreAbove();
-                if (!isCurrentThreadGeneration(generation))
+                if (messageNavigationToken !== token || !isCurrentThreadGeneration(generation))
                     return;
                 target = findTarget();
             }
@@ -122,7 +124,8 @@ export function createConversationViewport(deps: {
             navigationScrollTop = container.scrollTop;
         }
         finally {
-            messageNavigationPending = false;
+            if (messageNavigationToken === token)
+                messageNavigationToken = null;
         }
     }
     function onMessageNavigationKeydown(event: KeyboardEvent): void {
@@ -325,7 +328,7 @@ export function createConversationViewport(deps: {
     function invalidateThreadWork(): void {
         threadGeneration += 1;
         questionJumpScrollTop = null;
-        historyQuestionJump = null;
+        resetMessageNavigation();
         shouldRestoreHistoryScroll = false;
         trackedPendingImages = new WeakSet<HTMLImageElement>();
         if (conversationScrollFrame)
