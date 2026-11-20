@@ -19,5 +19,5 @@ Return to the [manual test index](../../tests.md).
 | [Feature: Home composer vertical alignment matches reference layout](home-composer-vertical-alignment-matches-reference-layout.md) |
 | [Fix: Delete/rename thread dialog height cap](delete-rename-thread-dialog-height-cap.md) |
 | [Content header actions remain right aligned](content-header-actions-remain-right-aligned.md) |
-| [Dark theme plan card contrast](dark-theme-plan-card-contrast.md) |
+| [Plan card contrast in light and dark themes](dark-theme-plan-card-contrast.md) |
 | [Open Terminal removal](open-terminal-removal.md) |
