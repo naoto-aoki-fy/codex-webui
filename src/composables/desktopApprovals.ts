@@ -33,6 +33,15 @@ export function createDesktopApprovals(deps: {
     function readQuestionDraft(request: UiServerRequest): QuestionDraft | undefined {
         return questionDrafts.get(request.threadId)?.get(questionDraftKey(request));
     }
+    function shouldKeepClosedQuestionDraft(request: UiServerRequest): boolean {
+        const draft = readQuestionDraft(request);
+        if (!draft) return false;
+        if (draft.attempt && !draft.attempt.retryable) return true;
+        for (const { choice, text } of draft.fields.values()) {
+            if (choice || text?.trim()) return true;
+        }
+        return false;
+    }
     function ensureQuestionDraft(request: UiServerRequest): QuestionDraft {
         if (!questionDrafts.has(request.threadId)) questionDrafts.set(request.threadId, new Map());
         const drafts = questionDrafts.get(request.threadId)!;
@@ -41,6 +50,7 @@ export function createDesktopApprovals(deps: {
         return drafts.get(key)!;
     }
     function updateQuestionDraft(request: UiServerRequest, questionId: string, field: 'choice' | 'text', value: string): void {
+        if (request.questionClosed) return;
         const draft = ensureQuestionDraft(request);
         draft.fields.set(questionId, { ...draft.fields.get(questionId), [field]: value });
     }
@@ -49,10 +59,13 @@ export function createDesktopApprovals(deps: {
         drafts?.delete(key);
         if (drafts?.size === 0) questionDrafts.delete(threadId);
     }
-    function rememberClosed(id: number, request = findPendingRequest(id)): void {
-        rememberId(closedRequestIds, id);
+    function removeRequestAndDraft(id: number, request: UiServerRequest | undefined): void {
         if (request) clearQuestionDraft(request.threadId, questionDraftKey(request));
         removePendingServerRequestById(id);
+    }
+    function rememberClosed(id: number, request = findPendingRequest(id)): void {
+        rememberId(closedRequestIds, id);
+        removeRequestAndDraft(id, request);
     }
     function confirmQuestionResponses(responses: QuestionResponse[]): void {
         for (const response of responses) {
@@ -72,9 +85,13 @@ export function createDesktopApprovals(deps: {
         const request = findPendingRequest(id);
         if (!request || request.method !== QUESTION_REQUEST) return;
         const attempt = readQuestionDraft(request)?.attempt;
-        if (request.questionClosed) rememberClosed(id, request);
-        else if (attempt?.retryable && !request.answerAttempted) clearQuestionDraft(request.threadId, questionDraftKey(request));
-        else return;
+        if (!request.questionClosed && (!attempt?.retryable || request.answerAttempted)) return;
+        clearQuestionDraft(request.threadId, questionDraftKey(request));
+        if (request.questionClosed) {
+            // Keep accepting a confirmation from the original HTTP reply after dismissal.
+            rememberId(nativeClosedQuestionIds, id);
+            removePendingServerRequestById(id);
+        }
         if (attempt?.error && deps.error.value === attempt.error) deps.error.value = '';
     }
     function clearThreadQuestions(threadId: string): void {
@@ -196,9 +213,15 @@ export function createDesktopApprovals(deps: {
     function replacePendingServerRequests(requests: UiServerRequest[]): void {
         const next: Record<string, UiServerRequest[]> = {};
         const incoming = new Set(requests.map(request => JSON.stringify([request.threadId, questionDraftKey(request)])));
-        const drafts = Object.values(pendingServerRequestsByThreadId.value).flat()
-            .filter(request => readQuestionDraft(request) && !incoming.has(JSON.stringify([request.threadId, questionDraftKey(request)])))
-            .map(request => ({ ...request, questionClosed: true }));
+        const drafts: UiServerRequest[] = [];
+        for (const rows of Object.values(pendingServerRequestsByThreadId.value)) {
+            for (const request of rows) {
+                const key = questionDraftKey(request);
+                if (request.method !== QUESTION_REQUEST || incoming.has(JSON.stringify([request.threadId, key]))) continue;
+                if (shouldKeepClosedQuestionDraft(request)) drafts.push({ ...request, questionClosed: true });
+                else clearQuestionDraft(request.threadId, key);
+            }
+        }
         for (const request of [...requests, ...drafts]) {
             const threadId = request.threadId || GLOBAL_SERVER_REQUEST_SCOPE;
             const current = next[threadId] ?? [];
@@ -229,10 +252,10 @@ export function createDesktopApprovals(deps: {
                     retainSubmission({ response, saved: row?.saved !== false });
                 } else {
                     rememberId(nativeClosedQuestionIds, id);
-                    if (request?.method === QUESTION_REQUEST && readQuestionDraft(request)) {
+                    if (request?.method === QUESTION_REQUEST && shouldKeepClosedQuestionDraft(request)) {
                         upsertPendingServerRequest({ ...request, questionClosed: true });
-                    } else {
-                        rememberClosed(id, request);
+                    } else if (request) {
+                        removeRequestAndDraft(id, request);
                     }
                 }
             }
@@ -287,10 +310,16 @@ export function createDesktopApprovals(deps: {
         catch (unknownError) {
             if (generation !== deps.lifecycleGeneration) return false;
             if (isQuestion && closedRequestIds.has(reply.id)) return true;
-            if (draft) {
+            if (draft && request) {
+                if (readQuestionDraft(request) !== draft) return false;
                 const pending = findPendingRequest(reply.id);
-                const retryable = Boolean(pending && !pending.questionClosed && unknownError instanceof CodexApiError &&
-                    unknownError.code === QUESTION_REPLY_NOT_SENT);
+                const notSent = unknownError instanceof CodexApiError && unknownError.code === QUESTION_REPLY_NOT_SENT;
+                if (notSent && pending?.questionClosed) {
+                    draft.attempt = undefined;
+                    if (!shouldKeepClosedQuestionDraft(pending)) removeRequestAndDraft(reply.id, pending);
+                    return false;
+                }
+                const retryable = Boolean(pending && notSent);
                 if (retryable && pending?.answerAttempted) upsertPendingServerRequest({ ...pending, answerAttempted: false });
                 const message = retryable && unknownError instanceof Error ? unknownError.message : QUESTION_REPLY_UNCONFIRMED;
                 draft.attempt = { error: message, retryable };
