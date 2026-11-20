@@ -9,9 +9,9 @@
 
 #### Actions and expected results
 
-1. With an empty or short draft, find the minus icon with the **Minimize message
-   input** tooltip at the top-right of the inline composer. For a long draft, it
-   sits immediately to the left of maximize, with matching size, alignment, color,
+1. With an empty, short, or long draft, find the minus icon with the **Minimize message
+   input** tooltip at the top-right of the inline composer. It sits immediately to
+   the left of maximize, with matching size, alignment, color,
    spacing and hover styling; neither control covers textarea text.
    Activate it with click/tap, then repeat using keyboard Enter/Space.
    Expect only a small floating message icon with the **Show message input**
@@ -75,8 +75,7 @@
 - Collapse/restore only changes local view refs and visibility. The editor remains
   mounted; toggling does not serialize the draft or rehydrate attachments, invalidate
   caches, subscribe to events, or request history again.
-- Focus uses `preventScroll`; restoring queues one existing textarea overflow
-  measurement after Vue updates. Floating controls teleport to `body` to avoid
+- Focus uses `preventScroll`. Floating controls teleport to `body` to avoid
   transformed ancestors; only the controls move, while the editor keeps its owner.
   No new timer, observer, blocking network work,
   unbounded fanout or large payload is introduced.

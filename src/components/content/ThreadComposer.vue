@@ -168,7 +168,6 @@
             <IconTablerMinus class="thread-composer-expand-icon" />
           </button>
           <button
-            v-if="hasExpandedComposerToggle"
             class="thread-composer-expand"
             type="button"
             :aria-label="isComposerExpanded ? ('Exit full screen composer') : ('Expand composer')"
@@ -457,10 +456,8 @@ const {
   isInteractionDisabled,
   placeholderText,
   hasSubmitContent,
-  hasExpandedComposerToggle,
   onSubmit,
   onInterrupt,
-  queueComposerOverflowMeasurement,
   toggleComposerExpanded,
   onInputChange,
   onInputKeydown,
@@ -543,7 +540,6 @@ function setComposerCollapsed(collapsed: boolean): void {
     else {
       const target = isInteractionDisabled.value ? collapseInputButtonRef.value : inputRef.value
       target?.focus({ preventScroll: true })
-      queueComposerOverflowMeasurement()
     }
   })
 }
@@ -614,7 +610,6 @@ onMounted(() => {
   window.addEventListener('drop', attachments.onWindowDragCleanup)
   window.addEventListener('dragend', attachments.onWindowDragCleanup)
   window.addEventListener('blur', attachments.onWindowDragCleanup)
-  input.queueComposerOverflowMeasurement()
 })
 
 defineExpose<ThreadComposerExposed>({
@@ -659,10 +654,6 @@ watch([input.selectedApps, input.draft, attachments.selectedImages, attachments.
   persistDraftForThread(lastActiveThreadId, input.getCurrentDraftPayload())
   draftSaveWarning.value = draftStorageError
 }, { deep: true })
-
-watch(input.draft, () => {
-  input.queueComposerOverflowMeasurement()
-})
 
 watch(
   () => props.cwd,

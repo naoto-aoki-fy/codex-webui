@@ -1,17 +1,28 @@
-### Composer expands long drafts to full screen
+### Composer full-screen button and Enter behavior
 
 #### Feature/Change Name
-Thread composer full-screen expand control for multi-line drafts.
+Full-screen editing and Enter behavior in the shared Home and conversation composer.
 
 #### Prerequisites/Setup
 1. Dev server running (`pnpm run dev --host 127.0.0.1 --port 4173`)
-2. Any existing thread is open and send controls are enabled; also repeat on Home after choosing a folder
-3. Light theme and dark theme both available from the appearance switcher
+2. Use a disposable existing chat and repeat on Home after choosing a folder.
+3. Note the current **Settings → General → Require ⌘ + enter to send** and
+   appearance settings so you can restore them after testing.
 
 #### Steps
-1. In light theme, type or paste at least six lines into the composer.
-2. Confirm the expand button appears in the composer input area.
-3. Click the expand button.
+1. In light theme, check that **Expand composer** is visible next to **Minimize
+   message input** with an empty draft, a short draft, and a long draft. For the
+   long draft, paste a line long enough to wrap and at least six lines of text.
+   Check that the placeholder and text clear both buttons, including when the
+   textarea scrolls. On Home before choosing a folder, verify the visible expand
+   button is disabled.
+2. Turn **Require ⌘ + enter to send** off, clear the draft, and click **Expand
+   composer**. Check that the button changes to **Exit full screen composer** in
+   the same corner and that the textarea receives focus.
+3. Type `firstsecond` and place the caret between `first` and `second`. Press Enter
+   once. Verify that `second` moves to the next line, the caret is before `second`,
+   and no message sends. Check that text still clears the exit button. Exit full
+   screen, turn **Require ⌘ + enter to send** on, clear the draft, expand, and repeat.
 4. Confirm the composer fills the viewport. The header (title and actions), sidebar,
    conversation history, goal panel, and Home folder/hero content are hidden and
    cannot receive keyboard focus. The textarea uses the remaining writing space.
@@ -24,29 +35,42 @@ Thread composer full-screen expand control for multi-line drafts.
 7. Restore the long draft. Click **Exit full screen composer**. Confirm the normal
    layout and sidebar visibility return, with draft, attachments, selected skill,
    model and thinking setting intact. Repeat expansion/exit using keyboard activation.
+   Minimize the inline composer and use **Show message input** to restore it.
+   Verify that it returns inline with **Expand composer** visible.
 8. While expanded, deliver an approval or user-input request. The normal layout
    must return and expose the request panel; the draft remains after answering it.
 9. Switch to dark theme and repeat. Repeat at 375×812 and 768×1024, including with
    the mobile keyboard open; controls and exit remain inside the visible viewport
    and clear device safe areas. A disabled editor must still permit full-screen exit.
+10. In a disposable chat, send separate drafts while expanded using Ctrl+Enter
+    (Command+Enter on Mac) and the Send button. After returning inline, verify
+    Enter sends with **Require ⌘ + enter to send** off. With it on, verify Enter
+    inserts a line break and the shortcut sends. Hover over the setting and check
+    that its tooltip explains the full-screen behavior.
+11. While expanded, press Enter with a file or skill suggestion highlighted and
+    verify it selects the suggestion. With an IME conversion in progress, press
+    Enter and verify it confirms the conversion. For each check, verify that no
+    message sends.
 
 #### Expected Results
-- Short drafts do not show the expand control.
-- Long or overflowing drafts show an icon-only expand control.
+- Empty, short and long drafts show the icon-only expand control when inline.
 - **Minimize message input** is a separate inline action; see [collapsible composer](composer-collapse.md).
 - Full-screen mode uses the same draft state and submit controls as inline mode.
 - Full-screen and inline states are readable in light theme and dark theme.
-- Expanding/exiting does not send messages, interrupt turns or issue API requests.
+- Expanding/exiting and inserting a plain line break issue zero API requests.
 - The editor stays mounted; layout changes do not reset textarea selection or drafts.
 
 #### Automated Regression
 `APPROVED_DIST_ROOT=. node scripts/test-composer-fullscreen.cjs` after building
 checks the current production assets with intercepted protocol fixtures at
-`http://127.0.0.1:4173`. Reports and screenshots are saved under
+`http://127.0.0.1:4173`. It verifies button clearance, native line-break insertion,
+and zero additional API requests during layout changes and newline insertion.
+Reports and screenshots are saved under
 `output/playwright/composer-fullscreen-*`. This is not live server validation.
 
 #### Rollback/Cleanup
-- Clear the draft from the composer.
+- Clear test drafts and attachments. Restore the original send and appearance
+  settings and remove disposable chats.
 
 ---
 

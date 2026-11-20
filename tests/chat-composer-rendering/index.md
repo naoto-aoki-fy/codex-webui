@@ -22,7 +22,7 @@ Return to the [manual test index](../../tests.md).
 | [Codex thread deep links render as local web thread URLs](codex-thread-deep-links-render-as-local-web-thread-urls.md) |
 | [Bold-wrapped Markdown links render without literal markers](bold-wrapped-markdown-links-render-without-literal-markers.md) |
 | [Collapsible inline message composer](composer-collapse.md) |
-| [Composer expands long drafts to full screen](composer-expands-long-drafts-to-full-screen.md) |
+| [Composer full-screen button and Enter behavior](composer-expands-long-drafts-to-full-screen.md) |
 | [Composer mode scoping and Fast mode support](composer-mode-scoping-and-fast-mode-support.md) |
 | [Composer controls stay editable during responses](composer-controls-stay-editable-during-responses.md) |
 | [Feature: Markdown file links with backticked filename labels render correctly](markdown-file-links-with-backticked-filename-labels-render-correctly.md) |

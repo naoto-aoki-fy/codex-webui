@@ -61,8 +61,6 @@ export function createComposerInput(deps: {
     const fileMentionHighlightedIndex = ref(0);
     const isComposerExpanded = ref(false);
     const isComposerCollapsed = ref(false);
-    const isDraftOverflowing = ref(false);
-    let composerOverflowMeasurementQueued = false;
     let fileMentionSearchToken = 0;
     let fileMentionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
@@ -95,8 +93,6 @@ export function createComposerInput(deps: {
         : deps.settings.isPlanModeWaitingForModel.value
             ? ('Loading models for plan mode...')
             : ('Type a message... (@ for files)'));
-    const draftLineCount = computed(() => draft.value.split('\n').length);
-    const hasExpandedComposerToggle = computed(() => isComposerExpanded.value || draftLineCount.value >= 6 || isDraftOverflowing.value);
     function onSubmit(): void {
         const text = draft.value.trim();
         if (!canSubmit.value)
@@ -173,32 +169,13 @@ export function createComposerInput(deps: {
     function onInterrupt(): void {
         deps.emit('interrupt');
     }
-    function updateComposerOverflowState(): void {
-        const input = inputRef.value;
-        if (!input || isComposerCollapsed.value) {
-            isDraftOverflowing.value = false;
-            return;
-        }
-        isDraftOverflowing.value = input.scrollHeight > input.clientHeight + 2;
-    }
-    function queueComposerOverflowMeasurement(): void {
-        if (composerOverflowMeasurementQueued)
-            return;
-        composerOverflowMeasurementQueued = true;
-        void nextTick(() => {
-            composerOverflowMeasurementQueued = false;
-            updateComposerOverflowState();
-        });
-    }
     function toggleComposerExpanded(): void {
         if (isInteractionDisabled.value && !isComposerExpanded.value)
             return;
         isComposerExpanded.value = !isComposerExpanded.value;
-        queueComposerOverflowMeasurement();
         void nextTick(() => inputRef.value?.focus());
     }
     function onInputChange(): void {
-        queueComposerOverflowMeasurement();
         updateSkillSuggestions();
         updateFileMentionState();
     }
@@ -261,13 +238,14 @@ export function createComposerInput(deps: {
                 return;
             }
         }
-        const shouldSend = deps.props.sendWithEnter !== false
-            ? event.key === 'Enter' && !event.shiftKey
-            : event.key === 'Enter' && (event.metaKey || event.ctrlKey);
+        if (event.key !== 'Enter')
+            return;
+        const shouldSend = isComposerExpanded.value || deps.props.sendWithEnter === false
+            ? event.metaKey || event.ctrlKey
+            : !event.shiftKey;
         if (shouldSend) {
             event.preventDefault();
             onSubmit();
-            return;
         }
     }
     function closeFileMention(): void {
@@ -338,10 +316,7 @@ export function createComposerInput(deps: {
     }
     function hydrateDraft(payload: ComposerDraftPayload): void {
         replaceDraftState(payload);
-        void nextTick(() => {
-            inputRef.value?.focus();
-            updateComposerOverflowState();
-        });
+        void nextTick(() => inputRef.value?.focus());
     }
     function appendTextToDraft(text: string): void {
         const nextText = text.trim();
@@ -421,13 +396,11 @@ hasUnsavedDraft,
 isInteractionDisabled,
 placeholderText,
 hasSubmitContent,
-hasExpandedComposerToggle,
 onSubmit,
 replaceDraftState,
 clearDraftState,
 getCurrentDraftPayload,
 onInterrupt,
-queueComposerOverflowMeasurement,
 toggleComposerExpanded,
 onInputChange,
 onInputKeydown,

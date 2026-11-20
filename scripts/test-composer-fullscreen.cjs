@@ -16,6 +16,25 @@ async function withinViewport(locator, viewport) {
   }), 'element is not covered')
   return box
 }
+
+async function assertEditorClearance(input, controls, viewport) {
+  const textRight = await input.evaluate(el => el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight))
+  for (const control of controls) {
+    const box = await withinViewport(control, viewport)
+    assert(box.x >= textRight, 'editor control clears the text area')
+  }
+}
+
+async function assertNativeLineBreak(input, calls) {
+  await input.fill('firstsecond')
+  await input.evaluate(el => el.setSelectionRange(5, 5))
+  const before = calls.length
+  await input.press('Enter')
+  assert.equal(await input.inputValue(), 'first\nsecond')
+  assert.deepEqual(await input.evaluate(el => [el.selectionStart, el.selectionEnd]), [6, 6])
+  assert.equal(calls.length, before, 'inserting a line break adds no API calls')
+}
+
 ;(async () => {
   mkdirSync('output/playwright', { recursive:true })
   const browser = await chromium.launch({ headless:true })
@@ -38,7 +57,21 @@ async function withinViewport(locator, viewport) {
         const input = page.locator('.thread-composer-input')
         const expand = page.getByRole('button', { name:'Expand composer', exact:true })
         const exit = page.getByRole('button', { name:'Exit full screen composer', exact:true })
+        const minimize = page.getByRole('button', { name:'Minimize message input', exact:true })
+        const restore = page.getByRole('button', { name:'Show message input', exact:true })
+        assert.equal(await input.inputValue(), '')
+        await assertEditorClearance(input, [minimize, expand], viewport)
+        await expand.click()
+        await assertEditorClearance(input, [exit], viewport)
+        await assertNativeLineBreak(input, calls)
+        await exit.click()
+        await minimize.click()
+        assert.equal(await expand.isVisible(), false)
+        await restore.click()
+        await input.fill('Short draft fixture')
+        await assertEditorClearance(input, [minimize, expand], viewport)
         await input.fill(longDraft)
+        await assertEditorClearance(input, [minimize, expand], viewport)
         await input.evaluate(el => { window.fullscreenInput = el; el.setSelectionRange(12, 19) })
         const sidebarVisible = await page.locator('.desktop-sidebar').isVisible()
         const beforeExpand = calls.length
@@ -175,8 +208,8 @@ async function withinViewport(locator, viewport) {
           await page.screenshot({ path })
           if (title === 'Context') await dialog.getByRole('button', { name:'Close dialog', exact:true }).click()
           else await page.keyboard.press('Escape')
-          assert.equal(await dialog.isVisible(), false)
-          assert.equal(await page.locator('.conversation-header-menu > summary').evaluate(el => el === document.activeElement), true)
+          await dialog.waitFor({ state:'hidden' })
+          await page.locator('.conversation-header-menu > summary:focus').waitFor()
         }
         assert.equal(await input.inputValue(), snapshot)
         // Stop stays reachable in full-screen mode when the active turn has no draft.
@@ -202,17 +235,19 @@ async function withinViewport(locator, viewport) {
         assert.equal(await page.locator('.content-root.is-composer-expanded').count(), 0)
         await page.locator('.new-thread-folder-dropdown .composer-dropdown-trigger').click()
         await page.locator('.composer-dropdown-option').filter({ hasText:'Fixture project' }).click()
-        await input.fill(longDraft)
+        assert.equal(await input.inputValue(), '')
+        await assertEditorClearance(input, [minimize, expand], viewport)
         await expand.click()
         assert.equal(await page.locator('.new-thread-empty').isVisible(), false)
-        await withinViewport(exit, viewport)
+        await assertEditorClearance(input, [exit], viewport)
         assert.equal((await page.locator('.thread-composer').boundingBox()).height, viewport.height)
+        await assertNativeLineBreak(input, calls)
         await exit.click()
         assert.equal(await page.locator('.new-thread-empty').isVisible(), true)
-        assert.equal(await input.inputValue(), longDraft)
+        assert.equal(await input.inputValue(), 'first\nsecond')
         assert.deepEqual(errors, [])
         results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, screenshot, composerBox, background, zeroApiToggleCycles:3, toggleRoundTripMs:cycles })
-        console.log('PASS', viewport.width, theme, 'full-screen, controls, attachments, draft, pending request, dialog headers, Home, zero-request cycles')
+        console.log('PASS', viewport.width, theme, 'full screen, native Enter, control clearance, attachments, draft, pending request, dialog headers, Home, zero-request cycles')
         await page.close()
       }
     }
