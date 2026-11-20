@@ -1,5 +1,9 @@
 <template>
-  <section v-if="request" class="thread-pending-request">
+  <section
+    v-if="request"
+    class="thread-pending-request"
+    :class="{ 'thread-pending-request--user-input': request.method === 'item/tool/requestUserInput' }"
+  >
     <article
       class="thread-pending-request-shell"
     >
