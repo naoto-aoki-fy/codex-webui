@@ -110,6 +110,7 @@ async function verify(page, viewport, theme) {
   let secondHistoryResponse = null
   let finishFailedReply
   let finishInterruptedReply
+  const delayedReplies = new Map()
   let retryableAttempts = 0
   const turns = [
     { id: 'first-turn', status: 'completed', items: [{ type: 'agentMessage', id: 'first', text: 'Fixture start' }] },
@@ -137,6 +138,7 @@ async function verify(page, viewport, theme) {
     if (url.pathname.endsWith('/server-requests/respond')) {
       if (body.id === 260) return new Promise(resolve => { finishFailedReply = resolve })
       if (body.id === 263) return new Promise(resolve => { finishInterruptedReply = resolve })
+      if (delayedReplies.has(body.id)) return delayedReplies.get(body.id)
       if (body.id === 262 && ++retryableAttempts === 1) return { status: 502, json: {
         error: 'Question reply was not sent. Your draft is kept. You can retry.', code: 'question_reply_not_sent',
       } }
@@ -680,10 +682,12 @@ async function verify(page, viewport, theme) {
   emit('server/request/resolved', { id: 263, threadId: thread.id })
   await stop.waitFor()
   await pendingChip.waitFor({ state: 'hidden' })
-  await panel.getByRole('button', { name: 'Question closed', exact: true }).waitFor()
+  await confirming.and(heading).waitFor()
+  await dismiss.waitFor()
   assert.equal(await stop.isEnabled(), true)
   assert.equal(await other.inputValue(), draft)
-  assert.equal(await confirming.isDisabled(), true)
+  assert.equal(await other.getAttribute('readonly'), '')
+  assert.equal(await choice.isDisabled(), true)
   if (await jumpLatest.isVisible()) await jumpLatest.click()
   const stopScreenshot = resolve(output, `question-confirmation-stop-${viewport.width}-${theme}.png`)
   await page.waitForTimeout(2200)
@@ -706,9 +710,97 @@ async function verify(page, viewport, theme) {
   await dismiss.click()
   await panel.waitFor({ state: 'hidden' })
   await input.waitFor()
+  const followUp = {
+    id: 'follow-up', status: 'completed', items: [
+      { id: 'follow-up-user', type: 'userMessage', content: [{ type: 'text', text: 'Continue after the interrupted turn' }] },
+      { id: 'follow-up-agent', type: 'agentMessage', text: 'Follow-up complete' },
+    ],
+  }
+  turns.push(followUp)
+  emit('turn/completed', { threadId: thread.id, turn: followUp })
+  await stop.waitFor({ state: 'hidden' })
+  await list.locator('[data-message-id="follow-up-agent"]').waitFor()
+
+  // Neither closure path retains a draft after its fields return to their defaults.
+  for (const [id, reconnect] of [[264, false], [265, true]]) {
+    emit('server/request', questionRequest(id, 'follow-up'))
+    await heading.waitFor()
+    await other.fill(draft)
+    await other.fill(' ')
+    await choice.click()
+    await panel.getByRole('button', { name: 'Full review', exact: true }).click()
+    await choice.click()
+    await panel.getByRole('button', { name: 'Quick update', exact: true }).click()
+    if (reconnect) {
+      const refreshed = page.waitForResponse(response => response.url().endsWith('/server-requests/pending'))
+      emit('app-server/reconnected', {})
+      await refreshed
+    } else {
+      emit('server/request/resolved', { id, threadId: thread.id })
+    }
+    await panel.waitFor({ state: 'hidden' })
+  }
+
+  const unsentQuestion = questionRequest(266, 'follow-up')
+  emit('server/request', unsentQuestion)
+  await heading.waitFor()
+  await other.fill(draft)
+  await heading.click()
+  emit('server/request/resolved', { id: unsentQuestion.id, threadId: thread.id })
+  await heading.filter({ hasText: 'Unsent draft' }).and(page.locator('[aria-expanded="false"]')).waitFor()
+  await dismiss.click()
+  await panel.waitFor({ state: 'hidden' })
+
+  const collapsedDraftScreenshot = resolve(output, `question-draft-collapsed-${viewport.width}-${theme}.png`)
+  for (const [id, success] of [[267, true], [268, false]]) {
+    let finishReply
+    delayedReplies.set(id, new Promise(resolve => { finishReply = resolve }))
+    const request = questionRequest(id, 'follow-up')
+    request.params.questions[0].isSecret = true
+    emit('server/request', request)
+    await heading.waitFor()
+    await other.fill(draft)
+    const submitted = page.waitForRequest(request => new URL(request.url()).pathname === '/codex-api/server-requests/respond' &&
+      request.postDataJSON()?.id === id)
+    await send.click()
+    await submitted
+    await confirming.waitFor()
+    await heading.click()
+    emit('server/request/resolved', { id, threadId: thread.id })
+    await confirming.and(heading).and(page.locator('[aria-expanded="false"]')).waitFor()
+    if (success) {
+      assert.equal(await panel.evaluate(element => element.scrollWidth <= element.clientWidth), true)
+      await dismiss.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(2200)
+      await page.screenshot({ path: collapsedDraftScreenshot })
+    }
+    const apiCount = requests.length
+    await dismiss.click()
+    await panel.waitFor({ state: 'hidden' })
+    emit('server/request/resolved', { id, threadId: thread.id })
+    await page.waitForTimeout(200)
+    assert.deepEqual(requests.slice(apiCount), [], 'dismissing during confirmation must not make API requests')
+    // The browser only receives the delayed confirmation through the original HTTP reply.
+    const httpReply = page.waitForResponse(response => response.url().endsWith('/server-requests/respond') &&
+      response.request().postDataJSON()?.id === id)
+    finishReply(success ? { json: { ok: true, saved: true, response: {
+      id: 'answer-' + id, threadId: thread.id, turnId: 'follow-up', submittedAt: '2026-11-20T01:05:00.000Z',
+      questions: [{ id: 'scope', heading: 'Documentation scope', provided: true }],
+    } } } : { status: 502, json: { error: 'Question reply could not be confirmed. Your draft is kept.' } })
+    await (await httpReply).finished()
+    const answer = list.locator('[data-message-id="question-response-answer-' + id + '"]')
+    if (success) {
+      await answer.getByText('Answer hidden', { exact: true }).waitFor()
+      assert.equal(await answer.count(), 1)
+    } else {
+      assert.equal(await answer.count(), 0)
+    }
+    await panel.waitFor({ state: 'hidden' })
+    assert.equal(replies().filter(reply => reply.id === id).length, 1)
+  }
 
   assert.deepEqual(errors, [])
-  return { url, viewport, theme, stopScreenshot, failedScreenshot, dismissedScreenshot, answerScreenshot, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
+  return { url, viewport, theme, stopScreenshot, failedScreenshot, dismissedScreenshot, collapsedDraftScreenshot, answerScreenshot, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0, dismissApiRequests: 0 }
 }
 
 async function main() {

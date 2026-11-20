@@ -61,18 +61,21 @@
       </template>
 
       <template v-else>
-        <button
-          v-if="isToolQuestion"
-          type="button"
-          class="plan-card-title w-full"
-          data-pending-question-heading
-          :aria-expanded="isQuestionExpanded"
-          :aria-controls="questionBodyId"
-          @click="isQuestionExpanded = !isQuestionExpanded"
-        >
-          <IconTablerChevronRight class="plan-card-chevron" />
-          {{ requestPanelTitle(request) }}
-        </button>
+        <div v-if="isToolQuestion" :class="request.questionClosed ? 'flex items-center gap-2' : 'contents'">
+          <button
+            type="button"
+            class="plan-card-title w-full min-w-0"
+            data-pending-question-heading
+            :aria-expanded="isQuestionExpanded"
+            :aria-controls="questionBodyId"
+            @click="isQuestionExpanded = !isQuestionExpanded"
+          >
+            <IconTablerChevronRight class="plan-card-chevron" />
+            {{ requestPanelTitle(request) }}
+          </button>
+          <button v-if="request.questionClosed" type="button" class="thread-pending-request-secondary"
+            @click="emit('dismissQuestionDraft', request.id)">Dismiss draft</button>
+        </div>
         <header v-if="!isToolQuestion || (isQuestionExpanded && !request.questionClosed)" class="thread-pending-request-header">
           <div class="thread-pending-request-heading">
             <p v-if="!isToolQuestion" class="thread-pending-request-eyebrow">{{ requestPanelTitle(request) }}</p>
@@ -200,8 +203,8 @@
                   :model-value="readQuestionAnswer(question.id, question.options[0]?.label || '')"
                   :options="toolQuestionOptions(question)"
                   :placeholder="('Choice')"
-                  :disabled="!isQuestionExpanded"
-                  @update:model-value="emit('updateQuestionDraft', question.id, 'choice', $event)"
+                  :disabled="!isQuestionExpanded || request.questionClosed"
+                  @update:model-value="emit('updateQuestionDraft', question.id, 'choice', $event === question.options[0]?.label ? '' : $event)"
                 />
               </div>
 
@@ -219,17 +222,18 @@
                 class="thread-pending-request-input"
                 :type="question.isSecret ? 'password' : 'text'"
                 :value="readQuestionOtherAnswer(question.id)"
+                :readonly="request.questionClosed"
                 :placeholder="('Other answer')"
                 @input="onQuestionOtherAnswerInput(question.id, $event)"
               />
             </label>
           </div>
 
-          <footer class="thread-pending-request-footer thread-pending-request-footer--question">
+          <footer v-if="!request.questionClosed || questionError" class="thread-pending-request-footer thread-pending-request-footer--question">
             <p v-if="questionError" class="thread-pending-request-question-error" role="alert">{{ questionError }}</p>
-            <button v-if="questionError && (request.questionClosed || canRetryQuestion)" type="button" class="thread-pending-request-secondary"
+            <button v-if="canRetryQuestion" type="button" class="thread-pending-request-secondary"
               @click="emit('dismissQuestionDraft', request.id)">Dismiss draft</button>
-            <button v-if="!questionError || canRetryQuestion" type="button" class="thread-pending-request-primary"
+            <button v-if="!request.questionClosed && (!questionError || canRetryQuestion)" type="button" class="thread-pending-request-primary"
               :disabled="isAwaitingQuestionConfirmation || !hasToolAnswer"
               @click="onRespondToolRequestUserInput(request)">
               {{ isAwaitingQuestionConfirmation ? 'Awaiting confirmation…' : (canRetryQuestion ? 'Retry' : 'Send') }}
@@ -318,8 +322,8 @@ const questionBodyId = useId()
 const selectedApprovalDecision = ref<ApprovalDecision>('accept')
 const approvalFreeformText = ref('')
 const questionAttempt = computed(() => props.questionDraft?.attempt)
-const questionError = computed(() => questionAttempt.value?.error ||
-  (props.request?.questionClosed && !questionAttempt.value ? 'Question closed. Your draft is kept.' : ''))
+const questionError = computed(() => props.request?.questionClosed && questionAttempt.value?.retryable
+  ? '' : questionAttempt.value?.error || '')
 const canRetryQuestion = computed(() => questionAttempt.value?.retryable && !props.request?.questionClosed && !props.request?.answerAttempted)
 const isAwaitingQuestionConfirmation = computed(() => !questionError.value && Boolean(questionAttempt.value || props.request?.answerAttempted))
 const hasToolAnswer = computed(() => {
@@ -398,7 +402,12 @@ function readRequestReason(request: UiServerRequest): string {
 function requestPanelTitle(request: UiServerRequest): string {
   if (isApprovalRequest(request)) return 'Awaiting approval'
   if (isMcpElicitationRequest(request)) return 'MCP server input required'
-  if (request.method === QUESTION_REQUEST) return request.questionClosed ? 'Question closed' : 'Awaiting response'
+  if (request.method === QUESTION_REQUEST) {
+    if (!request.questionClosed) return 'Awaiting response'
+    if (questionError.value) return 'Answer unconfirmed'
+    if (questionAttempt.value && !questionAttempt.value.retryable) return 'Awaiting confirmation…'
+    return 'Unsent draft'
+  }
   if (request.method === 'item/tool/call') return 'Tool call waiting for response'
   return request.method
 }

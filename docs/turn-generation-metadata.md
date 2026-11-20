@@ -78,9 +78,10 @@ event arrives. Successful completion starts a fresh deadline for the rollout
 check. Interruption, failure, disconnect, rollback and deletion retire
 unconfirmed attempts. Archive, thread closure and unsubscribe also settle an
 attempt if it was still waiting for the terminal event. They let an already
-completed turn finish its bounded rollout check. A closed draft stays in the
-conversation while confirmation is pending. The composer restores **Stop**
-while the turn runs and the sidebar clears its pending-question indicator.
+completed turn finish its bounded rollout check. After closure the conversation
+shows a read-only draft if it contains changes or a reply was sent or could have
+been sent. The user can dismiss it during confirmation. The composer restores
+**Stop** while the turn runs and the sidebar clears its pending-question indicator.
 
 WebUI saves ordered, redacted records under
 `app-servers/<sha256(ID)>/question-responses/<sha256(threadId)>.json`
@@ -91,6 +92,8 @@ write fails. Unconfirmed replies retain their draft in memory through navigation
 panel replacement and reconnect in the same tab. Retry is available when the
 bridge establishes the frame never entered the socket and the question is still
 pending. Confirmation, dismissal, deletion and profile teardown clear the draft.
+Dismissal clears the local draft immediately. A later confirmation still saves
+the redacted answer to history.
 
 Existing history responses contain only records for their page or retained turn
 IDs. The browser merges these with submission and completion records, by ID.
