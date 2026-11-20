@@ -6,7 +6,7 @@ Prerequisites: Use disposable existing directories with a Git repository and an 
 2. Submit without selecting a workspace. Expect a clear selection error and no new directory under Documents/Codex.
 3. Browse, select, and switch between two existing directories. Reload. Expect both roots and their histories to remain accessible, in native Project order.
 4. Open the project menu. Rename it and use Move up or Move down. Reload and confirm the new name and order persist. Remove a disposable project and confirm its folder still exists. Thread renaming remains available.
-5. Create and resume a conversation. Attach a normal file and image using Add photos & files. Expect both to submit and remain in history; folder upload and camera capture are absent.
+5. In a new conversation, open the composer’s `+` menu and select **Add files**. Select a regular file and an image. Confirm the composer shows a file chip and an image preview, then submit and verify both attachments appear in history. Resume an existing conversation and repeat. Check both flows in light and dark themes. Folder upload and camera capture are absent.
 6. Conversation revert uses native Codex history operations and never restores local files. File diffs remain inspectable; file Undo/Redo has been removed.
 7. Modify that file externally, record its bytes and Git status, then revert a turn and fork/revert another turn. Expect native history changes with identical local file bytes and Git status.
 8. Call retired creation, clone, and rollback endpoints. Expect JSON 404, no filesystem changes, and no Codex RPC calls.

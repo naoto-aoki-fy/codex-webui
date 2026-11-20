@@ -205,7 +205,7 @@
               :disabled="isInteractionDisabled"
               @click="triggerPhotoLibrary"
             >
-              {{ ('Add photos & files') }}
+              {{ ('Add files') }}
             </button>
 
             <button v-if="!isNewThread" class="thread-composer-attach-item" type="button" @click="isAttachMenuOpen=false;isAppsPickerOpen=!isAppsPickerOpen">Apps / Connectors<span v-if="selectedApps.length"> ({{ selectedApps.length }})</span></button>
