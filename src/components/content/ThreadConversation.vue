@@ -773,8 +773,9 @@
           :key="JSON.stringify([activeThreadId, pendingQuestion.id])"
           :request="pendingQuestion"
           :request-count="pendingRequests.length"
-          :question-attempt="questionAttempt"
+          :question-draft="questionDraft"
           @dismiss-question-draft="emit('dismissQuestionDraft', $event)"
+          @update-question-draft="(...edit) => emit('updateQuestionDraft', ...edit)"
           @respond-server-request="emit('respondServerRequest', $event)"
         />
       </li>
@@ -1166,6 +1167,7 @@ const emit = defineEmits<{
   implementPlan: [payload: { turnId: string }]
   respondServerRequest: [payload: UiServerRequestReply]
   dismissQuestionDraft: [id: number]
+  updateQuestionDraft: [questionId: string, field: 'choice' | 'text', value: string]
 }>()
 
 const viewport = createConversationViewport({

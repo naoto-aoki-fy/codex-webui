@@ -523,11 +523,18 @@ const question = {
 }
 const questionReply = { answers: { secret: { answers: ['never save this'] }, scope: { answers: ['Full', 'Keep examples'] } } }
 
-it('validates the pending question and confirms exactly one reply by native request ID and thread', async () => {
+function notifyQuestionResult(socket: any, result: unknown = questionReply, overrides: Record<string, string> = {}) {
+  const { callId = question.itemId, ...params } = overrides
+  socket.notify('rawResponseItem/completed', { threadId: question.threadId, turnId: question.turnId,
+    ...params, item: { type: 'function_call_output', call_id: callId, output: JSON.stringify(result) } })
+}
+
+it('saves once after the matching result, filtering mismatches, duplicates and private values', async () => {
   const client = new AppServerClient()
   const listener = vi.fn()
   const { questionResponses, QuestionResponseStore } = await import('./questionResponses')
   const profile = process.env.CODEXUI_CONNECTION_PROFILE!
+  const save = vi.spyOn(questionResponses, 'save')
   client.onNotification(listener)
   try {
     await client.reconnect()
@@ -546,6 +553,16 @@ it('validates the pending question and confirms exactly one reply by native requ
     expect(client.listPendingServerRequests()).toHaveLength(1)
     expect(listener.mock.calls.some(([event]) => event.method === 'server/request/resolved')).toBe(false)
     socket.notify('serverRequest/resolved', { threadId: question.threadId, requestId: 'native-42' })
+    expect(client.listPendingServerRequests()).toHaveLength(0)
+    notifyQuestionResult(socket, questionReply, { threadId: 'wrong-thread' })
+    notifyQuestionResult(socket, questionReply, { turnId: 'wrong-turn' })
+    notifyQuestionResult(socket, questionReply, { callId: 'wrong-call' })
+    notifyQuestionResult(socket, { answers: { ...questionReply.answers, scope: { answers: ['Keep examples', 'Full'] } } })
+    notifyQuestionResult(socket, { answers: {} })
+    expect(save).not.toHaveBeenCalled()
+    // Result object order is immaterial, each value array is ordered.
+    notifyQuestionResult(socket, { answers: { scope: questionReply.answers.scope, secret: questionReply.answers.secret } })
+    notifyQuestionResult(socket)
     const result = await response
     await duplicate
     expect(result).toMatchObject({ saved: true, response: {
@@ -554,9 +571,12 @@ it('validates the pending question and confirms exactly one reply by native requ
         { id: 'secret', heading: 'Private answer', provided: true },
       ],
     } })
-    expect(listener.mock.calls.filter(([event]) => event.method === 'server/request/resolved')).toEqual([
+    expect(listener.mock.calls.filter(([event]) => event.method === 'server/request/resolved' && event.params.response)).toEqual([
       [{ method: 'server/request/resolved', params: expect.objectContaining({ id: pending.id, response: result!.response }) }],
     ])
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(listener.mock.calls)).not.toContain('never save this')
+    expect(JSON.stringify(client.getStreamEvents(question.threadId, 400))).not.toContain('never save this')
     const restarted = new QuestionResponseStore()
     expect(await restarted.read(question.threadId, new Set([question.turnId]), profile)).toEqual([result!.response])
     expect(await restarted.read(question.threadId, new Set(['older']), profile)).toEqual([])
@@ -565,10 +585,10 @@ it('validates the pending question and confirms exactly one reply by native requ
     expect(await questionResponses.read(question.threadId, new Set([question.turnId]))).toEqual([result!.response])
     socket.notify('thread/deleted', { threadId: question.threadId })
     expect(await questionResponses.read(question.threadId, new Set([question.turnId]))).toEqual([])
-  } finally { client.dispose() }
+  } finally { save.mockRestore(); client.dispose() }
 })
 
-it.each(['disconnect', 'timeout', 'send failure'])('does not save, publish, or retry an unconfirmed reply after %s', async cause => {
+it.each(['disconnect', 'timeout', 'send failure', 'cancelled turn'])('does not save, publish, or retry an unconfirmed reply after %s', async cause => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   vi.stubEnv('CODEXUI_APP_SERVER_RPC_DEADLINE_MS', '30')
   const client = new AppServerClient()
@@ -584,14 +604,20 @@ it.each(['disconnect', 'timeout', 'send failure'])('does not save, publish, or r
     await flush()
     if (cause === 'disconnect') {
       await client.reconnect()
+      notifyQuestionResult(socket)
+      notifyQuestionResult(wire.sockets[1]!)
+    } else if (cause === 'cancelled turn') {
       socket.notify('serverRequest/resolved', { threadId: question.threadId, requestId: 4 })
+      socket.notify('turn/completed', { threadId: question.threadId, turn: { id: question.turnId, status: 'interrupted' } })
+      notifyQuestionResult(socket)
     } else if (cause === 'timeout') {
       await vi.advanceTimersByTimeAsync(35)
       await expect(client.respondToServerRequest({ id, result: questionReply })).rejects.toThrow('already')
     }
     await failed
     expect(wire.sockets.flatMap(socket => socket.frames).filter(frame => frame.id === 4)).toHaveLength(cause === 'send failure' ? 0 : 1)
-    expect(listener.mock.calls.some(([event]) => event.method === 'server/request/resolved')).toBe(false)
+    expect(listener.mock.calls.some(([event]) => event.method === 'server/request/resolved' && event.params.response)).toBe(false)
+    expect(JSON.stringify(listener.mock.calls)).not.toContain('never save this')
   } finally { client.dispose() }
 })
 
@@ -609,10 +635,35 @@ it('publishes and returns the same redacted answer when local persistence fails'
     const response = client.respondToServerRequest({ id, result: questionReply })
     await flush()
     socket.notify('serverRequest/resolved', { threadId: question.threadId, requestId: 4 })
+    notifyQuestionResult(socket)
     const submission = await response
     expect(submission?.saved).toBe(false)
-    expect(listener.mock.calls.find(([event]) => event.method === 'server/request/resolved')?.[0].params.response).toEqual(submission?.response)
+    expect(listener.mock.calls.find(([event]) => event.method === 'server/request/resolved' && event.params.response)?.[0].params).toMatchObject({
+      response: submission?.response, saved: false,
+    })
     expect(JSON.stringify(submission)).not.toContain('never save this')
     expect(JSON.stringify(save.mock.calls)).not.toContain('never save this')
   } finally { save.mockRestore(); client.dispose() }
+})
+
+it('permits manual retry only when the socket preflight refused to send and the question is pending', async () => {
+  const client = new AppServerClient()
+  try {
+    await client.reconnect()
+    const socket = wire.sockets[0]!
+    socket.emit('message', Buffer.from(JSON.stringify({ id: 4, method: 'request_user_input', params: {
+      thread_id: question.threadId, turn_id: question.turnId, call_id: question.itemId, questions: question.questions,
+    } })), false)
+    const { id, method } = client.listPendingServerRequests()[0]!
+    expect(method).toBe('item/tool/requestUserInput')
+    socket.readyState = 2
+    await expect(client.respondToServerRequest({ id, result: questionReply })).rejects.toMatchObject({ code: 'question_reply_not_sent' })
+    expect(socket.frames.filter((frame: any) => frame.id === 4)).toHaveLength(0)
+    socket.readyState = 1
+    const response = client.respondToServerRequest({ id, result: questionReply })
+    await flush()
+    notifyQuestionResult(socket)
+    expect((await response)?.saved).toBe(true)
+    expect(socket.frames.filter((frame: any) => frame.id === 4)).toHaveLength(1)
+  } finally { client.dispose() }
 })

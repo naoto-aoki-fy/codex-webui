@@ -238,9 +238,10 @@
                   :is-fork-disabled="isForkOperationPending || isRollingBack"
                   :pending-requests="selectedThreadServerRequests"
                   :pending-question="selectedThreadPendingQuestion"
-                  :question-attempt="selectedThreadPendingQuestion ? questionAttempts[selectedThreadPendingQuestion.id] : undefined"
+                  :question-draft="selectedThreadPendingQuestion ? readQuestionDraft(selectedThreadPendingQuestion) : undefined"
                   :question-responses="selectedQuestionResponses"
                   @dismiss-question-draft="dismissQuestionDraft"
+                  @update-question-draft="onUpdateQuestionDraft"
                   :has-more-persisted-above="hasMoreOlderMessages"
                   :is-loading-persisted-above="isLoadingOlderMessages"
                   :load-earlier-messages="loadOlderMessages"
@@ -266,7 +267,7 @@
                   {{ nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value }}
                   <button type="button" @click="openNativeQueue">Inspect native prompt queue</button>
                 </p>
-                <p v-if="questionSaveWarning?.threadId === selectedThreadId" class="composer-runtime-error" role="alert">{{ questionSaveWarning.message }}</p>
+                <p v-if="questionSaveWarning" class="composer-runtime-error" role="alert">{{ questionSaveWarning }}</p>
                 <p v-if="modelSelectionNotice" class="composer-model-notice" role="status">{{ (modelSelectionNotice) }}</p>
                 <ThreadComposer
                   @update:expanded="isComposerExpanded=$event"
@@ -488,7 +489,8 @@ const {
   selectedThreadTokenUsage,
   selectedThreadServerRequests,
   selectedQuestionResponses,
-  questionAttempts,
+  readQuestionDraft,
+  updateQuestionDraft,
   questionSaveWarning,
   dismissQuestionDraft,
   selectedLiveOverlay,
@@ -727,6 +729,10 @@ const selectedThreadPendingQuestion = computed(() => {
   const request = selectedThreadPendingRequest.value
   return request?.method === 'item/tool/requestUserInput' ? request : null
 })
+function onUpdateQuestionDraft(questionId: string, field: 'choice' | 'text', value: string): void {
+  const request = selectedThreadPendingQuestion.value
+  if (request) updateQuestionDraft(request, questionId, field, value)
+}
 const composerCwd = computed(() => {
   if (isHomeRoute.value) return newThreadCwd.value.trim()
   return selectedThread.value?.cwd?.trim() ?? ''

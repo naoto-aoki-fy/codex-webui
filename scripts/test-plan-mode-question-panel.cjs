@@ -108,6 +108,7 @@ async function verify(page, viewport, theme) {
   let pendingOnReload = null
   let historyResponse = null
   let secondHistoryResponse = null
+  let finishFailedReply
   const turns = [
     { id: 'first-turn', status: 'completed', items: [{ type: 'agentMessage', id: 'first', text: 'Fixture start' }] },
     history('Earlier history'),
@@ -130,8 +131,9 @@ async function verify(page, viewport, theme) {
   page.on('request', request => {
     if (new URL(request.url()).pathname.startsWith('/codex-api/')) requests.push(request.url())
   })
-  const { calls, emit, errors } = await setup(page, (body, _page, url) => {
+  const { calls, emit, errors } = await setup(page, async (body, _page, url) => {
     if (url.pathname.endsWith('/server-requests/respond')) {
+      if (body.id === 260) return new Promise(resolve => { finishFailedReply = resolve })
       const request = [200, 201, 204].includes(body.id) && body.result?.answers
       if (!request) return { json: { ok: true } }
       const turnId = body.id === 201 ? 'live' : body.id === 204 ? 'first-turn' : 'question-turn'
@@ -157,8 +159,9 @@ async function verify(page, viewport, theme) {
       return { json: { result: { thread: detail, model: 'fixture-model', modelProvider: 'fixture', olderCursor: 'older-fixture' } } }
     }
     if (body.method === 'thread/turns/list') {
-      return (body.params.threadId === secondThread.id ? secondHistoryResponse : historyResponse)
-        ?? { json: { result: { data: [], nextCursor: null } } }
+      const response = await (body.params.threadId === secondThread.id ? secondHistoryResponse : historyResponse)
+      if (response && response.json.result.nextCursor !== body.params.cursor) return response
+      return { json: { result: { data: [], nextCursor: null } } }
     }
   }, false)
 
@@ -296,8 +299,9 @@ async function verify(page, viewport, theme) {
   assert.equal(await choice.innerText(), 'Full review')
   assert.equal(await other.inputValue(), draft)
   await send.click()
-  await panel.getByRole('button', { name: 'Quick update', exact: true }).waitFor()
   await assertPosition(panel, 'question-agent', 'Later history-0')
+  assert.equal(await choice.innerText(), 'Full review')
+  assert.equal(await other.inputValue(), draft)
   assert.deepEqual(replies(), [{
     path: '/codex-api/server-requests/respond',
     id: 201,
@@ -440,6 +444,8 @@ async function verify(page, viewport, theme) {
     }
     pendingOnReload = questionRequest(requestId, turnId)
     emit('server/request', pendingOnReload)
+    await heading.waitFor({ state: 'attached' })
+    await scrollToMessage(list, 'Earlier history-3')
     await jumpQuestion.waitFor()
     await assertPosition(panel, 'a')
     assert.equal(await list.locator(`[data-message-id="${anchorId}"]`).count(), 0)
@@ -506,6 +512,7 @@ async function verify(page, viewport, theme) {
     await list.evaluate(element => { element.scrollTop = element.scrollHeight })
     pendingOnReload = null
     emit('server/request/resolved', { id: requestId, threadId: thread.id })
+    if (action === 'restore') await panel.getByRole('button', { name: 'Dismiss draft' }).click()
     await heading.waitFor({ state: 'hidden' })
   }
 
@@ -551,8 +558,56 @@ async function verify(page, viewport, theme) {
   await assertMessageAligned(page, 'new-thread-page-11')
   assert.deepEqual(historyRequests().slice(beforeSwitch).map(call => call.params.threadId), [thread.id, secondThread.id])
 
+  historyResponse = null
+  secondHistoryResponse = null
+  // Fail the original reply after navigation, with an approval replacing its panel.
+  await page.evaluate(id => { location.hash = `#/thread/${id}` }, thread.id)
+  await input.waitFor()
+  const failedQuestion = questionRequest(260, 'question-turn')
+  failedQuestion.params.questions[0].isSecret = true
+  emit('server/request', failedQuestion)
+  await heading.waitFor()
+  await choice.click()
+  await panel.getByRole('button', { name: 'Full review', exact: true }).click()
+  await other.fill(draft)
+  await send.click()
+  await panel.getByRole('button', { name: 'Awaiting confirmation…' }).waitFor()
+  assert(finishFailedReply)
+  emit('server/request', {
+    id: 261, method: 'item/commandExecution/requestApproval',
+    params: { threadId: thread.id, turnId: 'live', command: 'echo replacement' },
+  })
+  await footer.getByText('echo replacement', { exact: true }).waitFor()
+  await page.evaluate(id => { location.hash = `#/thread/${id}` }, secondThread.id)
+  await list.locator('[data-message-id="second-initial-11"]').waitFor()
+  finishFailedReply({ status: 502, json: { error: 'Question reply could not be confirmed. Your draft is kept.' } })
+  await page.evaluate(id => { location.hash = `#/thread/${id}` }, thread.id)
+  await footer.getByText('echo replacement', { exact: true }).waitFor()
+  await footer.getByRole('button', { name: 'Send', exact: true }).click()
+  const unconfirmed = panel.getByRole('alert').filter({ hasText: 'Question reply could not be confirmed' })
+  await unconfirmed.waitFor()
+  assert.equal(await choice.innerText(), 'Full review')
+  assert.equal(await other.inputValue(), draft)
+  assert.equal(await other.getAttribute('type'), 'password')
+  assert.equal(await panel.getByRole('button', { name: 'Retry', exact: true }).count(), 0)
+  emit('app-server/disconnected', {})
+  emit('app-server/reconnected', {})
+  await unconfirmed.waitFor()
+  assert.equal(await other.inputValue(), draft)
+  assert.equal(await choice.innerText(), 'Full review')
+  assert.equal(replies().filter(reply => reply.id === 260).length, 1)
+  assert.equal(await list.locator('[data-message-id="question-response-answer-260"]').count(), 0)
+  assert.equal(await page.evaluate(value => [localStorage, sessionStorage].some(storage =>
+    Object.values(storage).some(row => row.includes(value))), draft), false)
+  await panel.getByRole('button', { name: 'Dismiss draft' }).scrollIntoViewIfNeeded()
+  const failedScreenshot = join(output, `question-draft-unconfirmed-${viewport.width}-${theme}.png`)
+  await page.waitForTimeout(2200)
+  await page.screenshot({ path: failedScreenshot })
+  await panel.getByRole('button', { name: 'Dismiss draft' }).click()
+  await heading.waitFor({ state: 'hidden' })
+
   assert.deepEqual(errors, [])
-  return { url, viewport, theme, answerScreenshot, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
+  return { url, viewport, theme, failedScreenshot, answerScreenshot, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
 }
 
 async function main() {

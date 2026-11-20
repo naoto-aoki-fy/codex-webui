@@ -5,7 +5,52 @@ import { asRecord } from './bridgeHttpUtils.js'
 import { profileStorageDirectory } from './connectionProfile.js'
 import { deleteCodexGlobalState, readCodexGlobalState, updateCodexGlobalState } from './codexGlobalState.js'
 
-export const QUESTION_REQUEST = 'item/tool/requestUserInput'
+const QUESTION_TOOL = 'request_user_input'
+
+export function questionRequestParams(params: Record<string, unknown> | null) {
+  const { threadId, thread_id, conversationId, conversation_id, turnId, turn_id, itemId, item_id, callId, call_id } = params ?? {}
+  return {
+    ...params,
+    threadId: threadId ?? thread_id ?? conversationId ?? conversation_id,
+    turnId: turnId ?? turn_id,
+    itemId: itemId ?? item_id ?? callId ?? call_id,
+  }
+}
+
+type QuestionAnswers = Record<string, { answers: string[] }>
+
+export function readQuestionToolAnswers(output: unknown): QuestionAnswers | undefined {
+  const text = Array.isArray(output) && output.length === 1 && asRecord(output[0])?.type === 'input_text'
+    ? asRecord(output[0])?.text : output
+  if (typeof text !== 'string' || !text.trimStart().startsWith('{')) return
+  try {
+    const body = asRecord(JSON.parse(text))
+    const answers = asRecord(body?.answers)
+    if (answers && Object.keys(body!).length === 1 && Object.values(answers).every(value => {
+      const row = asRecord(value)
+      return Array.isArray(row?.answers) && row.answers.every(answer => typeof answer === 'string')
+    })) return answers as QuestionAnswers
+  } catch { /* Other function outputs can contain arbitrary text. */ }
+}
+
+export function questionAnswersMatch(submitted: QuestionAnswers, observed: QuestionAnswers): boolean {
+  const ids = Object.keys(submitted)
+  return ids.length === Object.keys(observed).length && ids.every(id => {
+    if (!Object.prototype.hasOwnProperty.call(observed, id)) return false
+    const expected = submitted[id]!.answers
+    const actual = observed[id]!.answers
+    return expected.length === actual.length && expected.every((answer, index) => answer === actual[index])
+  })
+}
+
+export function isQuestionToolCall(item: Record<string, unknown> | null): boolean {
+  return item?.type === 'function_call' && item.name === QUESTION_TOOL
+}
+
+export function isQuestionToolOutput(item: Record<string, unknown> | null): boolean {
+  return item?.type === 'functionCallOutput' && item.name === QUESTION_TOOL ||
+    item?.type === 'function_call_output' && Boolean(readQuestionToolAnswers(item.output))
+}
 
 function responsePath(threadId: string, profileId?: string): string {
   const filename = createHash('sha256').update(threadId).digest('hex') + '.json'

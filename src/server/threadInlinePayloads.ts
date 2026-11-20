@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { inlineAssetUrl, inlineMediaDirectory } from './appAssets.js'
 import { join } from 'node:path'
+import { isQuestionToolOutput } from './questionResponses.js'
 
 export const THREAD_METHODS_WITH_TURNS = new Set(['thread/read', 'thread/resume', 'thread/fork'])
 
@@ -333,6 +334,10 @@ export async function sanitizeThreadTurnsInlinePayloads(method: string, result: 
       const itemId = asNonEmptyString(itemRecord?.id) ?? 'item'
       if (!itemRecord) {
         nextItems.push(item)
+        continue
+      }
+      if (isQuestionToolOutput(itemRecord)) {
+        itemChanged = true
         continue
       }
       const sanitizedItem = await sanitizeInlinePayloadDeep(item, {
