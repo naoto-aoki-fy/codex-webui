@@ -80,6 +80,7 @@ type QuestionAttempt = {
   match: (answers: ReturnType<typeof readQuestionToolAnswers>) => void
   close: () => void
   complete: () => void
+  endSubscription: () => void
   fail: () => void
 }
 
@@ -306,7 +307,8 @@ export class AppServerClient {
       if (message.method === 'turn/completed') {
         const turn = asRecord(asRecord(message.params)?.turn)
         const turnId = readNonEmptyString(turn?.id)
-        if (turnId) this.retireQuestionRequests(this.extractThreadIdFromParams(message.params), turnId, turn?.status === 'completed')
+        if (turnId) this.retireQuestionRequests(this.extractThreadIdFromParams(message.params), turnId,
+          turn?.status === 'completed' ? 'completed' : 'failed')
       }
       this.emitNotification({
         method: message.method,
@@ -331,6 +333,9 @@ export class AppServerClient {
         this.submittedModeRequests.delete(nThreadId)
         this.lastThreadReadSnapshotByThreadId.delete(nThreadId)
         this.streamEventsByThreadId.delete(nThreadId)
+      }
+      if (notification.method === 'thread/closed' || notification.method === 'thread/archived') {
+        this.retireQuestionRequests(nThreadId, undefined, 'subscription-ended')
       }
       if (notification.method === 'turn/started') {
         const turn = asRecord(asRecord(notification.params)?.turn)
@@ -475,10 +480,11 @@ export class AppServerClient {
     }
   }
 
-  private retireQuestionRequests(threadId: string, turnId?: string, completed = false): void {
+  private retireQuestionRequests(threadId: string, turnId?: string, outcome: 'completed' | 'failed' | 'subscription-ended' = 'failed'): void {
     for (const attempt of this.questionAttempts.values()) {
       if (attempt.threadId !== threadId || (turnId !== undefined && attempt.turnId !== turnId)) continue
-      if (completed) attempt.complete()
+      if (outcome === 'completed') attempt.complete()
+      else if (outcome === 'subscription-ended') attempt.endSubscription()
       else attempt.fail()
     }
     for (const [id, pending] of this.pendingServerRequests) {
@@ -588,6 +594,9 @@ export class AppServerClient {
         complete: () => {
           completed = true
           attempt.close()
+        },
+        endSubscription: () => {
+          if (!completed) attempt.fail()
         },
         fail: () => {
           if (retire()) reject(new Error(QUESTION_REPLY_UNCONFIRMED))
@@ -785,6 +794,7 @@ export class AppServerClient {
     if (method === 'thread/archive' || method === 'thread/unsubscribe') {
       const id = readNonEmptyString(asRecord(params)?.threadId)
       this.subscribedThreads.delete(id)
+      this.retireQuestionRequests(id, undefined, 'subscription-ended')
     }
     return result
   }
