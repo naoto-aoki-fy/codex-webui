@@ -1,11 +1,22 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { createConnectionNotice } from './connectionNotice'
+import { createConnectionNotices } from './connectionNotice'
 
-beforeEach(() => vi.useFakeTimers())
-afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
+let tab: EventTarget & { visibilityState: DocumentVisibilityState; defaultView: EventTarget }
+
+function setVisibility(visibility: DocumentVisibilityState) {
+  tab.visibilityState = visibility
+  tab.dispatchEvent(new Event('visibilitychange'))
+}
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  tab = Object.assign(new EventTarget(), { visibilityState: 'visible' as const, defaultView: new EventTarget() })
+  vi.stubGlobal('document', tab)
+})
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
 it('stays unobtrusive on initial connection and keeps prolonged warnings until confirmed readiness', () => {
-  const connection = createConnectionNotice()
+  const { browser: connection } = createConnectionNotices()
   connection.update('connected')
   expect(connection.notice.value).toBe('')
   connection.update('disconnected')
@@ -23,7 +34,7 @@ it('stays unobtrusive on initial connection and keeps prolonged warnings until c
 })
 
 it('deduplicates success without extending its deadline or showing it again after dismissal', () => {
-  const connection = createConnectionNotice()
+  const { browser: connection } = createConnectionNotices()
   connection.update('disconnected')
   connection.update('connected')
   vi.advanceTimersByTime(1000)
@@ -36,7 +47,7 @@ it('deduplicates success without extending its deadline or showing it again afte
 })
 
 it('rejects stale callbacks across repeated failures, recovery cycles, and disposal', () => {
-  const connection = createConnectionNotice()
+  const { browser: connection, dispose } = createConnectionNotices()
   const timeout = vi.spyOn(globalThis, 'setTimeout')
   connection.update('disconnected')
   connection.update('connected')
@@ -49,15 +60,14 @@ it('rejects stale callbacks across repeated failures, recovery cycles, and dispo
   stale()
   expect(connection.notice.value).toBe('reconnected')
   const disposedCallback = timeout.mock.calls[1]![0] as () => void
-  connection.dispose()
+  dispose()
   disposedCallback()
   expect(vi.getTimerCount()).toBe(0)
-  expect(connection.notice.value).toBe('reconnected')
+  expect(connection.notice.value).toBe('')
 })
 
 it('keeps simultaneous connection layers independent', () => {
-  const browser = createConnectionNotice()
-  const appServer = createConnectionNotice()
+  const { browser, appServer } = createConnectionNotices()
   browser.update('disconnected')
   appServer.update('disconnected')
   browser.update('connected')
@@ -67,4 +77,104 @@ it('keeps simultaneous connection layers independent', () => {
   appServer.update('connected')
   vi.advanceTimersByTime(3000)
   expect(appServer.notice.value).toBe('')
+})
+
+it.each([499, 500, 501])('handles recovery at %i ms for both layers and updates their state immediately', elapsed => {
+  const { browser, appServer } = createConnectionNotices()
+  browser.update('reconnecting')
+  appServer.update('disconnected')
+  setVisibility('hidden')
+  expect([browser.notice.value, appServer.notice.value]).toEqual(['', ''])
+  setVisibility('visible')
+  expect(vi.getTimerCount()).toBe(1)
+  vi.advanceTimersByTime(499)
+  expect([browser.notice.value, appServer.notice.value]).toEqual(['', ''])
+  vi.advanceTimersByTime(elapsed - 499)
+  if (elapsed >= 500) {
+    expect([browser.notice.value, appServer.notice.value]).toEqual(['reconnecting', 'disconnected'])
+  }
+  browser.update('connected')
+  appServer.update('connected')
+  expect([browser.state.value, appServer.state.value]).toEqual(['connected', 'connected'])
+  const expected = elapsed > 500 ? 'reconnected' : ''
+  expect([browser.notice.value, appServer.notice.value]).toEqual([expected, expected])
+  vi.advanceTimersByTime(2999)
+  expect([browser.notice.value, appServer.notice.value]).toEqual([expected, expected])
+  vi.advanceTimersByTime(1)
+  expect([browser.notice.value, appServer.notice.value]).toEqual(['', ''])
+})
+
+it('discards prior confirmations and hidden recoveries across consecutive tab switches', () => {
+  setVisibility('hidden')
+  const { browser, appServer } = createConnectionNotices()
+  browser.update('disconnected')
+  expect(browser.state.value).toBe('disconnected')
+  expect(browser.notice.value).toBe('')
+  setVisibility('visible')
+  vi.advanceTimersByTime(500)
+  expect(browser.notice.value).toBe('disconnected')
+  vi.advanceTimersByTime(1)
+  browser.update('connected')
+  expect(browser.notice.value).toBe('reconnected')
+
+  setVisibility('hidden')
+  appServer.update('disconnected')
+  appServer.update('connected')
+  expect(appServer.state.value).toBe('connected')
+  expect(vi.getTimerCount()).toBe(0)
+  setVisibility('visible')
+  vi.advanceTimersByTime(300)
+  browser.update('disconnected')
+  setVisibility('hidden')
+  expect(vi.getTimerCount()).toBe(0)
+  setVisibility('visible')
+  vi.advanceTimersByTime(200)
+  setVisibility('visible') // A duplicate event must not extend the deadline.
+  vi.advanceTimersByTime(299)
+  expect([browser.notice.value, appServer.notice.value]).toEqual(['', ''])
+  vi.advanceTimersByTime(1)
+  expect([browser.notice.value, appServer.notice.value]).toEqual(['disconnected', ''])
+})
+
+it('times staggered recoveries independently after displaying both warnings at 500 ms', () => {
+  const { browser, appServer } = createConnectionNotices()
+  setVisibility('hidden')
+  browser.update('disconnected')
+  appServer.update('disconnected')
+  setVisibility('visible')
+  vi.advanceTimersByTime(500)
+  expect([browser.notice.value, appServer.notice.value]).toEqual(['disconnected', 'disconnected'])
+  vi.advanceTimersByTime(200)
+  browser.update('connected')
+  expect([browser.notice.value, appServer.notice.value]).toEqual(['reconnected', 'disconnected'])
+  vi.advanceTimersByTime(100)
+  appServer.update('connected')
+  expect([browser.notice.value, appServer.notice.value]).toEqual(['reconnected', 'reconnected'])
+  vi.advanceTimersByTime(2900)
+  expect([browser.notice.value, appServer.notice.value]).toEqual(['', 'reconnected'])
+  vi.advanceTimersByTime(100)
+  expect(appServer.notice.value).toBe('')
+})
+
+it('cleans up the shared listener and timer on page exit and keeps them across cached navigation', () => {
+  const addVisibilityListener = vi.spyOn(tab, 'addEventListener')
+  const removeVisibilityListener = vi.spyOn(tab, 'removeEventListener')
+  const removePageListener = vi.spyOn(tab.defaultView, 'removeEventListener')
+  const { start, browser } = createConnectionNotices()
+  start()
+  expect(addVisibilityListener).toHaveBeenCalledTimes(1)
+  setVisibility('hidden')
+  tab.defaultView.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: true }))
+  setVisibility('visible')
+  expect(vi.getTimerCount()).toBe(1)
+  tab.defaultView.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: false }))
+  expect(removeVisibilityListener).toHaveBeenCalledWith('visibilitychange', addVisibilityListener.mock.calls[0]![1])
+  expect(removePageListener).toHaveBeenCalledWith('pagehide', expect.any(Function))
+  expect(vi.getTimerCount()).toBe(0)
+  setVisibility('hidden')
+  setVisibility('visible')
+  expect(vi.getTimerCount()).toBe(0)
+  start()
+  browser.update('disconnected')
+  expect(browser.notice.value).toBe('disconnected')
 })

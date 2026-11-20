@@ -64,10 +64,30 @@ const fs = require('node:fs')
       assert.equal(colors.background, theme === 'dark' ? 'rgb(66, 32, 6)' : 'rgb(254, 249, 195)')
       const screenshot = `output/playwright/recovery-status-${theme}.png`
       await page.screenshot({ path: screenshot, fullPage: true })
+
+      const clockStart = new Date('2026-11-16T00:00:00Z')
+      await page.clock.install({ time: clockStart })
+      await page.clock.pauseAt(new Date(clockStart.getTime() + 1000))
+      const visibility = state => page.evaluate(state => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: state })
+        document.dispatchEvent(new Event('visibilitychange'))
+      }, state)
+      const connectionBanners = page.locator('[data-connection="browser"], [data-connection="app-server"]')
+      const subscription = page.locator('[data-connection="subscription"]')
+      for (const state of ['hidden', 'visible']) {
+        await visibility(state)
+        assert.equal(await connectionBanners.count(), 0)
+        assert.match(await subscription.innerText(), /previous approval expired/)
+        assert.match(await subscription.innerText(), /Submission outcome unknown/)
+        assert.equal(await subscription.getByRole('button', { name: 'Refresh history', exact: true }).count(), 1)
+      }
+      await page.clock.runFor(501)
+      await page.getByText('Codex App Server: Disconnected', { exact: true }).waitFor()
+      await emit('ready', { ok: true })
       await emit('app-server/reconnected', {})
       await page.getByText('Codex App Server: Reconnected', { exact: true }).waitFor()
       assert.equal(await draft.inputValue(), 'unsent disposable recovery draft')
-      console.log(JSON.stringify({ url: page.url(), viewport: '1440x1000', theme, colors, screenshot, assertions: 'recovering/recovered, preserved unsent draft, failed/manual retry, disconnect, expired approval, unknown outcome, reconnection and theme colors passed' }))
+      console.log(JSON.stringify({ url: page.url(), viewport: '1440x1000', theme, colors, screenshot, assertions: 'recovering/recovered, preserved unsent draft, failed/manual retry, disconnect, expired approval and unknown outcome during tab suppression, reconnection and theme colors passed' }))
       await page.close()
     }
   } finally { await browser.close() }

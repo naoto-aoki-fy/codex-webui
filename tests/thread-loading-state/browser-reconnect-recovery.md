@@ -205,42 +205,59 @@ separately. Repeat the following in light and dark themes:
    Expect each warning to clear only after its own recovery, with a temporary
    success for that layer. Browser reconnection must reconcile the latest App
    Server status even when its disconnect/reconnect event was missed offline.
-6. Repeat offline/online and hidden/visible transitions. Deliver an old stream's
-   late `ready` after replacement. Expect one current browser transport and one
-   warning per layer; no late callback can mark the replacement connected.
+6. With both warnings visible, switch away from the tab and then return while
+   both layers are still down. Expect neither connection banner while the tab
+   is hidden or during the first 499 ms after returning. At 500 ms, expect a
+   warning for each layer still down. Switch away again before the delay ends
+   and return. Measure the full 500 ms from the latest return. Thread
+   subscription, expired approval, and unknown outcome feedback are visible
+   throughout the delay when applicable.
 7. Recover, disconnect again before three seconds, and wait beyond the previous
    deadline. Expect the new warning to remain. Repeat recovery cycles and duplicate
    success events; duplicates must not create additional rows. Browser and App
    Server duplicate successes do not restart dismissal or reappear after dismissal.
-8. After final recovery, expect all success rows gone at three seconds and no
-   request caused by dismissal. Confirm no automatic `turn/start`, `turn/steer`,
-   approval response, or backend `/reconnect` call. Verify pending/unknown-outcome
-   safety feedback remains independent of connection success.
+8. Recover one layer while the tab is hidden or within 500 ms of returning.
+   Expect no success banner for that recovery. Switch away while a success is
+   showing, then return and verify it does not reappear. For a staggered
+   recovery, keep both layers down through 500 ms and restore them at different
+   times after that point. For example, restore browser delivery at 700 ms.
+   Expect its warning at 500 ms and its success at 700 ms. Expect each success
+   to disappear three seconds after its own recovery. Use the fixture for exact
+   499, 500, and 501 ms timing.
+9. Repeat offline/online and hidden/visible transitions. Deliver an old stream's
+   late `ready` after replacement. Expect one current transport per browser
+   subscription and one warning per connection layer. The stale event cannot
+   mark the replacement connected. In DevTools Network, verify that revealing
+   warnings or dismissing successes adds no connections or API requests beyond
+   the existing transport recovery and state reads. Confirm no automatic
+   `turn/start`, `turn/steer`, approval response, or backend `/reconnect` call.
 
 The deterministic script exercises both transports and themes, captures warning, success
 and healthy screenshots, and records recovery request counts in
 `output/playwright/connection-status-{ws,sse}-{light,dark}.json`. It uses a virtual
-clock for the 2999/3000 ms boundary and prolonged/repeated failures. Unit tests also
-invoke retained timeout callbacks directly to establish stale-timer protection.
+clock for the 499/500/501 ms and 2999/3000 ms boundaries, repeated tab switches,
+staggered recovery, and prolonged failures. It counts both transport attempts
+and API requests while showing warnings and dismissing successes. Unit tests
+also invoke retained timeout callbacks directly to check stale-timer protection.
 These fixtures do not establish real network/suspension or authenticated Codex
 recovery; record live results separately using the earlier checklists.
 
-Automated verification on 2026-11-16: unit suite 1511 passed / 2 live tests
-skipped; typecheck, production build and credential-free integration fixture
-passed. Both browser scripts passed against this checkout at `127.0.0.1:4173`,
-1440×1000, in both themes; the connection-status script also covered both WS and
-SSE. The published application was not tested. The public ESM CLI smoke command
-`node dist-cli/index.js --help` passed (this project has no public CJS entry).
+Automated verification on 2026-11-20 passed 1560 unit tests, with 2 live tests
+skipped. Type checking, the production build, and the credential-free integration
+fixture passed. Both browser scripts passed at `127.0.0.1:4173`, 1440×1000, in
+both themes. The connection-status script covered both WS and SSE. The public
+ESM CLI smoke command `node dist-cli/index.js --help` passed.
 
-Performance audit: each measured browser recovery burst made one selected-thread
-`thread/read`, one `thread/list`, one pending-approvals read and one workspace-state
-read. Dismissal caused zero requests. The two existing notification subscriptions
-(desktop and sidebar) remained at two after repeated recovery, with no accumulating
-transports. Notice updates do constant work on refs and at most one timer per
-connection layer; they add no polling, history fanout, cache invalidation or large
-payloads. The backend sends one small current-status event per new subscription.
-The production main JS chunk was 478.87 kB (152.58 kB gzip). Live network latency,
-CPU/memory profiles and authenticated App Server recovery were not measured.
+Performance audit for the tab delay: WS and SSE reused two subscriptions
+(desktop and sidebar) in each theme. Showing warnings at 500 ms and dismissing
+successes made zero API requests and opened zero transports. The measured
+recovery burst made one request each for `thread/list`, `project/list`,
+`model-preferences/read`, `thread/resume` for the selected thread, and pending
+approvals. The banner code adds one shared visibility listener and one shared
+delay timer. It updates only local display state and leaves request payloads,
+history reads, and cache invalidation to the existing recovery path. Live
+network latency, CPU/memory, and authenticated App Server recovery were outside
+the fixture checks.
 
 Cleanup: close fixture tabs and restore network restrictions/theme after live
 checks. Leave shared App Server processes and the existing development server

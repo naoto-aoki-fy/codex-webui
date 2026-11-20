@@ -57,13 +57,17 @@ const base = 'http://127.0.0.1:4173'
           Object.defineProperty(navigator, 'onLine', { configurable: true, value: online })
           window.dispatchEvent(new Event(online ? 'online' : 'offline'))
         }
+        window.fixtureVisibility = value => {
+          Object.defineProperty(document, 'visibilityState', { configurable: true, value })
+          document.dispatchEvent(new Event('visibilitychange'))
+        }
       }, { theme, transport })
       const thread = { id: 'connection-fixture', cwd: '/remote/disposable', preview: 'Connection status fixture', createdAt: 1, updatedAt: 1, status: { type: 'idle' }, turns: [] }
       await page.route('**/codex-api/**', async route => {
-        if (route.request().url().endsWith('/codex-api/connection-profile')) return route.fulfill({ json: { connectionProfile: 'browser-fixture' } })
         const pathname = new URL(route.request().url()).pathname
         const body = route.request().postDataJSON()
         requests.push({ path: pathname, method: body?.method || route.request().method() })
+        if (pathname.endsWith('/connection-profile')) return route.fulfill({ json: { connectionProfile: 'browser-fixture' } })
         if (pathname.endsWith('/rpc')) {
           const method = body.method
           const result = method === 'thread/list' ? { data: [thread], nextCursor: null }
@@ -80,6 +84,16 @@ const base = 'http://127.0.0.1:4173'
       await page.evaluate(() => window.fixtureReady())
       const row = layer => page.locator(`[data-connection="${layer}"]`)
       const emit = (method, params) => page.evaluate(({ method, params }) => window.fixtureEmit(method, params), { method, params })
+      const visibility = state => page.evaluate(state => window.fixtureVisibility(state), state)
+      const ready = () => page.evaluate(() => window.fixtureReady())
+      const activity = async () => ({
+        transportAttempts: await page.evaluate(() => window.fixtureTransports.length),
+        apiRequests: requests.length,
+      })
+      const expectNoConnectionBanners = async () => {
+        assert.equal(await row('browser').count(), 0)
+        assert.equal(await row('app-server').count(), 0)
+      }
       // runFor flushes Vue updates; ordinary locators wait for pending history reads.
       const advance = ms => page.clock.runFor(ms)
       await page.locator('textarea').first().fill('preserved unsent connection draft')
@@ -149,43 +163,95 @@ const base = 'http://127.0.0.1:4173'
       assert.match(await row('app-server').innerText(), /Disconnected/)
       assert.equal(await page.locator('textarea').first().inputValue(), 'preserved unsent connection draft')
       assert.equal(await page.locator('html').evaluate(el => el.classList.contains('dark')), theme === 'dark')
+
+      // Clear prior successes when hidden and discard recoveries received in the background.
+      await page.evaluate(() => window.fixtureNetwork(true))
+      await advance(100)
+      await ready()
+      await emit('app-server/transportState', { state: 'connected' })
+      assert.match(await row('browser').innerText(), /Reconnected/)
+      assert.match(await row('app-server').innerText(), /Reconnected/)
+      await visibility('hidden')
+      await expectNoConnectionBanners()
+      await emit('app-server/disconnected', {})
+      await emit('app-server/transportState', { state: 'connected' })
+      await emit('app-server/subscriptionRecovery', { threadId: thread.id, state: 'recovering' })
+      assert.match(await row('subscription').innerText(), /Recovering/)
+      await expectNoConnectionBanners()
+
+      const beforeFastReturn = await activity()
+      await visibility('visible')
+      await advance(499)
+      await expectNoConnectionBanners()
+      assert.match(await row('subscription').innerText(), /Recovering/)
+      assert.deepEqual(await activity(), { ...beforeFastReturn, transportAttempts: beforeFastReturn.transportAttempts + 2 })
+      await ready()
+      await expectNoConnectionBanners()
+      await advance(1)
+      await expectNoConnectionBanners()
+      await page.waitForTimeout(500) // Finish the fast return's recovery reads before the next cycle.
+
+      // Tab switches restart the delay. The two lifecycle subscriptions still reconnect as usual.
+      await emit('app-server/disconnected', {})
+      await visibility('hidden')
+      await visibility('visible')
+      await advance(300)
+      await visibility('hidden')
+      const beforeSlowReturn = await activity()
+      await visibility('visible')
+      await advance(200) // The canceled timer would have fired here.
+      await expectNoConnectionBanners()
+      await advance(299)
+      await expectNoConnectionBanners()
+      const beforeWarnings = await activity()
+      assert.deepEqual(beforeWarnings, { ...beforeSlowReturn, transportAttempts: beforeSlowReturn.transportAttempts + 2 })
+      await advance(1)
+      assert.match(await row('browser').innerText(), /Disconnected.*Reconnecting/s)
+      assert.match(await row('app-server').innerText(), /Disconnected/)
+      assert.deepEqual(await activity(), beforeWarnings, 'displaying the warnings must not create transports or API requests')
       const colors = await row('browser').evaluate(el => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color }))
       assert.equal(colors.background, theme === 'dark' ? 'rgb(66, 32, 6)' : 'rgb(254, 249, 195)')
+      assert.equal(await row('app-server').evaluate(el => getComputedStyle(el).backgroundColor), colors.background)
       await page.waitForTimeout(2200)
       const warningScreenshot = path.resolve(`output/playwright/connection-status-${transport}-${theme}.png`)
       await page.screenshot({ path: warningScreenshot, fullPage: true })
-      // Suspended-tab recovery uses the existing coalesced lifecycle replacement.
-      await page.evaluate(() => window.fixtureNetwork(true))
-      await advance(100)
-      await page.evaluate(() => window.fixtureReady())
-      await emit('app-server/transportState', { state: 'connected' })
-      await advance(3000)
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
-        document.dispatchEvent(new Event('visibilitychange'))
-        Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
-      assert.match(await row('browser').innerText(), /Disconnected.*Reconnecting/s)
-      await advance(100)
+      await emit('app-server/transportState', { state: 'connected' }) // Exactly 500 ms is silent.
+      assert.equal(await row('app-server').count(), 0)
+      assert.deepEqual(await activity(), beforeWarnings)
+      await emit('app-server/disconnected', {})
+
       const activeTransportCount = await page.evaluate(() => window.fixtureCurrent().length)
       assert.equal(activeTransportCount, 2, 'desktop and sidebar retain only their existing subscriptions')
+      await advance(1)
       const recoveryStart = requests.length
-      await page.evaluate(() => window.fixtureReady())
+      await ready() // 501 ms: show browser success while the App Server is still down.
       await row('browser').getByText('WebUI Backend: Reconnected', { exact: true }).waitFor()
+      assert.match(await row('app-server').innerText(), /Disconnected/)
+      await advance(199)
+      await emit('app-server/transportState', { state: 'connected' }) // 700 ms: show App Server success.
+      await row('app-server').getByText('Codex App Server: Reconnected', { exact: true }).waitFor()
       // Network reads are async; allow them to settle before measuring dismissal.
       await page.waitForTimeout(500)
       const recoveryRequests = requests.slice(recoveryStart)
-      const requestsBeforeDismissal = requests.length
-      await advance(3000)
-      assert.equal(await page.locator('.connection-recovery-status').count(), 0)
-      assert.equal(requests.length, requestsBeforeDismissal, 'dismissal must not issue network requests')
+      assert.deepEqual(recoveryRequests.map(r => r.method === 'GET' ? r.path : r.method).sort(), [
+        '/codex-api/server-requests/pending', 'model-preferences/read', 'project/list', 'thread/list', 'thread/resume',
+      ])
+      const beforeDismissal = await activity()
+      assert.equal(beforeDismissal.transportAttempts, beforeWarnings.transportAttempts)
+      await advance(2800)
+      assert.match(await row('browser').innerText(), /Reconnected/)
+      await advance(1)
+      assert.equal(await row('browser').count(), 0)
+      assert.match(await row('app-server').innerText(), /Reconnected/)
+      await advance(199)
+      await expectNoConnectionBanners()
+      assert.deepEqual(await activity(), beforeDismissal, 'dismissals must not create transports or API requests')
       await page.waitForTimeout(2200)
       const healthyScreenshot = path.resolve(`output/playwright/connection-status-${transport}-${theme}-healthy.png`)
       await page.screenshot({ path: healthyScreenshot, fullPage: true })
       assert.equal(requests.some(r => ['turn/start', 'turn/steer'].includes(r.method) || r.path.endsWith('/respond') || r.path.endsWith('/reconnect')), false)
       assert.deepEqual(errors, [])
-      const report = { url: page.url(), viewport: '1440x1000', theme, transport, colors, warningScreenshot, successScreenshot, healthyScreenshot, recoveryRequests, activeTransportCount, dismissalRequests: requests.length - requestsBeforeDismissal, assertions: 'independent faults, subscription failure/recovery/manual retry, 3s success dismissal, prolonged warnings, offline/online cycles, stale callbacks, duplicate success, suspended tab, drafts, no replay, themes' }
+      const report = { url: page.url(), viewport: '1440x1000', theme, transport, colors, warningScreenshot, successScreenshot, healthyScreenshot, recoveryRequests, activeTransportCount, bannerOnlyTransportAttempts: 0, bannerOnlyApiRequests: 0, assertions: 'independent faults, subscription failure/recovery/manual retry, 3s success dismissal, prolonged warnings, offline/online cycles, stale callbacks, duplicate success, hidden tab and 499/500/501 ms boundaries, repeated tab switches, staggered recovery, drafts, no replay, themes' }
       fs.writeFileSync(`output/playwright/connection-status-${transport}-${theme}.json`, JSON.stringify(report, null, 2))
       console.log(JSON.stringify(report))
       await page.close()

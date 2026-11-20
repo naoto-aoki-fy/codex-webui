@@ -14,7 +14,7 @@ import { createAccountSettings } from './accountSettings'
 import {rpcCall} from '../api/codexRpcClient'
 import { normalizeExecutionItem, executionText } from '../api/normalizers/executionDetails'
 import { createDesktopConnection } from './desktopConnection'
-import { createConnectionNotice } from './connectionNotice'
+import { createConnectionNotices } from './connectionNotice'
 import { createDesktopTurns } from './desktopTurns'
 import { createDesktopHistory } from './desktopHistory'
 import { createDesktopApprovals } from './desktopApprovals'
@@ -334,8 +334,8 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
       history.persistedMessagesByThreadId.value[selectedThreadId.value]?.some(message=>message.id===`import-status-${selectedThreadId.value}`)===true,
   })
 
-  const browserConnection = createConnectionNotice()
-  const appServerConnection = createConnectionNotice()
+  const connectionNotices = createConnectionNotices()
+  const { browser: browserConnection, appServer: appServerConnection } = connectionNotices
   const connection = createDesktopConnection({
     onBrowserConnectionState: state=>{browserConnection.update(state);if(state!=='connected'){threadTokenUsageByThreadId.value={};accountSettings.disconnect()}},
     invalidateReadJobs() { operationEpoch.value++ },
@@ -2806,8 +2806,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     nativeDeletion.value?.dispose();nativeDeletion.value=null
     for (const timer of recoveryDismissTimerByThreadId.values()) clearTimeout(timer)
     recoveryDismissTimerByThreadId.clear()
-    browserConnection.dispose()
-    appServerConnection.dispose()
+    connectionNotices.dispose()
     backendPreferences.dispose()
     ++connection.lifecycleGeneration
     ++connection.eventSyncGeneration
@@ -2990,7 +2989,12 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     updateSelectedSpeedMode,
     respondToPendingServerRequest: approvals.respondToPendingServerRequest,
     removeProject,
-    startPolling: () => { if (typeof window !== 'undefined') window.addEventListener?.('storage', onPreferenceStorage); backendPreferences.resume(); connection.startPolling() },
+    startPolling: () => {
+      if (typeof window !== 'undefined') window.addEventListener?.('storage', onPreferenceStorage)
+      connectionNotices.start()
+      backendPreferences.resume()
+      connection.startPolling()
+    },
     stopPolling,
     primeSelectedThread,
   }
