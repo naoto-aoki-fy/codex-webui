@@ -93,6 +93,12 @@ pnpm run test:integration:fixture
 
 Typecheck covers Vue/frontend and server/CLI TypeScript. Build includes frontend
 checking, Vite/precompression and tsup; tsup alone does not check server types.
+The frontend build writes Zstandard level 19 (`.zst`), Brotli quality 11 (`.br`),
+and gzip level 9 (`.gz`) sidecars sequentially. Deploy them alongside the
+originals. The production CLI honors `Accept-Encoding` weights and serves the
+smallest available file within a tie. See the
+[precompressed asset checks](../tests/cli-network-platform/precompressed-frontend-assets.md).
+
 Unit tests use local mocks/protocol fixtures. The integration command is a CJS
 harness launching the public ESM CLI and Vite against a local WebSocket fixture;
 it requires free ports 4198/4199 and a POSIX process-group environment. No public
