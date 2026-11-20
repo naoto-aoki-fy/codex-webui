@@ -729,6 +729,80 @@
   @apply bg-zinc-700;
 }
 
+:root:not(.dark) .thread-pending-request--user-input {
+  .thread-pending-request-shell {
+    @apply border-zinc-200 bg-white text-zinc-900 shadow-sm;
+  }
+
+  .thread-pending-request-question {
+    @apply border-zinc-200 bg-zinc-50;
+  }
+
+  :is(.thread-pending-request-title, .thread-pending-request-question-title) {
+    @apply text-zinc-900;
+  }
+
+  :is(.thread-pending-request-eyebrow, .thread-pending-request-question-text, .thread-pending-request-question-description, .thread-pending-request-select-label) {
+    @apply text-zinc-600;
+  }
+
+  .thread-pending-request-counter {
+    @apply border-zinc-200 bg-zinc-100 text-zinc-600;
+  }
+
+  :is(.thread-pending-request-input, .composer-dropdown-trigger) {
+    @apply border-zinc-500 bg-white text-zinc-900;
+  }
+
+  .thread-pending-request-input::placeholder {
+    @apply text-zinc-500;
+  }
+
+  .thread-pending-request-primary {
+    @apply border-zinc-900 bg-zinc-900 text-zinc-50 hover:bg-zinc-700;
+  }
+}
+
+:root.dark .thread-pending-request--user-input {
+  --pending-request-focus-color: var(--color-zinc-200);
+
+  .thread-pending-request-shell {
+    @apply border-zinc-700 bg-zinc-900 text-zinc-100;
+  }
+
+  .thread-pending-request-question {
+    @apply border-zinc-700 bg-zinc-800;
+  }
+
+  :is(.thread-pending-request-eyebrow, .thread-pending-request-question-text, .thread-pending-request-question-description, .thread-pending-request-select-label) {
+    @apply text-zinc-300;
+  }
+
+  :is(.thread-pending-request-input, .composer-dropdown-trigger) {
+    @apply border-zinc-500 bg-zinc-950 text-zinc-100;
+  }
+
+  .thread-pending-request-input::placeholder,
+  .composer-dropdown-chevron {
+    @apply text-zinc-400;
+  }
+}
+
+:root .thread-pending-request--user-input {
+  :is(.composer-dropdown-trigger, .thread-pending-request-primary) {
+    @apply transition-none;
+  }
+
+  :is(.thread-pending-request-input, .composer-dropdown-trigger, .composer-dropdown-option, .thread-pending-request-primary):focus-visible {
+    outline: 2px solid var(--pending-request-focus-color, var(--color-zinc-700));
+    outline-offset: 2px;
+  }
+
+  .composer-dropdown-option:focus-visible {
+    outline-offset: -2px;
+  }
+}
+
 :root.dark .plan-card {
   @apply border-sky-700/70 bg-slate-900/78 text-zinc-200;
 }

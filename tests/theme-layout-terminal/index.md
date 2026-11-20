@@ -20,4 +20,5 @@ Return to the [manual test index](../../tests.md).
 | [Fix: Delete/rename thread dialog height cap](delete-rename-thread-dialog-height-cap.md) |
 | [Content header actions remain right aligned](content-header-actions-remain-right-aligned.md) |
 | [Plan card contrast in light and dark themes](dark-theme-plan-card-contrast.md) |
+| [Plan Mode question panel in light and dark themes](plan-mode-question-panel.md) |
 | [Open Terminal removal](open-terminal-removal.md) |
