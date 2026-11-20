@@ -1,4 +1,4 @@
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import type { ConversationProps } from "./conversationContracts";
 type TaskListItem = {
     text: string;
@@ -59,6 +59,7 @@ export function createConversationViewport(deps: {
     let bottomLockFrame = 0;
     let bottomLockFramesLeft = 0;
     let questionJumpScrollTop: number | null = null;
+    let historyQuestionJump: { threadId: string; questionId: number } | null = null;
     let shouldRestoreHistoryScroll = false;
     let conversationUnmounted = false;
     let threadGeneration = 0;
@@ -80,12 +81,14 @@ export function createConversationViewport(deps: {
     let messageNavigationPending = false;
     function resetMessageNavigation(): void {
         navigationMessageId = null;
+        historyQuestionJump = null;
     }
     async function navigateMessage(direction: -1 | 1): Promise<void> {
         const container = conversationListRef.value;
         if (!container || messageNavigationPending)
             return;
         messageNavigationPending = true;
+        historyQuestionJump = null;
         const generation = threadGeneration;
         autoFollowOutput.value = false;
         if (bottomLockFrame)
@@ -197,25 +200,43 @@ export function createConversationViewport(deps: {
         enforceBottomState();
         scheduleBottomLock(4);
     }
-    function jumpToQuestion(heading: HTMLButtonElement): void {
+    function findQuestionHeading(): HTMLButtonElement | null {
+        return conversationListRef.value?.querySelector<HTMLButtonElement>('[data-pending-question-heading]') ?? null;
+    }
+    watch(() => deps.props.pendingQuestion?.id, () => {
+        historyQuestionJump = null;
+    }, { flush: 'sync' });
+    function onQuestionFocusIn(event: FocusEvent): void {
+        if (historyQuestionJump && event.target !== findQuestionHeading())
+            historyQuestionJump = null;
+    }
+    function applyQuestionJump(heading: HTMLButtonElement, restore: boolean): void {
         const container = conversationListRef.value;
         if (!container)
             return;
-        resetMessageNavigation();
         autoFollowOutput.value = false;
         if (bottomLockFrame)
             cancelAnimationFrame(bottomLockFrame);
         bottomLockFrame = 0;
         bottomLockFramesLeft = 0;
-        // A page already being fetched may finish after the jump.
-        shouldRestoreHistoryScroll = false;
-
         const previousScrollTop = container.scrollTop;
-        const offset = heading.getBoundingClientRect().top - container.getBoundingClientRect().top - container.clientTop;
-        container.scrollTo({ top: previousScrollTop + offset - 8, behavior: 'instant' });
-        if (container.scrollTop !== previousScrollTop)
+        const top = container.getBoundingClientRect().top + container.clientTop;
+        const bounds = heading.getBoundingClientRect();
+        if (!restore || bounds.top < top || bounds.bottom > top + container.clientHeight)
+            container.scrollTo({ top: previousScrollTop + bounds.top - top - 8, behavior: 'instant' });
+        if (restore || container.scrollTop !== previousScrollTop)
             questionJumpScrollTop = container.scrollTop;
-        heading.focus({ preventScroll: true });
+        if (!restore || heading.ownerDocument.activeElement !== heading)
+            heading.focus({ preventScroll: true });
+    }
+    function jumpToQuestion(heading: HTMLButtonElement): void {
+        resetMessageNavigation();
+        shouldRestoreHistoryScroll = false;
+        applyQuestionJump(heading, false);
+
+        const questionId = deps.props.pendingQuestion?.id;
+        if (isLoadingMore.value && questionId !== undefined)
+            historyQuestionJump = { threadId: deps.props.activeThreadId, questionId };
     }
     async function loadMoreAbove(): Promise<void> {
         const container = conversationListRef.value;
@@ -235,13 +256,23 @@ export function createConversationViewport(deps: {
                 await deps.props.loadEarlierMessages?.(threadIdAtStart);
             }
             await nextTick();
-            if (isCurrentThreadGeneration(generation) && shouldRestoreHistoryScroll) {
+            if (!isCurrentThreadGeneration(generation))
+                return;
+            const jump = historyQuestionJump;
+            if (jump && jump.threadId === deps.props.activeThreadId && jump.questionId === deps.props.pendingQuestion?.id) {
+                const heading = findQuestionHeading();
+                if (heading)
+                    applyQuestionJump(heading, true);
+            }
+            else if (shouldRestoreHistoryScroll) {
                 container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
             }
         }
         finally {
-            if (isCurrentThreadGeneration(generation))
+            if (isCurrentThreadGeneration(generation)) {
+                historyQuestionJump = null;
                 isLoadingMore.value = false;
+            }
         }
     }
     function bindPendingImageHandlers(): void {
@@ -294,6 +325,7 @@ export function createConversationViewport(deps: {
     function invalidateThreadWork(): void {
         threadGeneration += 1;
         questionJumpScrollTop = null;
+        historyQuestionJump = null;
         shouldRestoreHistoryScroll = false;
         trackedPendingImages = new WeakSet<HTMLImageElement>();
         if (conversationScrollFrame)
@@ -315,6 +347,7 @@ export function createConversationViewport(deps: {
         questionJumpScrollTop = null;
         if (isQuestionJump)
             return;
+        historyQuestionJump = null;
         autoFollowOutput.value = isAtBottom(container);
         if (!autoFollowOutput.value && hasMoreAbove.value && !isLoadingMore.value && container.scrollTop < LOAD_MORE_SCROLL_THRESHOLD_PX) {
             void loadMoreAbove();
@@ -339,6 +372,8 @@ onMessageNavigationKeydown,
 enforceBottomState,
 scheduleBottomLock,
 jumpToLatest,
+findQuestionHeading,
+onQuestionFocusIn,
 jumpToQuestion,
 loadMoreAbove,
 bindPendingImageHandlers,
