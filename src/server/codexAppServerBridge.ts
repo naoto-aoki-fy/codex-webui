@@ -588,11 +588,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           res.end()
           return
         }
-        const payload = await readJsonBody(req)
+        const payload = await readJsonBody(req, bytes => { requestBodyBytes = bytes })
         const body = asRecord(payload) as RpcProxyRequest | null
-        if (payload !== null && payload !== undefined) {
-          requestBodyBytes = Buffer.byteLength(JSON.stringify(payload), 'utf8')
-        }
         rpcMethod = body?.method && typeof body.method === 'string' ? body.method : null
 
 	        if (!body || typeof body.method !== 'string' || body.method.length === 0) {

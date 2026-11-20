@@ -35,5 +35,8 @@ compressible JSON.
    `bodyMB` in both entries. The Brotli response has `Content-Encoding: br`
    and its log includes `encodedResponseBytes` equal to its `Content-Length`.
    The identity entry omits the encoded-byte field.
+3. Run `pnpm exec vitest run src/server/codexAppServerBridge.rpcResponse.test.ts`
+   to verify that `bodyMB` includes the original request JSON bytes, including
+   formatting whitespace, with both fixed-length and chunked requests.
 
 Cleanup. Stop the test server and restore any temporary environment overrides.

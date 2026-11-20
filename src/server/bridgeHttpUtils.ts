@@ -43,8 +43,12 @@ export function setJson(res: ServerResponse, statusCode: number, payload: unknow
   res.end(JSON.stringify(payload))
 }
 
-export async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+export async function readJsonBody(
+  req: IncomingMessage,
+  onBodyBytes?: (bytes: number) => void,
+): Promise<unknown> {
   const raw = await readRawBody(req)
+  onBodyBytes?.(raw.length)
   if (raw.length === 0) return null
   const text = raw.toString('utf8').trim()
   if (text.length === 0) return null
