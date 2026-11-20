@@ -2,12 +2,96 @@ const assert = require('node:assert/strict')
 const { spawn, spawnSync } = require('node:child_process')
 const { createHash } = require('node:crypto')
 const { once } = require('node:events')
-const { createServer } = require('node:http')
+const { createServer, request } = require('node:http')
 const { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } = require('node:fs')
 const { hostname, tmpdir } = require('node:os')
 const { join } = require('node:path')
+const { performance } = require('node:perf_hooks')
+const { brotliDecompressSync, gunzipSync } = require('node:zlib')
 const { WebSocketServer, WebSocket } = require('ws')
 const { fixtureWebuiStorage } = require('./fixture-webui-storage.cjs')
+
+const compressionCursor = 'compression-fixture-page'
+const compressionThreads = {
+  data: Array.from({ length: 150 }, (_, index) => ({
+    id: 'compression-thread-' + index,
+    preview: 'Conversation ' + index + '\n  Keep this indentation. 日本語\t"quoted"  \n'.repeat(8),
+  })),
+  nextCursor: null,
+}
+
+function rawRpc(url, acceptEncoding, payload) {
+  const json = JSON.stringify(payload)
+  return new Promise((resolve, reject) => {
+    const start = performance.now()
+    const req = request(url + '/codex-api/rpc', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(json),
+        ...(acceptEncoding === undefined ? {} : { 'Accept-Encoding': acceptEncoding }),
+      },
+    }, res => {
+      const chunks = []
+      res.on('data', chunk => chunks.push(chunk))
+      res.on('error', reject)
+      res.on('end', () => resolve({
+        status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks), ms: performance.now() - start,
+      }))
+    })
+    req.on('error', reject)
+    req.end(json)
+  })
+}
+
+async function verifyRpcCompression(url, frames, entryPoint) {
+  const listRequest = { method: 'thread/list', params: { cursor: compressionCursor } }
+  const original = Buffer.from(JSON.stringify({ result: compressionThreads }))
+  const measurements = []
+  for (const [accept, encoding] of [
+    ['identity', undefined], ['br', 'br'], ['gzip', 'gzip'],
+    ['gzip, br', 'br'], ['br;q=0.5, gzip;q=1', 'gzip'],
+  ]) {
+    const before = frames.length
+    const response = await rawRpc(url, accept, listRequest)
+    assert.equal(response.status, 200)
+    assert.equal(response.headers['content-encoding'], encoding)
+    assert.equal(response.headers['content-type'], 'application/json; charset=utf-8')
+    assert.match(response.headers.vary, /\bAccept-Encoding\b/i)
+    assert.deepEqual(frames.slice(before).map(({ method, params }) => ({ method, params })), [listRequest])
+    if (encoding) {
+      assert.equal(Number(response.headers['content-length']), response.body.length)
+      assert(response.body.length < original.length)
+    }
+    const decoded = encoding === 'br' ? brotliDecompressSync(response.body)
+      : encoding === 'gzip' ? gunzipSync(response.body) : response.body
+    assert.deepEqual(decoded, original)
+    if (accept === (encoding ?? 'identity')) {
+      measurements.push(`${accept} ${response.body.length} B in ${response.ms.toFixed(2)} ms`)
+    }
+  }
+
+  const before = frames.length
+  const unavailable = await rawRpc(url, 'zstd, identity;q=0', listRequest)
+  assert.equal(unavailable.status, 406)
+  assert.match(unavailable.headers.vary, /\bAccept-Encoding\b/i)
+  assert.equal(unavailable.body.length, 0)
+  assert.equal(frames.length, before)
+
+  const small = await rawRpc(url, 'br, gzip', { method: 'account/read' })
+  assert.equal(small.status, 200)
+  assert.equal(small.headers['content-encoding'], undefined)
+  assert.deepEqual(JSON.parse(small.body), { result: { account: { type: 'apiKey' }, requiresOpenaiAuth: true } })
+  const invalid = await rawRpc(url, 'gzip', {})
+  assert.equal(invalid.status, 400)
+  assert.equal(invalid.headers['content-encoding'], undefined)
+  assert.deepEqual(JSON.parse(invalid.body), { error: 'Invalid body: expected { method, params? }' })
+  const failed = await rawRpc(url, 'br', { method: 'maintenance/unknown' })
+  assert.equal(failed.status, 502)
+  assert.equal(failed.headers['content-encoding'], undefined)
+  assert.deepEqual(JSON.parse(failed.body), { error: 'Method not found' })
+  console.log('PASS', entryPoint, 'RPC compression (HTTP round trip)', measurements.join(', '))
+}
 
 async function verifyCachedPlanInBrowser(backend, threadId, loadRollout, releaseRollout) {
   const { chromium } = require('playwright')
@@ -87,7 +171,8 @@ async function run() {
   const historyId = 'history-cursor-fixture'
   const historyTurns = Array.from({ length: 15 }, (_, index) => ({
     id: 'turn-' + index, status: 'completed', items: [
-      { id: 'prompt-' + index, type: 'userMessage', content: [{ type: 'text', text: 'Fixture prompt ' + index }] },
+      { id: 'prompt-' + index, type: 'userMessage', content: [{ type: 'text',
+        text: 'Fixture prompt ' + index + '\n  Keep this indentation. 日本語\t"quoted"  \n'.repeat(120) }] },
     ],
   }))
   const historyThread = {
@@ -204,6 +289,7 @@ async function run() {
         : frame.method === 'account/login/cancel' ? { status: 'canceled' }
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
         : frame.method === 'model/list' ? { data: [{ id: frame.params.cursor ? 'fixture-hidden' : 'fixture-model', hidden: Boolean(frame.params.cursor), isDefault: !frame.params.cursor }], nextCursor: frame.params.cursor ? null : 'fixture-next' }
+        : frame.method === 'thread/list' && frame.params?.cursor === compressionCursor ? compressionThreads
         : ['thread/list', 'project/list'].includes(frame.method) ? { data: heldRollout && frame.method === 'thread/list' ? [historyThread] : [], nextCursor: null }
         : (frame.method === 'thread/start' && frame.params.cwd === defaultThread.cwd ||
           ['thread/read', 'thread/resume'].includes(frame.method) && frame.params.threadId === defaultThread.id)
@@ -383,13 +469,15 @@ async function run() {
         assert.equal((await call('accountSession/switch')).status, 403)
         assert.equal(frames.length, beforeSessionRequest)
         assert.deepEqual(await call('thread/name/set'), { status: 200, body: { result: {} } })
+        await verifyRpcCompression(url, frames, dev ? 'pnpm run dev' : 'built CLI')
         const historyRequest = async (method, params) => {
           const response = await fetch(url + '/codex-api/rpc', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept-Encoding': 'gzip' },
             body: JSON.stringify({ method, params: { threadId: historyId, ...params } }),
           })
           const body = await response.json()
           assert(response.ok, JSON.stringify(body))
+          if (method === 'thread/read') assert.equal(response.headers.get('content-encoding'), 'gzip')
           return body.result
         }
         const historyStart = frames.length

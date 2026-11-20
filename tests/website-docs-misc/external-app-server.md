@@ -135,6 +135,27 @@ Then run the WebSocket and Unix fixtures above sequentially to check both public
 CLI and dev entry points. Cleanup: tests restore temporary state and stop their
 own processes; no persistent configuration changes or rollback are needed.
 
+## HTTP compression for RPC responses
+
+Setup. Run `pnpm run build` and `pnpm run test:integration:fixture`. The fixture
+starts the development server and production CLI on temporary test ports, checks
+their raw Brotli, gzip, and identity responses, and reports wire bytes and
+round-trip times. Expect identical JSON after decompression, one upstream call
+per successful list request, and zero calls for a request rejected with HTTP 406.
+
+1. With a configured App Server, open DevTools **Network**, enable **Big request
+   rows** in Network settings, and open a conversation with several long messages.
+2. Open the `POST /codex-api/rpc` entry whose **Payload** method is `thread/read`
+   and whose `includeTurns` is true. Use a history whose decoded response is at
+   least 1 KiB and consists mostly of text.
+3. Check **Headers** for `Content-Encoding: br` or `gzip` and
+   `Vary: Accept-Encoding`. Expect the transferred size in **Size** to be smaller
+   than the decoded size on the second line. **Preview** shows decoded JSON, and
+   the conversation still displays the original message text and indentation.
+
+Cleanup. Close DevTools and stop any test server started manually. The fixture
+stops its own servers and removes their temporary state.
+
 ## External authentication refresh extraction (9-C-10)
 
 Prerequisites: install dependencies; no live Codex credentials are needed.
