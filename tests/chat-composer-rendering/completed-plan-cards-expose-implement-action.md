@@ -76,3 +76,27 @@ Plan cards reuse normalized interpretation for explanation, steps, and copy cont
 
 #### Rollback/Cleanup
 - Remove test threads and clear copied test content.
+
+---
+
+### Minimize and expand Plan cards
+
+#### Prerequisites/Setup
+- Open a test thread with two completed Plan cards and a streaming Plan card. Use a completed card with a turn ID and a second thread for navigation.
+
+#### Steps
+1. In Light appearance, click the Plan heading on the first completed card to minimize it.
+2. Use Copy on the minimized card and paste into a text editor. Check the second card and any response metadata below the first card.
+3. Focus the minimized heading and press Enter or Space to expand the Plan.
+4. Switch to Dark appearance and repeat steps 1–3.
+5. Minimize the streaming Plan. After another update to that card, expand it and inspect the latest content.
+6. Minimize a card, navigate to another thread, and return.
+
+#### Expected Results
+- The minimized card shows its Plan heading and available Copy action or Updating badge. Its body and Implement action are hidden, and other cards and response metadata remain visible.
+- The heading reflects the expanded state and keeps keyboard focus when toggled with the keyboard. Expanding restores the body and existing actions in both themes.
+- Copy still copies the minimized Plan. Updates to the same streaming card leave it minimized, and expanding displays its latest content.
+- When returning to the thread, its cards start expanded.
+
+#### Rollback/Cleanup
+- Restore the previous appearance, clear pasted test content, and remove any temporary test threads.

@@ -314,7 +314,16 @@
                 </div>
                 <div v-else-if="isPlanMessage(message)" class="plan-card" :data-streaming="message.messageType === 'plan.live'">
                   <div class="plan-card-header">
-                    <p class="plan-card-title">Plan</p>
+                    <button
+                      type="button"
+                      class="plan-card-title"
+                      :aria-expanded="!collapsedPlanIds.has(message.id)"
+                      :aria-label="collapsedPlanIds.has(message.id) ? 'Expand plan' : 'Minimize plan'"
+                      @click="togglePlan(message.id)"
+                    >
+                      <IconTablerChevronRight class="plan-card-chevron" />
+                      Plan
+                    </button>
                     <span v-if="message.messageType === 'plan.live'" class="plan-card-badge">Updating</span>
                     <button
                       v-else-if="readPlan(message).hasCopyContent"
@@ -329,32 +338,34 @@
                       <span class="message-copy-label">{{ copiedPlanId === message.id ? 'Copied' : 'Copy' }}</span>
                     </button>
                   </div>
-                  <div
-                    v-if="readPlan(message).explanation"
-                    class="plan-card-explanation plan-card-markdown"
-                    v-html="renderMarkdownBlocksAsHtml(readPlan(message).explanation)"
-                  />
-                  <ol v-if="readPlan(message).steps.length > 0" class="plan-step-list">
-                    <li
-                      v-for="(step, stepIndex) in readPlan(message).steps"
-                      :key="`${message.id}:plan-step:${stepIndex}`"
-                      class="plan-step-item"
-                      :data-status="step.status"
-                    >
-                      <span class="plan-step-status" :data-status="step.status">{{ planStepStatusIcon(step.status) }}</span>
-                      <div class="plan-step-text plan-card-markdown" v-html="renderMarkdownBlocksAsHtml(step.step)" />
-                    </li>
-                  </ol>
-                  <div v-else class="plan-card-markdown" v-html="renderMarkdownBlocksAsHtml(message.text)" />
-                  <div v-if="showImplementPlanButton(message)" class="plan-card-actions">
-                    <button
-                      type="button"
-                      class="plan-card-implement-button"
-                      @click="implementPlan(message)"
-                    >
-                      Implement plan
-                    </button>
-                  </div>
+                  <template v-if="!collapsedPlanIds.has(message.id)">
+                    <div
+                      v-if="readPlan(message).explanation"
+                      class="plan-card-explanation plan-card-markdown"
+                      v-html="renderMarkdownBlocksAsHtml(readPlan(message).explanation)"
+                    />
+                    <ol v-if="readPlan(message).steps.length > 0" class="plan-step-list">
+                      <li
+                        v-for="(step, stepIndex) in readPlan(message).steps"
+                        :key="`${message.id}:plan-step:${stepIndex}`"
+                        class="plan-step-item"
+                        :data-status="step.status"
+                      >
+                        <span class="plan-step-status" :data-status="step.status">{{ planStepStatusIcon(step.status) }}</span>
+                        <div class="plan-step-text plan-card-markdown" v-html="renderMarkdownBlocksAsHtml(step.step)" />
+                      </li>
+                    </ol>
+                    <div v-else class="plan-card-markdown" v-html="renderMarkdownBlocksAsHtml(message.text)" />
+                    <div v-if="showImplementPlanButton(message)" class="plan-card-actions">
+                      <button
+                        type="button"
+                        class="plan-card-implement-button"
+                        @click="implementPlan(message)"
+                      >
+                        Implement plan
+                      </button>
+                    </div>
+                  </template>
                 </div>
                 <div
                   v-else
@@ -822,7 +833,7 @@ import { createConversationMarkdown } from './conversationMarkdown'
 
 import { fileChangeOperationLabel, fileChangeOperationTone, formatFileChangeDelta, fileChangeDeltaParts, formatFileChangeCountLabel, fileChangeSummaryLabel, fileChangeSummaryStatusParts } from '../../utils/fileChangePresentation'
 import ComposerDropdown from './ComposerDropdown.vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { generationMetadataLabel } from '../../turnGenerationMetadata'
 import { formatMessageTimestamp } from '../../messageTimestamps'
 import type { UiFileChange, UiMessage } from '../../types/codex'
@@ -838,6 +849,7 @@ import ThreadDiffViewer from './ThreadDiffViewer.vue'
 
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
+import IconTablerChevronRight from '../icons/IconTablerChevronRight.vue'
 import IconTablerCopy from '../icons/IconTablerCopy.vue'
 import ForkSplitButton from './ForkSplitButton.vue'
 import type { ForkMethod } from '../../types/codex'
@@ -848,6 +860,7 @@ const collapsedAutoCommandIds = ref<Set<string>>(new Set())
 const expandedCommandGroupIds = ref<Set<string>>(new Set())
 const expandedWorkedIds = ref<Set<string>>(new Set())
 const expandedFileChangeSummaryIds = ref<Set<string>>(new Set())
+const collapsedPlanIds = reactive(new Set<string>())
 const activeDiffViewerSummary = ref<TurnFileChangeSummary | null>(null)
 const activeDiffViewerChangeKey = ref('')
 const isDiffViewerFileListOpen = ref(false)
@@ -860,6 +873,14 @@ const { isMobile } = useMobile()
 
 function isCommandMessage(message: UiMessage): boolean {
   return message.messageType === 'commandExecution' && !!message.commandExecution
+}
+
+function togglePlan(messageId: string): void {
+  if (collapsedPlanIds.has(messageId)) {
+    collapsedPlanIds.delete(messageId)
+  } else {
+    collapsedPlanIds.add(messageId)
+  }
 }
 
 function implementPlan(message: UiMessage): void {
@@ -1392,6 +1413,7 @@ watch(
     expandedCommandGroupIds.value = new Set()
     expandedWorkedIds.value = new Set()
     expandedFileChangeSummaryIds.value = new Set()
+    collapsedPlanIds.clear()
     failedMarkdownImages.value = new Set()
     markdown.markdownImageFailureVersion.value += 1
     actions.copiedResponseAnchorId.value = ''
@@ -1693,7 +1715,15 @@ onBeforeUnmount(() => {
 }
 
 .plan-card-title {
-  @apply m-0 text-sm font-semibold leading-5 text-sky-900;
+  @apply flex flex-1 cursor-pointer items-center gap-1.5 rounded-sm text-left text-sm font-semibold leading-5 text-sky-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current;
+}
+
+.plan-card-chevron {
+  @apply size-3.5 shrink-0 motion-safe:transition-transform;
+}
+
+.plan-card-title[aria-expanded='true'] .plan-card-chevron {
+  @apply rotate-90;
 }
 
 .plan-card-badge {
