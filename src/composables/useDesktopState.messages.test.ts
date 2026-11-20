@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDesktopState } from './useDesktopState'
 import { loadSelectedModelMap } from './desktopStatePersistence'
 import { reasoningCatalog } from '../api/codexGateway'
-import type { ResumedThread, RpcNotification } from '../api/codexGateway'
+import type { ResumedThread, RpcNotification, ThreadGoal, ThreadGoalStatus } from '../api/codexGateway'
 import type { UiMessage, UiThread } from '../types/codex'
 
 const gateway = vi.hoisted(() => ({
@@ -22,6 +22,7 @@ const gateway = vi.hoisted(() => ({
   renameThread: vi.fn(),
   subscribeCodexNotifications: vi.fn(),
   getPendingServerRequests: vi.fn(),
+  getThreadGoal: vi.fn(),
   replyToServerRequest: vi.fn(),
   getThreadTitleCache: vi.fn(),
   getProjects: vi.fn(),
@@ -132,6 +133,7 @@ beforeEach(() => {
   gateway.getSkillsList.mockResolvedValue([])
   gateway.getAccountRateLimits.mockResolvedValue(null)
   gateway.getPendingServerRequests.mockResolvedValue([])
+  gateway.getThreadGoal.mockResolvedValue(null)
   gateway.resumeThread.mockResolvedValue(oldDetail)
   gateway.getThreadDetail.mockResolvedValue(activeDetail)
   gateway.archiveThread.mockResolvedValue(undefined)
@@ -148,30 +150,243 @@ afterEach(() => {
 
 describe('selected turn completion notifications', () => {
   it.each(['completed', 'failed', 'interrupted'])('handles a selected turn with status %s', async (status) => {
-    const onSelectedTurnCompleted = vi.fn()
-    const state = await loadState({ onSelectedTurnCompleted })
+    const onSelectedThreadAttention = vi.fn()
+    const state = await loadState({ onSelectedThreadAttention })
     turnStarted()
 
     notify({ method: 'turn/completed', params: { threadId: thread.id, turn: { id: 'turn-2', status } } })
 
     expect(state.selectedThread.value?.inProgress).toBe(false)
-    expect(onSelectedTurnCompleted.mock.calls).toEqual(status === 'interrupted' ? [] : [[thread.id]])
+    expect(onSelectedThreadAttention.mock.calls).toEqual(status === 'interrupted' ? [] : [[thread.id]])
   })
 
   it('ignores a completion for another thread', async () => {
-    const onSelectedTurnCompleted = vi.fn()
-    await loadState({ onSelectedTurnCompleted })
+    const onSelectedThreadAttention = vi.fn()
+    await loadState({ onSelectedThreadAttention })
 
     notify({ method: 'turn/completed', params: { threadId: 'another-thread', turn: { id: 'other-turn', status: 'completed' } } })
 
-    expect(onSelectedTurnCompleted).not.toHaveBeenCalled()
+    expect(onSelectedThreadAttention).not.toHaveBeenCalled()
+  })
+})
+
+describe('Goal and pending request notifications', () => {
+  const goal = (status: ThreadGoalStatus, threadId = thread.id): ThreadGoal => ({
+    threadId, status, objective: 'Finish the task', tokenBudget: null,
+    tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1, updatedAt: 1,
+  })
+  const update = (status: ThreadGoalStatus, turnId: string | null = null, threadId = thread.id) =>
+    notify({ method: 'thread/goal/updated', params: { threadId, turnId, goal: goal(status, threadId) } })
+  const clear = () => notify({ method: 'thread/goal/cleared', params: { threadId: thread.id } })
+  const start = (id: string) => notify({ method: 'turn/started', params: { threadId: thread.id, turn: { id } } })
+  const finish = (id: string, status = 'completed') => notify({ method: 'turn/completed', params: {
+    threadId: thread.id, turn: { id, status },
+  } })
+  const request = (id: number, method = 'item/tool/requestUserInput', threadId = thread.id, answerAttempted = false) => ({
+    id, method, params: { threadId, turnId: 'goal-turn', questions: [] }, answerAttempted,
+  })
+  const pending = (params: ReturnType<typeof request>) => notify({ method: 'server/request', params })
+  const resolved = (id: number) => notify({ method: 'server/request/resolved', params: { id, threadId: thread.id } })
+
+  async function setup(status: ThreadGoalStatus = 'active') {
+    gateway.getThreadGoal.mockResolvedValue(goal(status))
+    const onSelectedThreadAttention = vi.fn()
+    const state = await loadState({ onSelectedThreadAttention })
+    return { state, attention: onSelectedThreadAttention }
+  }
+
+  it.each(['complete', 'paused', 'blocked', 'usageLimited', 'budgetLimited'] as const)(
+    'suppresses intermediate successes and marks %s once before normal responses resume',
+    async status => {
+      const { state, attention } = await setup()
+      start('intermediate')
+      update('active', 'intermediate')
+      finish('intermediate')
+      expect(attention).not.toHaveBeenCalled()
+      start('goal-turn')
+      update(status, 'goal-turn')
+      update(status, 'goal-turn')
+      finish('goal-turn')
+      expect(state.selectedThreadGoal.goal.value?.status).toBe(status)
+      expect(attention).toHaveBeenCalledExactlyOnceWith(thread.id)
+      expect(gateway.getThreadGoal).toHaveBeenCalledTimes(1)
+      start('ordinary')
+      finish('ordinary')
+      expect(attention).toHaveBeenCalledTimes(2)
+    },
+  )
+
+  it.each(['failed', 'interrupted'] as const)('correlates %s and a Goal stop in either event order', async status => {
+    const { attention } = await setup()
+    start('first')
+    finish('first', status)
+    expect(attention).toHaveBeenCalledExactlyOnceWith(thread.id)
+    update('paused', 'first')
+    expect(attention).toHaveBeenCalledTimes(1)
+    update('active')
+    start('second')
+    update('blocked', 'second')
+    finish('second', status)
+    finish('second', status)
+    expect(attention).toHaveBeenCalledTimes(2)
+  })
+
+  it('marks a fatal error once and ignores retryable or stale errors', async () => {
+    const { attention } = await setup()
+    start('old')
+    start('goal-turn')
+    const error = (turnId: string, willRetry: boolean) => notify({ method: 'error', params: {
+      threadId: thread.id, turnId, willRetry, error: { message: 'fixture error' },
+    } })
+    error('old', false)
+    error('goal-turn', true)
+    expect(attention).not.toHaveBeenCalled()
+    error('goal-turn', false)
+    expect(attention).toHaveBeenCalledExactlyOnceWith(thread.id)
+    finish('goal-turn', 'failed')
+    update('usageLimited', 'goal-turn')
+    expect(attention).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears silently and selects normal notifications starting with the next turn', async () => {
+    const { state, attention } = await setup()
+    start('goal-turn')
+    clear()
+    finish('goal-turn')
+    expect(state.selectedThreadGoal.goal.value).toBeNull()
+    expect(attention).not.toHaveBeenCalled()
+    start('ordinary')
+    finish('ordinary')
+    expect(attention).toHaveBeenCalledExactlyOnceWith(thread.id)
+  })
+
+  it('uses baseline reads for hydration and reconnect without marking either snapshot', async () => {
+    const { state, attention } = await setup('complete')
+    expect(attention).not.toHaveBeenCalled()
+    gateway.getThreadGoal.mockResolvedValue(goal('paused'))
+    await notificationReady()
+    notify({ method: 'ready', params: { reconnected: true } })
+    update('paused')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.selectedThreadGoal.goal.value?.status).toBe('paused')
+    expect(attention).not.toHaveBeenCalled()
+    expect(gateway.getThreadGoal).toHaveBeenCalledTimes(2)
+    start('ordinary')
+    finish('ordinary')
+    expect(attention).toHaveBeenCalledExactlyOnceWith(thread.id)
+  })
+
+  it.each(['Method not found', 'goals feature is disabled'])('uses ordinary outcomes when the Goal read fails with %s', async message => {
+    gateway.getThreadGoal.mockRejectedValue(new Error(message))
+    const onSelectedThreadAttention = vi.fn()
+    await loadState({ onSelectedThreadAttention })
+    start('ordinary')
+    finish('ordinary')
+    expect(onSelectedThreadAttention).toHaveBeenCalledExactlyOnceWith(thread.id)
+  })
+
+  it('classifies a fast completion using the pending baseline and drops stale reads on navigation', async () => {
+    const first = deferred<ThreadGoal>()
+    gateway.getThreadGoal.mockReturnValueOnce(first.promise)
+    const onSelectedThreadAttention = vi.fn()
+    const state = await loadState({ onSelectedThreadAttention })
+    start('intermediate')
+    finish('intermediate')
+    first.resolve(goal('active'))
+    await first.promise
+    expect(onSelectedThreadAttention).not.toHaveBeenCalled()
+    const stale = deferred<ThreadGoal>()
+    gateway.getThreadGoal.mockReturnValueOnce(stale.promise)
+    notify({ method: 'app-server/reconnected', params: null })
+    gateway.getThreadGoal.mockResolvedValue(goal('complete', 'other-thread'))
+    state.primeSelectedThread('other-thread')
+    stale.resolve(goal('paused'))
+    await vi.advanceTimersByTimeAsync(0)
+    update('complete', 'intermediate')
+    expect(state.selectedThreadGoal.goal.value).toEqual(goal('complete', 'other-thread'))
+    expect(onSelectedThreadAttention).not.toHaveBeenCalled()
+  })
+
+  it('keeps the arrival time when an ordinary response ends before the baseline is known', async () => {
+    const baseline = deferred<null>()
+    gateway.getThreadGoal.mockReturnValueOnce(baseline.promise)
+    const onSelectedThreadAttention = vi.fn()
+    await loadState({ onSelectedThreadAttention })
+    start('ordinary')
+    const before = performance.now()
+    finish('ordinary')
+    const after = performance.now()
+    expect(onSelectedThreadAttention).not.toHaveBeenCalled()
+
+    baseline.resolve(null)
+    await baseline.promise
+    expect(onSelectedThreadAttention).toHaveBeenCalledExactlyOnceWith(thread.id, expect.any(Number))
+    expect(onSelectedThreadAttention.mock.calls[0]?.[1]).toBeGreaterThanOrEqual(before)
+    expect(onSelectedThreadAttention.mock.calls[0]?.[1]).toBeLessThanOrEqual(after)
+  })
+
+  it('marks each newly pending request immediately and still marks completion after confirmation', async () => {
+    const question = request(1)
+    const restored = request(2, 'item/fileChange/requestApproval')
+    gateway.getPendingServerRequests.mockResolvedValue([restored])
+    const { attention } = await setup()
+    await notificationReady()
+    start('goal-turn')
+    pending(restored)
+    pending(request(3, question.method, thread.id, true))
+    pending(request(4, 'item/commandExecution/requestApproval', 'other-thread'))
+    expect(attention).not.toHaveBeenCalled()
+    pending(question)
+    expect(attention).toHaveBeenCalledExactlyOnceWith(thread.id)
+    pending(question)
+    resolved(question.id)
+    pending(question)
+    expect(attention).toHaveBeenCalledTimes(1)
+    for (const method of ['mcpServer/elicitation/request', 'item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval']) {
+      const id = attention.mock.calls.length + 10
+      pending(request(id, method))
+      expect(attention).toHaveBeenCalledTimes(id - 9)
+      resolved(id)
+    }
+    update('complete', 'goal-turn')
+    finish('goal-turn')
+    expect(attention).toHaveBeenCalledTimes(6)
+  })
+
+  it('does not refetch the sidebar, history, or Goal for live Goal or pending request events', async () => {
+    const { attention } = await setup()
+    await notificationReady()
+    const counts = [gateway.getThreadGroupsPage, gateway.getThreadDetail, gateway.getThreadGoal, gateway.getPendingServerRequests]
+    const before = counts.map(mock => mock.mock.calls.length)
+    update('paused', null, 'other-thread')
+    update('paused')
+    pending(request(9))
+    clear()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(attention).toHaveBeenCalledTimes(2)
+    expect(counts.map(mock => mock.mock.calls.length)).toEqual(before)
+  })
+
+  it('keeps new requests delivered while a restored request snapshot is in flight', async () => {
+    const { state, attention } = await setup()
+    const snapshot = deferred<unknown[]>()
+    gateway.getPendingServerRequests.mockReturnValueOnce(snapshot.promise)
+    notify({ method: 'app-server/reconnected', params: null })
+    pending(request(10))
+    expect(attention).toHaveBeenCalledExactlyOnceWith(thread.id)
+    snapshot.resolve([request(11, 'item/permissions/requestApproval')])
+    await snapshot.promise
+    expect(state.selectedThreadServerRequests.value.map(request => request.id).sort()).toEqual([10, 11])
+    pending(request(10))
+    pending(request(11, 'item/permissions/requestApproval'))
+    expect(attention).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('browser notification reconnection recovery', () => {
   it('keeps the idle initial ready cheap but reloads cached history after a missed completion', async () => {
-    const onSelectedTurnCompleted = vi.fn()
-    const state = await loadState({ onSelectedTurnCompleted })
+    const onSelectedThreadAttention = vi.fn()
+    const state = await loadState({ onSelectedThreadAttention })
     await notificationReady()
     expect(gateway.getThreadDetail).not.toHaveBeenCalled()
     expect(gateway.getThreadGroupsPage).toHaveBeenCalledTimes(1)
@@ -187,7 +402,7 @@ describe('browser notification reconnection recovery', () => {
     expect(gateway.getThreadGroupsPage).toHaveBeenCalledTimes(2)
     expect(state.messages.value).toEqual(completedDetail.messages)
     expect(state.selectedLiveOverlay.value).toBeNull()
-    expect(onSelectedTurnCompleted).not.toHaveBeenCalled()
+    expect(onSelectedThreadAttention).not.toHaveBeenCalled()
     expect(gateway.startThreadTurn).toHaveBeenCalledTimes(1)
     expect(gateway.resumeThread).toHaveBeenCalledTimes(1)
   })
@@ -1882,15 +2097,15 @@ describe('new-thread preference context across deferred creation', () => {
 })
 
 it('preserves active turn-B state on late turn-A completion', async () => {
-  const onSelectedTurnCompleted = vi.fn()
-  const state = await loadState({ onSelectedTurnCompleted })
+  const onSelectedThreadAttention = vi.fn()
+  const state = await loadState({ onSelectedThreadAttention })
   notify({ method: 'turn/started', params: { threadId: thread.id, turn: { id: 'turn-A', status: 'inProgress' } } })
   notify({ method: 'turn/started', params: { threadId: thread.id, turn: { id: 'turn-B', status: 'inProgress' } } })
   expect(state.selectedThread.value?.inProgress).toBe(true)
   notify({ method: 'turn/completed', params: { threadId: thread.id, turn: { id: 'turn-A', status: 'completed' } } })
   // Assert before scheduled history synchronization can mask the transition.
   expect(state.selectedThread.value?.inProgress).toBe(true)
-  expect(onSelectedTurnCompleted).not.toHaveBeenCalled()
+  expect(onSelectedThreadAttention).not.toHaveBeenCalled()
 })
 
 

@@ -18,6 +18,7 @@ import { createConnectionNotices } from './connectionNotice'
 import { createDesktopTurns } from './desktopTurns'
 import { createDesktopHistory } from './desktopHistory'
 import { createDesktopApprovals } from './desktopApprovals'
+import { createSelectedThreadGoal } from './selectedThreadGoal'
 import { pruneThreadStateMap, removeThreadFromGroups, mergeThreadGroups, mergeIncomingWithLocalThreads } from './threadListReconciliation'
 export { removeThreadFromGroups } from './threadListReconciliation'
 
@@ -160,12 +161,17 @@ function toForkedThreadTitle(title: string): string {
   return /^fork:\s+/iu.test(normalizedTitle) ? normalizedTitle : `Fork: ${normalizedTitle}`
 }
 
-export function useDesktopState({ onSelectedTurnCompleted }: {
-  onSelectedTurnCompleted?: (threadId: string) => void
+export function useDesktopState({ onSelectedThreadAttention }: {
+  onSelectedThreadAttention?: (threadId: string, occurredAt?: number) => void
 } = {}) {
   const projectGroups = ref<UiProjectGroup[]>([])
   const sourceGroups = ref<UiProjectGroup[]>([])
   const selectedThreadId = ref('')
+  const selectedThreadGoal = createSelectedThreadGoal(
+    selectedThreadId,
+    onSelectedThreadAttention ?? (() => {}),
+    () => activeTurnIdByThreadId.value[selectedThreadId.value],
+  )
   const securityObservation = createThreadSecurityObservation()
   const deniedActions = createDeniedActionObservation()
   const history = createDesktopHistory({
@@ -429,6 +435,9 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
   const persistedUserMessageByThreadId = ref<Record<string, boolean>>({})
   const approvals = createDesktopApprovals({
     retainQuestionResponse: response => history.retainQuestionResponses(response.threadId, [response]),
+    onNewPendingRequest: threadId => {
+      if (threadId === selectedThreadId.value) onSelectedThreadAttention?.(threadId)
+    },
     get applyThreadFlags() { return applyThreadFlags; },
     get lifecycleGeneration() { return connection.lifecycleGeneration; }, set lifecycleGeneration(value) { connection.lifecycleGeneration = value; },
     get error() { return error; }
@@ -1812,6 +1821,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
   }
 
   function applyRealtimeUpdates(notification: RpcNotification): void {
+    if (selectedThreadGoal.observe(notification)) return
     if (notification.method === 'model-preferences/changed') { backendPreferences.observe(notification.params as ModelPreferences); return }
     if (notification.method === 'model-preferences/error') { backendPreferences.error.value = readString(asRecord(notification.params)?.message) || 'Model preferences could not be saved'; return }
     if (notification.method === 'ready' && asRecord(notification.params)?.reconnected === true) void backendPreferences.refresh()
@@ -1833,6 +1843,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     if (notification.method === 'app-server/reconnected'
       || (notification.method === 'ready' && asRecord(notification.params)?.reconnected === true && transportState.value !== 'disconnected')) {
       accountSettings.refreshIfActive()
+      void selectedThreadGoal.refresh()
     }
     if(notification.method==='app-server/disconnected'){threadTokenUsageByThreadId.value={};accountSettings.disconnect()}
     if(notification.method==='turn/started'||notification.method==='thread/reverted'){
@@ -2018,6 +2029,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
 
     const startedTurn = readTurnStartedInfo(notification)
     if (startedTurn) {
+      if (startedTurn.threadId === selectedThreadId.value) selectedThreadGoal.startTurn(startedTurn.turnId)
       pendingTurnStartsById.set(startedTurn.turnId, startedTurn)
       setTurnIndexForThread(startedTurn.threadId, startedTurn.turnId, inferNextTurnIndex(startedTurn.threadId))
       activeTurnIdByThreadId.value = {
@@ -2035,6 +2047,9 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     const completedTurn = readTurnCompletedInfo(notification)
     const turnErrorMessage = readTurnErrorMessage(notification)
     if (completedTurn) {
+      if (completedTurn.threadId === selectedThreadId.value) {
+        selectedThreadGoal.endTurn(completedTurn.turnId, asRecord(asRecord(notification.params)?.turn)?.status)
+      }
       const startedTurnState = pendingTurnStartsById.get(completedTurn.turnId)
       if (startedTurnState) {
         pendingTurnStartsById.delete(completedTurn.turnId)
@@ -2078,6 +2093,9 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
           transient: notificationErrorState.transient,
         })
         if (notificationErrorState.transient !== true) {
+          if (errorThreadId === selectedThreadId.value) {
+            selectedThreadGoal.failActiveGoalTurn(readString(asRecord(notification.params)?.turnId) || activeTurnIdByThreadId.value[errorThreadId] || '')
+          }
           setThreadInProgress(errorThreadId, false)
           setTurnActivityForThread(errorThreadId, null)
           turns.clearPendingTurnRequest(errorThreadId)
@@ -2231,10 +2249,6 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
             liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, completedThreadId)
           }
         }
-      }
-      const status = asRecord(asRecord(notification.params)?.turn)?.status
-      if (status === 'completed' || status === 'failed') {
-        onSelectedTurnCompleted?.(notificationThreadId)
       }
     }
 
@@ -2860,6 +2874,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     recoveryDismissTimerByThreadId.clear()
     connectionNotices.dispose()
     backendPreferences.dispose()
+    selectedThreadGoal.reset()
     ++connection.lifecycleGeneration
     approvals.clearQuestionState()
     ++connection.eventSyncGeneration
@@ -2978,6 +2993,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     selectedLiveOverlay,
     codexQuota,
     selectedThreadId,
+    selectedThreadGoal,
     availableCollaborationModes,
     availableModelIds: orderedModelIds,
     selectedCollaborationMode,
@@ -3049,6 +3065,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     respondToPendingServerRequest: approvals.respondToPendingServerRequest,
     removeProject,
     startPolling: () => {
+      selectedThreadGoal.ensureBaseline()
       if (typeof window !== 'undefined') window.addEventListener?.('storage', onPreferenceStorage)
       connectionNotices.start()
       backendPreferences.resume()

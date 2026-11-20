@@ -60,7 +60,8 @@ export function createDesktopConnection(deps: {
     const pendingThreadMessageRefresh = new Set<string>();
     function queueEventDrivenSync(notification: RpcNotification): void {
         const generation = lifecycleGeneration;
-        if (notification.method === 'thread/tokenUsage/updated' || notification.method === 'thread/readState/changed' || notification.method === 'thread/queue/changed')
+        if (notification.method === 'thread/tokenUsage/updated' || notification.method === 'thread/readState/changed' || notification.method === 'thread/queue/changed' ||
+            notification.method === 'thread/goal/updated' || notification.method === 'thread/goal/cleared')
             return;
         const method = notification.method;
         const shouldRefreshMessages = method === 'turn/started' ||

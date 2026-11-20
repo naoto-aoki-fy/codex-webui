@@ -1,11 +1,15 @@
 import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
 
-export function useTurnCompletionTabIndicator(activeThreadId: () => string | null, pageTitle: Ref<string>) {
+export function useThreadTabIndicator(activeThreadId: () => string | null, pageTitle: Ref<string>) {
   const tab = typeof document === 'undefined' ? undefined : document
   const markedThreadId = ref<string | null>(null)
   const isMarked = computed(() => markedThreadId.value !== null && markedThreadId.value === activeThreadId())
+  let contextChangedAt = performance.now()
 
-  watch(activeThreadId, () => { markedThreadId.value = null }, { flush: 'sync' })
+  watch(activeThreadId, () => {
+    contextChangedAt = performance.now()
+    markedThreadId.value = null
+  }, { flush: 'sync' })
 
   const favicon = tab?.querySelector<HTMLLinkElement>('#app-favicon')
   const originalHref = favicon?.getAttribute('href')
@@ -20,19 +24,20 @@ export function useTurnCompletionTabIndicator(activeThreadId: () => string | nul
     if (tab) tab.title = title
   }, { immediate: true })
 
-  function markBackgroundTurnCompletion(threadId: string): void {
-    if (tab?.hidden && activeThreadId() === threadId) markedThreadId.value = threadId
+  function markBackgroundThread(threadId: string, occurredAt = performance.now()): void {
+    if (tab?.hidden && activeThreadId() === threadId && occurredAt >= contextChangedAt) markedThreadId.value = threadId
   }
 
-  function clearTurnMarkerWhenVisible(): void {
+  function updateVisibility(): void {
+    contextChangedAt = performance.now()
     if (tab && !tab.hidden) markedThreadId.value = null
   }
 
-  tab?.addEventListener('visibilitychange', clearTurnMarkerWhenVisible)
+  tab?.addEventListener('visibilitychange', updateVisibility)
   onScopeDispose(() => {
-    tab?.removeEventListener('visibilitychange', clearTurnMarkerWhenVisible)
+    tab?.removeEventListener('visibilitychange', updateVisibility)
     if (tab) tab.title = pageTitle.value
   })
 
-  return { markBackgroundTurnCompletion }
+  return { markBackgroundThread }
 }
