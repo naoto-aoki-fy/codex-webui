@@ -131,7 +131,21 @@ async function verify(page, viewport, theme) {
     if (new URL(request.url()).pathname.startsWith('/codex-api/')) requests.push(request.url())
   })
   const { calls, emit, errors } = await setup(page, (body, _page, url) => {
-    if (url.pathname.endsWith('/server-requests/respond')) return { json: { ok: true } }
+    if (url.pathname.endsWith('/server-requests/respond')) {
+      const request = [200, 201, 204].includes(body.id) && body.result?.answers
+      if (!request) return { json: { ok: true } }
+      const turnId = body.id === 201 ? 'live' : body.id === 204 ? 'first-turn' : 'question-turn'
+      const response = {
+        id: 'answer-' + body.id, threadId: thread.id, turnId,
+        anchorItemId: body.id === 201 ? 'live-agent' : body.id === 204 ? 'first' : 'question-agent', submittedAt: '2026-11-20T01:05:00.000Z',
+        questions: [
+          { id: 'scope', heading: 'Documentation scope', answers: body.result.answers.scope.answers },
+          { id: 'secret', heading: 'Private answer', provided: true },
+        ],
+      }
+      emit('server/request/resolved', { id: body.id, threadId: thread.id, response })
+      return { json: { ok: true, response, saved: true } }
+    }
     if (url.pathname.endsWith('/server-requests/pending') && pendingOnReload) {
       return { json: { data: [pendingOnReload] } }
     }
@@ -289,6 +303,18 @@ async function verify(page, viewport, theme) {
     id: 201,
     result: { answers: { scope: { answers: ['Full review', draft] } } },
   }])
+
+  const saved = list.locator('[data-message-id="question-response-answer-201"]')
+  await saved.getByRole('heading', { name: 'Documentation scope', exact: true }).waitFor()
+  assert.equal(await saved.count(), 1)
+  assert.equal(await saved.getByText('Answer hidden', { exact: true }).count(), 1)
+  assert.equal(await saved.getByRole('button', { name: 'Copy answers' }).count(), 1)
+  assert.equal(await saved.getByRole('button', { name: /revert|fork/i }).count(), 0)
+  assert.equal(await saved.evaluate(element => element.previousElementSibling.dataset.messageId), 'live-agent')
+  await saved.scrollIntoViewIfNeeded()
+  await page.waitForTimeout(2200)
+  const answerScreenshot = join(output, `question-answer-${viewport.width}-${theme}.png`)
+  await page.screenshot({ path: answerScreenshot })
 
   // Reload with the earlier request still pending.
   pendingOnReload = questionRequest(200, 'question-turn')
@@ -526,7 +552,7 @@ async function verify(page, viewport, theme) {
   assert.deepEqual(historyRequests().slice(beforeSwitch).map(call => call.params.threadId), [thread.id, secondThread.id])
 
   assert.deepEqual(errors, [])
-  return { url, viewport, theme, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
+  return { url, viewport, theme, answerScreenshot, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
 }
 
 async function main() {

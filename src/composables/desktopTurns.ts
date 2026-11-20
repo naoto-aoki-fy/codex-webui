@@ -107,28 +107,21 @@ export function createDesktopTurns(deps: {
         name: string;
         path: string;
     }> = [], fileAttachments: FileAttachment[] = []): Promise<boolean> {
-        if (!threadId || !text.trim())
-            return false;
-        if (imageUrls.length > 0 || skills.length > 0 || fileAttachments.length > 0)
-            return false;
-        const requests = deps.approvals.pendingServerRequestsByThreadId.value[threadId] ?? [];
-        const userInputRequests = requests.filter((request) => request.method === 'item/tool/requestUserInput');
-        if (userInputRequests.length !== 1)
-            return false;
+        const userInputRequests = deps.approvals.getThreadPendingRequests(threadId)
+            .filter(request => request.method === 'item/tool/requestUserInput');
+        if (!userInputRequests.length) return false;
+        if (!text.trim() || imageUrls.length || skills.length || fileAttachments.length || userInputRequests.length !== 1) {
+            throw new Error('Use the question panel to answer the pending questions.');
+        }
         const [request] = userInputRequests;
         const questionIds = deps.approvals.readToolRequestUserInputQuestionIds(request);
-        if (questionIds.length !== 1)
-            return false;
-        return deps.approvals.respondToPendingServerRequest({
+        if (questionIds.length !== 1) throw new Error('Use the question panel to answer multiple questions.');
+        const confirmed = await deps.approvals.respondToPendingServerRequest({
             id: request.id,
-            result: {
-                answers: {
-                    [questionIds[0]]: {
-                        answers: [text.trim()],
-                    },
-                },
-            },
+            result: { answers: { [questionIds[0]]: { answers: [text.trim()] } } },
         });
+        if (!confirmed) throw new Error(deps.error.value || 'Question reply could not be confirmed. Your draft is kept.');
+        return true;
     }
     async function sendMessageToSelectedThread(text: string, imageUrls: string[] = [], skills: Array<{
         name: string;

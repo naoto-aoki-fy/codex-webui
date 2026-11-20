@@ -208,7 +208,7 @@ export function createDesktopConnection(deps: {
                     // Recover only the selected conversation.
                     for (const id of recoveryIds) {
                         try {
-                            await deps.history.loadMessages(id, { silent: true, force: true });
+                            await deps.history.loadMessages(id, { silent: true, force: true, recoverRetained: true });
                         }
                         catch { /* Retry through ordinary history loading. */ }
                     }

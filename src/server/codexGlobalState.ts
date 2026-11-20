@@ -69,11 +69,7 @@ export async function readCodexGlobalState(path = getCodexGlobalStatePath(), rec
   return readState(await resolveDestination(path), recoverMalformed)
 }
 
-export async function updateCodexGlobalState<T>(
-  update: (state: CodexGlobalState) => T | Promise<T>,
-  path = getCodexGlobalStatePath(),
-  recoverMalformed = false,
-): Promise<T> {
+async function withStateLock<T>(path: string, mutate: (destination: string, checkLock: () => void) => Promise<T>): Promise<T> {
   const destination = await resolveDestination(path)
   const previous = mutationsByPath.get(destination) ?? Promise.resolve()
   const run = previous.catch(() => undefined).then(async () => {
@@ -83,12 +79,32 @@ export async function updateCodexGlobalState<T>(
       ...lockOptions,
       onCompromised: (error) => { compromised = error },
     })
-    let temporaryPath: string | null = null
+    try {
+      return await mutate(destination, () => { if (compromised) throw compromised })
+    } finally {
+      if (!compromised) await release()
+    }
+  })
+  mutationsByPath.set(destination, run)
+  try {
+    return await run
+  } finally {
+    if (mutationsByPath.get(destination) === run) mutationsByPath.delete(destination)
+  }
+}
+
+export async function updateCodexGlobalState<T>(
+  update: (state: CodexGlobalState) => T | Promise<T>,
+  path = getCodexGlobalStatePath(),
+  recoverMalformed = false,
+): Promise<T> {
+  return withStateLock(path, async (destination, checkLock) => {
+    let temporaryPath: string | undefined
     try {
       const state = await readState(destination, recoverMalformed)
       const before: unknown = JSON.parse(JSON.stringify(state))
       const result = await update(state)
-      if (compromised) throw compromised
+      checkLock()
       if (isDeepStrictEqual(before, state)) return result
 
       const mode = await stat(destination).then((info) => info.mode & 0o7777).catch((error: unknown) => {
@@ -104,22 +120,19 @@ export async function updateCodexGlobalState<T>(
       } finally {
         await file.close()
       }
-      if (compromised) throw compromised
+      checkLock()
       await rename(temporaryPath, destination)
-      temporaryPath = null
+      temporaryPath = undefined
       return result
     } finally {
-      try {
-        if (temporaryPath) await rm(temporaryPath, { force: true })
-      } finally {
-        if (!compromised) await release()
-      }
+      if (temporaryPath) await rm(temporaryPath, { force: true })
     }
   })
-  mutationsByPath.set(destination, run)
-  try {
-    return await run
-  } finally {
-    if (mutationsByPath.get(destination) === run) mutationsByPath.delete(destination)
-  }
+}
+
+export async function deleteCodexGlobalState(path: string): Promise<void> {
+  await withStateLock(path, async (destination, checkLock) => {
+    checkLock()
+    await rm(destination, { force: true })
+  })
 }

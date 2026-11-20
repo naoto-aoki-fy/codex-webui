@@ -1,3 +1,4 @@
+import type { QuestionResponse } from '../questionResponses';
 import type { Ref } from 'vue';
 import { ref } from 'vue';
 import { getOlderThreadMessages, getThreadDetail, resumeThread } from '../api/codexGateway';
@@ -20,6 +21,7 @@ function omitKey<TValue>(record: Record<string, TValue>, key: string): Record<st
 }
 type HistoryReadOwner = {
     olderCursor?: string | null;
+    latestTurnIds?: Set<string>;
 };
 type FileAttachment = {
     label: string;
@@ -39,6 +41,7 @@ type PendingTurnRequest = {
 };
 /** Owns persisted history, page/read ownership, pending read promises and loading indicators. stopPolling clears these resources; disconnect recovery detaches read ownership without replaying mutations. */
 export function createDesktopHistory(deps: {
+    confirmQuestionResponses: (responses: QuestionResponse[]) => void;
     securityObservation?: ReturnType<typeof import('./threadSecurityObservation').createThreadSecurityObservation>;
     selectedThreadId: Ref<string, string>;
     turnIndexByTurnIdByThreadId: Ref<Record<string, Record<string, number>>, Record<string, Record<string, number>>>;
@@ -71,6 +74,23 @@ export function createDesktopHistory(deps: {
         transient?: boolean;
     }) => void;
 }) {
+    const questionResponsesByThreadId = ref<Record<string, Map<string, QuestionResponse>>>({});
+    function retainQuestionResponses(threadId: string, responses: QuestionResponse[], retainedTurns?: Record<string, number>): void {
+        const previous = questionResponsesByThreadId.value[threadId];
+        if (!previous && !responses.length) return;
+        const activeTurnId = deps.activeTurnIdByThreadId.value[threadId];
+        const next = new Map(previous);
+        if (retainedTurns) {
+            for (const [id, response] of next) {
+                if (response.turnId !== activeTurnId && !Object.prototype.hasOwnProperty.call(retainedTurns, response.turnId)) next.delete(id);
+            }
+        }
+        for (const response of responses) {
+            if (response.threadId === threadId && (!retainedTurns || Object.prototype.hasOwnProperty.call(retainedTurns, response.turnId))) next.set(response.id, response);
+        }
+        questionResponsesByThreadId.value = { ...questionResponsesByThreadId.value, [threadId]: next };
+        if (responses.length) deps.confirmQuestionResponses(responses);
+    }
     const persistedMessagesByThreadId = ref<Record<string, UiMessage[]>>({});
     const loadedVersionByThreadId = ref<Record<string, string>>({});
     const loadedMessagesByThreadId = ref<Record<string, boolean>>({});
@@ -100,6 +120,7 @@ export function createDesktopHistory(deps: {
         lastMessageLoadAtByThreadId.delete(threadId);
         lastMessageLoadFailureAtByThreadId.delete(threadId);
         if (dropPayload) {
+            questionResponsesByThreadId.value = omitKey(questionResponsesByThreadId.value, threadId);
             loadedMessagesByThreadId.value = omitKey(loadedMessagesByThreadId.value, threadId);
             loadedVersionByThreadId.value = omitKey(loadedVersionByThreadId.value, threadId);
             persistedMessagesByThreadId.value = omitKey(persistedMessagesByThreadId.value, threadId);
@@ -114,6 +135,7 @@ export function createDesktopHistory(deps: {
     async function loadMessages(threadId: string, options: {
         silent?: boolean;
         force?: boolean;
+        recoverRetained?: boolean;
     } = {}) {
         const generation = deps.lifecycleGeneration;
         if (!threadId) {
@@ -158,11 +180,13 @@ export function createDesktopHistory(deps: {
                 const needsResume = deps.resumedThreadById.value[threadId] !== true;
                 const realtimeRevision = deps.realtimeRevisionByThreadId.get(threadId) ?? 0;
                 const securityRevision = deps.securityObservation?.revision(threadId);
-                const resumedThread = needsResume ? await resumeThread(threadId) : null;
+                const retained = options.recoverRetained || reconnectingThreadHistory.has(threadId)
+                    ? Object.keys(deps.turnIndexByTurnIdByThreadId.value[threadId] ?? {}).filter(id => !owner.latestTurnIds?.has(id)) : [];
+                const resumedThread = needsResume ? await (retained.length ? resumeThread(threadId, retained) : resumeThread(threadId)) : null;
                 if (!isCurrent())
                     return;
                 if (resumedThread && securityRevision !== undefined) deps.securityObservation?.accept(threadId,securityRevision,resumedThread.security ?? null);
-                const detail = resumedThread ?? await getThreadDetail(threadId);
+                const detail = resumedThread ?? await (retained.length ? getThreadDetail(threadId, retained) : getThreadDetail(threadId));
                 if (!isCurrent())
                     return;
                 const currentThread = flattenThreads(deps.sourceGroups.value).find(row => row.id === threadId);
@@ -189,6 +213,7 @@ export function createDesktopHistory(deps: {
                 const previousPersisted = persistedMessagesByThreadId.value[threadId] ?? [];
                 const previousIndices = deps.turnIndexByTurnIdByThreadId.value[threadId] ?? {};
                 const freshEntries = Object.entries(detail.turnIndexByTurnId);
+                owner.latestTurnIds = new Set(freshEntries.map(([id]) => id));
                 const anchor = freshEntries.find(([id]) => Object.prototype.hasOwnProperty.call(previousIndices, id));
                 const offset = anchor ? previousIndices[anchor[0]]! - anchor[1] : 0;
                 const turnIndexByTurnId = Object.fromEntries(freshEntries.map(([id, index]) => [id, index + offset]));
@@ -208,7 +233,9 @@ export function createDesktopHistory(deps: {
                     [threadId]: Boolean(owner.olderCursor),
                 };
                 deps.markThreadMessagesPersisted(threadId, nextMessages);
-                deps.replaceTurnIndexLookupForThread(threadId, { ...earlierIndices, ...turnIndexByTurnId });
+                const retainedTurns = { ...earlierIndices, ...turnIndexByTurnId };
+                deps.replaceTurnIndexLookupForThread(threadId, retainedTurns);
+                retainQuestionResponses(threadId, detail.questionResponses ?? [], retainedTurns);
                 deps.rebindLiveFileChangeTurnIndices(threadId);
                 const earlierMessages = previousPersisted.filter(message => message.turnId && Object.prototype.hasOwnProperty.call(earlierIndices, message.turnId));
                 const isImported = (message: UiMessage) => message.importMetadata || message.id === `import-status-${threadId}`;
@@ -312,6 +339,7 @@ export function createDesktopHistory(deps: {
                 ...page.turnIndexByTurnId,
             });
             deps.rebindLiveFileChangeTurnIndices(threadId);
+            retainQuestionResponses(threadId, page.questionResponses ?? []);
             hasMoreOlderMessagesByThreadId.value = {
                 ...hasMoreOlderMessagesByThreadId.value,
                 [threadId]: Boolean(owner.olderCursor),
@@ -343,6 +371,8 @@ export function createDesktopHistory(deps: {
         await loadMessages(threadId, options);
     }
     return {
+questionResponsesByThreadId,
+retainQuestionResponses,
 persistedMessagesByThreadId,
 loadedVersionByThreadId,
 loadedMessagesByThreadId,

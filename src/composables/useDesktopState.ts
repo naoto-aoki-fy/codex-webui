@@ -169,6 +169,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
   const securityObservation = createThreadSecurityObservation()
   const deniedActions = createDeniedActionObservation()
   const history = createDesktopHistory({
+    confirmQuestionResponses: responses => approvals.confirmQuestionResponses(responses),
     securityObservation,
     get selectedThreadId() { return selectedThreadId; },
     get turnIndexByTurnIdByThreadId() { return turnIndexByTurnIdByThreadId; },
@@ -427,6 +428,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
   let localThreadReconciliationTimer: number | null = null
   const persistedUserMessageByThreadId = ref<Record<string, boolean>>({})
   const approvals = createDesktopApprovals({
+    retainQuestionResponse: response => history.retainQuestionResponses(response.threadId, [response]),
     get applyThreadFlags() { return applyThreadFlags; },
     get lifecycleGeneration() { return connection.lifecycleGeneration; }, set lifecycleGeneration(value) { connection.lifecycleGeneration = value; },
     get error() { return error; }
@@ -508,6 +510,14 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
       rows.push(...approvals.pendingServerRequestsByThreadId.value[GLOBAL_SERVER_REQUEST_SCOPE])
     }
     return rows.sort((first, second) => first.receivedAtIso.localeCompare(second.receivedAtIso))
+  })
+  const selectedQuestionResponses = computed(() => {
+    const threadId = selectedThreadId.value
+    const turns = turnIndexByTurnIdByThreadId.value[threadId] ?? {}
+    const activeTurn = activeTurnIdByThreadId.value[threadId]
+    return [...(history.questionResponsesByThreadId.value[threadId]?.values() ?? [])]
+      .filter(response => response.turnId === activeTurn || Object.prototype.hasOwnProperty.call(turns, response.turnId))
+      .map(response => ({ ...response, turnIndex: turns[response.turnId] }))
   })
   const selectedLiveOverlay = computed<UiLiveOverlay | null>(() => {
     const threadId = selectedThreadId.value
@@ -1102,6 +1112,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     }
     resumedThreadById.value = pruneThreadStateMap(resumedThreadById.value, activeThreadIds)
     turnIndexByTurnIdByThreadId.value = pruneThreadStateMap(turnIndexByTurnIdByThreadId.value, activeThreadIds)
+    history.questionResponsesByThreadId.value = pruneThreadStateMap(history.questionResponsesByThreadId.value, activeThreadIds)
     history.persistedMessagesByThreadId.value = pruneThreadStateMap(history.persistedMessagesByThreadId.value, activeThreadIds)
     liveAgentMessagesByThreadId.value = pruneThreadStateMap(liveAgentMessagesByThreadId.value, activeThreadIds)
     liveReasoningTextByThreadId.value = pruneThreadStateMap(liveReasoningTextByThreadId.value, activeThreadIds)
@@ -1806,6 +1817,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
       const id=readString(asRecord(notification.params)?.threadId)
       if(id){
         invalidateThreadListGeneration();removeArchivedThreadFromLoadedLists(id);invalidateResumeThread(id)
+        history.invalidateThreadHistory(id)
         setLiveAgentMessagesForThread(id,[]);clearLiveReasoningForThread(id)
         liveCommandsByThreadId.value=omitKey(liveCommandsByThreadId.value,id)
         liveFileChangeMessagesByThreadId.value=omitKey(liveFileChangeMessagesByThreadId.value,id)
@@ -1902,7 +1914,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
       }
       for (const threadId of Object.keys(resumedThreadById.value)) invalidateResumeThread(threadId)
       resumedThreadById.value = {}
-      approvals.pendingServerRequestsByThreadId.value = {}
+      approvals.clearPendingAfterDisconnect()
       for (const threadId of Object.keys(inProgressById.value)) {
         if (inProgressById.value[threadId] !== true) continue
         turns.unknownOutcomeByThreadId.value = { ...turns.unknownOutcomeByThreadId.value, [threadId]: true }
@@ -2749,8 +2761,10 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
       const detail = await getThreadDetailForRevert(threadId)
       if (history.historyReadOwnerByThreadId.get(threadId) !== owner) return ''
       setPersistedMessagesForThread(threadId, detail.messages)
+      history.retainQuestionResponses(threadId, detail.questionResponses ?? [], detail.turnIndexByTurnId)
       turnIndexByTurnIdByThreadId.value = { ...turnIndexByTurnIdByThreadId.value, [threadId]: detail.turnIndexByTurnId }
       owner.olderCursor = detail.olderCursor
+      owner.latestTurnIds = new Set(Object.keys(detail.turnIndexByTurnId))
       history.hasMoreOlderMessagesByThreadId.value = { ...history.hasMoreOlderMessagesByThreadId.value, [threadId]: Boolean(owner.olderCursor) }
       history.loadedMessagesByThreadId.value = { ...history.loadedMessagesByThreadId.value, [threadId]: true }
       if (operation === 'fork-and-revert' && selectionGeneration === originalSelectionGeneration && selectedThreadId.value === originalSelection && originalSelection === sourceThreadId) {
@@ -2866,6 +2880,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     history.hasMoreOlderMessagesByThreadId.value = {}
     history.lastMessageLoadAtByThreadId.clear()
     history.lastMessageLoadFailureAtByThreadId.clear()
+    history.questionResponsesByThreadId.value = {}
     history.persistedMessagesByThreadId.value = {}
     livePlanMessagesByThreadId.value = {}
     liveAgentMessagesByThreadId.value = {}
@@ -2916,6 +2931,10 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     selectedThreadTokenUsage,
     isSelectedThreadInterruptPending,
     selectedThreadServerRequests,
+    selectedQuestionResponses,
+    questionAttempts: approvals.questionAttempts,
+    questionSaveWarning: approvals.questionSaveWarning,
+    dismissQuestionDraft: approvals.dismissQuestionDraft,
     selectedLiveOverlay,
     codexQuota,
     selectedThreadId,

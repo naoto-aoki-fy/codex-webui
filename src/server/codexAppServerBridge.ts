@@ -1,3 +1,4 @@
+import { questionResponses } from './questionResponses.js'
 import { ModelPreferencesStore } from './modelPreferencesStore.js'
 import { createModelPreferenceUsage } from './modelPreferenceUsage.js'
 import type { ModelPreferences } from '../modelPreferences.js'
@@ -271,8 +272,9 @@ export async function forkThreadAtCutoff(appServer: RpcExecutor, params: Record<
 async function readRecentThread(appServer: AppServerClient, method: 'thread/read' | 'thread/resume', params: Record<string, unknown>): Promise<unknown> {
   const threadId = readNonEmptyString(params.threadId)
   const snapshotEpoch = appServer.getSnapshotEpoch()
+  const { retainedTurnIds, ...nativeParams } = params
   const metadata = asRecord(await appServer.rpc(method, {
-    ...params,
+    ...nativeParams,
     ...(method === 'thread/read' ? { includeTurns: false } : { excludeTurns: true }),
   }))
   const thread = asRecord(metadata?.thread)
@@ -286,7 +288,12 @@ async function readRecentThread(appServer: AppServerClient, method: 'thread/read
       throw new Error('Invalid native history page')
     }
     if (snapshotEpoch !== appServer.getSnapshotEpoch()) throw new Error('History changed while loading. Refresh the thread.')
-    return { ...metadata, thread: { ...thread, turns: [...page.data].reverse() }, olderCursor: page.nextCursor ?? null }
+    const responses = await readQuestionResponses(threadId, page.data, retainedTurnIds)
+    if (snapshotEpoch !== appServer.getSnapshotEpoch()) throw new Error('History changed while loading. Refresh the thread.')
+    return {
+      ...metadata, thread: { ...thread, turns: [...page.data].reverse() }, olderCursor: page.nextCursor ?? null,
+      ...(responses.length ? { questionResponses: responses } : {}),
+    }
   } catch (error) {
     if ((error as { code?: number } | null)?.code === -32601) {
       throw new Error('Connected Codex server lacks thread/turns/list. Upgrade Codex.')
@@ -298,13 +305,24 @@ async function readRecentThread(appServer: AppServerClient, method: 'thread/read
   }
 }
 
-async function presentTurnPage(appServer: AppServerClient, threadId: string, result: unknown): Promise<unknown> {
+function readRetainedTurnIds(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter(id => typeof id === 'string' && id.length > 0 && id.length <= 256) : []
+}
+
+function readQuestionResponses(threadId: string, turns: unknown[], retained?: unknown) {
+  const turnIds = new Set(turns.map(turn => readNonEmptyString(asRecord(turn)?.id)).filter(Boolean))
+  for (const id of readRetainedTurnIds(retained)) turnIds.add(id)
+  return questionResponses.read(threadId, turnIds)
+}
+
+async function presentTurnPage(appServer: AppServerClient, threadId: string, result: unknown, includeResponses: boolean): Promise<unknown> {
   const page = asRecord(result)
   if (!threadId || !Array.isArray(page?.data)) return result
   // Reuse the existing native thread presentation for each page's items and buffered errors.
   const wrapped = { thread: { id: threadId, turns: page.data } }
   const presented = asRecord(await sanitizeThreadTurnsInlinePayloads('thread/read', mergeStreamTurnErrorsIntoThreadResult(appServer, wrapped)))
-  return { ...page, data: asRecord(presented?.thread)?.turns }
+  const responses = includeResponses ? await readQuestionResponses(threadId, page.data) : []
+  return { ...page, data: asRecord(presented?.thread)?.turns, ...(responses.length ? { questionResponses: responses } : {}) }
 }
 
 export async function callRpcWithArchiveRecovery(
@@ -709,7 +727,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         }
 
         const sanitizedResult = body.method === 'thread/turns/list'
-          ? await presentTurnPage(appServer, readNonEmptyString(asRecord(body.params)?.threadId), rpcResult)
+          ? await presentTurnPage(appServer, readNonEmptyString(asRecord(body.params)?.threadId), rpcResult, asRecord(body.params)?.itemsView !== 'notLoaded')
           : await sanitizeThreadTurnsInlinePayloads(body.method, errorMergedResult)
         if (body.method === 'thread/start' && asRecord(body.params)?.projectId) {
           const expected = asRecord(body.params)!.projectId
@@ -735,8 +753,8 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
       if (req.method === 'POST' && url.pathname === '/codex-api/server-requests/respond') {
         const payload = await readJsonBody(req)
-        await appServer.respondToServerRequest(payload)
-        setJson(res, 200, { ok: true })
+        const submission = await appServer.respondToServerRequest(payload)
+        setJson(res, 200, { ok: true, ...submission })
         return
       }
 

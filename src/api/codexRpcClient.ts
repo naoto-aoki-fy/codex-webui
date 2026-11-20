@@ -1,3 +1,4 @@
+import type { QuestionSubmission } from '../questionResponses'
 import type { RpcEnvelope } from '../types/codex'
 import { CodexApiError, extractErrorMessage } from './codexErrors'
 
@@ -374,7 +375,7 @@ export function subscribeRpcNotifications(
   }
 }
 
-export async function respondServerRequest(body: ServerRequestReplyBody): Promise<void> {
+export async function respondServerRequest(body: ServerRequestReplyBody): Promise<QuestionSubmission | undefined> {
   let response: Response
   try {
     response = await fetch('/codex-api/server-requests/respond', {
@@ -408,6 +409,8 @@ export async function respondServerRequest(body: ServerRequestReplyBody): Promis
       },
     )
   }
+  const record = asRecord(payload)
+  if (record?.response && typeof record.saved === 'boolean') return record as QuestionSubmission
 }
 
 export async function fetchPendingServerRequests(): Promise<unknown[]> {

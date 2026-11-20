@@ -33,11 +33,31 @@
         v-if="message"
         class="conversation-item"
         :data-message-id="message.id"
-        :data-navigation-message="(message.role === 'user' || message.role === 'assistant') && !isCommandMessage(message) && message.messageType !== 'fileChange'"
+        :data-navigation-message="!message.questionResponse && (message.role === 'user' || message.role === 'assistant') && !isCommandMessage(message) && message.messageType !== 'fileChange'"
         :data-role="message.role"
         :data-message-type="message.messageType || ''"
       >
-        <div v-if="message.executionLabel" class="message-row" data-role="system">
+        <div v-if="message.questionResponse" class="message-row" data-role="user">
+          <div class="message-stack" data-role="user">
+            <article class="message-card question-response-card" data-role="user">
+              <section v-for="question in message.questionResponse.questions" :key="question.id">
+                <h3>{{ question.heading }}</h3>
+                <p>{{ questionAnswerText(question) }}</p>
+              </section>
+            </article>
+            <p class="message-timestamp">
+              <time :datetime="message.submittedAt">Sent: {{ formatMessageTimestamp(message.submittedAt) }}</time>
+            </p>
+            <div class="message-toolbar" data-role="user">
+              <button type="button" class="message-copy-button" :data-copied="copiedUserMessageId === message.id"
+                :aria-label="copiedUserMessageId === message.id ? 'Answers copied' : 'Copy answers'" @click="copyUserMessage(message)">
+                <IconTablerCopy class="icon-svg message-copy-icon" />
+                <span class="message-copy-label">{{ copiedUserMessageId === message.id ? 'Copied' : 'Copy' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-else-if="message.executionLabel" class="message-row" data-role="system">
         <details class="execution-details feature-panel">
           <summary>{{ message.executionLabel }}</summary>
           <pre v-text="message.text"></pre>
@@ -752,6 +772,8 @@
           :key="JSON.stringify([activeThreadId, pendingQuestion.id])"
           :request="pendingQuestion"
           :request-count="pendingRequests.length"
+          :question-attempt="questionAttempt"
+          @dismiss-question-draft="emit('dismissQuestionDraft', $event)"
           @respond-server-request="emit('respondServerRequest', $event)"
         />
       </li>
@@ -852,6 +874,8 @@ import { createConversationMarkdown } from './conversationMarkdown'
 import { fileChangeOperationLabel, fileChangeOperationTone, formatFileChangeDelta, fileChangeDeltaParts, formatFileChangeCountLabel, fileChangeSummaryLabel, fileChangeSummaryStatusParts } from '../../utils/fileChangePresentation'
 import ComposerDropdown from './ComposerDropdown.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { questionAnswerText } from '../../questionResponses'
+import { insertQuestionResponseRows, type QuestionResponseRow } from './questionResponseRows'
 import { generationMetadataLabel } from '../../turnGenerationMetadata'
 import { formatMessageTimestamp } from '../../messageTimestamps'
 import type { UiFileChange, UiMessage, UiServerRequestReply } from '../../types/codex'
@@ -1140,6 +1164,7 @@ const emit = defineEmits<{
   rollback: [payload: { threadId: string; turnId: string; operation: import('../../types/codex').RevertOperation; messageId?: string }]
   implementPlan: [payload: { turnId: string }]
   respondServerRequest: [payload: UiServerRequestReply]
+  dismissQuestionDraft: [id: number]
 }>()
 
 const viewport = createConversationViewport({
@@ -1235,12 +1260,15 @@ const standaloneFileChangeSummaryByMessageId = computed(() => fileChangeSummaryI
 const hiddenFileChangeMessageIds = computed(() => fileChangeSummaryIndex.value.hiddenMessageIds)
 
 const hasConversationContent = computed(() =>
-  props.messages.length > 0 || props.pendingRequests.length > 0 || Boolean(props.pendingQuestion || props.liveOverlay),
+  props.messages.length > 0 || props.pendingRequests.length > 0 || Boolean(props.pendingQuestion || props.liveOverlay || props.questionResponses?.length),
 )
 const pendingQuestionRowKey = Symbol('pendingQuestion')
 const conversationRows = computed(() => {
-  const rows: Array<UiMessage | null> = props.isLoading ? [] : visibleMessages.value.filter((message) =>
+  const visible = visibleMessages.value.filter(message =>
     !hiddenGroupedCommandIds.value.has(message.id) && !hiddenFileChangeMessageIds.value.has(message.id),
+  )
+  const rows: Array<QuestionResponseRow | null> = props.isLoading ? [] : insertQuestionResponseRows(
+    props.messages, visible, props.questionResponses ?? [], visibleMessages.value[0]?.id,
   )
   if (!props.pendingQuestion) return rows
 
@@ -2127,6 +2155,18 @@ onBeforeUnmount(() => {
   width: fit-content;
   margin-left: auto;
   align-self: flex-end;
+}
+
+.question-response-card section + section {
+  @apply mt-3;
+}
+
+.question-response-card h3 {
+  @apply font-semibold;
+}
+
+.question-response-card p {
+  @apply whitespace-pre-wrap break-words;
 }
 
 .automation-message-label {
