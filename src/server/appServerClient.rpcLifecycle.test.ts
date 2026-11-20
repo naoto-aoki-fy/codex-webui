@@ -154,6 +154,8 @@ it('coalesces automatic reconnects and never sends an old approval to a reused w
     await first
     const approval = { id: 7, method: 'item/commandExecution/requestApproval', params: { threadId: 't' } }
     old.emit('message', Buffer.from(JSON.stringify(approval)), false)
+    old.emit('message', Buffer.from(JSON.stringify(approval)), false)
+    expect(client.listPendingServerRequests()).toHaveLength(1)
     const stale = client.listPendingServerRequests()[0].id
     old.terminate()
     await vi.advanceTimersByTimeAsync(500)

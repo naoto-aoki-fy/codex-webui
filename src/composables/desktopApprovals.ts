@@ -14,6 +14,7 @@ export function createDesktopApprovals(deps: {
     applyThreadFlags: () => void;
     lifecycleGeneration: number;
     retainQuestionResponse: (response: QuestionResponse) => void;
+    onNewPendingRequest?: (threadId: string) => void;
     error: Ref<string, string>;
 }) {
     const pendingServerRequestsByThreadId = ref<Record<string, UiServerRequest[]>>({});
@@ -22,6 +23,8 @@ export function createDesktopApprovals(deps: {
     const questionSaveWarnings = reactive(new Map<string, string>());
     const closedRequestIds = new Set<number>();
     const nativeClosedQuestionIds = new Set<number>();
+    const seenRequestIds = new Set<number>();
+    let requestsDuringLoad: Map<number, UiServerRequest> | undefined;
 
     function rememberId(ids: Set<number>, id: number): void {
         ids.add(id);
@@ -102,10 +105,12 @@ export function createDesktopApprovals(deps: {
         questionSaveWarnings.delete(threadId);
     }
     function clearQuestionState(): void {
+        requestsDuringLoad = undefined;
         for (const threadId of Object.keys(pendingServerRequestsByThreadId.value)) clearThreadQuestions(threadId);
         questionDrafts.clear();
         nativeClosedQuestionIds.clear();
         closedRequestIds.clear();
+        seenRequestIds.clear();
         questionSaveWarnings.clear();
     }
     function getThreadRequests(threadId: string): UiServerRequest[] {
@@ -200,6 +205,7 @@ export function createDesktopApprovals(deps: {
         deps.applyThreadFlags();
     }
     function removePendingServerRequestById(requestId: number): void {
+        requestsDuringLoad?.delete(requestId);
         const next: Record<string, UiServerRequest[]> = {};
         for (const [threadId, requests] of Object.entries(pendingServerRequestsByThreadId.value)) {
             const filtered = requests.filter((request) => request.id !== requestId);
@@ -238,7 +244,16 @@ export function createDesktopApprovals(deps: {
             const request = normalizeServerRequest(notification.params);
             if (!request || closedRequestIds.has(request.id) || nativeClosedQuestionIds.has(request.id))
                 return true;
+            const existing = getThreadRequests(request.threadId).find(row => row.id === request.id);
+            const duplicate = seenRequestIds.has(request.id) || Boolean(existing);
+            const attempt = request.method === QUESTION_REQUEST ? readQuestionDraft(request)?.attempt : undefined;
+            rememberId(seenRequestIds, request.id);
+            if (existing?.answerAttempted) request.answerAttempted = true;
+            requestsDuringLoad?.set(request.id, request);
             upsertPendingServerRequest(request);
+            if (!duplicate && !request.answerAttempted && (!attempt || attempt.retryable) && request.threadId !== GLOBAL_SERVER_REQUEST_SCOPE) {
+                deps.onNewPendingRequest?.(request.threadId);
+            }
             return true;
         }
         if (notification.method === 'server/request/resolved') {
@@ -266,17 +281,28 @@ export function createDesktopApprovals(deps: {
     async function loadPendingServerRequestsFromBridge(): Promise<void> {
         const generation = deps.lifecycleGeneration;
         const version = ++pendingServerRequestsVersion;
+        const live = new Map<number, UiServerRequest>();
+        requestsDuringLoad = live;
         try {
             const rows = await getPendingServerRequests();
             if (generation !== deps.lifecycleGeneration || version !== pendingServerRequestsVersion)
                 return;
-            const normalizedRequests = rows
+            const restored = rows
                 .map((row) => normalizeServerRequest(row))
                 .filter((request): request is UiServerRequest => request !== null && !closedRequestIds.has(request.id) && !nativeClosedQuestionIds.has(request.id));
-            replacePendingServerRequests(normalizedRequests);
+            for (const request of restored) rememberId(seenRequestIds, request.id);
+            const merged = new Map(restored.map(request => [request.id, request]));
+            for (const { id, threadId } of live.values()) {
+                const request = getThreadRequests(threadId).find(row => row.id === id);
+                if (request && !request.questionClosed && !merged.has(id)) merged.set(id, request);
+            }
+            replacePendingServerRequests([...merged.values()]);
         }
         catch {
             // Keep UI usable when pending request endpoint is temporarily unavailable.
+        }
+        finally {
+            if (requestsDuringLoad === live) requestsDuringLoad = undefined;
         }
     }
     function retainSubmission(submission: QuestionSubmission): void {
@@ -340,6 +366,7 @@ export function createDesktopApprovals(deps: {
         clearQuestionState,
         clearPendingAfterDisconnect: () => {
             ++pendingServerRequestsVersion;
+            requestsDuringLoad = undefined;
             for (const requests of Object.values(pendingServerRequestsByThreadId.value)) {
                 for (const request of requests) {
                     const draft = readQuestionDraft(request);

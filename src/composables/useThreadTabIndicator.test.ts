@@ -1,6 +1,6 @@
 import { effectScope, nextTick, ref } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useTurnCompletionTabIndicator } from './useTurnCompletionTabIndicator'
+import { useThreadTabIndicator } from './useThreadTabIndicator'
 
 const originalHref = '/icons/favicon-192x192.png'
 const origin = 'http://localhost'
@@ -27,8 +27,8 @@ function setup() {
   const pageTitle = ref(title)
   const scope = effectScope()
   scopes.push(scope)
-  const { markBackgroundTurnCompletion } = scope.run(() =>
-    useTurnCompletionTabIndicator(() => activeThreadId.value, pageTitle),
+  const { markBackgroundThread } = scope.run(() =>
+    useThreadTabIndicator(() => activeThreadId.value, pageTitle),
   )!
 
   function setHidden(hidden: boolean) {
@@ -36,7 +36,7 @@ function setup() {
     tab.dispatchEvent(new Event('visibilitychange'))
   }
 
-  return { tab, favicon, activeThreadId, pageTitle, scope, markBackgroundTurnCompletion, setHidden }
+  return { tab, favicon, activeThreadId, pageTitle, scope, markBackgroundThread, setHidden }
 }
 
 afterEach(() => {
@@ -44,20 +44,20 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('turn completion tab indicator', () => {
+describe('conversation tab indicator', () => {
   it('marks the title and favicon together and restores both when the tab becomes visible', async () => {
     const state = setup()
     expect(state.tab.title).toBe(title)
     expect(state.favicon.getAttribute()).toBe(originalHref)
 
     state.setHidden(true)
-    state.markBackgroundTurnCompletion('first')
+    state.markBackgroundThread('first')
     await nextTick()
     expect(state.tab.title).toBe(`* ${title}`)
     expect(state.favicon.href).toBe(markedHref)
 
     state.pageTitle.value = 'Renamed conversation | Codex WebUI'
-    state.markBackgroundTurnCompletion('first')
+    state.markBackgroundThread('first')
     await nextTick()
     expect(state.tab.title).toBe(`* ${state.pageTitle.value}`)
     expect(state.favicon.href).toBe(markedHref)
@@ -71,12 +71,12 @@ describe('turn completion tab indicator', () => {
   it.each(['second', null])('clears the marker on navigation to %s while hidden', async (threadId) => {
     const state = setup()
     state.setHidden(true)
-    state.markBackgroundTurnCompletion('first')
+    state.markBackgroundThread('first')
     await nextTick()
     expect(state.favicon.href).toBe(markedHref)
 
     state.activeThreadId.value = threadId
-    state.markBackgroundTurnCompletion('first')
+    state.markBackgroundThread('first')
     await nextTick()
     expect(state.tab.title).toBe(title)
     expect(state.favicon.getAttribute()).toBe(originalHref)
@@ -87,24 +87,53 @@ describe('turn completion tab indicator', () => {
     expect(state.favicon.getAttribute()).toBe(originalHref)
   })
 
-  it('ignores completions in a visible tab and completions for another thread', async () => {
+  it('ignores notifications in a visible tab and notifications for another thread', async () => {
     const state = setup()
-    state.markBackgroundTurnCompletion('first')
+    state.markBackgroundThread('first')
     await nextTick()
     expect(state.tab.title).toBe(title)
     expect(state.favicon.getAttribute()).toBe(originalHref)
 
     state.setHidden(true)
-    state.markBackgroundTurnCompletion('second')
+    state.markBackgroundThread('second')
     await nextTick()
     expect(state.tab.title).toBe(title)
     expect(state.favicon.getAttribute()).toBe(originalHref)
   })
 
+  it('ignores deferred notifications from before the most recent visibility change', async () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0)
+    try {
+      const state = setup()
+      const whileVisible = performance.now()
+      now.mockReturnValue(1)
+      state.setHidden(true)
+      state.markBackgroundThread('first', whileVisible)
+      await nextTick()
+      expect(state.tab.title).toBe(title)
+      const whileHidden = performance.now()
+      now.mockReturnValue(2)
+      state.setHidden(false)
+      now.mockReturnValue(3)
+      state.setHidden(true)
+      state.markBackgroundThread('first', whileHidden)
+      await nextTick()
+      expect(state.tab.title).toBe(title)
+      expect(state.favicon.getAttribute()).toBe(originalHref)
+
+      state.markBackgroundThread('first', performance.now())
+      await nextTick()
+      expect(state.tab.title).toBe(`* ${title}`)
+      expect(state.favicon.href).toBe(markedHref)
+    } finally {
+      now.mockRestore()
+    }
+  })
+
   it('restores both indicators when the app is unmounted before a visibility update flushes', async () => {
     const state = setup()
     state.setHidden(true)
-    state.markBackgroundTurnCompletion('first')
+    state.markBackgroundThread('first')
     await nextTick()
     expect(state.favicon.href).toBe(markedHref)
 

@@ -654,9 +654,9 @@ export class AppServerClient {
     }
 
     method = normalizePendingServerRequestMethod(method, asRecord(params))
+    if ([...this.pendingServerRequests.values()].some(request => request.wireId === requestId)) return
     if (method === QUESTION_REQUEST) {
-      if ([...this.pendingServerRequests.values()].some(request => request.method === QUESTION_REQUEST && request.wireId === requestId) ||
-        [...this.questionAttempts.values()].some(attempt => attempt.request.wireId === requestId)) return
+      if ([...this.questionAttempts.values()].some(attempt => attempt.request.wireId === requestId)) return
       params = questionRequestParams(asRecord(params))
       this.rememberQuestionCallId(readNonEmptyString(asRecord(params)?.itemId))
     }

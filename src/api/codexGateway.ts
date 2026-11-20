@@ -1090,12 +1090,12 @@ export type ThreadGoal = {
   updatedAt: number
 }
 
-function normalizeThreadGoal(value: unknown): ThreadGoal {
+export function normalizeThreadGoal(value: unknown): ThreadGoal | null {
   const row = asRecord(value)
   if (!row || typeof row.threadId !== 'string' || !row.threadId.trim()
     || typeof row.objective !== 'string'
     || !THREAD_GOAL_STATUSES.includes(row.status as ThreadGoalStatus)) {
-    throw new Error('Thread goal response was malformed')
+    return null
   }
   return {
     threadId: row.threadId,
@@ -1109,16 +1109,22 @@ function normalizeThreadGoal(value: unknown): ThreadGoal {
   }
 }
 
+function requireThreadGoal(value: unknown): ThreadGoal {
+  const goal = normalizeThreadGoal(value)
+  if (!goal) throw new Error('Thread goal response was malformed')
+  return goal
+}
+
 export async function getThreadGoal(threadId: string): Promise<ThreadGoal | null> {
   if (!threadId.trim()) return null
   const result = await callRpc<{ goal?: unknown }>('thread/goal/get', { threadId: threadId.trim() })
-  return result.goal == null ? null : normalizeThreadGoal(result.goal)
+  return result.goal == null ? null : requireThreadGoal(result.goal)
 }
 
 export async function setThreadGoal(threadId: string, changes: { objective?: string; status?: ThreadGoalStatus; tokenBudget?: number | null }): Promise<ThreadGoal> {
   if (!threadId.trim()) throw new Error('thread/goal/set requires threadId')
   const result = await callRpc<{ goal: unknown }>('thread/goal/set', { ...changes, threadId: threadId.trim() })
-  return normalizeThreadGoal(result.goal)
+  return requireThreadGoal(result.goal)
 }
 
 export async function clearThreadGoal(threadId: string): Promise<boolean> {

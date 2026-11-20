@@ -255,7 +255,9 @@
                 <ThreadGoalPanel
                   ref="threadGoalPanelRef"
                   :thread-id="selectedThreadId"
-                  :in-progress="isSelectedThreadInProgress"
+                  :goal="selectedThreadGoal.goal.value"
+                  :load-error="selectedThreadGoal.loadError.value"
+                  :save-goal="selectedThreadGoal.save"
                 />
                 <ThreadPendingRequestPanel
                   v-if="selectedThreadPendingRequest && selectedThreadPendingRequest !== selectedThreadPendingQuestion"
@@ -397,7 +399,7 @@ import { parseModelSelection } from './api/modelCapabilities'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNewThreadCwdRoute } from './composables/useNewThreadCwdRoute'
-import { useTurnCompletionTabIndicator } from './composables/useTurnCompletionTabIndicator'
+import { useThreadTabIndicator } from './composables/useThreadTabIndicator'
 import DesktopLayout from './components/layout/DesktopLayout.vue'
 import GeneralPreferencesSettings from './components/sidebar/GeneralPreferencesSettings.vue'
 import AboutSettings from './components/sidebar/AboutSettings.vue'
@@ -486,6 +488,7 @@ const {
   projectGroups,
   projectDisplayNameById, projects,
   selectedThread,
+  selectedThreadGoal,
   selectedThreadTokenUsage,
   selectedThreadServerRequests,
   selectedQuestionResponses,
@@ -562,7 +565,7 @@ const {
   primeSelectedThread,
   executeThreadRevert,
   isRollingBack,
-} = useDesktopState({ onSelectedTurnCompleted: (threadId) => markBackgroundTurnCompletion(threadId) })
+} = useDesktopState({ onSelectedThreadAttention: (threadId, occurredAt) => markBackgroundThread(threadId, occurredAt) })
 
 const route = useRoute()
 const router = useRouter()
@@ -685,7 +688,7 @@ const contentContextLabel = computed(() => {
   if (isHomeRoute.value || isSkillsRoute.value) return ''
   return getThreadContextLabel(selectedThread.value, projectDisplayNameById.value)
 })
-const { markBackgroundTurnCompletion } = useTurnCompletionTabIndicator(
+const { markBackgroundThread } = useThreadTabIndicator(
   () => route.name === 'thread' ? routeThreadId.value : null,
   computed(() => formatChatPageTitle(selectedThread.value?.title, contentContextLabel.value)),
 )
