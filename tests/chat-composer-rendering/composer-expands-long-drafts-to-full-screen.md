@@ -52,15 +52,28 @@ Full-screen editing and Enter behavior in the shared Home and conversation compo
     Enter and verify it confirms the conversion. For each check, verify that no
     message sends.
 12. In light and dark themes, turn **Require ⌘ + enter to send** off and expand
-    the composer. Type `See tail`, put the caret directly before `tail`, and type
-    `@nonexistent_file`. Wait for the file search to finish with **No matching
-    files**. Press plain Enter once. Verify the panel closes, `tail` moves to the
-    next line with the caret directly before it, and no message sends. Clear the
-    draft and repeat with network throttling enabled in DevTools. Use the Network
-    panel to confirm the file search request is still pending when you press Enter
-    with no file candidates visible. In the inline composer, repeat after the
-    search finishes and verify the first Enter closes the panel, leaves the text
-    on one line, and sends nothing.
+    the composer. Open the **Network** panel in DevTools and filter for
+    `composer-file-search`. For each check, clear the Network log and the draft,
+    type `See tail`, put the caret directly before `tail`, and paste
+    `@nonexistent_file`. Find the `POST /codex-api/composer-file-search` request
+    whose **Payload** has `query` set to `"nonexistent_file"`. The composer can
+    show **No matching files** while the request is pending, so use the Network
+    panel to confirm the search state. Press Enter in the composer for each check.
+
+    - **Completed search in full screen.** Confirm the matching request returns
+      HTTP 200 and `{"data":[]}` in **Response**, then press plain Enter once.
+    - **Pending search in full screen.** Enable network throttling before repeating
+      the draft setup. Press plain Enter once while the matching request shows
+      **Pending** in the Network panel and no file candidates are visible.
+
+    In both full-screen checks, verify that the panel closes, a line break moves
+    `tail` to the next line, the caret is at the start of that line, and no message
+    sends.
+
+    - **Completed search in normal view.** Disable throttling, exit full screen, and
+      repeat the draft setup. In the Network panel, confirm the matching request
+      returns HTTP 200 and `{"data":[]}` in **Response**, then press plain Enter once.
+      Verify that the panel closes, the draft stays on one line, and no message sends.
 
 #### Expected Results
 - Empty, short and long drafts show the icon-only expand control when inline.
