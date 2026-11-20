@@ -51,6 +51,16 @@ Full-screen editing and Enter behavior in the shared Home and conversation compo
     verify it selects the suggestion. With an IME conversion in progress, press
     Enter and verify it confirms the conversion. For each check, verify that no
     message sends.
+12. In light and dark themes, turn **Require ⌘ + enter to send** off and expand
+    the composer. Type `See tail`, put the caret directly before `tail`, and type
+    `@nonexistent_file`. Wait for the file search to finish with **No matching
+    files**. Press plain Enter once. Verify the panel closes, `tail` moves to the
+    next line with the caret directly before it, and no message sends. Clear the
+    draft and repeat with network throttling enabled in DevTools. Use the Network
+    panel to confirm the file search request is still pending when you press Enter
+    with no file candidates visible. In the inline composer, repeat after the
+    search finishes and verify the first Enter closes the panel, leaves the text
+    on one line, and sends nothing.
 
 #### Expected Results
 - Empty, short and long drafts show the icon-only expand control when inline.
@@ -70,7 +80,7 @@ Reports and screenshots are saved under
 
 #### Rollback/Cleanup
 - Clear test drafts and attachments. Restore the original send and appearance
-  settings and remove disposable chats.
+  settings and network throttling, and remove disposable chats.
 
 ---
 

@@ -161,6 +161,77 @@ it('selects the highlighted file with Enter while maximized', async () => {
   }
 })
 
+it.each([
+  { mode: 'maximized', searchState: 'pending' },
+  { mode: 'maximized', searchState: 'resolved with no results' },
+  { mode: 'inline', searchState: 'resolved with no results' },
+])('closes the empty file panel on the first Enter ($mode, search $searchState)', async ({ mode, searchState }) => {
+  const c = mount({ cwd: '/project', sendWithEnter: true })
+  let resolveSearch!: (response: Response) => void
+  const fetch = vi.fn(() => new Promise<Response>(resolve => { resolveSearch = resolve }))
+  vi.stubGlobal('fetch', fetch)
+  vi.useFakeTimers()
+  try {
+    if (mode === 'maximized') {
+      c.nodes().find(n => n.props['aria-label'] === 'Expand composer')!.props.onClick()
+    }
+    c.exposed.appendTextToDraft('See @nonexistent_file')
+    await vue.nextTick()
+    const input = c.nodes().find(n => n.tag === 'textarea')!
+    const emptyPanel = () => c.nodes().find(n => n.props.class === 'thread-composer-file-mention-empty')
+    input.props.onInput()
+    await vi.advanceTimersByTimeAsync(120)
+    expect(fetch).toHaveBeenCalledOnce()
+
+    const finishSearch = async () => {
+      resolveSearch(new Response(JSON.stringify({ data: [] })))
+      await vi.advanceTimersByTimeAsync(0)
+    }
+    if (searchState !== 'pending') await finishSearch()
+    expect(emptyPanel()?.text).toBe('No matching files')
+
+    expect(pressEnter(input)).toHaveBeenCalledTimes(mode === 'inline' ? 1 : 0)
+    await vue.nextTick()
+    expect(c.nodes().some(n => n.props.class === 'thread-composer-file-mentions')).toBe(false)
+    expect(c.submitted).not.toHaveBeenCalled()
+
+    if (searchState === 'pending') await finishSearch()
+    await vi.advanceTimersByTimeAsync(120)
+    expect(emptyPanel()).toBeUndefined()
+    expect(fetch).toHaveBeenCalledOnce()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it.each([
+  { key: 'Enter', modifiers: { altKey: true } },
+  { key: 'Enter', modifiers: { ctrlKey: true } },
+  { key: 'Enter', modifiers: { metaKey: true } },
+  { key: 'Enter', modifiers: { shiftKey: true } },
+  { key: 'Tab', modifiers: {} },
+])('still consumes $key ($modifiers) when the maximized file panel is empty', async ({ key, modifiers }) => {
+  const c = mount()
+  c.nodes().find(n => n.props['aria-label'] === 'Expand composer')!.props.onClick()
+  c.exposed.appendTextToDraft('@nonexistent_file')
+  await vue.nextTick()
+  const input = c.nodes().find(n => n.tag === 'textarea')!
+  const emptyPanel = () => c.nodes().find(n => n.props.class === 'thread-composer-file-mention-empty')
+  input.props.onInput()
+  await vue.nextTick()
+
+  expect(pressEnter(input, { isComposing: true })).not.toHaveBeenCalled()
+  await vue.nextTick()
+  expect(emptyPanel()).toBeDefined()
+
+  const preventDefault = vi.fn()
+  input.props.onKeydown({ key, preventDefault, ...modifiers })
+  expect(preventDefault).toHaveBeenCalledOnce()
+  await vue.nextTick()
+  expect(emptyPanel()).toBeUndefined()
+  expect(c.submitted).not.toHaveBeenCalled()
+})
+
 it('preserves text, images, files, skills and persisted draft when the app rejects a rendered submission', async () => {
   const c = mount()
   c.exposed.hydrateDraft(payload)

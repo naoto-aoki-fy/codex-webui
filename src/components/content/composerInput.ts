@@ -227,8 +227,11 @@ export function createComposerInput(deps: {
                 return;
             }
             if (event.key === 'Enter' || event.key === 'Tab') {
-                event.preventDefault();
                 const selected = fileMentionSuggestions.value[fileMentionHighlightedIndex.value];
+                const allowNewline = event.key === 'Enter' && isComposerExpanded.value && !selected
+                    && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
+                if (!allowNewline)
+                    event.preventDefault();
                 if (selected) {
                     applyFileMention(selected);
                 }
