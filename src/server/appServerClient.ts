@@ -1,4 +1,4 @@
-import { readCollaborationMode } from '../turnGenerationMetadata.js'
+import { readCollaborationMode, readGenerationMetadata, type TurnGenerationMetadata } from '../turnGenerationMetadata.js'
 import { QUESTION_REPLY_NOT_SENT, QUESTION_REPLY_UNCONFIRMED, type QuestionSubmission } from '../questionResponses.js'
 import { normalizePendingServerRequestMethod, QUESTION_REQUEST } from '../serverRequestMethod.js'
 import {
@@ -158,11 +158,51 @@ export class AppServerClient {
     home: () => this.resolveCodexHome(),
   })
   private readonly rolloutRequests = new Map<string, Set<string> | null>()
+  private readonly submittedModeRequests = new Map<string, { ids: Set<string>; superseded: Set<string> }>()
+
+  private publishGenerationMetadata(threadId: string, turnId: string, generationMetadata: TurnGenerationMetadata): void {
+    if (generationMetadata.collaborationMode !== undefined) this.submittedModeRequests.get(threadId)?.superseded.add(turnId)
+    this.emitNotification({ method: 'turn/generationMetadata', params: { threadId, turnId, generationMetadata } })
+  }
+
+  private recoverSubmittedModes(threadId: string, ids: Set<string>, executionIds: Set<string>): void {
+    const pending = this.submittedModeRequests.get(threadId)
+    if (pending) {
+      for (const id of ids) pending.ids.add(id)
+      for (const id of executionIds) pending.superseded.add(id)
+      return
+    }
+    const request = { ids: new Set(ids), superseded: executionIds }
+    const profileId = getConnectionProfileId()
+    this.submittedModeRequests.set(threadId, request)
+    void this.rolloutMetadata.readSubmittedModes(threadId, profileId).then(modes => {
+      if (this.submittedModeRequests.get(threadId) !== request || getConnectionProfileId() !== profileId) return
+      for (const id of request.ids) {
+        const mode = modes.get(id)
+        if (mode && !request.superseded.has(id)) {
+          this.publishGenerationMetadata(threadId, id, { collaborationMode: mode, collaborationModeSource: 'submitted' })
+        }
+      }
+    }).catch(() => { /* A cache miss must never break history. */ }).finally(() => {
+      if (this.submittedModeRequests.get(threadId) === request) this.submittedModeRequests.delete(threadId)
+    })
+  }
+
   private recoverRolloutMetadata(threadId: string, turns: unknown[] | null, force = false, retainedTurnIds: string[] = []): void {
     const generation = this.getConnectionGeneration()
     const key = `${generation}:${threadId}:${force}`
     const ids = turns ? new Set(turns.map(turn => readNonEmptyString(asRecord(turn)?.id)).filter(Boolean)) : null
     if (ids) for (const id of retainedTurnIds) ids.add(id)
+    if (ids?.size && turns) {
+      const executionIds = new Set<string>()
+      for (const turn of turns) {
+        const row = asRecord(turn)
+        const turnId = readNonEmptyString(row?.id)
+        if (turnId && readGenerationMetadata(row?.generationMetadata)?.collaborationModeSource === 'execution') executionIds.add(turnId)
+      }
+      this.recoverSubmittedModes(threadId, ids, executionIds)
+    }
+    if (turns?.length === 0) return
     if (this.rolloutRequests.has(key)) {
       const existing = this.rolloutRequests.get(key)
       if (!ids) this.rolloutRequests.set(key, null)
@@ -173,8 +213,13 @@ export class AppServerClient {
     void this.rolloutMetadata.recover(threadId, force).then(entries => {
       if (generation !== this.getConnectionGeneration()) return
       const requested = this.rolloutRequests.get(key)
-      for (const [turnId, generationMetadata] of entries) {
-        if (!requested || requested.has(turnId)) this.emitNotification({ method: 'turn/generationMetadata', params: { threadId, turnId, generationMetadata } })
+      for (const [turnId, metadata] of entries) {
+        if (requested && !requested.has(turnId)) continue
+        // Submitted modes are published by the local read, which can overtake
+        // this transfer and may contain a newer cache snapshot.
+        const { collaborationMode: _mode, collaborationModeSource, ...responseMetadata } = metadata
+        const execution = collaborationModeSource === 'execution' ? metadata : responseMetadata
+        if (Object.keys(execution).length) this.publishGenerationMetadata(threadId, turnId, execution)
       }
     }).catch(() => { /* Metadata must never break history loading. */ }).finally(() => this.rolloutRequests.delete(key))
   }
@@ -204,6 +249,7 @@ export class AppServerClient {
     this.codexHome.reset()
     this.uploadUserHome = undefined
     this.recovery.cancel()
+    this.submittedModeRequests.clear()
     for (const request of this.pending.values()) request.reject(new Error('App-server disconnected. Retry to reconnect; inspect the thread before resending a turn.'))
     this.pending.clear()
     for (const attempt of this.questionAttempts.values()) attempt.fail()
@@ -277,8 +323,16 @@ export class AppServerClient {
     if (nThreadId && notification.method !== 'turn/generationMetadata') {
       if (notification.method === 'thread/reverted' || notification.method === 'thread/deleted') {
         this.snapshotEpoch = {}
+        this.submittedModeRequests.delete(nThreadId)
         this.lastThreadReadSnapshotByThreadId.delete(nThreadId)
         this.streamEventsByThreadId.delete(nThreadId)
+      }
+      if (notification.method === 'turn/started') {
+        const turn = asRecord(asRecord(notification.params)?.turn)
+        const turnId = readNonEmptyString(turn?.id)
+        if (turnId && readGenerationMetadata(turn?.generationMetadata)?.collaborationModeSource === 'execution') {
+          this.submittedModeRequests.get(nThreadId)?.superseded.add(turnId)
+        }
       }
       if(notification.method==='thread/deleted'){
         this.retireQuestionRequests(nThreadId)
@@ -663,13 +717,15 @@ export class AppServerClient {
         try {
           const generationMetadata = await this.rolloutMetadata.rememberSubmittedMode(resumeId, turnId, mode, getConnectionProfileId())
           if (generationMetadata && generation === this.connectionGeneration) {
-            this.emitNotification({ method: 'turn/generationMetadata', params: { threadId: resumeId, turnId, generationMetadata } })
+            this.publishGenerationMetadata(resumeId, turnId, generationMetadata)
           }
         } catch { /* A best-effort cache write must never change native acceptance. */ }
       }
     }
     if (method === 'thread/turns/list' && Array.isArray(record?.data)) {
-      if (record.data.length && asRecord(params)?.itemsView !== 'notLoaded') this.recoverRolloutMetadata(resumeId, record.data, false, retainedTurnIds)
+      if ((record.data.length || retainedTurnIds.length) && asRecord(params)?.itemsView !== 'notLoaded') {
+        this.recoverRolloutMetadata(resumeId, record.data, false, retainedTurnIds)
+      }
     }
     const thread = asRecord(record?.thread)
     if (thread && typeof thread.id === 'string' && Array.isArray(thread.turns)) {
@@ -678,6 +734,7 @@ export class AppServerClient {
     if (method === 'thread/revert') {
       this.snapshotEpoch = {}
       const id = readNonEmptyString(asRecord(params)?.threadId)
+      this.submittedModeRequests.delete(id)
       this.lastThreadReadSnapshotByThreadId.delete(id)
       this.streamEventsByThreadId.delete(id)
     }

@@ -131,8 +131,21 @@ type Client = {
  * No session contents are retained. Cache validation always stats the source. */
 export class RolloutGenerationMetadata {
   private readonly pending = new Map<string, Promise<Map<string, TurnGenerationMetadata>>>()
+  private readonly pendingCacheReads = new Map<string, Promise<ReturnType<typeof record>>>()
   private tail: Promise<unknown> = Promise.resolve()
   constructor(private readonly client: Client) {}
+
+  private readLocalCache(path: string): Promise<ReturnType<typeof record>> {
+    const pending = this.pendingCacheReads.get(path)
+    if (pending) return pending
+    const read = readCache(path).then(record, () => undefined).finally(() => this.pendingCacheReads.delete(path))
+    this.pendingCacheReads.set(path, read)
+    return read
+  }
+
+  async readSubmittedModes(threadId: string, profileId: string): Promise<Map<string, CollaborationModeKind>> {
+    return submittedModes(await this.readLocalCache(cachePath(threadId, profileId)))
+  }
 
   recover(threadId: string, force = false): Promise<Map<string, TurnGenerationMetadata>> {
     const generation = this.client.generation()
@@ -170,7 +183,7 @@ export class RolloutGenerationMetadata {
 
   private async read(threadId: string, profileId: string, generation: number, force: boolean) {
     const destination = cachePath(threadId, profileId)
-    const cached = record(await readCache(destination).catch(() => undefined))
+    const cached = await this.readLocalCache(destination)
     let submitted = submittedModes(cached)
     const fallback = () => generation === this.client.generation() ? combineEvidence(new Map(), submitted) : new Map<string, TurnGenerationMetadata>()
     const rpc = async (method: string, params: unknown) => {

@@ -8,8 +8,61 @@ const { join } = require('node:path')
 const { WebSocketServer, WebSocket } = require('ws')
 const { fixtureWebuiStorage } = require('./fixture-webui-storage.cjs')
 
+async function verifyCachedPlanInBrowser(backend, threadId, loadRollout, releaseRollout) {
+  const { chromium } = require('playwright')
+  const viewport = { width: 1280, height: 900 }
+  const url = `http://127.0.0.1:4173/#/thread/${threadId}`
+  const output = 'output/playwright'
+  mkdirSync(output, { recursive: true })
+  const browser = await chromium.launch()
+  let notifications
+  try {
+    const page = await browser.newPage({ viewport, colorScheme: 'light' })
+    const historyCalls = []
+    await page.route('**/codex-api/**', async route => {
+      const request = new URL(route.request().url())
+      if (request.pathname === '/codex-api/rpc' && route.request().method() === 'POST') {
+        const call = route.request().postDataJSON()
+        if (call.params?.threadId === threadId && ['thread/read', 'thread/resume', 'thread/turns/list'].includes(call.method)) {
+          historyCalls.push(call)
+        }
+      }
+      const response = await route.fetch({ url: new URL(request.pathname + request.search, backend).href })
+      await route.fulfill({ response })
+    })
+    await page.routeWebSocket('**/codex-api/ws', socket => {
+      notifications = new WebSocket(backend.replace('http:', 'ws:') + '/codex-api/ws')
+      notifications.on('message', raw => socket.send(String(raw)))
+      socket.onClose(() => notifications.terminate())
+    })
+    await page.goto(url)
+    const recent = page.locator('[data-message-id="prompt-13"] .message-plan-badge')
+    const older = page.locator('[data-message-id="prompt-2"] .message-plan-badge')
+    await recent.waitFor()
+    await loadRollout()
+    await page.getByRole('button', { name: 'Load earlier messages' }).click()
+    await older.waitFor()
+    assert.equal(await page.locator('.message-plan-badge').count(), 2)
+    await older.scrollIntoViewIfNeeded()
+    await page.waitForTimeout(2200)
+    const blocked = join(output, 'plan-cache-blocked-1280-light.png')
+    await page.screenshot({ path: blocked })
+    await releaseRollout(historyCalls)
+    await older.waitFor({ state: 'hidden' })
+    assert.equal(await recent.count(), 1)
+    await page.waitForTimeout(2200)
+    const resolved = join(output, 'plan-cache-conflict-1280-light.png')
+    await page.screenshot({ path: resolved })
+    console.log('PASS fresh browser', url, viewport, 'recent and older cached Plan badges during a blocked rollout and later conflict', blocked, resolved)
+  } finally {
+    notifications?.terminate()
+    await browser.close()
+  }
+}
+
 async function run() {
   const unix = process.env.CODEXAPP_FIXTURE_TRANSPORT === 'unix'
+  const verifyBrowser = process.env.CODEXAPP_FIXTURE_BROWSER === '1'
   if (unix && process.platform === 'win32') throw new Error('Unix fixture requires Linux/macOS')
   const directory = mkdtempSync(join(tmpdir(), 'webui-app-server-fixture-'))
   const path = unix ? join(directory, 'codex.sock') : null
@@ -31,9 +84,20 @@ async function run() {
   const endpoint = path ? 'unix://' + path : 'ws://127.0.0.1:' + http.address().port
   const frames = []
   const historyId = 'history-cursor-fixture'
-  const historyTurns = Array.from({ length: 15 }, (_, index) => ({ id: 'turn-' + index, items: [] }))
+  const historyTurns = Array.from({ length: 15 }, (_, index) => ({
+    id: 'turn-' + index, status: 'completed', items: [
+      { id: 'prompt-' + index, type: 'userMessage', content: [{ type: 'text', text: 'Fixture prompt ' + index }] },
+    ],
+  }))
+  const historyThread = {
+    id: historyId, name: 'Plan cache fixture', preview: 'Fixture prompt', cwd: '/fixture/project',
+    createdAt: 1795136100, updatedAt: 1795136100, status: { type: 'idle' }, modelProvider: 'fixture-provider',
+  }
   const olderCursor = 'native-opaque-cursor'
   const questionCases = new Map()
+  const rolloutPath = '/fixture/core/sessions/2026/11/20/rollout-fixture.jsonl'
+  let heldRollout
+  let rolloutRead
   let connections = 0
   server.on('connection', socket => {
     connections++
@@ -55,8 +119,13 @@ async function run() {
         metadataFixtureRead=true;socket.send(JSON.stringify({id:frame.id,...reply}));return
       }
       if (frame.method === 'turn/start' && frame.params.threadId === historyId) {
-        const id = frame.params.collaborationMode?.mode === 'plan' ? 'turn-2' : 'turn-12'
+        const id = frame.params.input?.[0]?.text === 'Recent Plan fixture' ? 'turn-13'
+          : frame.params.collaborationMode?.mode === 'plan' ? 'turn-2' : 'turn-12'
         socket.send(JSON.stringify({ id: frame.id, result: { turn: { id } } }))
+        return
+      }
+      if (heldRollout && frame.method === 'fs/readFile' && frame.params.path === rolloutPath) {
+        rolloutRead = raw => socket.send(JSON.stringify({ id: frame.id, result: { dataBase64: Buffer.from(raw).toString('base64') } }))
         return
       }
       if (['turn/start', 'turn/steer'].includes(frame.method)) {
@@ -80,15 +149,17 @@ async function run() {
       }
       if (frame.method === 'fs/writeFile') files.set(frame.params.path, Buffer.from(frame.params.dataBase64, 'base64'))
       const result = frame.method === 'initialize' ? { codexHome: '/fixture/core', platformOs: 'linux' }
-        : frame.method === 'fs/getMetadata' ? { isDirectory: true, isSymlink: false }
+        : frame.method === 'fs/getMetadata' ? frame.params.path === rolloutPath
+          ? { isFile: true, modifiedAtMs: 1 } : { isDirectory: true, isSymlink: false }
         : frame.method === 'thread/name/set' ? {}
         : frame.method === 'account/read' ? { account: { type: 'apiKey', apiKey: 'fixture-secret' }, requiresOpenaiAuth: true, authToken: 'fixture-secret' }
         : frame.method === 'account/login/start' ? { type: 'chatgpt', loginId: 'fixture-login', authUrl: 'https://example.invalid/sign-in', accessToken: 'fixture-secret' }
         : frame.method === 'account/login/cancel' ? { status: 'canceled' }
         : frame.method === 'modelProvider/list' ? { data: [{ id: 'fixture-provider', displayName: 'Fixture', isDefault: true }] }
         : frame.method === 'model/list' ? { data: [{ id: frame.params.cursor ? 'fixture-hidden' : 'fixture-model', hidden: Boolean(frame.params.cursor), isDefault: !frame.params.cursor }], nextCursor: frame.params.cursor ? null : 'fixture-next' }
-        : ['thread/list', 'project/list'].includes(frame.method) ? { data: [], nextCursor: null }
-        : frame.method === 'thread/read' && frame.params.threadId === historyId ? { thread: { id: historyId, turns: [] }, modelProvider: 'fixture-provider', model: 'fixture-model' }
+        : ['thread/list', 'project/list'].includes(frame.method) ? { data: heldRollout && frame.method === 'thread/list' ? [historyThread] : [], nextCursor: null }
+        : ['thread/read', 'thread/resume'].includes(frame.method) && frame.params.threadId === historyId
+          ? { thread: { ...historyThread, turns: [], path: heldRollout ? rolloutPath : null }, modelProvider: 'fixture-provider', model: 'fixture-model' }
         : frame.method === 'thread/turns/list' && frame.params.threadId === historyId
           ? { data: frame.params.cursor ? historyTurns.slice(0, 5).reverse() : historyTurns.slice(5).reverse(), nextCursor: frame.params.cursor ? null : olderCursor }
           : {}
@@ -117,7 +188,7 @@ async function run() {
       // Codex is absent on this host; CLI precedence deliberately overrides a refused env URL.
       const env = {
         ...process.env, ...storageEnv, CODEXUI_APP_SERVER_URL: dev ? endpoint : 'ws://127.0.0.1:1',
-        CODEXUI_APP_SERVER_RPC_DEADLINE_MS: '500',
+        CODEXUI_APP_SERVER_RPC_DEADLINE_MS: verifyBrowser && dev && profile === shortHostname ? '15000' : '500',
       }
       if (uploadOverride === undefined) delete env.CODEXUI_REMOTE_UPLOAD_DIR
       else env.CODEXUI_REMOTE_UPLOAD_DIR = uploadOverride
@@ -418,6 +489,53 @@ async function run() {
             ['thread/read', 'thread/read', 'thread/turns/list'])
           assert(!frames.slice(beforeModeRecovery).some(frame => 'retainedTurnIds' in frame.params))
           console.log('PASS', profile, previousRuns ? 'restart' : 'acceptance', 'exact retained Plan and Default mode, unavailable rollout, no extra native calls')
+          if (previousRuns) {
+            await historyRequest('turn/start', { input: [{ type: 'text', text: 'Recent Plan fixture' }], collaborationMode: { mode: 'plan' } })
+            heldRollout = true
+            rolloutRead = undefined
+            modes.clear()
+            const blockedAt = frames.length
+            const loadRollout = async () => {
+              for (let attempt = 0; attempt < 100 && !rolloutRead; attempt++) await new Promise(resolve => setTimeout(resolve, 10))
+              assert(rolloutRead, 'fixture must be holding a remote rollout read')
+            }
+            const releaseRollout = async browserHistory => {
+              const blockedFrames = frames.slice(blockedAt)
+              const historyFrames = blockedFrames.filter(frame => frame.params?.threadId === historyId)
+              const requests = browserHistory ?? [{ method: 'thread/read', params: { includeTurns: true } }]
+              const recentReads = requests.filter(frame => frame.method !== 'thread/turns/list')
+              const expectedPages = requests.filter(frame => frame.method === 'thread/turns/list' ||
+                (frame.params?.includeTurns !== false && frame.params?.excludeTurns !== true))
+              assert.equal(historyFrames.filter(frame => frame.method === 'thread/turns/list').length, expectedPages.length)
+              assert.equal(historyFrames.filter(frame => frame.method === 'thread/read' || frame.method === 'thread/resume').length, recentReads.length + 1)
+              assert.equal(blockedFrames.filter(frame => frame.method === 'fs/readFile').length, 1)
+              assert(!historyFrames.some(frame => 'retainedTurnIds' in frame.params))
+              const evidence = [
+                { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-2', collaboration_mode_kind: 'default' } },
+                { type: 'turn_context', payload: { turn_id: 'turn-2', collaboration_mode: { mode: 'plan' } } },
+              ]
+              modes.clear()
+              rolloutRead(evidence.map(row => JSON.stringify(row) + '\n').join(''))
+              await waitForModes(['turn-2'])
+              assert.deepEqual(modes.get('turn-2'), { collaborationMode: null, collaborationModeSource: 'execution' })
+              assert.deepEqual(frames.slice(blockedAt + blockedFrames.length).map(frame => frame.method)
+                .filter(method => method?.startsWith('fs/')), ['fs/getMetadata'])
+            }
+            if (verifyBrowser) {
+              await verifyCachedPlanInBrowser(url, historyId, loadRollout, releaseRollout)
+            } else {
+              await historyRequest('thread/read', { includeTurns: true, retainedTurnIds: ['turn-2'] })
+              await loadRollout()
+              await waitForModes(['turn-2', 'turn-12', 'turn-13'])
+              assert.deepEqual(modes.get('turn-2'), { collaborationMode: 'plan', collaborationModeSource: 'submitted' })
+              await releaseRollout()
+            }
+            heldRollout = false
+            modes.clear()
+            await historyRequest('thread/read', { includeTurns: true, retainedTurnIds: ['turn-2'] })
+            await waitForModes(['turn-12', 'turn-13'])
+            console.log('PASS blocked rollout releases exact Plan fallback immediately and later clears a conflicting badge')
+          }
         } finally { metadataStream.terminate() }
         if (previousRuns) nativeSocket.send(JSON.stringify({ method: 'thread/deleted', params: { threadId: historyId } }))
         const metadataRead=async(includeTurns)=>{
