@@ -121,6 +121,8 @@ async function verify(page, theme, viewport) {
   await pending.getByRole('alert').getByText('Question reply could not be confirmed. Your draft is kept.').waitFor()
   assert.equal(await pending.getByPlaceholder('Other answer').inputValue(), 'Keep this draft')
   assert.equal(fixture.calls.filter(call => call.id === 302).length, 1)
+  assert.equal(await pending.getByRole('button', { name: 'Dismiss draft' }).count(), 0)
+  emit('server/request/resolved', { id: 302, threadId: thread.id })
   await pending.getByRole('button', { name: 'Dismiss draft' }).click()
   pendingQuestion(303)
   await pending.getByPlaceholder('Other answer').fill('Attempt that cannot be saved')

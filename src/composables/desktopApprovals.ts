@@ -70,7 +70,12 @@ export function createDesktopApprovals(deps: {
     }
     function dismissQuestionDraft(id: number): void {
         const request = findPendingRequest(id);
-        if (request && (request.questionClosed || readQuestionDraft(request)?.attempt?.error)) rememberClosed(id, request);
+        if (!request || request.method !== QUESTION_REQUEST) return;
+        const attempt = readQuestionDraft(request)?.attempt;
+        if (request.questionClosed) rememberClosed(id, request);
+        else if (attempt?.retryable && !request.answerAttempted) clearQuestionDraft(request.threadId, questionDraftKey(request));
+        else return;
+        if (attempt?.error && deps.error.value === attempt.error) deps.error.value = '';
     }
     function clearThreadQuestions(threadId: string): void {
         questionDrafts.delete(threadId);
@@ -283,6 +288,7 @@ export function createDesktopApprovals(deps: {
                 const pending = findPendingRequest(reply.id);
                 const retryable = Boolean(pending && !pending.questionClosed && unknownError instanceof CodexApiError &&
                     unknownError.code === QUESTION_REPLY_NOT_SENT);
+                if (retryable && pending?.answerAttempted) upsertPendingServerRequest({ ...pending, answerAttempted: false });
                 const message = retryable && unknownError instanceof Error ? unknownError.message : QUESTION_REPLY_UNCONFIRMED;
                 draft.attempt = { error: message, retryable };
                 deps.error.value = message;

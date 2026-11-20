@@ -227,7 +227,7 @@
 
           <footer class="thread-pending-request-footer thread-pending-request-footer--question">
             <p v-if="questionError" class="thread-pending-request-question-error" role="alert">{{ questionError }}</p>
-            <button v-if="questionError" type="button" class="thread-pending-request-secondary"
+            <button v-if="questionError && (request.questionClosed || canRetryQuestion)" type="button" class="thread-pending-request-secondary"
               @click="emit('dismissQuestionDraft', request.id)">Dismiss draft</button>
             <button v-if="!questionError || canRetryQuestion" type="button" class="thread-pending-request-primary"
               :disabled="isAwaitingQuestionConfirmation || !hasToolAnswer"

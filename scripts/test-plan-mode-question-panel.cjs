@@ -109,6 +109,7 @@ async function verify(page, viewport, theme) {
   let historyResponse = null
   let secondHistoryResponse = null
   let finishFailedReply
+  let retryableAttempts = 0
   const turns = [
     { id: 'first-turn', status: 'completed', items: [{ type: 'agentMessage', id: 'first', text: 'Fixture start' }] },
     history('Earlier history'),
@@ -134,7 +135,10 @@ async function verify(page, viewport, theme) {
   const { calls, emit, errors } = await setup(page, async (body, _page, url) => {
     if (url.pathname.endsWith('/server-requests/respond')) {
       if (body.id === 260) return new Promise(resolve => { finishFailedReply = resolve })
-      const request = [200, 201, 204].includes(body.id) && body.result?.answers
+      if (body.id === 262 && ++retryableAttempts === 1) return { status: 502, json: {
+        error: 'Question reply was not sent. Your draft is kept. You can retry.', code: 'question_reply_not_sent',
+      } }
+      const request = [200, 201, 204, 262].includes(body.id) && body.result?.answers
       if (!request) return { json: { ok: true } }
       const turnId = body.id === 201 ? 'live' : body.id === 204 ? 'first-turn' : 'question-turn'
       const response = {
@@ -193,7 +197,8 @@ async function verify(page, viewport, theme) {
   await pager.waitFor()
   await list.evaluate(element => { element.scrollTop = element.scrollHeight })
   assert.ok(Math.abs(await bottomGap()) <= 1)
-  emit('server/request', questionRequest(200, 'question-turn'))
+  pendingOnReload = questionRequest(200, 'question-turn')
+  emit('server/request', pendingOnReload)
   await heading.waitFor()
   await jumpQuestion.waitFor()
   assert.ok(Math.abs(await bottomGap()) <= 1, 'an earlier question should keep the latest output in view')
@@ -606,7 +611,9 @@ async function verify(page, viewport, theme) {
   assert.equal(await list.locator('[data-message-id="question-response-answer-260"]').count(), 0)
   assert.equal(await page.evaluate(value => [localStorage, sessionStorage].some(storage =>
     Object.values(storage).some(row => row.includes(value))), draft), false)
+  emit('server/request/resolved', { id: 260, threadId: thread.id })
   const dismiss = panel.getByRole('button', { name: 'Dismiss draft' })
+  await dismiss.waitFor()
   const dismissColor = await dismiss.evaluate(element => getComputedStyle(element).color)
   assert.ok(theme === 'dark' ? lightness(dismissColor) > 0.65 : lightness(dismissColor) < 0.55, dismissColor)
   await panel.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
@@ -616,8 +623,39 @@ async function verify(page, viewport, theme) {
   await dismiss.click()
   await heading.waitFor({ state: 'hidden' })
 
+  pendingOnReload = questionRequest(262, 'question-turn')
+  pendingOnReload.params.questions[0].isSecret = true
+  emit('server/request', pendingOnReload)
+  await heading.waitFor()
+  const defaultChoice = await choice.innerText()
+  await choice.click()
+  await panel.getByRole('button', { name: 'Full review', exact: true }).click()
+  await other.fill(draft)
+  await send.click()
+  await panel.getByRole('button', { name: 'Retry', exact: true }).waitFor()
+  await dismiss.click()
+  await send.waitFor()
+  assert.equal(await panel.getByRole('alert').count(), 0)
+  assert.equal(await choice.innerText(), defaultChoice)
+  assert.equal(await other.inputValue(), '')
+  assert.equal(retryableAttempts, 1, 'dismissing the draft does not send a reply')
+  const refreshedPending = page.waitForResponse(response => response.url().endsWith('/server-requests/pending'))
+  emit('app-server/reconnected', {})
+  await refreshedPending
+  await heading.waitFor()
+  assert.equal(await other.inputValue(), '')
+  await panel.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
+  const dismissedScreenshot = join(output, `question-draft-dismissed-${viewport.width}-${theme}.png`)
+  await page.waitForTimeout(2200)
+  await page.screenshot({ path: dismissedScreenshot })
+  await send.click()
+  await list.locator('[data-message-id="question-response-answer-262"]').waitFor()
+  assert.deepEqual(replies().filter(reply => reply.id === 262).map(reply => reply.result.answers.scope.answers), [
+    ['Full review', draft], [defaultChoice],
+  ])
+
   assert.deepEqual(errors, [])
-  return { url, viewport, theme, failedScreenshot, answerScreenshot, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
+  return { url, viewport, theme, failedScreenshot, dismissedScreenshot, answerScreenshot, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0 }
 }
 
 async function main() {
