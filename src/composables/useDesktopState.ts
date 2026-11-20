@@ -302,13 +302,13 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
   const operationEpoch = ref(0)
   const nativeDeletion=shallowRef<import('./threadDeletion').ThreadDeletion|null>(null)
   async function ensureNativeDeletion(){const epoch=operationEpoch.value,owner=connection.lifecycleGeneration,module=await import('./threadDeletion');if(epoch!==operationEpoch.value||owner!==connection.lifecycleGeneration)return null
-    if(!nativeDeletion.value)nativeDeletion.value=module.createThreadDeletion({epoch:operationEpoch,selected:selectedThreadId,ready:()=>transportState.value!=='disconnected',blocked:()=>isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||turns.isSendingMessage.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.blocking.value||(approvals.pendingServerRequestsByThreadId.value[selectedThreadId.value]?.length??0)>0})
+    if(!nativeDeletion.value)nativeDeletion.value=module.createThreadDeletion({epoch:operationEpoch,selected:selectedThreadId,ready:()=>transportState.value!=='disconnected',blocked:()=>isRollingBack.value||inProgressById.value[selectedThreadId.value]===true||turns.isSendingMessage.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.blocking.value||approvals.getThreadPendingRequests(selectedThreadId.value).length>0})
     return nativeDeletion.value
   }
   const accountSettings = createAccountSettings()
   const accountRevision = ref(0)
   const accountUsageEpoch = computed(() => operationEpoch.value + accountRevision.value)
-  const nativeAccountChangeBlocked=computed(()=>nativeDeletion.value?.blocking.value||hasActiveInProgressThreads()||turns.isSendingMessage.value||turns.isInterruptingTurn.value||isRollingBack.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.busy.value||permissionChanges.state.value==='unknown'||Object.values(approvals.pendingServerRequestsByThreadId.value).some(rows=>rows.length>0))
+  const nativeAccountChangeBlocked=computed(()=>nativeDeletion.value?.blocking.value||hasActiveInProgressThreads()||turns.isSendingMessage.value||turns.isInterruptingTurn.value||isRollingBack.value||compaction.busy.value||review.busy.value||nativeQueue.writing.value||permissionChanges.busy.value||permissionChanges.state.value==='unknown'||Object.values(approvals.pendingServerRequestsByThreadId.value).some(rows=>approvals.readPendingRequestState(rows)!==null))
   watch(operationEpoch,()=>{securityObservation.clear();deniedActions.clear()},{flush:'sync'})
   const review = createThreadReview({ epoch: operationEpoch, selected: selectedThreadId,
     blocked: () => nativeDeletion.value?.selectedBlocking.value || isRollingBack.value || inProgressById.value[selectedThreadId.value] === true || turns.isSendingMessage.value || compaction.busy.value || permissionChanges.blocking.value ||
@@ -1048,7 +1048,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
       projectName: group.projectName,
       threads: group.threads.map((thread) => {
         const inProgress = inProgressById.value[thread.id] === true
-        const pendingRequestState = approvals.readPendingRequestState(approvals.getThreadPendingRequests(thread.id))
+        const pendingRequestState = approvals.readPendingRequestState(approvals.pendingServerRequestsByThreadId.value[thread.id] ?? [])
         const unread = thread.nativeReadState?.firstUnread != null
 
         return {

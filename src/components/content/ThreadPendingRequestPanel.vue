@@ -73,7 +73,7 @@
           <IconTablerChevronRight class="plan-card-chevron" />
           {{ requestPanelTitle(request) }}
         </button>
-        <header v-if="!isToolQuestion || isQuestionExpanded" class="thread-pending-request-header">
+        <header v-if="!isToolQuestion || (isQuestionExpanded && !request.questionClosed)" class="thread-pending-request-header">
           <div class="thread-pending-request-heading">
             <p v-if="!isToolQuestion" class="thread-pending-request-eyebrow">{{ requestPanelTitle(request) }}</p>
             <p class="thread-pending-request-title">{{ requestPanelPrompt(request) }}</p>
@@ -398,7 +398,7 @@ function readRequestReason(request: UiServerRequest): string {
 function requestPanelTitle(request: UiServerRequest): string {
   if (isApprovalRequest(request)) return 'Awaiting approval'
   if (isMcpElicitationRequest(request)) return 'MCP server input required'
-  if (request.method === QUESTION_REQUEST) return 'Awaiting response'
+  if (request.method === QUESTION_REQUEST) return request.questionClosed ? 'Question closed' : 'Awaiting response'
   if (request.method === 'item/tool/call') return 'Tool call waiting for response'
   return request.method
 }

@@ -128,7 +128,7 @@ NODE
 
 #### Automated fixture
 
-Run `node scripts/test-plan-mode-question-panel.cjs` against the same development server. It checks question placement, draft retention, keyboard toggles, reopening, approval and MCP input in the footer, and the jump flows above. The keyboard jump and history restoration both land inside the history pagination threshold and verify zero additional API requests. It saves screenshots of the jump controls, expanded and minimized cards, and the restored heading for each theme and viewport under `output/playwright/`.
+Run `node scripts/test-plan-mode-question-panel.cjs` against the same development server. It checks question placement, draft retention, keyboard toggles, reopening, approval and MCP input in the footer, and the jump flows above. The keyboard jump and history restoration both land inside the history pagination threshold and verify zero additional API requests. The fixture also checks that native closure labels the card **Question closed**, clears the pending sidebar indicator, and restores **Stop** while the draft is awaiting confirmation. Click **Stop** to send one interrupt for that turn. Send an ordinary prompt while the closed draft is visible and verify that it starts a new turn. Dismiss the retained draft. The fixture saves screenshots of these states for each theme and viewport under `output/playwright/`.
 
 #### Cleanup
 
@@ -138,7 +138,7 @@ Close the fixture browser. Its theme preference and response are isolated from y
 
 1. With a Codex App Server connected, open a persisted thread and prompt in Plan mode for multiple questions with choices, free text and a private field. Tab through the question, enter a choice, visible free text and private text. Submit once while clicking Send twice. Confirm a single WebSocket reply to Codex and one user-style bubble after the item preceding the question. Check each heading, answer order, **Answer hidden**, Sent time and **Copy answers**. Paste the copied content into a scratch editor and search for the private value. The bubble has no Fork or Revert controls. Repeat in light and dark at desktop and mobile widths.
 2. Reload, open a fresh browser on the same WebUI profile and restart the WebUI backend while keeping Codex running. Check the same ID, placement, time and redacted content. Load an older page containing a saved answer. Disconnect its browser stream, submit a different old-turn response in another browser, then reconnect. Inspect the ordinary history response for records from the current page and the retained older turns only. Compare native page counts with an empty history response.
-3. Stop the App Server connection just after Send, or fixture a native closure with no matching tool result. The pending draft remains available with an error and no automatic retry. Simulate WebUI data-directory write failure after a matching native tool result. The bubble appears with the same redaction and the submitting browser warns that history saving failed.
+3. Stop the App Server connection just after Send, or fixture a native closure followed by turn completion with no matching tool result. The draft remains available with an error and no automatic retry. Simulate WebUI data-directory write failure after a matching native tool result. The bubble appears with the same redaction and the submitting browser warns that history saving failed.
 4. Archive and reopen the thread, then compare the same thread ID on another profile. The archive keeps the saved bubble, and the other profile has its own records. Native and Portable Fork retain eligible prompt and assistant behavior, with saved answers displayed only in the source. Revert through an answered turn and confirm its bubble disappears. Use the protocol fixture to observe confirmed native permanent deletion and check that the stored answers disappear.
 5. Close fixture browsers, remove temporary fixture profile data, and unarchive any live thread used for the check if needed.
 
@@ -154,13 +154,17 @@ Close the fixture browser. Its theme preference and response are isolated from y
    unconfirmed form still has both values. Inspect local and session storage for
    the test value. Dismiss the draft and confirm the panel disappears. Reloading
    the page starts a new in-memory draft.
-3. Run the external App Server protocol fixture. Inspect a native closure before
-   a matching result and expect an empty history until confirmation. On the
-   default stream after thread creation and resume, check one rollout transfer
-   per answered turn and one redacted saved answer even if completion repeats.
-   Check that mismatched IDs, changed answer ordering, cancellation, connection
-   loss and closure without a result save nothing. Check that browser events,
-   generation metadata caches and backend output contain no private value.
+3. Build the app and run the TCP and Unix external App Server protocol fixtures.
+   With raw result events, expect an empty history after native closure and a
+   saved answer as soon as the exact result arrives. On the default stream,
+   expect confirmation only after successful turn completion and one fresh
+   rollout transfer. The fixture waits past the original send deadline and
+   fills the metadata queue before completing the turn. Expect one native
+   reply, one rollout transfer ahead of waiting metadata reads and one
+   redacted answer even if completion repeats. Mismatches, cancellation,
+   connection loss and a missing closure before the send deadline save
+   nothing. Check that browser events, caches and backend output contain no
+   private value.
 4. When the bridge certifies that the socket did not send the frame and the
    request remains pending, use **Retry** once and look for confirmation before a
    bubble appears. Repeat with a fresh request and choose **Dismiss draft**.
@@ -177,8 +181,7 @@ that asks Codex to use `request_user_input`. Answer the question and wait for
 successful turn completion. Verify one saved answer, masked private values,
 and one native reply with the default event settings. Reload the thread to
 resume it, check the saved bubble, and answer a second Plan question. Interrupt
-a third turn after submitting its answer and before completion. If the
-question panel hides the composer, use the WebUI bridge's `turn/interrupt`
-RPC with the thread and turn IDs from the question event. Verify the interrupted
-turn has no saved answer, then dismiss its closed draft.
+a third turn with **Stop** after Codex closes the question and while the card
+shows **Awaiting confirmation…**. Verify the interrupted turn has no saved
+answer, then dismiss its closed draft.
 Archive the disposable thread and preserve the independent App Server process.
