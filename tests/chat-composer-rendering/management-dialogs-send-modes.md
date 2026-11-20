@@ -12,7 +12,7 @@ use a disposable native conversation and a supported independently managed serve
 1. At 1280×900, 768×1024, 375×812 and 320×900, inspect light and dark themes.
    Expand an MCP execution result. Its outer column must match assistant messages;
    output remains left aligned, with code/log scrolling local to its output.
-2. Enter a draft, select Queue mode from **+ → Send mode**, and leave the chat at
+2. Enter a draft, turn on **Queue mode** in **+**, and leave the chat at
    a known scroll position. Open **sidebar → Settings → Archived conversations**. Read a long
    title, inspect its full text/title tooltip, refresh, and exercise loading,
    empty and read-error states. Restore remains distinct from permanent deletion.
@@ -43,42 +43,35 @@ use a disposable native conversation and a supported independently managed serve
    while the dialog is open: output continues and appears once after closing.
    Forms and ordinary text must fit without page-wide horizontal scrolling.
 
-## Immediate default and selection semantics
+## Queue mode controls and submission
 
 1. Start a new conversation, including New conversation while already on Home.
-   Immediate is selected; no persistent Immediate label appears. The + menu marks
-   Immediate mode. Both existing modes (Immediate mode and Queue mode) are offered.
-2. Select Queue before the first message. Its compact indicator appears. The menu
-   explains that the first message creates the native conversation; it uses the
-   established initial-turn path. Once its persistent ID arrives, Queue remains
-   selected and subsequent submissions use the existing native queue API.
-3. Submit more than one queued message in the same conversation. Selection remains
-   Queue. Switch to Immediate during active work: only subsequent submissions use
-   immediate send/steer behavior; queued entry IDs, input, order and timing remain.
-   Selecting a mode itself must never start, release, reorder or replay queue work.
-4. Queue selection performs a guarded read-only readiness check. Failed reads or
-   uncertain receipts keep Send disabled and link to queue inspection. Existing
-   confirmation and acknowledgment requirements remain unchanged.
-5. Switch to another existing conversation, revisit the original, and reload.
-   Each starts Immediate, preserving the prior reset-on-entry behavior. No new
-   per-thread or browser send-mode preference storage exists. Opening/closing
-   management UI alone must retain the current selection.
-
-## Queue mode typography and color
-
-Setup: use the fixture or disposable conversation described above with Model and
-Reasoning Effort controls visible. Select **+ → Send mode → Queue mode**.
-
-1. In both light and dark themes, compare the Queue mode indicator with Model and
-   Reasoning Effort. Computed font family, size, weight, line height and letter
-   spacing must match; size and line height use the existing `text-sm` and
-   `leading-tight` tokens. Computed text color must also match, using
-   `text-zinc-500` in light theme and `text-zinc-400` in dark theme.
-2. Confirm the existing padding, spacing and layout rules remain unchanged. Click
-   the Queue mode indicator: the send-mode menu still opens with Queue selected.
-   Select Immediate mode: the indicator disappears without submitting a message.
-
-Cleanup: restore Immediate mode and the original theme. No messages need sending.
+   Open **+** and confirm **Queue mode** starts off. Enter a draft and click the
+   switch. Confirm it turns on and the menu stays open. Press Enter and then
+   Space with the switch focused. Confirm it turns off and then on, with focus
+   still on the switch. Check the draft and verify that switching has issued
+   zero turn starts, steers or queue writes.
+2. Before the first message, check the menu description and **Queue ×** above
+   the draft. Send the first message and confirm it creates the conversation
+   and starts a turn. Confirm **Queue ×** is still visible after navigation.
+   Send a second message and inspect Conversation tools for the queued entry.
+3. At desktop, tablet and mobile widths in both themes, enable **Plan mode** and
+   **Queue mode** in the same conversation. Compare the two switches and check
+   that **Plan ×**, then **Queue ×**, appear in one row above the draft with the
+   same font, color and padding. Select **Queue ×** and confirm **Plan ×** and
+   the draft remain. Turn Queue mode on again and select **Plan ×** to confirm
+   **Queue ×** remains.
+4. Turn Queue mode off while a response is active and explicitly send a draft.
+   Confirm it steers the active turn and existing queued entries keep their IDs,
+   input and order. With an idle conversation, Queue mode off sends a normal turn.
+5. In an existing fixture conversation, fail the first queue readiness read
+   while the **+** menu is open. Verify that the notice and **Inspect native prompt
+   queue** stay visible below the composer, clear of the menu. Verify that the
+   draft stays editable and **Queue prompt** stays disabled.
+6. Enable Queue mode, switch to another existing conversation and revisit the
+   original. Enable it again and reload. Confirm Queue mode is off after each
+   navigation or reload, with any saved draft intact. Opening or closing
+   management dialogs preserves the current selection.
 
 Cleanup: close fixture pages. In a manual disposable thread, explicitly inspect
 and remove pending prompts using the existing confirmed queue actions, restore

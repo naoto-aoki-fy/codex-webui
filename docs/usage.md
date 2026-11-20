@@ -39,10 +39,10 @@ when no longer needed. Mobile browsers access the App Server host's projects and
 
 
 
-Immediate mode is the default; during an active turn it uses Steer. Choose
-Immediate mode or native Queue mode from **composer + → Send mode**. Queue mode
-shows a compact indicator and requires the supported native queue service. Stop
-remains available during generation. Earlier history loads on demand. See
+The composer sends immediately by default and uses Steer during an active turn.
+Turn on **Queue mode** in the composer **+** menu to use the native queue.
+**Queue ×** appears above the draft and turns Queue mode off when selected.
+Stop remains available during generation. Earlier history loads on demand. See
 [management entry points and send-mode behavior](management-ui.md) for dialogs,
 thread-switch resets and the first-message boundary.
 

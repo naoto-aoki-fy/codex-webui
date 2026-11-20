@@ -140,8 +140,9 @@
             <span>/{{ item.name }}</span><small>{{ item.description }}</small>
           </button>
         </div>
-        <div v-if="isPlanModeSelected" class="thread-composer-active-mode">
-          <button type="button" @click="emit('update:selected-collaboration-mode', 'default')">{{ ('Plan') }} ×</button>
+        <div v-if="isPlanModeSelected || input.queueMode.value" class="thread-composer-active-mode">
+          <button v-if="isPlanModeSelected" type="button" @click="emit('update:selected-collaboration-mode', 'default')">{{ ('Plan') }} ×</button>
+          <button v-if="input.queueMode.value" type="button" @click="input.queueMode.value = false">Queue ×</button>
         </div>
         <textarea
           ref="inputRef"
@@ -209,13 +210,6 @@
             </button>
 
             <button v-if="!isNewThread" class="thread-composer-attach-item" type="button" @click="isAttachMenuOpen=false;isAppsPickerOpen=!isAppsPickerOpen">Apps / Connectors<span v-if="selectedApps.length"> ({{ selectedApps.length }})</span></button>
-            <fieldset class="composer-send-modes" role="radiogroup" aria-label="Send mode" @keydown="onSendModeKeydown">
-              <legend>Send mode</legend>
-              <button v-for="mode in [{queue:false,label:'Immediate mode'},{queue:true,label:'Queue mode'}]" :key="mode.label" class="thread-composer-attach-setting" type="button" role="radio" :tabindex="input.queueMode.value===mode.queue ? 0 : -1" :aria-checked="input.queueMode.value===mode.queue" @click="input.queueMode.value=mode.queue;isAttachMenuOpen=false">
-                <span class="thread-composer-attach-setting-label">{{ mode.label }}</span><span aria-hidden="true">{{ input.queueMode.value===mode.queue ? '✓' : '' }}</span>
-              </button>
-              <p v-if="isNewThread">The first message creates the conversation. Queue mode applies to subsequent submissions.</p>
-            </fieldset>
             <div class="thread-composer-attach-separator" />
             <button
               class="thread-composer-attach-setting"
@@ -252,6 +246,25 @@
                   'is-busy': isUpdatingSpeedMode,
                   'is-disabled': isSpeedToggleDisabled,
                 }"
+              />
+            </button>
+            <button
+              class="thread-composer-attach-setting"
+              type="button"
+              role="switch"
+              aria-label="Queue mode"
+              :aria-checked="input.queueMode.value"
+              :aria-describedby="isNewThread ? queueModeDescriptionId : undefined"
+              :disabled="isComposerConfigDisabled"
+              @click="input.queueMode.value = !input.queueMode.value"
+            >
+              <span class="thread-composer-attach-setting-copy">
+                <span class="thread-composer-attach-setting-label">Queue mode</span>
+                <span v-if="isNewThread" :id="queueModeDescriptionId" class="thread-composer-attach-setting-description">The first message creates the conversation. Queue mode applies to subsequent submissions.</span>
+              </span>
+              <span
+                class="thread-composer-attach-switch"
+                :class="{ 'is-on': input.queueMode.value }"
               />
             </button>
             <button
@@ -330,7 +343,6 @@
           @update:model-value="onReasoningEffortSelect"
         />
 
-        <button v-if="input.queueMode.value" type="button" class="thread-composer-control thread-composer-queue-mode" aria-label="Send mode: Queue mode" @click.stop="toggleAttachMenu">Queue mode</button>
         <div
           class="thread-composer-actions"
         >
@@ -525,6 +537,7 @@ const {
 } = settings
 
 const editorId = useId()
+const queueModeDescriptionId = useId()
 const showInputButtonRef = ref<HTMLButtonElement | null>(null)
 const collapseInputButtonRef = ref<HTMLButtonElement | null>(null)
 const isStopDisabled = computed(() => props.disabled
@@ -572,14 +585,6 @@ watch([settings.activeModelProvider, settings.modelOptions, () => props.selected
   const next = settings.modelOptions.value.find(option => option.value === fallback)?.value || settings.modelOptions.value[0]?.value || ''
   emit('update:selected-model', next)
 }, { immediate: true })
-
-function onSendModeKeydown(event: KeyboardEvent) {
-  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
-  event.preventDefault()
-  input.queueMode.value = event.key === 'Home' ? false : event.key === 'End' ? true : !input.queueMode.value
-  const group = event.currentTarget as HTMLElement
-  nextTick(() => group.querySelector<HTMLElement>('[aria-checked="true"]')?.focus())
-}
 
 function toggleAttachMenu(): void {
   if (input.isInteractionDisabled.value) return

@@ -364,38 +364,61 @@ it('preserves structured App references in drafts and submission and clears them
  c.submitted.mock.calls[0]![1](false);c.props.connectionEpoch=1;await vue.nextTick();c.submit()
  expect(c.submitted.mock.calls[1]![0].apps).toBeUndefined()
 })
-it('selects send modes in the + menu without opening tools or changing submitted snapshots', async () => {
+it('toggles Queue in the open menu and removes its chip independently of Plan and the draft', async () => {
   const c = mount({ queueReady: true, isTurnInProgress: true })
-  const choose = async (label: string) => {
-    c.nodes().find(n => n.props['aria-label'] === 'Add attachments and settings')!.props.onClick()
-    await vue.nextTick()
-    const modes = c.nodes().filter(n => n.props.role === 'radio')
-    expect(modes.find(n => n.children.some(child => child.text === label))).toBeDefined()
-    modes.find(n => n.children.some(child => child.text === label))!.props.onClick()
-    await vue.nextTick()
-  }
-  expect(c.nodes().some(n => n.props['aria-label'] === 'Send mode: Queue mode')).toBe(false)
-  await choose('Queue mode')
-  expect(c.nodes().some(n => n.props['aria-label'] === 'Send mode: Queue mode')).toBe(true)
-  c.exposed.appendTextToDraft('queued while active')
+  const control = (label: string) => c.nodes().find(n => n.props['aria-label'] === label)!
+  const chips = () => c.nodes().find(n => n.props.class === 'thread-composer-active-mode')
+    ?.children.filter(n => n.tag === 'button') ?? []
+  c.exposed.hydrateDraft(payload)
+  control('Add attachments and settings').props.onClick()
   await vue.nextTick()
+  const queueSwitch = control('Queue mode')
+  expect(queueSwitch.props).toMatchObject({ role: 'switch', type: 'button', 'aria-checked': false })
+  expect(chips()).toHaveLength(0)
+
+  queueSwitch.props.onClick()
+  await vue.nextTick()
+  expect(control('Queue mode')).toBe(queueSwitch)
+  expect(queueSwitch.props['aria-checked']).toBe(true)
+  expect(chips().map(n => n.text)).toEqual(['Queue ×'])
+
+  c.props.selectedCollaborationMode = 'plan'
+  await vue.nextTick()
+  expect(chips().map(n => n.text).sort()).toEqual(['Plan ×', 'Queue ×'])
+  chips().find(n => n.text === 'Queue ×')!.props.onClick()
+  await vue.nextTick()
+  expect(chips().map(n => n.text)).toEqual(['Plan ×'])
+  expect(queueSwitch.props['aria-checked']).toBe(false)
+  expect(c.submitted).not.toHaveBeenCalled()
+  expect(control('Steer')).toBeDefined()
+
+  queueSwitch.props.onClick()
+  await vue.nextTick()
+  c.props['onUpdate:selectedCollaborationMode'] = (mode: string) => { c.props.selectedCollaborationMode = mode }
+  await vue.nextTick()
+  chips().find(n => n.text === 'Plan ×')!.props.onClick()
+  await vue.nextTick()
+  expect(chips().map(n => n.text)).toEqual(['Queue ×'])
   c.submit()
   const first = c.submitted.mock.calls[0]![0]
-  expect(first.queue).toBe(true)
-  c.submitted.mock.calls[0]![1](true)
-  await choose('Immediate mode')
-  expect(first.queue).toBe(true)
-  c.exposed.appendTextToDraft('steer')
+  expect(first).toEqual({ ...payload, queue: true })
+  c.submitted.mock.calls[0]![1](false)
+  queueSwitch.props.onClick()
   await vue.nextTick()
+  expect(queueSwitch.props['aria-checked']).toBe(false)
+  expect(first.queue).toBe(true)
   c.submit()
-  expect(c.submitted.mock.calls[1]![0].queue).toBeUndefined()
+  expect(c.submitted.mock.calls[1]![0]).toEqual(payload)
 })
 
 it('allows Queue selection before thread creation while sending the initial message normally', async () => {
   const c = mount({ activeThreadId: '__new-thread__' })
   c.nodes().find(n => n.props['aria-label'] === 'Add attachments and settings')!.props.onClick()
   await vue.nextTick()
-  c.nodes().filter(n => n.props.role === 'radio')[1]!.props.onClick()
+  const queueSwitch = c.nodes().find(n => n.props.role === 'switch' && n.props['aria-label'] === 'Queue mode')!
+  const description = c.nodes().find(n => n.props.id === queueSwitch.props['aria-describedby'])
+  expect(description?.text).toBe('The first message creates the conversation. Queue mode applies to subsequent submissions.')
+  queueSwitch.props.onClick()
   await vue.nextTick()
   expect(c.nodes().some(n => n.props['aria-label'] === 'Queue prompt')).toBe(false)
   expect(c.nodes().some(n => n.props['aria-label'] === 'Send message')).toBe(true)

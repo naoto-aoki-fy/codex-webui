@@ -50,6 +50,13 @@ async function openToolsDialog(page) {
 }
 async function openComposerEntry(page,name) {
  await page.getByRole('button',{name:'Add attachments and settings',exact:true}).click()
- await page.getByRole(['Immediate mode','Queue mode'].includes(name)?'radio':'button',{name:name==='Apps / Connectors'?/^Apps \/ Connectors/:name,exact:true}).click()
+ await page.getByRole('button',{name:name==='Apps / Connectors'?/^Apps \/ Connectors/:name,exact:true}).click()
 }
-module.exports={setup,thread,assert,openToolsDialog,openComposerEntry}
+async function enableQueueMode(page) {
+ const trigger=page.getByRole('button',{name:'Add attachments and settings',exact:true})
+ const queueSwitch=page.getByRole('switch',{name:'Queue mode',exact:true,checked:false})
+ await trigger.click()
+ await queueSwitch.click()
+ await trigger.click()
+}
+module.exports={setup,thread,assert,openToolsDialog,openComposerEntry,enableQueueMode}

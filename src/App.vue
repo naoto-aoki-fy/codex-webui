@@ -265,10 +265,6 @@
                   :request-count="selectedThreadLiveRequests.length"
                   @respond-server-request="onRespondServerRequest"
                 />
-                <p v-if="composerSendMode.queue.value && (nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value)" class="composer-runtime-error" role="alert">
-                  {{ nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value }}
-                  <button type="button" @click="openNativeQueue">Inspect native prompt queue</button>
-                </p>
                 <p v-if="questionSaveWarning" class="composer-runtime-error" role="alert">{{ questionSaveWarning }}</p>
                 <p v-if="modelSelectionNotice" class="composer-model-notice" role="status">{{ (modelSelectionNotice) }}</p>
                 <ThreadComposer
@@ -303,6 +299,10 @@
                   @update:selected-speed-mode="onSelectSpeedMode"
                   @edit-goal="threadGoalPanelRef?.edit()"
                   @interrupt="onInterruptTurn" />
+                <p v-if="composerSendMode.queue.value && (nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value)" class="composer-runtime-error" role="alert">
+                  {{ nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value }}
+                  <button type="button" @click="openNativeQueue">Inspect native prompt queue</button>
+                </p>
               </div>
             </div>
           </template>
@@ -312,6 +312,7 @@
   </DesktopLayout>
   <ManagementDialog :open="isConversationToolsOpen" title="Conversation tools" @close="isConversationToolsOpen=false">
                   <ConversationTools v-if="areConversationToolsLoaded" :thread-id="selectedThreadId"
+                    @vue:mounted="revealNativeQueue"
                     :security="securityObservation.snapshots.value[selectedThreadId] ?? null"
                     :denied-actions="deniedActions.rows.value"
                     :queue="nativeQueue"
@@ -436,6 +437,7 @@ const ConversationTools = defineAsyncComponent(() => import('./components/conten
 const areConversationToolsLoaded = ref(false)
 const isConversationToolsOpen = ref(false)
 const isContextOpen = ref(false)
+let queueInspectionTarget: { threadId: string; epoch: number } | undefined
 function openContext() {
   closeConversationMenu()
   isContextOpen.value = true
@@ -443,6 +445,7 @@ function openContext() {
 const conversationMenuRef = ref<HTMLDetailsElement | null>(null)
 function closeConversationMenu() { if (conversationMenuRef.value) conversationMenuRef.value.open = false }
 function openConversationTools() {
+  queueInspectionTarget = undefined
   closeConversationMenu()
   areConversationToolsLoaded.value = true
   isConversationToolsOpen.value = true
@@ -701,7 +704,12 @@ const filteredMessages = computed(() =>
   }),
 )
 const liveOverlay = computed(() => selectedLiveOverlay.value)
-watch(selectedThreadId, () => { isConversationToolsOpen.value = false; isContextOpen.value = false; closeConversationMenu() }, { flush: 'sync' })
+watch(selectedThreadId, () => {
+  queueInspectionTarget = undefined
+  isConversationToolsOpen.value = false
+  isContextOpen.value = false
+  closeConversationMenu()
+}, { flush: 'sync' })
 watch(isHomeRoute, (home, previous) => { if (home && !previous) restoreNewConversationPreferences() })
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
 const activeDraftComposer = computed(() => isHomeRoute.value ? homeThreadComposerRef.value : threadComposerRef.value)
@@ -1084,14 +1092,25 @@ function onWindowKeyDown(event: KeyboardEvent): void {
   }
 }
 
-async function openNativeQueue() {
-  const ownerThread=selectedThreadId.value,ownerEpoch=operationEpoch.value
+function openNativeQueue() {
   openConversationTools()
-  await import('./components/content/ConversationTools.vue')
-  await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()))
-  if(selectedThreadId.value!==ownerThread||operationEpoch.value!==ownerEpoch)return
+  queueInspectionTarget = { threadId: selectedThreadId.value, epoch: operationEpoch.value }
+  void nextTick(revealNativeQueue)
+}
+
+async function revealNativeQueue() {
+  const target = queueInspectionTarget
+  if (!target || !isConversationToolsOpen.value
+    || target.threadId !== selectedThreadId.value || target.epoch !== operationEpoch.value) return
   const panel = document.getElementById('native-prompt-queue') as HTMLDetailsElement | null
-  if (panel) { panel.open = true; panel.scrollIntoView({ block: 'nearest' }) }
+  // On first use, the mounted callback retries once the lazy panel exists.
+  if (!panel) return
+  queueInspectionTarget = undefined
+  panel.open = true
+  await nextTick()
+  if (!isConversationToolsOpen.value
+    || target.threadId !== selectedThreadId.value || target.epoch !== operationEpoch.value) return
+  panel.scrollIntoView({ block: 'nearest' })
   await nativeQueue.refresh()
 }
 
