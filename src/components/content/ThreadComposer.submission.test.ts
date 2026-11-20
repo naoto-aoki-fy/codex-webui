@@ -22,7 +22,7 @@ for (const node of ts.createSourceFile('composer.ts', script.content, ts.ScriptT
   imports[path] = await import(/* @vite-ignore */ resolve('src/components/content', path))
 }
 type Node = { tag: string; props: Record<string, any>; children: Node[]; parent?: Node; text?: string }
-const node = (tag: string): Node => ({ tag, props: {}, children: [], focus() {}, blur() {}, addEventListener() {}, removeEventListener() {}, getRootNode: () => ({ activeElement: null }), tagName: tag.toUpperCase(), style: {}, scrollHeight: 30, clientHeight: 30 } as Node)
+const node = (tag: string): Node => ({ tag, props: {}, children: [], focus() {}, blur() {}, addEventListener() {}, removeEventListener() {}, getRootNode: () => ({ activeElement: null }), tagName: tag.toUpperCase(), style: {} } as Node)
 let teleportTarget = node('body')
 const renderer = vue.createRenderer<Node, Node>({
   querySelector: selector => selector === 'body' ? teleportTarget : null,
@@ -69,6 +69,13 @@ function mount(initial: Record<string, unknown> = {}) {
   return { storage, exposed, submitted, props, selectedModels, nodes: () => [...all(root), ...all(body)], model: () => findModel(root)!, submit: () => find(root, 'form')!.props.onSubmit({ preventDefault() {} }) }
 }
 const payload = { text: 'follow-up', imageUrls: ['data:image/png;base64,abc'], fileAttachments: [{ label: 'file', path: '/file', fsPath: '/file' }], skills: [{ name: 'skill', path: '/skill' }] }
+
+function pressEnter(input: Node, modifiers: Partial<KeyboardEvent> = {}) {
+  const preventDefault = vi.fn()
+  input.props.onKeydown({ key: 'Enter', preventDefault, ...modifiers })
+  return preventDefault
+}
+
 it('hides the skills selector by default and toggles it without losing selected chips or submission skills', async () => {
   const skill = { name: 'review', description: 'Review changes', path: '/skills/review' }
   const c = mount({ skills: [skill], reasoningEffortOptions: [{ value: 'high', label: 'High' }] })
@@ -114,14 +121,17 @@ it('hides the skills selector by default and toggles it without losing selected 
 
 it('keeps slash skill selection available while the selector is hidden', async () => {
   const c = mount({ skills: [{ name: 'review', description: 'Review changes', path: '/skills/review' }] })
+  c.nodes().find(n => n.props['aria-label'] === 'Expand composer')!.props.onClick()
   c.exposed.appendTextToDraft('/review')
   await vue.nextTick()
   const input = c.nodes().find(n => n.tag === 'textarea')!
   input.props.onInput()
   await vue.nextTick()
-  const suggestion = c.nodes().find(n => n.props.class?.includes('thread-composer-file-mention-row'))!
-  suggestion.props.onMousedown({ preventDefault() {} })
+  expect(pressEnter(input, { isComposing: true })).not.toHaveBeenCalled()
+  expect(c.nodes().some(n => n.props['aria-label'] === 'Remove skill review')).toBe(false)
+  expect(pressEnter(input)).toHaveBeenCalledOnce()
   await vue.nextTick()
+  expect(c.submitted).not.toHaveBeenCalled()
   expect(c.nodes().some(n => n.props['aria-label'] === 'Remove skill review')).toBe(true)
   expect(c.nodes().some(n => n.tag === 'skill-dropdown')).toBe(false)
   c.exposed.appendTextToDraft('Please review')
@@ -129,6 +139,28 @@ it('keeps slash skill selection available while the selector is hidden', async (
   c.submit()
   expect(c.submitted.mock.calls[0]![0].skills).toEqual([{ name: 'review', path: '/skills/review' }])
 })
+
+it('selects the highlighted file with Enter while maximized', async () => {
+  const c = mount({ cwd: '/project' })
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [{ path: '/project/README.md' }] }))))
+  vi.useFakeTimers()
+  try {
+    c.nodes().find(n => n.props['aria-label'] === 'Expand composer')!.props.onClick()
+    c.exposed.appendTextToDraft('See @README')
+    await vue.nextTick()
+    const input = c.nodes().find(n => n.tag === 'textarea')!
+    input.props.onInput()
+    await vi.advanceTimersByTimeAsync(120)
+    expect(c.nodes().some(n => n.props.class?.includes('thread-composer-file-mention-row'))).toBe(true)
+    expect(pressEnter(input)).toHaveBeenCalledOnce()
+    await vue.nextTick()
+    expect(c.nodes().some(n => n.props['aria-label'] === 'Remove README.md')).toBe(true)
+    expect(c.submitted).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 it('preserves text, images, files, skills and persisted draft when the app rejects a rendered submission', async () => {
   const c = mount()
   c.exposed.hydrateDraft(payload)
@@ -303,18 +335,75 @@ it('allows Queue selection before thread creation while sending the initial mess
   expect(c.submitted.mock.calls[0]![0].queue).toBeUndefined()
 })
 
+it.each(['__new-thread__', 'child'])('shows maximize for empty, short and long drafts in %s', async activeThreadId => {
+  const c = mount({ activeThreadId })
+  const toggle = (label: string) => c.nodes().find(n => n.props['aria-label'] === label)
+  for (const draft of ['', 'short draft', 'long draft\n'.repeat(20)]) {
+    c.exposed.hydrateDraft({ ...payload, text: draft, imageUrls: [], fileAttachments: [], skills: [] })
+    await vue.nextTick()
+    const maximize = toggle('Expand composer')!
+    expect(maximize.props.disabled).toBe(false)
+    maximize.props.onClick()
+    await vue.nextTick()
+    expect(toggle('Exit full screen composer')).toBe(maximize)
+    expect(toggle('Expand composer')).toBeUndefined()
+    maximize.props.onClick()
+    await vue.nextTick()
+    expect(toggle('Expand composer')).toBe(maximize)
+  }
+})
+
+it.each([true, false])('uses the Enter send preference only in the normal view (sendWithEnter=%s)', async sendWithEnter => {
+  const c = mount({ sendWithEnter })
+  const button = (label: string) => c.nodes().find(n => n.props['aria-label'] === label)!
+  c.exposed.hydrateDraft(payload)
+  await vue.nextTick()
+  const input = c.nodes().find(n => n.tag === 'textarea')!
+
+  const checkNormalEnter = () => {
+    c.submitted.mockClear()
+    expect(pressEnter(input, { isComposing: true })).not.toHaveBeenCalled()
+    expect(c.submitted).not.toHaveBeenCalled()
+    expect(pressEnter(input)).toHaveBeenCalledTimes(Number(sendWithEnter))
+    expect(c.submitted).toHaveBeenCalledTimes(Number(sendWithEnter))
+    if (sendWithEnter) c.submitted.mock.lastCall![1](false)
+  }
+  checkNormalEnter()
+  c.submitted.mockClear()
+
+  button('Expand composer').props.onClick()
+  await vue.nextTick()
+  expect(pressEnter(input)).not.toHaveBeenCalled()
+  expect(c.submitted).not.toHaveBeenCalled()
+  for (const modifiers of [{ ctrlKey: true }, { metaKey: true }]) {
+    expect(pressEnter(input, modifiers)).toHaveBeenCalledOnce()
+    expect(c.submitted.mock.lastCall![0]).toEqual(payload)
+    c.submitted.mock.lastCall![1](false)
+  }
+  button('Send message').props.onClick()
+  expect(c.submitted).toHaveBeenCalledTimes(3)
+  expect(c.submitted.mock.lastCall![0]).toEqual(payload)
+  c.submitted.mock.lastCall![1](false)
+
+  button('Exit full screen composer').props.onClick()
+  await vue.nextTick()
+  checkNormalEnter()
+})
+
 it('collapses empty and populated drafts independently of full-screen editing without losing selections', async () => {
   const c = mount({ models: ['model'], selectedModel: 'model', selectedReasoningEffort: 'high' })
   const button = (label: string) => c.nodes().find(n => n.props['aria-label'] === label)!
-  const restore = () => c.nodes().find(n => n.tag === 'button' && n.props['aria-expanded'] === false && n.props['aria-controls'])
+  const restore = () => button('Show message input')
   const collapse = async () => { button('Minimize message input').props.onClick(); await vue.nextTick() }
   expect(restore()).toBeUndefined()
-  expect(button('Expand composer')).toBeUndefined()
+  expect(button('Expand composer')).toBeDefined()
   await collapse()
   expect(restore()).toBeDefined()
   expect(c.exposed.hasUnsavedDraft()).toBe(false)
   restore()!.props.onClick()
   await vue.nextTick()
+  expect(button('Expand composer')).toBeDefined()
+  expect(button('Exit full screen composer')).toBeUndefined()
   const longPayload = { ...payload, text: 'long draft\n'.repeat(20), apps: [{ id: 'connector_demo', name: 'Demo' }] }
   c.exposed.hydrateDraft(longPayload)
   await vue.nextTick()
@@ -376,7 +465,7 @@ it('opens each thread inline and restores only that thread’s draft after colla
   await vue.nextTick()
   c.props.activeThreadId = 'other'
   await vue.nextTick()
-  expect(c.nodes().some(n => n.props['aria-expanded'] === false && n.props['aria-controls'])).toBe(false)
+  expect(c.nodes().some(n => n.props['aria-label'] === 'Show message input')).toBe(false)
   expect(c.exposed.hasUnsavedDraft()).toBe(false)
   c.exposed.appendTextToDraft('other draft')
   await vue.nextTick()
@@ -411,8 +500,8 @@ it('closes composer popovers for pending requests without losing skills or the c
   expect(c.nodes().some(n => n.props.class === 'thread-composer-floating-actions')).toBe(false)
   c.props.hasPendingRequest = false
   await vue.nextTick()
-  expect(c.nodes().some(n => n.props['aria-expanded'] === false && n.props['aria-controls'])).toBe(true)
-  c.nodes().find(n => n.props['aria-expanded'] === false && n.props['aria-controls'])!.props.onClick()
+  expect(button('Show message input')).toBeDefined()
+  button('Show message input').props.onClick()
   await vue.nextTick()
   c.submit()
   expect(c.submitted.mock.calls[0]![0]).toEqual(payload)

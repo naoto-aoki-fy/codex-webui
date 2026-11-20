@@ -445,7 +445,7 @@ const SkillsMcpHub = defineAsyncComponent(() => import('./components/content/Ski
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const SETTINGS_HELP = {
-  sendWithEnter: ('When enabled, press Enter to send. When disabled, use Command+Enter to send.'),
+  sendWithEnter: ('In the normal view, use Ctrl+Enter or Command+Enter to send when this setting is on. When it is off, Enter sends. In full screen, Enter inserts a line break.'),
   appearance: ('Switch between system theme, light mode, and dark mode.'),
   chatWidth: ('Choose how wide the conversation column and composer can grow on desktop screens.'),
 } as const
