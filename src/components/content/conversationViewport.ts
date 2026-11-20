@@ -58,6 +58,8 @@ export function createConversationViewport(deps: {
     let conversationScrollFrame = 0;
     let bottomLockFrame = 0;
     let bottomLockFramesLeft = 0;
+    let questionJumpScrollTop: number | null = null;
+    let shouldRestoreHistoryScroll = false;
     let conversationUnmounted = false;
     let threadGeneration = 0;
     function isCurrentThreadGeneration(generation: number): boolean {
@@ -190,15 +192,37 @@ export function createConversationViewport(deps: {
     }
     function jumpToLatest(): void {
         resetMessageNavigation();
+        questionJumpScrollTop = null;
         autoFollowOutput.value = true;
         enforceBottomState();
         scheduleBottomLock(4);
+    }
+    function jumpToQuestion(heading: HTMLButtonElement): void {
+        const container = conversationListRef.value;
+        if (!container)
+            return;
+        resetMessageNavigation();
+        autoFollowOutput.value = false;
+        if (bottomLockFrame)
+            cancelAnimationFrame(bottomLockFrame);
+        bottomLockFrame = 0;
+        bottomLockFramesLeft = 0;
+        // A page already being fetched may finish after the jump.
+        shouldRestoreHistoryScroll = false;
+
+        const previousScrollTop = container.scrollTop;
+        const offset = heading.getBoundingClientRect().top - container.getBoundingClientRect().top - container.clientTop;
+        container.scrollTo({ top: previousScrollTop + offset - 8, behavior: 'instant' });
+        if (container.scrollTop !== previousScrollTop)
+            questionJumpScrollTop = container.scrollTop;
+        heading.focus({ preventScroll: true });
     }
     async function loadMoreAbove(): Promise<void> {
         const container = conversationListRef.value;
         if (!container || !hasMoreAbove.value || isLoadingMore.value || deps.props.isLoadingPersistedAbove === true)
             return;
         isLoadingMore.value = true;
+        shouldRestoreHistoryScroll = true;
         const threadIdAtStart = deps.props.activeThreadId;
         const generation = threadGeneration;
         const prevScrollHeight = container.scrollHeight;
@@ -211,8 +235,7 @@ export function createConversationViewport(deps: {
                 await deps.props.loadEarlierMessages?.(threadIdAtStart);
             }
             await nextTick();
-            // Discard scroll restoration if the thread changed while we were awaiting.
-            if (isCurrentThreadGeneration(generation)) {
+            if (isCurrentThreadGeneration(generation) && shouldRestoreHistoryScroll) {
                 container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
             }
         }
@@ -270,6 +293,8 @@ export function createConversationViewport(deps: {
     }
     function invalidateThreadWork(): void {
         threadGeneration += 1;
+        questionJumpScrollTop = null;
+        shouldRestoreHistoryScroll = false;
         trackedPendingImages = new WeakSet<HTMLImageElement>();
         if (conversationScrollFrame)
             cancelAnimationFrame(conversationScrollFrame);
@@ -285,6 +310,10 @@ export function createConversationViewport(deps: {
     function onConversationScroll(): void {
         const container = conversationListRef.value;
         if (!container || deps.props.isLoading)
+            return;
+        const isQuestionJump = container.scrollTop === questionJumpScrollTop;
+        questionJumpScrollTop = null;
+        if (isQuestionJump)
             return;
         autoFollowOutput.value = isAtBottom(container);
         if (!autoFollowOutput.value && hasMoreAbove.value && !isLoadingMore.value && container.scrollTop < LOAD_MORE_SCROLL_THRESHOLD_PX) {
@@ -310,6 +339,7 @@ onMessageNavigationKeydown,
 enforceBottomState,
 scheduleBottomLock,
 jumpToLatest,
+jumpToQuestion,
 loadMoreAbove,
 bindPendingImageHandlers,
 scheduleConversationScroll,

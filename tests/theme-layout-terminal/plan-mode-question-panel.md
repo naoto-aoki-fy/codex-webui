@@ -54,22 +54,30 @@ async function main() {
     await page.getByRole('button', { name: 'Add attachments and settings' }).click()
     await page.getByRole('switch', { name: 'Enable plan mode' }).click()
     await page.keyboard.press('Escape')
+    await page.locator('.conversation-list').evaluate(element => { element.scrollTop = element.scrollHeight })
+    const scope = {
+      id: 'scope',
+      header: 'Documentation scope',
+      question: 'Which scope should the plan use?',
+      isOther: true,
+      options: [
+        { label: 'Quick update', description: 'Update the setup notes.' },
+        { label: 'Full review', description: 'Review the whole guide.' },
+      ],
+    }
+    const extraQuestions = process.env.LONG_QUESTION === '1' ? Array.from({ length: 12 }, (_, index) => ({
+      ...scope,
+      id: `section-${index}`,
+      header: `Review section ${index + 1}`,
+      isOther: false,
+    })) : []
     emit('server/request', {
       id: 200,
       method: 'item/tool/requestUserInput',
       params: {
         threadId: 'approved-fixture',
         turnId: 'question-turn',
-        questions: [{
-          id: 'scope',
-          header: 'Documentation scope',
-          question: 'Which scope should the plan use?',
-          isOther: true,
-          options: [
-            { label: 'Quick update', description: 'Update the setup notes.' },
-            { label: 'Full review', description: 'Review the whole guide.' },
-          ],
-        }],
+        questions: [scope, ...extraQuestions],
       },
     })
     await page.waitForEvent('close', { timeout: 0 })
@@ -91,9 +99,16 @@ NODE
 5. In **Settings → General**, cycle **Appearance** to **Dark** and close Settings. Verify the same draft, dark surfaces, readable light text, and visible focus indicators on the heading, choice control, free-text field, and **Send**. Repeat the toggle checks at **768 × 1024** and **375 × 812** in both themes.
 6. Press **Enter** once with focus on **Send**. The card closes and the terminal prints one reply for request `200` containing both answers. The fixture then shows an approval for `echo approved` in the footer. Select **Yes for Session** and **Send**. Verify that the regular composer returns and the terminal prints one `acceptForSession` reply for request `201`.
 
+#### Jump to question
+
+1. Open a fresh fixture. Verify that **Fixture answer** stays at the bottom of the conversation and **Jump to question** appears while **Awaiting response** is above the viewport. Open the Network panel and filter for `/codex-api/`.
+2. Scroll into the later history while keeping **Awaiting response** offscreen. Verify that **Jump to question** and the down-arrow **Jump to latest** appear side by side. Click **Jump to question**. The conversation pane scrolls to **Awaiting response**, the heading gets focus, the card stays expanded, and the question jump button disappears. The Network panel should show zero new API requests. Scroll the heading offscreen again, focus the question jump button with **Tab**, and repeat with **Enter**.
+3. Repeat with `LONG_QUESTION=1 node` in the fixture command. Jump to the question, type a draft in **Other answer**, then scroll until **Send** is visible and the heading is above the viewport. Verify that **Jump to question** is available. Activate it, minimize the card via **Enter** on the focused heading, and use **Jump to latest** to move away. Jump back and verify that the card is still minimized. Reopen it and check the draft. None of the jumps should make API requests.
+4. Scroll until **Send** is visible and the heading is offscreen again. Submit the response. Verify the card and **Jump to question** disappear and the Network panel shows one response submission. Close the fixture to clear its state. Repeat at **1280 × 900**, **768 × 1024**, and **375 × 812** in both light and dark themes. Check that the jump controls fit side by side and their text, icon, and keyboard focus indicators are visible.
+
 #### Automated fixture
 
-Run `node scripts/test-plan-mode-question-panel.cjs` against the same development server. It checks placement when the turn has no visible rows, draft retention as a streamed row moves the card, the default expanded state after reopening, both keyboard toggles, API request counts, and approval and MCP input in the footer. It saves expanded and minimized screenshots for each theme and viewport under `output/playwright/`.
+Run `node scripts/test-plan-mode-question-panel.cjs` against the same development server. It checks question placement, draft retention, keyboard toggles, reopening, approval and MCP input in the footer, and the jump flows above. The keyboard jump also lands inside the history pagination threshold and verifies zero API requests. It saves screenshots of the two jump controls and of the expanded and minimized card for each theme and viewport under `output/playwright/`.
 
 #### Cleanup
 

@@ -778,16 +778,26 @@
       <li ref="bottomAnchorRef" class="conversation-bottom-anchor" />
     </ul>
 
-    <button
-      v-if="showJumpToLatestButton"
-      type="button"
-      class="jump-to-latest-button"
-      title="Jump to latest"
-      aria-label="Jump to latest output"
-      @click="jumpToLatest"
-    >
-      <IconTablerArrowUp class="icon-svg jump-to-latest-icon" />
-    </button>
+    <div v-if="showJumpToQuestionButton || showJumpToLatestButton" class="conversation-jump-actions">
+      <button
+        v-if="showJumpToQuestionButton"
+        type="button"
+        class="conversation-jump-button jump-to-question-button"
+        @click="jumpToQuestion"
+      >
+        Jump to question
+      </button>
+      <button
+        v-if="showJumpToLatestButton"
+        type="button"
+        class="conversation-jump-button jump-to-latest-button"
+        title="Jump to latest"
+        aria-label="Jump to latest output"
+        @click="jumpToLatest"
+      >
+        <IconTablerArrowUp class="icon-svg jump-to-latest-icon" />
+      </button>
+    </div>
 
     <div v-if="modalImageUrl.length > 0" class="image-modal-backdrop" @click="closeImageModal">
       <div class="image-modal-content" @click.stop>
@@ -1148,6 +1158,30 @@ const {
   onConversationScroll,
 } = viewport
 
+const questionHeading = ref<HTMLButtonElement | null>(null)
+const showJumpToQuestionButton = ref(false)
+
+watch([conversationListRef, () => props.activeThreadId, () => props.pendingQuestion?.id], ([root, , questionId], _, onCleanup) => {
+  const heading = questionId === undefined ? null : root?.querySelector<HTMLButtonElement>('[data-pending-question-heading]') ?? null
+  questionHeading.value = heading
+  showJumpToQuestionButton.value = false
+  if (!root || !heading) return
+
+  const observer = new IntersectionObserver(([entry]) => {
+    if (entry) showJumpToQuestionButton.value = !entry.isIntersecting
+  }, { root })
+  observer.observe(heading)
+  onCleanup(() => {
+    observer.disconnect()
+    observer.takeRecords()
+  })
+}, { flush: 'post' })
+
+function jumpToQuestion(): void {
+  const heading = questionHeading.value
+  if (heading) viewport.jumpToQuestion(heading)
+}
+
 const modalImageUrl = ref('')
 const actions = createConversationActions({
   get threadGeneration() { return viewport.threadGeneration; },
@@ -1418,7 +1452,7 @@ watch(
     if (!viewport.autoFollowOutput.value) return
     const generation = viewport.threadGeneration
     await nextTick()
-    if (!viewport.isCurrentThreadGeneration(generation)) return
+    if (!viewport.isCurrentThreadGeneration(generation) || !viewport.autoFollowOutput.value) return
     viewport.enforceBottomState()
     viewport.scheduleBottomLock(8)
   },
@@ -1585,8 +1619,20 @@ onBeforeUnmount(() => {
   @apply h-px;
 }
 
+.conversation-jump-actions {
+  @apply absolute left-1/2 bottom-4 z-20 flex -translate-x-1/2 items-center gap-2;
+}
+
+.conversation-jump-button {
+  @apply inline-flex h-11 cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-white/96 text-slate-700 shadow-lg shadow-slate-900/10 transition hover:-translate-y-0.5 hover:bg-white hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current;
+}
+
+.jump-to-question-button {
+  @apply px-4 text-sm font-medium whitespace-nowrap;
+}
+
 .jump-to-latest-button {
-  @apply absolute left-1/2 bottom-4 z-20 inline-flex h-11 w-11 -translate-x-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/96 text-slate-700 shadow-lg shadow-slate-900/10 transition hover:-translate-x-1/2 hover:-translate-y-0.5 hover:bg-white hover:text-slate-900;
+  @apply w-11;
 }
 
 .jump-to-latest-icon {
