@@ -20,6 +20,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { publicAccountStatus, publicLoginChallenge } from './publicAccount.js'
 import { handleSkillsRoutes } from './skillsRoutes.js'
+import { createRpcJsonWriter } from './rpcJsonResponse.js'
 
 type RpcProxyRequest = {
   method: string
@@ -523,6 +524,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       : null
     let responseBodyBytes = 0
     let rpcMethod: string | null = null
+    let sendRpcJson: ReturnType<typeof createRpcJsonWriter> = null
     const originalWrite = res.write.bind(res)
     const originalEnd = res.end.bind(res)
     res.write = ((chunk: unknown, encoding?: unknown, cb?: unknown) => {
@@ -574,6 +576,14 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       if (req.method === 'POST' && url.pathname === '/codex-api/rpc') {
+        sendRpcJson = createRpcJsonWriter(req, res)
+        if (!sendRpcJson) {
+          req.resume()
+          res.statusCode = 406
+          res.setHeader('Cache-Control', 'no-store')
+          res.end()
+          return
+        }
         const payload = await readJsonBody(req)
         const body = asRecord(payload) as RpcProxyRequest | null
         if (payload !== null && payload !== undefined) {
@@ -582,7 +592,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         rpcMethod = body?.method && typeof body.method === 'string' ? body.method : null
 
 	        if (!body || typeof body.method !== 'string' || body.method.length === 0) {
-	          setJson(res, 400, { error: 'Invalid body: expected { method, params? }' })
+	          await sendRpcJson(400, { error: 'Invalid body: expected { method, params? }' })
 	          return
 	        }
 
@@ -590,36 +600,36 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           const result = body.method === 'model-preferences/read' ? await modelPreferences.read()
             : body.method === 'model-preferences/update' ? await modelPreferences.update(body.params)
             : null
-          if (!result) { setJson(res, 400, { error: 'Unknown model preferences method' }); return }
+          if (!result) { await sendRpcJson(400, { error: 'Unknown model preferences method' }); return }
           if (body.method !== 'model-preferences/read') publishPreferences(result)
-          setJson(res, 200, { result: { ...result, connectionProfile } })
+          await sendRpcJson(200, { result: { ...result, connectionProfile } })
           return
         }
 
         if (body.method === 'getAuthStatus' || body.method.startsWith('account/chatgptAuthTokens/')
           || body.method.startsWith('accountSession/')) {
-          setJson(res, 403, { error: 'Account credentials and sessions are managed on the App Server host.' })
+          await sendRpcJson(403, { error: 'Account credentials and sessions are managed on the App Server host.' })
           return
         }
 
         if (body.method === 'account/read') {
           const account = await appServer.rpc('account/read', { refreshToken: false })
-          setJson(res, 200, { result: publicAccountStatus(account) })
+          await sendRpcJson(200, { result: publicAccountStatus(account) })
           return
         }
 
         if (body.method === 'account/login/start') {
           const type = asRecord(body.params)?.type
           if (type !== 'chatgpt' && type !== 'chatgptDeviceCode') {
-            setJson(res, 502, { error: 'Only Codex-managed ChatGPT sign-in is available through WebUI', rpcCode: -32602 })
+            await sendRpcJson(502, { error: 'Only Codex-managed ChatGPT sign-in is available through WebUI', rpcCode: -32602 })
             return
           }
           try {
             const result = await appServer.rpc(body.method, { type })
-            setJson(res, 200, { result: publicLoginChallenge(result, type) })
+            await sendRpcJson(200, { result: publicLoginChallenge(result, type) })
           } catch (error) {
             const code = asRecord(error)?.code
-            setJson(res, 502, {
+            await sendRpcJson(502, {
               error: getErrorMessage(error, 'Native sign-in failed'),
               ...(typeof code === 'number' ? { rpcCode: code } : {}),
             })
@@ -638,7 +648,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
               : body.method === 'conversation-transfer/create'
                 ? await transfers.create(readNonEmptyString(params.id), readNonEmptyString(params.model), readNonEmptyString(params.modelProvider))
                 : null
-          setJson(res, 200, { result })
+          await sendRpcJson(200, { result })
           return
         }
         if (body.method === 'turn/start') await transfers.assertReady(readNonEmptyString(asRecord(body.params)?.threadId))
@@ -646,19 +656,19 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         if (body.method === 'thread/start') {
           const cwd = readNonEmptyString(asRecord(body.params)?.cwd)
           if (!cwd) {
-            setJson(res, 400, { error: 'Select an existing workspace on the App Server host before starting a conversation.' })
+            await sendRpcJson(400, { error: 'Select an existing workspace on the App Server host before starting a conversation.' })
             return
           }
           try {
             if (!(await files.getMetadata(cwd)).isDirectory) {
-              setJson(res, 400, { error: 'The remote workspace path is not a directory.' })
+              await sendRpcJson(400, { error: 'The remote workspace path is not a directory.' })
               return
             }
           } catch (error) {
             const guidance = asRecord(error)?.code === -32601
               ? 'Upgrade the remote Codex App Server. This version does not support the directory validation required to start a conversation.'
               : 'Could not validate the workspace. Check the directory, permissions and connection on the App Server host before retrying.'
-            setJson(res, 502, { error: `${guidance} ${getErrorMessage(error, 'Directory validation failed.')}` })
+            await sendRpcJson(502, { error: `${guidance} ${getErrorMessage(error, 'Directory validation failed.')}` })
             return
           }
         }
@@ -685,7 +695,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 		            const threadId = typeof params?.threadId === 'string' ? params.threadId.trim() : ''
 		            const snapshot = threadId ? appServer.getLastThreadReadSnapshot(threadId) : null
 		            if (snapshot) {
-		              setJson(res, 200, { result: snapshot })
+		              await sendRpcJson(200, { result: snapshot })
 		              return
 		            }
 		          }
@@ -693,7 +703,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
             const params = asRecord(body.params)
             const threadId = typeof params?.threadId === 'string' ? params.threadId.trim() : ''
             if (threadId) {
-              setJson(res, 200, {
+              await sendRpcJson(200, {
                 result: {
                   thread: {
                     id: threadId,
@@ -706,7 +716,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
             }
           }
           if (body.method.startsWith('project/') || ['turn/start', 'turn/steer', 'account/usage/read', 'thread/compact/start', 'thread/delete', 'review/start', 'thread/queue/add', 'thread/queue/update', 'thread/queue/delete', 'thread/queue/reorder', 'thread/queue/start', 'thread/settings/update', 'account/login/cancel', 'account/logout'].includes(body.method)) {
-            setJson(res, 502, { error: getErrorMessage(error, body.method === 'account/usage/read' ? 'Account usage unavailable' : `Native ${body.method} request failed`), ...(typeof asRecord(error)?.code === 'number' ? { rpcCode: asRecord(error)!.code } : {}) })
+            await sendRpcJson(502, { error: getErrorMessage(error, body.method === 'account/usage/read' ? 'Account usage unavailable' : `Native ${body.method} request failed`), ...(typeof asRecord(error)?.code === 'number' ? { rpcCode: asRecord(error)!.code } : {}) })
             return
           }
           throw error
@@ -750,7 +760,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           }
         }
 
-        setJson(res, 200, { result })
+        await sendRpcJson(200, { result })
         return
       }
 
@@ -835,7 +845,9 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
     } catch (error) {
       const message = getErrorMessage(error, 'Unknown bridge error')
       const code = (error as { code?: unknown } | null)?.code
-      setJson(res, 502, { error: message, ...(code === QUESTION_REPLY_NOT_SENT ? { code } : {}) })
+      const payload = { error: message, ...(code === QUESTION_REPLY_NOT_SENT ? { code } : {}) }
+      if (sendRpcJson) await sendRpcJson(502, payload)
+      else setJson(res, 502, payload)
     }
   }
 
