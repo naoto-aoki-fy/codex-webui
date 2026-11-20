@@ -11,7 +11,11 @@ const compressGzip = promisify(gzip)
 
 type JsonWriter = (statusCode: number, payload: unknown) => void | Promise<void>
 
-export function createRpcJsonWriter(req: IncomingMessage, res: ServerResponse): JsonWriter | null {
+export function createRpcJsonWriter(
+  req: IncomingMessage,
+  res: ServerResponse,
+  onEncodedResponse?: (decodedBytes: number) => void,
+): JsonWriter | null {
   const vary = String(res.getHeader?.('Vary') ?? '')
   const varyFields = vary.toLowerCase().split(',').map(field => field.trim())
   if (!varyFields.includes('*') && !varyFields.includes('accept-encoding')) {
@@ -21,10 +25,15 @@ export function createRpcJsonWriter(req: IncomingMessage, res: ServerResponse): 
   const preferences = encodingPreferences(req.headers['accept-encoding'], encodings)
   const encoding = preferences[0]?.[0]
   if (!encoding) return null
-  if (encoding === 'identity') return (statusCode, payload) => setJson(res, statusCode, payload)
+  if (encoding === 'identity') {
+    return (statusCode, payload) => {
+      if (!res.destroyed) setJson(res, statusCode, payload)
+    }
+  }
 
   const allowsIdentity = preferences.some(group => group.includes('identity'))
   return async (statusCode, payload) => {
+    if (res.destroyed) return
     const body = JSON.stringify(payload)
     const bytes = Buffer.byteLength(body, 'utf8')
     let compressed: Buffer | undefined
@@ -44,6 +53,7 @@ export function createRpcJsonWriter(req: IncomingMessage, res: ServerResponse): 
     if (compressed && (!allowsIdentity || compressed.length < bytes)) {
       res.setHeader('Content-Encoding', encoding)
       res.setHeader('Content-Length', compressed.length)
+      onEncodedResponse?.(bytes)
       res.end(compressed)
       return
     }

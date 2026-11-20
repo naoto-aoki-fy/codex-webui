@@ -523,6 +523,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       ? parsedContentLength
       : null
     let responseBodyBytes = 0
+    let decodedResponseBodyBytes: number | undefined
     let rpcMethod: string | null = null
     let sendRpcJson: ReturnType<typeof createRpcJsonWriter> = null
     const originalWrite = res.write.bind(res)
@@ -542,12 +543,13 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       if (!API_PERF_LOGGING_ENABLED || didLog || !requestPath.startsWith('/codex-api/')) return
       const durationMs = Number((process.hrtime.bigint() - requestStartNs) / 1_000_000n)
       const requestBytes = requestBodyBytes ?? 0
-      const bodyMbValue = (requestBytes + responseBodyBytes) / MB_DIVISOR
+      const bodyMbValue = (requestBytes + (decodedResponseBodyBytes ?? responseBodyBytes)) / MB_DIVISOR
       const shouldLog = durationMs > API_PERF_MS_THRESHOLD || bodyMbValue > API_PERF_BODY_MB_THRESHOLD
       if (!shouldLog) return
       didLog = true
       const rpcPart = rpcMethod ? `, rpcMethod=${rpcMethod}` : ''
-      console.info(`[codex-api-perf] ${requestMethod} ${requestPath} -> ${res.statusCode} (${durationMs}ms, bodyMB=${bodyMbValue.toFixed(1)}${rpcPart})`)
+      const encodedPart = decodedResponseBodyBytes === undefined ? '' : `, encodedResponseBytes=${responseBodyBytes}`
+      console.info(`[codex-api-perf] ${requestMethod} ${requestPath} -> ${res.statusCode} (${durationMs}ms, bodyMB=${bodyMbValue.toFixed(1)}${rpcPart}${encodedPart})`)
     }
     res.once('finish', logApiRequestDuration)
     res.once('close', logApiRequestDuration)
@@ -576,7 +578,9 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       }
 
       if (req.method === 'POST' && url.pathname === '/codex-api/rpc') {
-        sendRpcJson = createRpcJsonWriter(req, res)
+        sendRpcJson = createRpcJsonWriter(req, res, decodedBytes => {
+          decodedResponseBodyBytes = decodedBytes
+        })
         if (!sendRpcJson) {
           req.resume()
           res.statusCode = 406
