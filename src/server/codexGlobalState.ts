@@ -45,10 +45,17 @@ async function resolveDestination(path: string, depth = 0): Promise<string> {
   return join(await resolveDestination(parent, depth + 1), basename(absolute))
 }
 
-async function readState(path: string, recoverMalformed = false): Promise<CodexGlobalState> {
+async function readState(path: string, recoverMalformed = false, maxBytes?: number): Promise<CodexGlobalState> {
   let raw: string
   try {
-    raw = await readFile(path, 'utf8')
+    if (maxBytes === undefined) raw = await readFile(path, 'utf8')
+    else {
+      const file = await open(path, 'r')
+      try {
+        if ((await file.stat()).size > maxBytes) throw new Error('WebUI state exceeds read budget')
+        raw = await file.readFile('utf8')
+      } finally { await file.close() }
+    }
   } catch (error) {
     if (isMissing(error)) return {}
     throw error
@@ -97,11 +104,12 @@ export async function updateCodexGlobalState<T>(
   update: (state: CodexGlobalState) => T | Promise<T>,
   path = getCodexGlobalStatePath(),
   recoverMalformed = false,
+  maxBytes?: number,
 ): Promise<T> {
   return withStateLock(path, async (destination, checkLock) => {
     let temporaryPath: string | undefined
     try {
-      const state = await readState(destination, recoverMalformed)
+      const state = await readState(destination, recoverMalformed, maxBytes)
       const before: unknown = JSON.parse(JSON.stringify(state))
       const result = await update(state)
       checkLock()

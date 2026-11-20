@@ -302,3 +302,18 @@ it('browser HTTP RPC has no application deadline or notification-driven replay; 
   expect(await observed).toMatchObject({ code: 'network_error', method: 'thread/resume' })
   expect(fetch).toHaveBeenCalledTimes(1)
 })
+
+it('coalesces overlapping retained-page recovery without dropping newly requested IDs', async () => {
+  const f = fixture()
+  const first = resumeThread('A', ['older'])
+  const plain = resumeThread('A')
+  const same = resumeThread('A', ['older'])
+  const wider = resumeThread('A', ['older', 'earlier'])
+  const joined = resumeThread('A', ['earlier'])
+  expect(f.resumes).toHaveLength(2)
+  f.resumes[0]!.resolve(response('first'))
+  f.resumes[1]!.resolve(response('wider'))
+  expect(await first).toBe(await plain)
+  expect(await first).toBe(await same)
+  expect(await wider).toBe(await joined)
+})

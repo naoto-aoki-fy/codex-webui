@@ -61,7 +61,7 @@ it('coalesces concurrent requests, caches minimal evidence, and survives backend
   expect(sourceReads(f)).toBe(1)
   expect(f.rpc).toHaveBeenCalledTimes(6)
   const cache = await readFile(cachePath(), 'utf8')
-  expect(Object.keys(JSON.parse(cache))).toEqual(['version', 'sourcePath', 'modifiedAtMs', 'turns'])
+  expect(Object.keys(JSON.parse(cache))).toEqual(['version', 'sourcePath', 'modifiedAtMs', 'rolloutModeScanned', 'turns', 'submittedModes'])
   expect(f.rpc.mock.calls.map(([method]) => method)).toEqual([
     'thread/read', 'fs/getMetadata', 'fs/readFile', 'fs/getMetadata', 'thread/read', 'fs/getMetadata',
   ])
@@ -76,7 +76,7 @@ it('invalidates appended sources, explicit refresh, schema and path changes', as
   expect(sourceReads(f)).toBe(2)
   await f.service.recover('t', true); expect(sourceReads(f)).toBe(3)
   const key = cachePath()
-  for (const field of [{ version: 2 }, { sourcePath: '/wrong' }]) {
+  for (const field of [{ version: 1 }, { sourcePath: '/wrong' }]) {
     await writeFile(key, JSON.stringify({ ...JSON.parse(await readFile(key, 'utf8')), ...field }))
     await f.service.recover('t')
   }
@@ -198,4 +198,90 @@ it('isolates cached evidence for identical thread IDs, source paths and mtimes o
   vi.stubEnv('CODEXUI_CONNECTION_PROFILE', 'unit-test')
   expect((await new RolloutGenerationMetadata(f.client).recover('t')).get('old')).toEqual(execution('A', 'high'))
   expect(sourceReads(f)).toBe(2)
+})
+
+const modeContext = (id: string, mode: string) => context(id, { collaboration_mode: { mode } })
+const modeStart = (id: string, mode: string) => JSON.stringify({ type: 'event_msg', payload: {
+  type: 'task_started', turn_id: id, collaboration_mode_kind: mode,
+} }) + '\n'
+const modeEvidence = (collaborationMode: 'default' | 'plan' | null, collaborationModeSource = 'execution') => ({
+  collaborationMode, collaborationModeSource,
+})
+
+it('parses exact collaboration-mode evidence independently of model and effort and clears conflicts', () => {
+  const result = parseRolloutMetadata(
+    modeStart('plan', 'plan') + modeContext('plan', 'plan') + modeStart('default', 'default') +
+    modeContext('conflict', 'plan') + modeStart('conflict', 'default') + modeContext('conflict', 'plan') +
+    context('conflict', { model: 'A', effort: 'none' }) +
+    modeStart('', 'plan') + modeStart('unknown', 'unknown') + modeStart('incomplete', 'plan').trimEnd(),
+  )
+  expect([...result]).toEqual([
+    ['plan', modeEvidence('plan')], ['default', modeEvidence('default')],
+    ['conflict', { ...execution('A', 'none'), ...modeEvidence(null) }],
+  ])
+})
+
+it('upgrades v1 in place and keeps explicit modes across restart with the rollout unavailable', async () => {
+  const f = fixture()
+  const profile = process.env.CODEXUI_CONNECTION_PROFILE!
+  await mkdir(cacheDirectory(), { recursive: true })
+  await writeFile(cachePath(), JSON.stringify({ version: 1, sourcePath: path, modifiedAtMs: 1,
+    turns: [{ turnId: 'old', metadata: execution('A', 'high') }] }))
+  await f.service.rememberSubmittedMode('t', 'new', 'plan', profile)
+  const upgraded = JSON.parse(await readFile(cachePath(), 'utf8'))
+  expect(upgraded).toMatchObject({ version: 2, sourcePath: path, turns: [{ turnId: 'old', metadata: execution('A', 'high') }], submittedModes: { new: 'plan' } })
+  const unavailable = { ...f.client, rpc: vi.fn(async () => { throw new Error('no rollout reads') }) }
+  const restarted = new RolloutGenerationMetadata(unavailable)
+  expect([...await restarted.recover('t')]).toEqual([['new', modeEvidence('plan', 'submitted')]])
+  expect((await restarted.recover('fork')).size).toBe(0)
+  const original = f.files.get(path)!
+  f.files.set(path, original + modeStart('old', 'plan'))
+  expect((await f.service.recover('t')).get('old')).toEqual({ ...execution('A', 'high'), ...modeEvidence('plan') })
+  expect(sourceReads(f)).toBe(1)
+})
+
+it('retains concurrent submission and refresh writes and discards both contradicted and conflicted fallbacks', async () => {
+  const f = fixture()
+  const profile = process.env.CODEXUI_CONNECTION_PROFILE!
+  const concurrentBackend = new RolloutGenerationMetadata(f.client)
+  f.files.set(path, f.files.get(path)! + modeStart('old', 'default') + modeStart('conflict', 'default') + modeContext('conflict', 'plan'))
+  const [rollout] = await Promise.all([
+    f.service.recover('t'),
+    concurrentBackend.rememberSubmittedMode('t', 'old', 'plan', profile),
+    concurrentBackend.rememberSubmittedMode('t', 'conflict', 'plan', profile),
+    f.service.rememberSubmittedMode('t', 'new', 'plan', profile),
+    f.service.rememberSubmittedMode('t', 'default', 'default', profile),
+  ])
+  expect(rollout.get('conflict')).toEqual(modeEvidence(null))
+  expect(rollout.get('old')).toEqual({ ...execution('A', 'high'), ...modeEvidence('default') })
+  const persisted = JSON.parse(await readFile(cachePath(), 'utf8'))
+  expect(persisted.submittedModes).toEqual({ new: 'plan', default: 'default' })
+  expect(persisted.turns.map((row: { turnId: string }) => row.turnId)).toEqual(['old', 'new', 'conflict'])
+  const unavailable = new RolloutGenerationMetadata({ ...f.client, rpc: async () => { throw new Error('offline rollout') } })
+  expect([...await unavailable.recover('t')]).toEqual([
+    ['new', modeEvidence('plan', 'submitted')], ['default', modeEvidence('default', 'submitted')],
+  ])
+})
+
+it('persists only the explicit mode on native acceptance without a metadata or history RPC', async () => {
+  const f = fixture()
+  const instance = new AppServerClient()
+  vi.spyOn(instance as any, 'ensureInitialized').mockResolvedValue(undefined)
+  const call = vi.spyOn(instance as any, 'callObserved')
+    .mockResolvedValueOnce({ turn: { id: 'exact' } })
+    .mockRejectedValueOnce(new Error('rejected'))
+    .mockResolvedValueOnce({ turn: {} })
+  const listener = vi.fn()
+  instance.onNotification(listener)
+  const params = { threadId: 't', collaborationMode: { mode: 'plan' }, model: 'sent-model', effort: 'none' }
+  try {
+    expect(await instance.rpc('turn/start', params)).toEqual({ turn: { id: 'exact' } })
+    expect(listener).toHaveBeenCalledWith({ method: 'turn/generationMetadata', params: {
+      threadId: 't', turnId: 'exact', generationMetadata: modeEvidence('plan', 'submitted'),
+    } })
+    await expect(instance.rpc('turn/start', params)).rejects.toThrow('rejected')
+    expect(await instance.rpc('turn/start', params)).toEqual({ turn: {} })
+    expect(call.mock.calls.map(([method]) => method)).toEqual(['turn/start', 'turn/start', 'turn/start'])
+    expect(JSON.parse(await readFile(cachePath(), 'utf8'))).toEqual({ version: 2, submittedModes: { exact: 'plan' } })
+  } finally { instance.dispose() }
 })

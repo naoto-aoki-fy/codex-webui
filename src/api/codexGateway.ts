@@ -338,7 +338,7 @@ export type ResumedThread = {
 }
 
 const RESUME_THREAD_COALESCE_TTL_MS = 30_000
-const recentResumeThreadById = new Map<string, Promise<ResumedThread>>()
+const recentResumeThreadById = new Map<string, { promise: Promise<ResumedThread>; retained: Set<string> }>()
 
 // Restore background event delivery without fetching its history.
 export async function resumeThreadSubscription(threadId: string): Promise<void> {
@@ -346,8 +346,8 @@ export async function resumeThreadSubscription(threadId: string): Promise<void> 
 }
 
 export async function resumeThread(threadId: string, retainedTurnIds: string[] = []): Promise<ResumedThread> {
-  const existing = retainedTurnIds.length ? undefined : recentResumeThreadById.get(threadId)
-  if (existing) return existing
+  const existing = recentResumeThreadById.get(threadId)
+  if (existing && retainedTurnIds.every(id => existing.retained.has(id))) return existing.promise
 
   const promise = (async () => {
     const payload = await callRpc<ThreadResumeResponse & { questionResponses?: QuestionResponse[] }>('thread/resume', {
@@ -368,16 +368,17 @@ export async function resumeThread(threadId: string, retainedTurnIds: string[] =
     }
   })()
 
-  recentResumeThreadById.set(threadId, promise)
+  const entry = { promise, retained: new Set(retainedTurnIds) }
+  recentResumeThreadById.set(threadId, entry)
   const hardEvictionTimer = globalThis.setTimeout(() => {
-    if (recentResumeThreadById.get(threadId) === promise) {
+    if (recentResumeThreadById.get(threadId) === entry) {
       recentResumeThreadById.delete(threadId)
     }
   }, RESUME_THREAD_COALESCE_TTL_MS)
   void promise.finally(() => {
     globalThis.clearTimeout(hardEvictionTimer)
     globalThis.setTimeout(() => {
-      if (recentResumeThreadById.get(threadId) === promise) {
+      if (recentResumeThreadById.get(threadId) === entry) {
         recentResumeThreadById.delete(threadId)
       }
     }, 2000)

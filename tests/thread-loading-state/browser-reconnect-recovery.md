@@ -283,3 +283,16 @@ stop only processes started for this verification. Keep independently managed
 production Codex/backend processes running. Remove disposable test threads only
 when their contents are no longer needed as evidence. Do not delete sessions,
 reset shared credentials or change approval policy to clean up this test.
+
+## Retained pages with question answers and Plan badges
+
+Before disconnecting, load an older page containing eligible question and Plan
+turns. Hold the metadata or question completion notification in the disconnected
+browser and let the other session receive the response. On reconnect, verify the
+selected conversation still includes the older page. Its original history request
+includes the retained turn IDs. Confirm that they stay off the App Server wire,
+that one native page is fetched per history request, and that the bridge returns
+only current-page or explicitly retained answer records. Verify one bubble per
+response, the original timestamp and restored exact-turn Plan badges. Roll back
+the answered turn and check that its bubble disappears. Close the disposable
+browsers and remove temporary fixture data.

@@ -29,7 +29,7 @@ import type { Project } from '../server/protocol/0.167.2/v2/Project'
 import { clientMessageId } from '../utils/clientMessageId'
 import { readPlanUpdate, asRecord, readString, readNumber, readThreadTokenUsageUpdate, extractThreadIdFromNotification, readTurnErrorMessage, readNotificationErrorState, readTurnActivity, liveReasoningMessageId, readReasoningStartedItemId, readReasoningDelta, readReasoningSectionBreakMessageId, readReasoningCompletedId, readAgentMessageStartedId, readAgentMessageDelta, readAgentMessageCompleted, readCompletedImageView, readCommandOutputDelta, isAgentContentEvent, type TurnActivityState } from './desktopNotificationReaders'
 import { NEW_THREAD_MODEL_CONTEXT, normalizeStoredModelId, createStringKeyedRecord, cloneStringKeyedRecord, omitStringKeyedRecordKey, pruneThreadContextStateMap, isNewThreadContextId, toThreadContextId, loadSelectedModelMap, saveSelectedModelMap, loadSelectedCollaborationModeMap, readSelectedCollaborationMode, writeSelectedCollaborationModeForContext, saveSelectedCollaborationModeMap } from './desktopStatePersistence'
-import { areStringArraysEqual, areMessageArraysEqual, normalizeMessageText, isOptimisticUserMessage, upsertMessage } from '../utils/desktopMessageReconciliation'
+import { areStringArraysEqual, areMessageArraysEqual, normalizeMessageText, isOptimisticUserMessage, hasEquivalentUserMessage, upsertMessage } from '../utils/desktopMessageReconciliation'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { formatTurnDuration, parseIsoTimestamp } from '../utils/turnTiming'
 import { createConversationTransfer, unarchiveThread, archiveThread, forkThread, forkThreadFromResponse, getAvailableCollaborationModes, getAccountRateLimits, renameThread, getAvailableModelIds, acquireReasoningCatalog, reasoningCatalog, reasoningOptions, resolveReasoningEffort, findReasoningModel, getCurrentModelConfig, getSkillsList, getBackgroundThreadListLimit, pickCodexRateLimitSnapshot, revertThreadHistory, validateThreadRevert, getThreadDetailForRevert, invalidateResumeThread, resumeThreadSubscription, getThreadGroupsPage, getProjects, setCodexSpeedMode, type RpcNotification, type SkillInfo } from '../api/codexGateway'
@@ -393,7 +393,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     get resumedThreadById() { return resumedThreadById; },
     get setSelectedThreadId() { return setSelectedThreadId; },
     get realtimeRevisionByThreadId() { return realtimeRevisionByThreadId; },
-    get setPersistedMessagesForThread() { return setPersistedMessagesForThread; },
+    settleOptimisticTurn,
     get maybeUnblockInterruptForActiveTurn() { return maybeUnblockInterruptForActiveTurn; },
     get pendingThreadMessageRefresh() { return connection.pendingThreadMessageRefresh; },
     get syncFromNotifications() { return connection.syncFromNotifications; },
@@ -545,14 +545,17 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
         : liveErrorText
 
     if (!isInProgress && !activity && !reasoningText && !errorText) return null
+    const activeTurn = activeTurnIdByThreadId.value[threadId]
+    const liveMetadata = generationMetadataByThreadId.value[threadId]?.[activeTurn]
     return {
       activityLabel: activity?.label || 'Thinking',
       activityDetails: activity?.details ?? [],
       reasoningText,
       errorText,
-      generationMetadata: generationMetadataByThreadId.value[threadId]?.[activeTurnIdByThreadId.value[threadId]]
-        ?? history.persistedMessagesByThreadId.value[threadId]?.find((message) =>
-          message.turnId === activeTurnIdByThreadId.value[threadId] && message.generationMetadata)?.generationMetadata,
+      generationMetadata: liveMetadata && (liveMetadata.model !== undefined || liveMetadata.effort !== undefined)
+        ? liveMetadata
+        : history.persistedMessagesByThreadId.value[threadId]?.find(message =>
+          message.role === 'assistant' && message.turnId === activeTurn && message.generationMetadata)?.generationMetadata,
     }
   })
   const codexQuota = computed<UiRateLimitSnapshot | null>(() => codexRateLimit.value)
@@ -577,8 +580,17 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
       ...liveItemOrder.merge([livePlan, liveCommands, liveFileChanges, liveAgent].map(group => group.filter(message => !persistedIds.has(message.id)))),
     ].map((message) => {
       const metadata = message.turnId ? generationMetadataByThreadId.value[threadId]?.[message.turnId] : undefined
-      if (message.role !== 'assistant' || !metadata) return message
-      return { ...message, generationMetadata: mergeGenerationMetadata(metadata, message.generationMetadata) }
+      if (!metadata) return message
+      if (message.role === 'user' && metadata.collaborationMode !== undefined) {
+        const { collaborationMode, collaborationModeSource } = metadata
+        const merged = mergeGenerationMetadata(message.generationMetadata, { collaborationMode, collaborationModeSource })
+        if (merged.collaborationMode === 'plan') return { ...message, generationMetadata: merged }
+        if (message.generationMetadata?.collaborationMode !== 'plan') return message
+        return { ...message, generationMetadata: undefined }
+      }
+      if (message.role !== 'assistant' || (metadata.model === undefined && metadata.effort === undefined)) return message
+      const { collaborationMode, collaborationModeSource, ...responseMetadata } = metadata
+      return { ...message, generationMetadata: mergeGenerationMetadata(responseMetadata, message.generationMetadata) }
     })
 
     const summary = turnSummaryByThreadId.value[threadId]
@@ -1361,6 +1373,7 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     imageUrls: string[] = [],
     skills: Array<{ name: string; path: string }> = [],
     fileAttachments: FileAttachment[] = [],
+    collaborationMode?: CollaborationModeKind,
   ): string {
     const existing = history.persistedMessagesByThreadId.value[threadId] ?? []
     const nextMessage: UiMessage = {
@@ -1371,10 +1384,23 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
       skills: skills.length > 0 ? skills.map((skill) => ({ name: skill.name, path: skill.path })) : undefined,
       fileAttachments: fileAttachments.length > 0 ? fileAttachments.map((file) => ({ ...file })) : undefined,
       messageType: 'userMessage.optimistic',
+      ...(collaborationMode === 'plan' ? { generationMetadata: { collaborationMode, collaborationModeSource: 'submitted' } } : {}),
       turnIndex: inferNextTurnIndex(threadId),
     }
     setPersistedMessagesForThread(threadId, [...existing, nextMessage])
     return nextMessage.id
+  }
+
+  function settleOptimisticTurn(threadId: string, messageId: string | undefined, turnId: string, collaborationMode: CollaborationModeKind): void {
+    if (turnId) retainGenerationMetadata(threadId, turnId, { collaborationMode, collaborationModeSource: 'submitted' })
+    if (!messageId) return
+    const messages = history.persistedMessagesByThreadId.value[threadId] ?? []
+    const next = messages.flatMap(message => {
+      if (message.id !== messageId) return [message]
+      const settled = { ...message, generationMetadata: undefined, ...(turnId ? { turnId } : {}) }
+      return turnId && hasEquivalentUserMessage(settled, messages) ? [] : [settled]
+    })
+    setPersistedMessagesForThread(threadId, next)
   }
 
   function setLiveAgentMessagesForThread(threadId: string, nextMessages: UiMessage[]): void {
@@ -1907,6 +1933,12 @@ export function useDesktopState({ onSelectedTurnCompleted }: {
     }
     if (notification.method === 'app-server/disconnected') {
       const message = connectionErrorMessage
+      for (const [threadId, rows] of Object.entries(history.persistedMessagesByThreadId.value)) {
+        if (rows.some(row => isOptimisticUserMessage(row) && !row.turnId && row.generationMetadata?.collaborationMode)) {
+          setPersistedMessagesForThread(threadId, rows.map(row => isOptimisticUserMessage(row) && !row.turnId
+            ? { ...row, generationMetadata: undefined } : row))
+        }
+      }
       transportState.value = 'disconnected'
       appServerConnection.update('disconnected')
       for (const threadId of Object.keys(approvals.pendingServerRequestsByThreadId.value)) {

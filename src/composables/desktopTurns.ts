@@ -4,7 +4,7 @@ import { CodexApiError } from '../api/codexErrors';
 import { getThreadDetail, interruptThreadTurn, resumeThread, startThread, startThreadTurn } from '../api/codexGateway';
 import { modelSelectionKey, parseModelSelection } from '../api/modelCapabilities';
 import { nativeWriteRejected } from '../api/nativeWriteOutcome';
-import type { CollaborationModeKind, ReasoningEffort, SpeedMode, UiMessage } from '../types/codex';
+import type { CollaborationModeKind, ReasoningEffort, SpeedMode } from '../types/codex';
 import { createDesktopApprovals } from './desktopApprovals';
 import { createDesktopHistory } from './desktopHistory';
 import { type TurnActivityState } from './desktopNotificationReaders';
@@ -53,7 +53,7 @@ export function createDesktopTurns(deps: {
     appendOptimisticUserMessage: (threadId: string, text: string, imageUrls?: string[], skills?: Array<{
         name: string;
         path: string;
-    }>, fileAttachments?: FileAttachment[]) => string;
+    }>, fileAttachments?: FileAttachment[], collaborationMode?: CollaborationModeKind) => string;
     setTurnErrorForThread: (threadId: string, message: string | null, options?: {
         transient?: boolean;
     }) => void;
@@ -72,7 +72,7 @@ export function createDesktopTurns(deps: {
         persist?: boolean;
     }) => void;
     realtimeRevisionByThreadId: Map<string, number>;
-    setPersistedMessagesForThread: (threadId: string, nextMessages: UiMessage[]) => void;
+    settleOptimisticTurn: (threadId: string, messageId: string | undefined, turnId: string, collaborationMode: CollaborationModeKind) => void;
     maybeUnblockInterruptForActiveTurn: (threadId: string, turnId: string) => void;
     pendingThreadMessageRefresh: Set<string>;
     syncFromNotifications: () => Promise<void>;
@@ -150,7 +150,7 @@ export function createDesktopTurns(deps: {
             return;
         }
         const isInProgress = deps.inProgressById.value[threadId] === true;
-        const optimisticMessageId = deps.appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments);
+        const optimisticMessageId = deps.appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments, submittedMode);
         if (isInProgress) {
             void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, submittedMode, optimisticMessageId, submissionContext).catch((unknownError) => {
                 if (generation !== deps.lifecycleGeneration)
@@ -234,7 +234,7 @@ export function createDesktopTurns(deps: {
             if (!threadId)
                 return '';
             deps.insertOptimisticThread(threadId, targetCwd, nextText || '[Image]', startedThread.projectId ?? projectId);
-            const optimisticMessageId = deps.appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments);
+            const optimisticMessageId = deps.appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode);
             deps.blockInterruptUntilThreadIsPersisted(threadId);
             deps.resumedThreadById.value = {
                 ...deps.resumedThreadById.value,
@@ -347,15 +347,10 @@ export function createDesktopTurns(deps: {
             submissionAccepted = true;
             if (!ownsAttempt())
                 return;
+            deps.settleOptimisticTurn(threadId, optimisticMessageId, startedTurnId, collaborationMode);
             if (collaborationMode === 'plan')
                 deps.resetSubmittedPlanMode(threadId);
             if (startedTurnId) {
-                if (optimisticMessageId) {
-                    const messages = deps.history.persistedMessagesByThreadId.value[threadId] ?? [];
-                    deps.setPersistedMessagesForThread(threadId, messages.map((message) => message.id === optimisticMessageId
-                        ? { ...message, turnId: startedTurnId }
-                        : message));
-                }
                 deps.activeTurnIdByThreadId.value = {
                     ...deps.activeTurnIdByThreadId.value,
                     [threadId]: startedTurnId,
@@ -370,6 +365,7 @@ export function createDesktopTurns(deps: {
         catch (unknownError) {
             if (!ownsAttempt())
                 throw unknownError;
+            if (!submissionAccepted) deps.settleOptimisticTurn(threadId, optimisticMessageId, '', collaborationMode);
             const ambiguous = unknownError instanceof Error && /disconnected|outcome unknown/i.test(unknownError.message)
                 || unknownError instanceof CodexApiError && (['network_error', 'invalid_response'].includes(unknownError.code) || (unknownError.status ?? 0) >= 500);
             if (submissionAttempted && !submissionAccepted && ambiguous && !nativeWriteRejected(unknownError)) {

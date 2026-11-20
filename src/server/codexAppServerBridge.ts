@@ -281,14 +281,16 @@ async function readRecentThread(appServer: AppServerClient, method: 'thread/read
   if (!threadId || thread?.id !== threadId) throw new Error('Invalid thread metadata in history response')
 
   try {
-    const page = asRecord(await appServer.rpc('thread/turns/list', {
-      threadId, sortDirection: 'desc', itemsView: 'full', limit: THREAD_RESPONSE_TURN_LIMIT,
-    }))
+    const pageParams = { threadId, sortDirection: 'desc', itemsView: 'full', limit: THREAD_RESPONSE_TURN_LIMIT }
+    const retained = readRetainedTurnIds(retainedTurnIds)
+    const page = asRecord(await (retained.length
+      ? appServer.rpc('thread/turns/list', pageParams, retained)
+      : appServer.rpc('thread/turns/list', pageParams)))
     if (!Array.isArray(page?.data) || (page.nextCursor != null && typeof page.nextCursor !== 'string')) {
       throw new Error('Invalid native history page')
     }
     if (snapshotEpoch !== appServer.getSnapshotEpoch()) throw new Error('History changed while loading. Refresh the thread.')
-    const responses = await readQuestionResponses(threadId, page.data, retainedTurnIds)
+    const responses = await readQuestionResponses(threadId, page.data, retained)
     if (snapshotEpoch !== appServer.getSnapshotEpoch()) throw new Error('History changed while loading. Refresh the thread.')
     return {
       ...metadata, thread: { ...thread, turns: [...page.data].reverse() }, olderCursor: page.nextCursor ?? null,
@@ -309,9 +311,9 @@ function readRetainedTurnIds(value: unknown): string[] {
   return Array.isArray(value) ? value.filter(id => typeof id === 'string' && id.length > 0 && id.length <= 256) : []
 }
 
-function readQuestionResponses(threadId: string, turns: unknown[], retained?: unknown) {
+function readQuestionResponses(threadId: string, turns: unknown[], retained: string[] = []) {
   const turnIds = new Set(turns.map(turn => readNonEmptyString(asRecord(turn)?.id)).filter(Boolean))
-  for (const id of readRetainedTurnIds(retained)) turnIds.add(id)
+  for (const id of retained) turnIds.add(id)
   return questionResponses.read(threadId, turnIds)
 }
 
