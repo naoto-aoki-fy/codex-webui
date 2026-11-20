@@ -16,6 +16,10 @@ const MAX_TURNS = 10_000
 const MAX_METADATA_READS = 16
 const record = (v: any): Record<string, any> | undefined => v && typeof v === 'object' && !Array.isArray(v) ? v : undefined
 
+function rolloutStamp(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
+}
+
 /** Use complete rollout records with exact IDs. A mode conflict must
  * explicitly clear submitted evidence already visible in a browser. */
 export function parseRolloutMetadata(raw: string, observe?: (type: unknown, payload: Record<string, unknown>) => void): Map<string, TurnGenerationMetadata> {
@@ -232,7 +236,8 @@ export class RolloutGenerationMetadata {
     let submitted = submittedModes(cached)
     const current = () => generation === this.client.generation() && getConnectionProfileId() === profileId
     const fallback = () => current() ? combineEvidence(new Map(), submitted) : new Map<string, TurnGenerationMetadata>()
-    const needed = () => job.metadataRequested || job.replies.some(reply => reply.answers)
+    const hasReplies = () => job.replies.some(reply => reply.answers)
+    const needed = () => job.metadataRequested || hasReplies()
     const rpc = async (method: string, params: unknown) => {
       if (!current()) throw new Error('Retired rollout recovery')
       const result = await this.client.rpc(method, params)
@@ -254,30 +259,38 @@ export class RolloutGenerationMetadata {
       job.snapshotStarted = true
       const before = await rpc('fs/getMetadata', { path })
       if (!before?.isFile || !needed()) return fallback()
-      const stamp = before.modifiedAtMs
-      const reliable = typeof stamp === 'number' && Number.isFinite(stamp) && stamp > 0
-      if (!job.force && reliable && cached?.version === 2 && cached.rolloutModeScanned === true &&
+      let stamp = rolloutStamp(before.modifiedAtMs)
+      if (!job.force && stamp !== undefined && cached?.version === 2 && cached.rolloutModeScanned === true &&
         cached.sourcePath === path && cached.modifiedAtMs === stamp) {
         const evidence = cachedEvidence(cached)
         if (evidence) return combineEvidence(evidence, submitted)
       }
-      const raw = await readFile(path, MAX_SOURCE_BYTES)
-      const after = await rpc('fs/getMetadata', { path })
-      if (!after?.isFile || (reliable && after.modifiedAtMs !== stamp)) return fallback()
+      let raw = await readFile(path, MAX_SOURCE_BYTES)
+      let after = await rpc('fs/getMetadata', { path })
+      if (!after?.isFile) return fallback()
+      if (stamp !== undefined && after.modifiedAtMs !== stamp) {
+        // A follow-up turn can append to the same rollout during confirmation.
+        const nextStamp = rolloutStamp(after.modifiedAtMs)
+        if (!hasReplies() || nextStamp === undefined) return fallback()
+        stamp = nextStamp
+        raw = await readFile(path, MAX_SOURCE_BYTES)
+        after = await rpc('fs/getMetadata', { path })
+        if (!after?.isFile || after.modifiedAtMs !== stamp) return fallback()
+      }
       const replies = job.replies.filter(reply => reply.answers)
       const observe = replies.length ? observeRolloutQuestionReplies(threadId, replies) : undefined
       const rollout = parseRolloutMetadata(raw, observe)
 
       const submittedCount = submitted.size
       discardContradictions(submitted, rollout)
-      if (reliable || submitted.size !== submittedCount) {
+      if (stamp !== undefined || submitted.size !== submittedCount) {
         try {
           await updateCodexGlobalState(state => {
             if (!current()) return
             submitted = submittedModes(state)
             discardContradictions(submitted, rollout)
             const submittedModesByTurn = Object.fromEntries(submitted)
-            if (!reliable) {
+            if (stamp === undefined) {
               storeCache(state, { ...state, version: 2, submittedModes: submittedModesByTurn })
               return
             }
