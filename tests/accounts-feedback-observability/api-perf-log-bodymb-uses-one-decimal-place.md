@@ -19,3 +19,21 @@
 - None
 
 ---
+
+### RPC payload sizes with HTTP compression
+
+Setup. Start the dev server with `CODEXUI_API_PERF_LOGGING=true`,
+`CODEXUI_API_PERF_MS_THRESHOLD=60000`, and `CODEXUI_API_PERF_BODY_MB_THRESHOLD=1`.
+Use a conversation whose latest history page contains more than 1 MiB of
+compressible JSON.
+
+1. Copy the `POST /codex-api/rpc` `thread/read` request for that conversation
+   from DevTools as cURL. Send it with `Accept-Encoding: identity`, then send
+   the same request with `Accept-Encoding: br`. Add `-D - -o /dev/null` to
+   each command to capture the headers and discard the response body.
+2. Expect one performance log entry for each request and the same one-decimal
+   `bodyMB` in both entries. The Brotli response has `Content-Encoding: br`
+   and its log includes `encodedResponseBytes` equal to its `Content-Length`.
+   The identity entry omits the encoded-byte field.
+
+Cleanup. Stop the test server and restore any temporary environment overrides.
