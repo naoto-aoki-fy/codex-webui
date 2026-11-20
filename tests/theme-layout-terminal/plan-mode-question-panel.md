@@ -155,19 +155,30 @@ Close the fixture browser. Its theme preference and response are isolated from y
    the test value. Dismiss the draft and confirm the panel disappears. Reloading
    the page starts a new in-memory draft.
 3. Run the external App Server protocol fixture. Inspect a native closure before
-   a matching result and expect an empty history until confirmation. Check that
-   mismatched IDs, changed answer ordering, cancellation, connection loss and
-   closure without a result save nothing. Check that an identical duplicate
-   result yields a single redacted saved answer and that browser events and
-   backend output contain no private value.
+   a matching result and expect an empty history until confirmation. On the
+   default stream after thread creation and resume, check one rollout transfer
+   per answered turn and one redacted saved answer even if completion repeats.
+   Check that mismatched IDs, changed answer ordering, cancellation, connection
+   loss and closure without a result save nothing. Check that browser events,
+   generation metadata caches and backend output contain no private value.
 4. When the bridge certifies that the socket did not send the frame and the
-   request remains pending, **Retry** is available. Use it once and look for the
-   same confirmation before a bubble appears. Simulate a confirmed reply with a
-   failed history write and check the visible redacted bubble and save warning.
+   request remains pending, use **Retry** once and look for confirmation before a
+   bubble appears. Repeat with a fresh request and choose **Dismiss draft**.
+   Expect the default choice, empty text and no error. Refresh pending requests
+   and verify the same question remains open. Submit the fresh form and confirm
+   the discarded text was never sent again. Dismiss a closed draft and verify the
+   panel disappears. Simulate a confirmed reply with a failed history write and
+   check the visible redacted bubble and save warning.
 5. Close the fixture browser and stop only the temporary App Server fixture.
 
-On Codex 0.170.0, a live positive check uses a disposable thread created with
-`experimentalRawEvents: true` on `thread/start`. Start a Plan turn, answer its
-question, and observe the closure followed by one redacted saved-answer event.
-Repeat with the server's default event settings and expect unconfirmed delivery
-if the stream omits the matching raw tool result.
+For live acceptance, connect to an independently managed and signed-in Codex
+0.170.0 App Server. Start a disposable thread in WebUI and send a Plan prompt
+that asks Codex to use `request_user_input`. Answer the question and wait for
+successful turn completion. Verify one saved answer, masked private values,
+and one native reply with the default event settings. Reload the thread to
+resume it, check the saved bubble, and answer a second Plan question. Interrupt
+a third turn after submitting its answer and before completion. If the
+question panel hides the composer, use the WebUI bridge's `turn/interrupt`
+RPC with the thread and turn IDs from the question event. Verify the interrupted
+turn has no saved answer, then dismiss its closed draft.
+Archive the disposable thread and preserve the independent App Server process.
