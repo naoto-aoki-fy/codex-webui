@@ -40,5 +40,7 @@ compressible JSON.
    formatting whitespace, with both fixed-length and chunked requests.
    The aborted-upload cases send 1.5 MiB, close the socket, and expect a single
    `aborted` log entry with `bodyMB=1.5` for either framing mode.
+   The rejected-upload cases expect `406` before sending the body, then a
+   single `406` log entry with the bytes drained after completion or disconnect.
 
 Cleanup. Stop the test server and restore any temporary environment overrides.
