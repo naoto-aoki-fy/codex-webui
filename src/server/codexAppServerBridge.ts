@@ -515,13 +515,15 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
     const parsedRequestUrl = rawUrl ? new URL(rawUrl, 'http://localhost') : null
     const requestPath = parsedRequestUrl?.pathname ?? ''
     const requestMethod = req.method ?? 'UNKNOWN'
+    const isRpcRequest = requestMethod === 'POST' && requestPath === '/codex-api/rpc'
     const rawContentLength = Array.isArray(req.headers['content-length'])
       ? req.headers['content-length'][0]
       : req.headers['content-length']
     const parsedContentLength = rawContentLength ? Number.parseInt(rawContentLength, 10) : NaN
-    let requestBodyBytes: number | null = Number.isFinite(parsedContentLength) && parsedContentLength >= 0
+    const declaredRequestBytes = Number.isFinite(parsedContentLength) && parsedContentLength >= 0
       ? parsedContentLength
-      : null
+      : 0
+    let requestBodyBytes = isRpcRequest ? 0 : declaredRequestBytes
     let responseBodyBytes = 0
     let decodedResponseBodyBytes: number | undefined
     let rpcMethod: string | null = null
@@ -539,20 +541,20 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       return originalEnd(chunk as never, encoding as never, cb as never)
     }) as typeof res.end
     let didLog = false
-    const logApiRequestDuration = () => {
+    const logApiRequestDuration = (aborted = false) => {
       if (!API_PERF_LOGGING_ENABLED || didLog || !requestPath.startsWith('/codex-api/')) return
       const durationMs = Number((process.hrtime.bigint() - requestStartNs) / 1_000_000n)
-      const requestBytes = requestBodyBytes ?? 0
-      const bodyMbValue = (requestBytes + (decodedResponseBodyBytes ?? responseBodyBytes)) / MB_DIVISOR
+      const bodyMbValue = (requestBodyBytes + (decodedResponseBodyBytes ?? responseBodyBytes)) / MB_DIVISOR
       const shouldLog = durationMs > API_PERF_MS_THRESHOLD || bodyMbValue > API_PERF_BODY_MB_THRESHOLD
       if (!shouldLog) return
       didLog = true
       const rpcPart = rpcMethod ? `, rpcMethod=${rpcMethod}` : ''
       const encodedPart = decodedResponseBodyBytes === undefined ? '' : `, encodedResponseBytes=${responseBodyBytes}`
-      console.info(`[codex-api-perf] ${requestMethod} ${requestPath} -> ${res.statusCode} (${durationMs}ms, bodyMB=${bodyMbValue.toFixed(1)}${rpcPart}${encodedPart})`)
+      const outcome = aborted ? 'aborted' : res.statusCode
+      console.info(`[codex-api-perf] ${requestMethod} ${requestPath} -> ${outcome} (${durationMs}ms, bodyMB=${bodyMbValue.toFixed(1)}${rpcPart}${encodedPart})`)
     }
     res.once('finish', logApiRequestDuration)
-    res.once('close', logApiRequestDuration)
+    res.once('close', () => logApiRequestDuration(isRpcRequest && !res.writableFinished))
 
     try {
       if (!req.url) {
@@ -577,7 +579,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
-      if (req.method === 'POST' && url.pathname === '/codex-api/rpc') {
+      if (isRpcRequest) {
         sendRpcJson = createRpcJsonWriter(req, res, decodedBytes => {
           decodedResponseBodyBytes = decodedBytes
         })
@@ -588,7 +590,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           res.end()
           return
         }
-        const payload = await readJsonBody(req, bytes => { requestBodyBytes = bytes })
+        const payload = await readJsonBody(req, bytes => { requestBodyBytes += bytes })
         const body = asRecord(payload) as RpcProxyRequest | null
         rpcMethod = body?.method && typeof body.method === 'string' ? body.method : null
 

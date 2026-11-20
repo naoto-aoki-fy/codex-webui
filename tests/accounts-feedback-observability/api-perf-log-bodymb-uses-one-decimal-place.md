@@ -38,5 +38,7 @@ compressible JSON.
 3. Run `pnpm exec vitest run src/server/codexAppServerBridge.rpcResponse.test.ts`
    to verify that `bodyMB` includes the original request JSON bytes, including
    formatting whitespace, with both fixed-length and chunked requests.
+   The aborted-upload cases send 1.5 MiB, close the socket, and expect a single
+   `aborted` log entry with `bodyMB=1.5` for either framing mode.
 
 Cleanup. Stop the test server and restore any temporary environment overrides.

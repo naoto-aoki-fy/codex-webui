@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { finished } from 'node:stream'
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -45,21 +46,34 @@ export function setJson(res: ServerResponse, statusCode: number, payload: unknow
 
 export async function readJsonBody(
   req: IncomingMessage,
-  onBodyBytes?: (bytes: number) => void,
+  onBodyChunkBytes?: (bytes: number) => void,
 ): Promise<unknown> {
-  const raw = await readRawBody(req)
-  onBodyBytes?.(raw.length)
+  const raw = await readRawBody(req, onBodyChunkBytes)
   if (raw.length === 0) return null
   const text = raw.toString('utf8').trim()
   if (text.length === 0) return null
   return JSON.parse(text) as unknown
 }
 
-export async function readRawBody(req: IncomingMessage): Promise<Buffer> {
+export async function readRawBody(
+  req: IncomingMessage,
+  onBodyChunkBytes?: (bytes: number) => void,
+): Promise<Buffer> {
   const chunks: Uint8Array[] = []
-  for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+  const collect = (chunk: Uint8Array | string) => {
+    const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+    chunks.push(bytes)
+    onBodyChunkBytes?.(bytes.length)
   }
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = finished(req, { writable: false }, error => {
+      req.off('data', collect)
+      cleanup()
+      if (error) reject(error)
+      else resolve()
+    })
+    req.on('data', collect)
+  })
   return Buffer.concat(chunks)
 }
 

@@ -14,6 +14,7 @@ let previousBridge: unknown
 let disposeBridge: () => void
 let server: Server
 let url: string
+let incoming: Promise<IncomingMessage>
 let serving: { closed: Promise<unknown[]>; done: Promise<void>; expectNoWrite: () => void }
 
 beforeEach(async () => {
@@ -28,6 +29,8 @@ beforeEach(async () => {
   }
   const bridge = createCodexBridgeMiddleware()
   disposeBridge = bridge.dispose
+  const requestStarted = deferred<IncomingMessage>()
+  incoming = requestStarted.promise
   server = createServer((req, res) => {
     const end = vi.spyOn(res, 'end')
     const write = vi.spyOn(res, 'write')
@@ -39,6 +42,7 @@ beforeEach(async () => {
         expect(write).not.toHaveBeenCalled()
       },
     }
+    requestStarted.resolve(req)
   })
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
@@ -58,11 +62,15 @@ afterEach(async () => {
   rpc.mockReset()
 })
 
-function requestRpc(encoding: string, body = '{"method":"thread/list"}', headers: OutgoingHttpHeaders = {}) {
-  const client = request(url, {
+function openRpcRequest(encoding: string, headers: OutgoingHttpHeaders = {}) {
+  return request(url, {
     method: 'POST',
     headers: { 'Accept-Encoding': encoding, 'Content-Type': 'application/json', Connection: 'close', ...headers },
   })
+}
+
+function requestRpc(encoding: string, body = '{"method":"thread/list"}', headers: OutgoingHttpHeaders = {}) {
+  const client = openRpcRequest(encoding, headers)
   client.end(body)
   return client
 }
@@ -130,6 +138,36 @@ it.each(['fixed-length', 'chunked'])('counts the original JSON bytes of a %s req
   expect(log).toHaveBeenCalledOnce()
   const bodyMB = ((requestBytes + Number(response.headers['content-length'])) / (1024 * 1024)).toFixed(1)
   expect(log.mock.calls[0]![0]).toContain(`bodyMB=${bodyMB}, rpcMethod=thread/list)`)
+})
+
+it.each(['fixed-length', 'chunked'])('logs only the received bytes of an aborted %s request', async framing => {
+  const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+  const mb = 1024 * 1024
+  const partial = Buffer.alloc(1.5 * mb, 32)
+  const headers: OutgoingHttpHeaders = framing === 'chunked'
+    ? { 'Transfer-Encoding': 'chunked' }
+    : { 'Content-Length': 3 * mb }
+  const client = openRpcRequest('identity', headers)
+  client.on('error', () => {})
+  client.flushHeaders()
+  const req = await incoming
+
+  const received = deferred<number>()
+  let bytesRead = 0
+  req.on('data', (chunk: Buffer) => {
+    bytesRead += chunk.length
+    if (bytesRead >= partial.length) received.resolve(bytesRead)
+  })
+  client.write(partial)
+  expect(await received.promise).toBe(partial.length)
+  client.destroy()
+  await serving.closed
+  await serving.done
+
+  expect(log).toHaveBeenCalledOnce()
+  expect(log.mock.calls[0]![0]).toMatch(/POST \/codex-api\/rpc -> aborted \(\d+ms, bodyMB=1\.5\)$/)
+  expect(rpc).not.toHaveBeenCalled()
+  serving.expectNoWrite()
 })
 
 it.each(['identity', 'gzip'])('skips %s serialization after the client disconnects before its RPC result', async encoding => {
