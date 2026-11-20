@@ -7,6 +7,7 @@ import { profileStorageDirectory } from './connectionProfile'
 import { storageNames } from './webuiStorage.mjs'
 import { AppServerClient } from './appServerClient'
 import { mergeGenerationMetadata } from '../turnGenerationMetadata'
+import type { RolloutQuestionReply } from './questionResponses'
 
 afterEach(() => vi.unstubAllEnvs())
 const cacheDirectory = () => join(profileStorageDirectory('cache'), storageNames.rolloutCache, 'v1')
@@ -18,7 +19,7 @@ function fixture() {
   let stamp = 1, generation = 0
   const files = new Map<string, string>([[path, context('old', { model: 'A', effort: 'high' }) + context('new', { model: 'B', effort: 'none' })]])
   const rpc = vi.fn(async (method: string, params: any): Promise<any> => {
-    if (method === 'thread/read') return { thread: { id: 't', path } }
+    if (method === 'thread/read') return { thread: { id: params.threadId, path } }
     if (method === 'fs/getMetadata') return { isFile: true, modifiedAtMs: stamp }
     if (method === 'fs/readFile') {
       if (!files.has(params.path)) throw new Error('ENOENT')
@@ -30,6 +31,77 @@ function fixture() {
   return { client, rpc, files, service: new RolloutGenerationMetadata(client), change: () => stamp++, disconnect: () => generation++ }
 }
 const sourceReads = (f: ReturnType<typeof fixture>) => f.rpc.mock.calls.filter(([m, p]) => m === 'fs/readFile' && p.path === path).length
+
+const questionAnswers = { choice: { answers: ['Full', 'Keep examples'] }, private: { answers: ['synthetic private value'] } }
+const questionReply = (): RolloutQuestionReply => ({ turnId: 'new', callId: 'call', answers: questionAnswers, confirmed: false })
+const row = (type: string, payload: object) => JSON.stringify({ type, payload }) + '\n'
+const boundary = (type: string, turnId = 'new') => row('event_msg', { type, turn_id: turnId })
+const questionCall = row('response_item', { type: 'function_call', name: 'request_user_input', call_id: 'call' })
+const questionResult = (answers: unknown = questionAnswers, callId = 'call') =>
+  row('response_item', { type: 'function_call_output', call_id: callId, output: JSON.stringify({ answers }) })
+const session = (id = 't') => row('session_meta', { id })
+const completeQuestion = questionCall + questionResult() + boundary('task_complete')
+
+it('shares a fresh scan with metadata even when the cached mtime matches, without persisting private evidence', async () => {
+  const f = fixture()
+  await f.service.recover('t')
+  f.files.set(path, session() + boundary('task_started') + context('new', { model: 'C' }) + questionCall +
+    questionResult() + questionResult() + boundary('task_complete'))
+  const reply = questionReply()
+  const metadata = f.service.recover('t')
+  expect(f.service.recover('t', true, reply)).toBe(metadata)
+  expect((await metadata).get('new')).toEqual(execution('C'))
+  expect(reply.confirmed).toBe(true)
+  expect(sourceReads(f)).toBe(2)
+  expect(f.rpc.mock.calls.slice(4).map(([method]) => method)).toEqual(['thread/read', 'fs/getMetadata', 'fs/readFile', 'fs/getMetadata'])
+  expect(await readFile(cachePath(), 'utf8')).not.toContain('synthetic private value')
+})
+
+it.each([
+  ['another session', session('other') + boundary('task_started') + completeQuestion],
+  ['another turn', session() + boundary('task_started', 'old') + questionCall + questionResult() + boundary('task_complete', 'old')],
+  ['another call', session() + boundary('task_started') + questionCall + questionResult(questionAnswers, 'other') + boundary('task_complete')],
+  ['no question tool call', session() + boundary('task_started') + questionResult() + boundary('task_complete')],
+  ['changed answer ordering', session() + boundary('task_started') + questionCall +
+    questionResult({ ...questionAnswers, choice: { answers: ['Keep examples', 'Full'] } }) + boundary('task_complete')],
+  ['incomplete record', session() + boundary('task_started') + completeQuestion.trimEnd()],
+  ['abort', session() + boundary('task_started') + questionCall + questionResult() + boundary('turn_aborted') + boundary('task_complete')],
+  ['abort without a turn ID', session() + boundary('task_started') + questionCall + questionResult() +
+    row('event_msg', { type: 'turn_aborted' }) + boundary('task_complete')],
+  ['rollback', session() + boundary('task_started') + completeQuestion + boundary('thread_rolled_back')],
+])('does not confirm a question reply using evidence from %s', async (_name, raw) => {
+  const f = fixture()
+  const reply = questionReply()
+  f.files.set(path, raw)
+  await f.service.recover('t', true, reply)
+  expect(reply.confirmed).toBe(false)
+  expect(sourceReads(f)).toBe(1)
+})
+
+it('queues one fresh question scan when an older metadata transfer already started', async () => {
+  const f = fixture(), original = f.rpc.getMockImplementation()!
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  f.rpc.mockImplementation(async (method, params) => {
+    const result = await original(method, params)
+    if (method === 'fs/readFile' && sourceReads(f) === 1) await held
+    return result
+  })
+  const old = f.service.recover('t')
+  try {
+    await vi.waitFor(() => expect(sourceReads(f)).toBe(1))
+    f.files.set(path, session() + boundary('task_started') + completeQuestion)
+    f.change()
+    const reply = questionReply()
+    const fresh = f.service.recover('t', true, reply)
+    expect(fresh).not.toBe(old)
+    expect(f.service.recover('t')).toBe(fresh)
+    release()
+    await fresh
+    expect(reply.confirmed).toBe(true)
+    expect(sourceReads(f)).toBe(2)
+  } finally { release(); await old }
+})
 
 it('parses exact IDs, missing/null/none, malformed and interrupted records; suppresses conflicting fields', () => {
   const raw = context('a', { model: 'A', effort: null }) + 'bad\n' + context('b', { model: 'B', effort: 'none' }) + context('a', { model: 'A' }) + context('conflict', { model: 'X', effort: 'high' }) + context('conflict', { model: 'Y', effort: 'high' }) + context('', { model: 'wrong' }) + JSON.stringify({ type: 'event_msg', payload: { turn_id: 'foreign', model: 'wrong' } }) + '\n' + context('partial', { model: 'wrong' }).trim()

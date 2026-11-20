@@ -19,6 +19,67 @@ export function questionRequestParams(params: Record<string, unknown> | null) {
 
 type QuestionAnswers = Record<string, { answers: string[] }>
 
+export type RolloutQuestionReply = {
+  turnId: string
+  callId: string
+  answers?: QuestionAnswers
+  confirmed: boolean
+}
+
+/** Function items have no turn ID in native JSONL. Match the call and its
+ * output inside the originating turn's start and completion records. */
+export function observeRolloutQuestionReplies(threadId: string, replies: RolloutQuestionReply[]) {
+  const byTurn = new Map<string, Map<string, RolloutQuestionReply[]>>()
+  for (const reply of replies) {
+    const calls = byTurn.get(reply.turnId) ?? new Map<string, RolloutQuestionReply[]>()
+    if (!byTurn.has(reply.turnId)) byTurn.set(reply.turnId, calls)
+    const candidates = calls.get(reply.callId) ?? []
+    if (!calls.has(reply.callId)) calls.set(reply.callId, candidates)
+    candidates.push(reply)
+  }
+  let sessionMatches = false
+  let activeTurn: unknown
+  const callsSeen = new Set<string>()
+  const matches = new Map<RolloutQuestionReply, boolean>()
+  return (type: unknown, payload: Record<string, unknown>) => {
+    if (type === 'session_meta') {
+      sessionMatches = payload.id === threadId
+      activeTurn = undefined
+      for (const reply of replies) reply.confirmed = false
+    }
+    if (!sessionMatches) return
+    if (type === 'event_msg') {
+      const turnId = payload.turn_id
+      if (payload.type === 'thread_rolled_back') {
+        activeTurn = undefined
+        for (const reply of replies) reply.confirmed = false
+      } else if (payload.type === 'task_started') {
+        activeTurn = turnId
+        callsSeen.clear()
+        matches.clear()
+      } else if (payload.type === 'turn_aborted' && (turnId == null || turnId === activeTurn)) {
+        activeTurn = undefined
+      } else if (payload.type === 'task_complete' && turnId === activeTurn) {
+        if (!payload.error) {
+          for (const [reply, match] of matches) reply.confirmed = match
+        }
+        activeTurn = undefined
+      }
+      return
+    }
+    if (type !== 'response_item' || typeof activeTurn !== 'string' || typeof payload.call_id !== 'string') return
+    const callId = payload.call_id
+    const candidates = byTurn.get(activeTurn)?.get(callId)
+    if (!candidates) return
+    if (isQuestionToolCall(payload)) callsSeen.add(callId)
+    if (payload.type !== 'function_call_output' || !callsSeen.has(callId)) return
+    const observed = readQuestionToolAnswers(payload.output)
+    for (const reply of candidates) {
+      matches.set(reply, matches.get(reply) !== false && Boolean(reply.answers && observed && questionAnswersMatch(reply.answers, observed)))
+    }
+  }
+}
+
 export function readQuestionToolAnswers(output: unknown): QuestionAnswers | undefined {
   const text = Array.isArray(output) && output.length === 1 && asRecord(output[0])?.type === 'input_text'
     ? asRecord(output[0])?.text : output
