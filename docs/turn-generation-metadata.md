@@ -10,7 +10,9 @@ thread. Accepted WebUI submissions can also supply an explicit collaboration mod
 1. Content-bearing thread reads, resumes, forks and turn pages start asynchronous
    recovery. On reconnect, the same history request carries IDs for locally
    retained older pages. The bridge uses those IDs to scope recovery and strips
-   them before calling Codex.
+   them before calling Codex. The bridge reads submitted modes from the local
+   profile cache independently of the rollout queue. Overlapping history pages
+   share the local read and receive only their exact or retained IDs.
 2. The reader resolves and validates the native rollout path under the Codex
    home's session or archive directory, then checks its modification timestamp.
    It validates the cached source path, timestamp, exact turn IDs and execution
@@ -30,15 +32,17 @@ thread. Accepted WebUI submissions can also supply an explicit collaboration mod
    best-effort write keyed by the returned turn ID before acknowledging the send.
    Cache updates serialize and atomically replace the local file. Validated
    rollout mode supersedes submitted mode, and contradictory or conflicting
-   evidence removes the submitted fallback.
+   evidence removes the submitted fallback. A pending local read skips turns
+   superseded by newer submission or execution evidence.
 6. `turn/generationMetadata` carries exact-turn evidence for the requested or
    retained turns. Prompt bubbles render a badge for Plan mode. The optimistic
    badge starts with the sent mode, transfers to the acknowledged turn ID and
    clears when the submission cannot be confirmed. Assistant metadata and
    timestamps continue to use their established evidence.
 
-When rollout reads fail, an available accepted mode can still be recovered across
-a backend restart. Unchanged valid rollout caches skip the remote source transfer.
+An available accepted mode can be recovered across a backend restart while the
+remote rollout is blocked, unavailable or queued. Unchanged valid rollout
+caches skip the remote source transfer.
 An unknown mtime cannot validate or cache rollout evidence. Explicit refresh
 rereads the source, including when a change preserves the recorded mtime. Missing
 paths, malformed rows and local cache failures leave native history available.
@@ -86,7 +90,8 @@ archive, and the bridge removes them when it observes permanent deletion.
 
 Recovery coalesces concurrent reads, serializes source transfers and admits at
 most 16 queued threads. Bounds remain 16 MiB per source, 2 MiB per cache, 10,000
-turn IDs and 512 characters per field. No session traversal, per-message RPC,
+turn IDs and 512 characters per field. Local recovery adds an asynchronous,
+coalesced cache read and uses existing metadata notifications. No session traversal, per-message RPC,
 source-to-fork history read, synchronous filesystem work or new request fanout is
 introduced. Native metadata-only pagination does not trigger rollout recovery.
 Answer history reads one profile/thread file asynchronously, filters by exact turn

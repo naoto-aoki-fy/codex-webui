@@ -63,3 +63,24 @@ dark themes at 1280 × 900, 768 × 1024 and 375 × 812.
    timestamps before and after. Check destination-owned evidence on Native Fork
    and that Portable Fork retains its ordinary transcript attribution.
 5. Archive the disposable threads and remove temporary fixture profiles when done.
+
+### Cached Plan badges with a blocked rollout
+
+1. Build WebUI and run `pnpm run test:integration:fixture`. The fixture seeds
+   accepted modes, pauses the remote rollout file read, and requests normal
+   history with a retained older turn. Expect exact submitted-mode updates while
+   the remote read is still paused. The wire should show one native page for the
+   history request and one existing asynchronous rollout recovery.
+2. With the current Vite checkout running on port 4173 and Playwright Chromium
+   installed, run `CODEXAPP_FIXTURE_BROWSER=1 pnpm run test:integration:fixture`.
+   A fresh browser should show the recent Plan badge while the rollout is held.
+   Click **Load earlier messages** and check the older Plan badge. The fixture
+   compares native history calls with browser requests and checks that the
+   pending rollout transfer is shared.
+3. Release the rollout with disagreeing execution modes for the older turn.
+   Expect the older badge to disappear, the recent badge to remain, and the
+   discarded fallback to stay absent on the next history read. Run
+   `pnpm exec vitest run src/server/rolloutGenerationMetadata.test.ts` to check
+   recovery with a full queue and a cache read that finishes after the conflict.
+4. Close the fixture browser and leave the current checkout's Vite server running.
+   The fixture removes its temporary profile data automatically.

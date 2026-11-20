@@ -285,3 +285,85 @@ it('persists only the explicit mode on native acceptance without a metadata or h
     expect(JSON.parse(await readFile(cachePath(), 'utf8'))).toEqual({ version: 2, submittedModes: { exact: 'plan' } })
   } finally { instance.dispose() }
 })
+
+it('publishes local modes for exact page and retained turns while the remote rollout queue is saturated', async () => {
+  const f = fixture()
+  const profile = process.env.CODEXUI_CONNECTION_PROFILE!
+  await f.service.rememberSubmittedMode('t', 'old', 'plan', profile)
+  await f.service.rememberSubmittedMode('t', 'new', 'plan', profile)
+  await f.service.rememberSubmittedMode('t', 'unrequested', 'plan', profile)
+  const instance = new AppServerClient()
+  const service = Reflect.get(instance, 'rolloutMetadata') as RolloutGenerationMetadata
+  const readSubmittedModes = vi.spyOn(service, 'readSubmittedModes')
+  vi.spyOn(instance, 'resolveCodexHome').mockResolvedValue('/remote/.codex')
+  vi.spyOn(instance as any, 'ensureInitialized').mockResolvedValue(undefined)
+  let release!: () => void
+  const blocked = new Promise<void>(resolve => { release = resolve })
+  const call = vi.spyOn(instance as any, 'callObserved').mockImplementation(async (method: any, params: any) => {
+    if (method === 'thread/turns/list') return { data: [{ id: 'new', items: [] }] }
+    if (method === 'fs/readFile') await blocked
+    return f.rpc(method, params)
+  })
+  const notify = vi.fn()
+  instance.onNotification(notify)
+  try {
+    const queued = Array.from({ length: 16 }, (_, index) => service.recover('blocked-' + index))
+    await vi.waitFor(() => expect(call.mock.calls.some(([method]) => method === 'fs/readFile')).toBe(true))
+    const before = call.mock.calls.length
+    await Promise.all([
+      instance.rpc('thread/turns/list', { threadId: 't' }),
+      instance.rpc('thread/turns/list', { threadId: 't' }, ['old']),
+    ])
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(2))
+    expect(readSubmittedModes).toHaveBeenCalledTimes(1)
+    expect(notify.mock.calls.map(([event]) => [event.params.turnId, event.params.generationMetadata])).toEqual([
+      ['new', modeEvidence('plan', 'submitted')], ['old', modeEvidence('plan', 'submitted')],
+    ])
+    expect(call.mock.calls.slice(before).map(([method]) => method)).toEqual(['thread/turns/list', 'thread/turns/list'])
+    release()
+    await Promise.all(queued)
+  } finally { release(); instance.dispose() }
+})
+
+it('clears a recovered badge on a later contradiction and prevents a delayed cache snapshot from restoring it', async () => {
+  const f = fixture()
+  const profile = process.env.CODEXUI_CONNECTION_PROFILE!
+  await f.service.rememberSubmittedMode('t', 'old', 'plan', profile)
+  const instance = new AppServerClient()
+  const service = Reflect.get(instance, 'rolloutMetadata') as RolloutGenerationMetadata
+  vi.spyOn(instance, 'resolveCodexHome').mockResolvedValue('/remote/.codex')
+  vi.spyOn(instance as any, 'ensureInitialized').mockResolvedValue(undefined)
+  let releaseRollout!: () => void
+  const blocked = new Promise<void>(resolve => { releaseRollout = resolve })
+  const call = vi.spyOn(instance as any, 'callObserved').mockImplementation(async (method: any, params: any) => {
+    if (method === 'thread/turns/list') return { data: [{ id: 'old', items: [] }] }
+    if (method === 'fs/readFile') await blocked
+    return f.rpc(method, params)
+  })
+  const notify = vi.fn()
+  instance.onNotification(notify)
+  const page = () => instance.rpc('thread/turns/list', { threadId: 't' })
+  try {
+    await page()
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledExactlyOnceWith({
+      method: 'turn/generationMetadata', params: { threadId: 't', turnId: 'old', generationMetadata: modeEvidence('plan', 'submitted') },
+    }))
+    await vi.waitFor(() => expect(call.mock.calls.some(([method]) => method === 'fs/readFile')).toBe(true))
+    const captured = await service.readSubmittedModes('t', profile)
+    let releaseLocal!: (value: typeof captured) => void
+    vi.spyOn(service, 'readSubmittedModes').mockImplementationOnce(() => new Promise(resolve => { releaseLocal = resolve }))
+    await page()
+    f.files.set(path, f.files.get(path)! + modeStart('old', 'default') + modeContext('old', 'plan'))
+    releaseRollout()
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledWith({
+      method: 'turn/generationMetadata', params: { threadId: 't', turnId: 'old', generationMetadata: { ...execution('A', 'high'), ...modeEvidence(null) } },
+    }))
+    releaseLocal(captured)
+    await vi.waitFor(() => expect(Reflect.get(instance, 'submittedModeRequests').size).toBe(0))
+    expect(notify).toHaveBeenCalledTimes(2)
+    expect(await service.readSubmittedModes('t', profile)).toEqual(new Map())
+    expect(call.mock.calls.map(([method]) => method)).toEqual([
+      'thread/turns/list', 'thread/read', 'fs/getMetadata', 'fs/readFile', 'thread/turns/list', 'fs/getMetadata',
+    ])
+  } finally { releaseRollout(); instance.dispose() }
+})
