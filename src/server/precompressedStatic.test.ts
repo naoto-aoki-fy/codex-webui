@@ -1,15 +1,21 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import express from 'express'
 import { request } from 'node:http'
-import { mkdtemp, writeFile, rm, readFile, mkdir } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm, readFile, mkdir, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { gunzipSync } from 'node:zlib'
+import { brotliDecompressSync, gunzipSync } from 'node:zlib'
 import { createRequire } from 'node:module'
 import { decompress } from '@bokuweb/zstd-wasm'
 import { precompressedStatic, sendPrecompressed } from './precompressedStatic'
 const require = createRequire(import.meta.url)
 const { precompress } = require('../../scripts/precompress-assets.cjs')
+const compression = [
+  { name: 'zstd', suffix: '.zst', decode: (body: Buffer) => Buffer.from(decompress(body)) },
+  { name: 'br', suffix: '.br', decode: brotliDecompressSync },
+  { name: 'gzip', suffix: '.gz', decode: gunzipSync },
+]
+const assetTypes = ['js', 'mjs', 'css', 'html', 'json', 'svg', 'txt', 'xml', 'map']
 let root: string
 let server: ReturnType<ReturnType<typeof express>['listen']>
 let port: number
@@ -18,6 +24,11 @@ beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'precompress-'))
   await writeFile(join(root, 'index.html'), content)
   await writeFile(join(root, 'app.js'), 'const text = "hello";'.repeat(100))
+  await writeFile(join(root, 'ties.js'), 'console.log("hello");'.repeat(128))
+  await writeFile(join(root, 'tiny.txt'), 'a')
+  await writeFile(join(root, 'partial.txt'), content)
+  await writeFile(join(root, 'image.png'), Buffer.from([1, 2, 3]))
+  for (const extension of assetTypes) await writeFile(join(root, `fixture.${extension}`), content)
   await mkdir(join(root, 'assets'), { recursive: true })
   await mkdir(join(root, '.vite'), { recursive: true })
   await writeFile(join(root, 'assets/app-Abcd123_.js'), 'const built = true;'.repeat(100))
@@ -27,6 +38,8 @@ beforeAll(async () => {
     publicScript: { file: 'app.js' },
   }))
   await precompress(root)
+  await unlink(join(root, 'partial.txt.br'))
+  await unlink(join(root, 'partial.txt.zst'))
   await writeFile(join(root, 'plain.txt'), 'uncompressed')
   const app = express()
   app.get('/codex-api/test', (_req, res) => res.set('Cache-Control', 'private, no-store').json({ ok: true }))
@@ -55,11 +68,20 @@ function get(encoding?: string, path = '/', method = 'GET', extra = {}) {
   })
 }
 it.each([
-  ['zstd, gzip', 'zstd'], ['gzip', 'gzip'],
-  ['gzip;q=1, zstd;q=0.5', 'gzip'], ['zstd;q=0, gzip', 'gzip'],
-  ['br', undefined], [undefined, undefined], ['*', 'zstd'],
-  ['*;q=1,zstd;q=0', 'gzip'], ['identity;q=1,gzip;q=0.5', undefined],
-  ['*;q=0,gzip;q=1', 'gzip'],
+  ['zstd', 'zstd'], ['br', 'br'], ['gzip', 'gzip'],
+  [undefined, undefined], ['', undefined], ['deflate', undefined],
+  ['gzip;q=1, br;q=0.9, zstd;q=0.5', 'gzip'],
+  ['zstd;q=0.8, br;q=0.6, gzip;q=0.2', 'zstd'],
+  ['gzip;q=0.1, br;q=0.3, zstd;q=0.2', 'br'],
+  ['identity;q=1,gzip;q=0.5', undefined],
+  ['identity;q=0.5,br;q=0.5', 'br'],
+  ['gzip;q=0.001', 'gzip'],
+  ['*', 'br'], ['*;q=0.5, gzip;q=0.6', 'gzip'],
+  ['*;q=0.9, br;q=0.5, zstd;q=0.1', 'gzip'],
+  ['*;q=1, BR ; Q = 0.000, zstd;q=0', 'gzip'],
+  ['*;q=1, br;q=0, br;q=1', 'zstd'],
+  ['*;q=1, br;q=0;q=1', 'zstd'],
+  ['*;q=0, br', 'br'], ['*;q=0, identity;q=0.5', undefined],
 ])('negotiates %s', async (header, encoding) => {
   const response = await get(header)
   expect(response.status).toBe(200)
@@ -67,16 +89,55 @@ it.each([
   expect(response.headers.vary).toBe('Accept-Encoding')
   expect(response.headers['content-type']).toContain('text/html')
   expect(Number(response.headers['content-length'])).toBe(response.body.length)
-  const decoded = encoding === 'gzip' ? gunzipSync(response.body) : encoding === 'zstd' ? Buffer.from(decompress(response.body)) : response.body
+  const decoded = compression.find(format => format.name === encoding)?.decode(response.body) ?? response.body
   expect(decoded.toString()).toBe(content)
 })
+
+it.each([
+  ['/index.html', 'gzip, deflate, br, zstd'],
+  ['/ties.js', 'gzip, deflate, br, zstd'],
+  ['/index.html', 'gzip, deflate, br'],
+  ['/index.html', 'gzip, zstd'],
+  ['/index.html', 'gzip;q=0.5, zstd;q=0.5, br;q=0.5'],
+])('selects the smallest accepted compressed file for %s with %s', async (path, header) => {
+  const candidates = await Promise.all(compression.filter(({ name }) => header.includes(name)).map(async format => ({
+    ...format,
+    body: await readFile(join(root, path + format.suffix)),
+  })))
+  const [smallest] = candidates.sort((a, b) => a.body.length - b.body.length)
+  const response = await get(header, path)
+  expect(response.status).toBe(200)
+  expect(response.headers['content-encoding']).toBe(smallest.name)
+  expect(response.body).toEqual(smallest.body)
+})
+
+it('considers the original size when identity is explicitly tied', async () => {
+  const response = await get('br, identity', '/tiny.txt')
+  expect(response.status).toBe(200)
+  expect(response.headers['content-encoding']).toBeUndefined()
+  expect(response.body.toString()).toBe('a')
+})
+
 it('falls back for missing sidecars and refuses unacceptable representations', async () => {
-  expect((await get('zstd,gzip', '/plain.txt')).body.toString()).toBe('uncompressed')
-  expect((await get('zstd,identity;q=0', '/plain.txt')).status).toBe(406)
-  expect((await get('*;q=0')).status).toBe(406)
+  expect((await get('br, zstd, gzip;q=0.5', '/partial.txt')).headers['content-encoding']).toBe('gzip')
+  expect((await get('br, zstd, gzip', '/partial.txt')).headers['content-encoding']).toBe('gzip')
+  const plain = await get('br, zstd, gzip', '/plain.txt')
+  expect(plain.status).toBe(200)
+  expect(plain.headers['content-encoding']).toBeUndefined()
+  expect(plain.body.toString()).toBe('uncompressed')
+  for (const [header, path] of [
+    ['zstd, br, gzip;q=0, identity;q=0', '/partial.txt'],
+    ['*;q=0', '/'],
+    ['br;q=0,zstd;q=0,gzip;q=0,identity;q=0', '/thread/example'],
+  ]) {
+    const response = await get(header, path)
+    expect(response.status).toBe(406)
+    expect(response.headers.vary).toBe('Accept-Encoding')
+    expect(response.headers['content-encoding']).toBeUndefined()
+  }
 })
 it('serves SPA routes, JavaScript MIME, HEAD and representation-specific validators', async () => {
-  expect((await get('zstd', '/thread/example')).headers['content-encoding']).toBe('zstd')
+  expect((await get('br', '/thread/example')).headers['content-encoding']).toBe('br')
   expect((await get('gzip', '/app.js')).headers['content-type']).toMatch(/javascript/)
   const gzip = await get('gzip')
   const head = await get('gzip', '/', 'HEAD')
@@ -87,15 +148,21 @@ it('serves SPA routes, JavaScript MIME, HEAD and representation-specific validat
   expect((await get('gzip', '/', 'GET', { 'If-None-Match': gzip.headers.etag })).status).toBe(304)
   expect((await get('identity', '/', 'GET', { 'If-None-Match': gzip.headers.etag })).status).toBe(200)
 })
-it('keeps originals and skips binary assets', async () => {
-  expect((await readFile(join(root, 'index.html'))).toString()).toBe(content)
-  await writeFile(join(root, 'image.png'), Buffer.from([1, 2, 3]))
-  await precompress(root)
-  await expect(readFile(join(root, 'image.png.gz'))).rejects.toThrow()
-  await expect(readFile(join(root, 'image.png.zst'))).rejects.toThrow()
+it.each(assetTypes)('precompresses .%s assets and retains their originals', async extension => {
+  const file = join(root, `fixture.${extension}`)
+  expect((await readFile(file)).toString()).toBe(content)
+  for (const { suffix, decode } of compression) {
+    expect(decode(await readFile(file + suffix)).toString()).toBe(content)
+  }
 })
 
-it.each(['identity', 'gzip', 'zstd'])('caches only build-generated JavaScript with %s', async encoding => {
+it('skips binary assets', async () => {
+  for (const { suffix } of compression) {
+    await expect(readFile(join(root, 'image.png' + suffix))).rejects.toMatchObject({ code: 'ENOENT' })
+  }
+})
+
+it.each(['identity', 'gzip', 'br', 'zstd'])('caches only build-generated JavaScript with %s', async encoding => {
   const path = '/assets/app-Abcd123_.js'
   const response = await get(encoding, path + '?v=1')
   expect(response.status).toBe(200)
@@ -105,11 +172,14 @@ it.each(['identity', 'gzip', 'zstd'])('caches only build-generated JavaScript wi
   expect(response.headers.vary).toBe('Accept-Encoding')
   const head = await get(encoding, path, 'HEAD')
   expect(head.body.length).toBe(0)
-  expect(head.headers['cache-control']).toBe(response.headers['cache-control'])
-  expect(head.headers['content-length']).toBe(response.headers['content-length'])
+  for (const header of ['cache-control', 'content-length', 'content-encoding', 'content-type', 'etag', 'last-modified', 'vary']) {
+    expect(head.headers[header]).toBe(response.headers[header])
+  }
   const fresh = await get(encoding, path, 'GET', { 'If-None-Match': response.headers.etag })
   expect(fresh.status).toBe(304)
   expect(fresh.headers['cache-control']).toBe(response.headers['cache-control'])
+  expect(fresh.headers.etag).toBe(response.headers.etag)
+  expect(fresh.headers.vary).toBe('Accept-Encoding')
   const otherEncoding = encoding === 'identity' ? 'gzip' : 'identity'
   expect((await get(otherEncoding, path, 'GET', { 'If-None-Match': response.headers.etag })).status).toBe(200)
   for (const path of ['/app.js', '/assets/manual-Abcd123_.js', '/legacy/app-Abcd123_.js', '/plain.txt']) {
