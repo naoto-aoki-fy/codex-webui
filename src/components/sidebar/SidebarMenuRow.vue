@@ -1,56 +1,44 @@
 <template>
-  <component
-    :is="props.as"
-    class="sidebar-menu-row"
-    :data-has-left="hasLeft"
-    :data-has-right="hasRight"
-    :data-has-right-hover="hasRightHover"
-    :data-force-right-hover="props.forceRightHover"
-    v-bind="$attrs"
-  >
-    <span v-if="hasLeft" class="sidebar-menu-row-left">
-      <slot name="left" />
-    </span>
-
-    <span class="sidebar-menu-row-main">
-      <slot />
-    </span>
-
-    <span v-if="hasRight" class="sidebar-menu-row-right">
-      <span v-if="hasRightDefault" class="sidebar-menu-row-right-default">
+  <component :is="as" class="sidebar-menu-row" :data-linked="href !== undefined">
+    <component
+      :is="href !== undefined ? SidebarLink : 'span'"
+      class="sidebar-menu-row-body"
+      :href="href"
+      :aria-current="current ? 'page' : undefined"
+      :aria-expanded="expanded"
+      @activate="emit('activate')"
+    >
+      <span v-if="$slots.left" class="sidebar-menu-row-left">
+        <slot name="left" />
+      </span>
+      <span class="sidebar-menu-row-main">
+        <slot />
+      </span>
+      <span v-if="$slots.right" class="sidebar-menu-row-right">
         <slot name="right" />
       </span>
-      <span v-if="hasRightHover" class="sidebar-menu-row-right-hover">
-        <slot name="right-hover" />
-      </span>
+    </component>
+
+    <span v-if="$slots['left-action']" class="sidebar-menu-row-left-action">
+      <slot name="left-action" />
     </span>
+    <div v-if="$slots.actions" class="sidebar-menu-row-actions">
+      <slot name="actions" />
+    </div>
   </component>
 </template>
 
 <script setup lang="ts">
-import { computed, useSlots } from 'vue'
+import SidebarLink from './SidebarLink.vue'
 
-defineOptions({
-  inheritAttrs: false,
-})
+withDefaults(defineProps<{
+  as?: string
+  href?: string
+  current?: boolean
+  expanded?: boolean
+}>(), { as: 'div', expanded: undefined })
 
-const props = withDefaults(
-  defineProps<{
-    as?: string
-    forceRightHover?: boolean
-  }>(),
-  {
-    as: 'div',
-    forceRightHover: false,
-  },
-)
-
-const slots = useSlots()
-
-const hasLeft = computed(() => Boolean(slots.left))
-const hasRightDefault = computed(() => Boolean(slots.right))
-const hasRightHover = computed(() => Boolean(slots['right-hover']))
-const hasRight = computed(() => hasRightDefault.value || hasRightHover.value)
+const emit = defineEmits<{ activate: [] }>()
 </script>
 
 <style scoped>
@@ -60,8 +48,22 @@ const hasRight = computed(() => hasRightDefault.value || hasRightHover.value)
   @apply w-full min-w-0 rounded-lg px-3 py-1 text-left transition flex items-center gap-2;
 }
 
+.sidebar-menu-row-body {
+  display: contents;
+}
+
+.sidebar-menu-row[data-linked='true'] {
+  @apply relative p-0;
+}
+
+.sidebar-menu-row[data-linked='true'] > .sidebar-menu-row-body {
+  @apply flex items-center gap-2 w-full min-w-0 rounded-lg px-3 py-1;
+  padding-right: var(--sidebar-row-link-right-padding, 0.75rem);
+}
+
 .sidebar-menu-row-left {
-  @apply w-4 h-4 shrink-0 flex items-center justify-center text-zinc-500;
+  @apply h-4 shrink-0 flex items-center justify-center text-zinc-500;
+  width: var(--sidebar-row-link-left-width, 1rem);
 }
 
 .sidebar-menu-row-main {
@@ -69,33 +71,19 @@ const hasRight = computed(() => hasRightDefault.value || hasRightHover.value)
 }
 
 .sidebar-menu-row-right {
-  @apply relative ml-2 shrink-0 flex items-center justify-end;
+  @apply ml-2 shrink-0 flex items-center justify-end;
 }
 
-.sidebar-menu-row-right-default,
-.sidebar-menu-row-right-hover {
-  @apply transition;
+.sidebar-menu-row-left-action,
+.sidebar-menu-row-actions {
+  @apply absolute top-1/2 -translate-y-1/2 pointer-events-none;
 }
 
-.sidebar-menu-row[data-has-right='true'] .sidebar-menu-row-right-hover {
-  @apply absolute right-0 top-1/2 -translate-y-1/2 opacity-0 invisible pointer-events-none;
+.sidebar-menu-row-left-action {
+  @apply left-3;
 }
 
-.sidebar-menu-row[data-has-right='true'][data-has-right-hover='true']:hover .sidebar-menu-row-right-default,
-.sidebar-menu-row[data-has-right='true'][data-has-right-hover='true']:focus-within .sidebar-menu-row-right-default {
-  @apply opacity-0 invisible pointer-events-none;
-}
-
-.sidebar-menu-row[data-has-right='true'][data-has-right-hover='true']:hover .sidebar-menu-row-right-hover,
-.sidebar-menu-row[data-has-right='true'][data-has-right-hover='true']:focus-within .sidebar-menu-row-right-hover {
-  @apply opacity-100 visible pointer-events-auto;
-}
-
-.sidebar-menu-row[data-has-right='true'][data-force-right-hover='true'] .sidebar-menu-row-right-default {
-  @apply opacity-0 invisible pointer-events-none;
-}
-
-.sidebar-menu-row[data-has-right='true'][data-force-right-hover='true'] .sidebar-menu-row-right-hover {
-  @apply opacity-100 visible pointer-events-auto;
+.sidebar-menu-row-actions {
+  @apply right-3;
 }
 </style>

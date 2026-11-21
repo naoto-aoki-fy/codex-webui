@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { ref } from 'vue'
+import { newThreadRoute, sidebarHref } from '../../router/sidebarRoutes'
+import { UNASSIGNED_PROJECT } from '../../utils/desktopProjectGroups'
 import { folderGroupKey, projectGroupKey, type FolderGroup, type SidebarGroup } from './sidebarGroups'
 import { createSidebarMenus } from './sidebarMenus'
 
@@ -68,21 +70,20 @@ describe('copy thread path', () => {
 const project = (projectId: string): SidebarGroup => ({ kind: 'project', key: projectGroupKey(projectId), projectId, threads: [] })
 
 describe('project tab menus', () => {
-  for (const entry of ['toggleProjectMenu', 'openProjectContextMenu'] as const) {
-    it(`opens an empty non-removable project via ${entry} without changing the current route`, async () => {
-      const { menus, open, emit, resolveNewThreadCwd, router } = setup()
-      await router.push('/thread/selected')
-      menus[entry](projectGroupKey('empty project'))
-      expect(menus.isProjectMenuOpen(projectGroupKey('empty project'))).toBe(true)
-      expect(menus.canRemoveProject(project('empty project'))).toBe(false)
-      menus.onOpenGroupInNewTab(project('empty project'))
-      expect(resolveNewThreadCwd).toHaveBeenCalledExactlyOnceWith('empty project')
-      expect(open).toHaveBeenCalledExactlyOnceWith('/ui/?projectId=empty+project&cwd=/work/Empty+project', '_blank', 'noopener,noreferrer')
-      expect(router.currentRoute.value.fullPath).toBe('/thread/selected')
-      expect(menus.isProjectMenuOpen(projectGroupKey('empty project'))).toBe(false)
-      expect(emit).not.toHaveBeenCalled()
-    })
-  }
+  it('opens the linked destination of an empty non-removable project without changing the current route', async () => {
+    const { menus, open, emit, resolveNewThreadCwd, router } = setup()
+    const group = project('empty project')
+    await router.push('/thread/selected')
+    menus.toggleProjectMenu(group.key)
+    expect(menus.isProjectMenuOpen(group.key)).toBe(true)
+    expect(menus.canRemoveProject(group)).toBe(false)
+    menus.onOpenGroupInNewTab(sidebarHref(router, newThreadRoute(menus.getNewThreadTarget(group))))
+    expect(resolveNewThreadCwd).toHaveBeenCalledExactlyOnceWith('empty project')
+    expect(open).toHaveBeenCalledExactlyOnceWith('/ui/?projectId=empty+project&cwd=/work/Empty+project', '_blank', 'noopener,noreferrer')
+    expect(router.currentRoute.value.fullPath).toBe('/thread/selected')
+    expect(menus.isProjectMenuOpen(group.key)).toBe(false)
+    expect(emit).not.toHaveBeenCalled()
+  })
   it('retains removal eligibility and uses the same tab behavior for threads', () => {
     const { menus, open, emit } = setup()
     menus.onRemoveProject(project('empty project'))
@@ -109,7 +110,7 @@ it('starts a folder composer in either tab using only its cwd, even when a Proje
   menus.onStartNewThread(folder)
   expect(emit).toHaveBeenLastCalledWith('start-new-thread', { cwd })
   menus.toggleProjectMenu(folder.key)
-  menus.onOpenGroupInNewTab(folder)
+  menus.onOpenGroupInNewTab(sidebarHref(router, newThreadRoute(menus.getNewThreadTarget(folder))))
   const href = open.mock.calls[0]![0] as string
   expect(router.resolve(href.slice('/ui'.length)).query).toEqual({ cwd })
   expect(menus.isProjectMenuOpen(folder.key)).toBe(false)
@@ -118,4 +119,14 @@ it('starts a folder composer in either tab using only its cwd, even when a Proje
 
   menus.onStartNewThread(project('removable'))
   expect(emit).toHaveBeenLastCalledWith('start-new-thread', { cwd: '/work/Empty project', projectId: 'removable' })
+})
+
+it('omits the Unassigned project ID and opens the no-directory folder at bare home', () => {
+  const { menus, router } = setup()
+  const unassigned = menus.getNewThreadTarget(project(UNASSIGNED_PROJECT))
+  expect(unassigned).toEqual({ cwd: '/work/Empty project' })
+  expect(sidebarHref(router, newThreadRoute(unassigned))).toBe('/ui/?cwd=/work/Empty+project')
+
+  const folder: FolderGroup = { kind: 'folder', key: folderGroupKey(''), cwd: '', name: 'No working directory', threads: [] }
+  expect(sidebarHref(router, newThreadRoute(menus.getNewThreadTarget(folder)))).toBe('/ui/')
 })

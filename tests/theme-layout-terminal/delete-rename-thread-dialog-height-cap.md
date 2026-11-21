@@ -6,7 +6,7 @@
 
 #### Steps — Delete button visibility
 
-1. Right-click (or long-press) a thread in the sidebar to open the context menu.
+1. Open a sidebar thread's three-dot menu.
 2. Click **Delete**.
 3. Verify the confirmation dialog appears and the **Delete** / **Cancel** buttons are fully visible without scrolling the page.
 4. Repeat with a thread whose title is very long (50+ characters); confirm buttons remain visible.

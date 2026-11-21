@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRenderer, createSSRApp, getCurrentInstance, h, nextTick, reactive, ssrContextKey } from 'vue'
 import type { Component } from 'vue'
 import { renderToString } from 'vue/server-renderer'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Thread } from '../../api/appServerDtos'
 import type { UiThread } from '../../types/codex'
 import { normalizeThreadGroupsV2 } from '../../api/normalizers/v2'
@@ -11,7 +12,15 @@ import SidebarThreadTree from './SidebarThreadTree.vue'
 import type { createSidebarThreads } from './sidebarThreads'
 import { getPinnedThreadState, getThreadSummary, setThreadPinned } from '../../api/codexGateway'
 
-vi.mock('vue-router', () => ({ useRouter: () => ({ resolve: vi.fn() }) }))
+vi.mock('vue-router', async (importOriginal) => ({
+  ...await importOriginal<typeof import('vue-router')>(),
+  useRouter: () => sidebarRouter,
+}))
+
+const sidebarRouter = createRouter({ history: createMemoryHistory(), routes: [
+  { path: '/', name: 'home', component: {} },
+  { path: '/thread/:threadId', name: 'thread', component: {} },
+] })
 vi.mock('../../api/codexGateway', () => ({
   getPinnedThreadState: vi.fn(async () => ({ threadIds: ['z-new'] })),
   getThreadSummary: vi.fn(),
@@ -35,6 +44,7 @@ type SidebarState = {
   isChronologicalView: boolean
   isPinnedSectionExpanded: boolean
   isCollapsed(projectName: string): boolean
+  groupHrefByKey: Map<string, string>
   threadViewMode: ThreadViewMode
   activeGroupKey: string | null
   setThreadViewMode(mode: ThreadViewMode): void
@@ -86,6 +96,7 @@ async function mountNativeSidebar() {
       state = (getCurrentInstance() as unknown as { setupState: SidebarState }).setupState
       // Read the display pipeline as the template does.
       void state.filteredGroups
+      void state.groupHrefByKey
       return null
     },
   }
@@ -126,10 +137,10 @@ it('keeps Projects and Threads visible with stored section collapse preferences'
     const html = await renderToString(createSSRApp(SidebarThreadTree, props))
     const header = html.match(/<div[^>]*class="[^"]*thread-tree-header-row[^"]*"[^>]*>/)?.[0]
     expect(header).toBeDefined()
-    expect(header).toContain('data-has-left="false"')
-    expect(header).toContain('data-has-right="true"')
+    expect(header).toContain('data-linked="false"')
     expect(header).not.toContain('aria-expanded')
     expect(html).toMatch(new RegExp(`<span class="thread-tree-header"[^>]*aria-level="2"[^>]*>${label}</span>`))
+    expect(html).toContain('aria-label="Organize threads"')
     expect(html).toContain(content)
   }
 
@@ -289,8 +300,9 @@ it('persists folder mode and isolates collapse and Show more from a matching nat
   expect(html).toMatch(/title="\/other\/shared"[^>]*>\/other\/shared<\/span>/)
   expect(html).toMatch(/title="\/shared"[^>]*>\/shared<\/span>/)
   expect(html).toMatch(/data-folder-path="\/other\/shared"[^>]*><div[^>]*data-active="true"/)
-  expect(html.match(/data-folder-path=""[\s\S]*?<\/article>/)?.[0]).toContain('No working directory')
-  expect(html.match(/data-folder-path=""[\s\S]*?<\/article>/)?.[0]).not.toContain('thread-start-button')
+  const blankFolder = html.match(/data-folder-path=""[\s\S]*?<\/article>/)?.[0]
+  expect(blankFolder).toContain('No working directory')
+  expect(blankFolder?.match(/href="\/"/g)).toHaveLength(2)
 
   storage.set(modeKey, 'chronological')
   for (const listener of listeners) listener({ key: modeKey })
@@ -298,6 +310,20 @@ it('persists folder mode and isolates collapse and Show more from a matching nat
   storage.set(modeKey, 'folder')
   for (const listener of listeners) listener({ key: modeKey })
   expect(state.threadViewMode).toBe('folder')
+})
+
+it('keeps group links stable while the selected thread changes', async () => {
+  const { props, state } = await mountNativeSidebar()
+  const links = state.groupHrefByKey
+  expect(links.get(projectGroupKey('Empty'))).toBe('/?projectId=Empty')
+
+  await sidebarRouter.push('/thread/z-new')
+  props.selectedThreadId = 'z-new'
+  await nextTick()
+  expect(state.groupHrefByKey).toBe(links)
+
+  state.setThreadViewMode('folder')
+  expect(state.groupHrefByKey.get(folderGroupKey('/shared'))).toBe('/?cwd=/shared')
 })
 
 it('keeps folder rows current with selection, sort, search, pins, pagination and reconciliation', async () => {

@@ -1,8 +1,10 @@
 import type { ComponentPublicInstance } from 'vue';
 import { computed, nextTick, ref } from 'vue';
-import type { Router, RouteLocationRaw } from 'vue-router';
+import type { Router } from 'vue-router';
 import type { ForkMethod } from '../../types/codex';
-import type { MenuDirection, NewThreadTarget, SidebarProps } from "./sidebarContracts";
+import type { MenuDirection, SidebarProps } from "./sidebarContracts";
+import { sidebarHref, threadRoute, type NewThreadTarget } from '../../router/sidebarRoutes';
+import { UNASSIGNED_PROJECT } from '../../utils/desktopProjectGroups';
 import type { SidebarGroup, ThreadViewMode } from './sidebarGroups';
 import { createSidebarThreads } from './sidebarThreads';
 import { copyTextToClipboard } from '../../utils/clipboard';
@@ -50,6 +52,8 @@ export function createSidebarMenus(deps: {
     }
     function onSelect(threadId: string): void {
         inlineDeleteConfirmThreadId.value = '';
+        closeThreadMenu();
+        closeProjectMenu();
         deps.emit('select', threadId);
     }
     function onCopyThreadChat(threadId: string): void {
@@ -66,7 +70,8 @@ export function createSidebarMenus(deps: {
     }
     function getNewThreadTarget(group: SidebarGroup): NewThreadTarget {
         if (group.kind === 'folder') return { cwd: group.cwd };
-        return { projectId: group.projectId, cwd: deps.props.resolveNewThreadCwd?.(group.projectId) ?? '' };
+        const cwd = deps.props.resolveNewThreadCwd?.(group.projectId) ?? '';
+        return group.projectId === UNASSIGNED_PROJECT ? { cwd } : { cwd, projectId: group.projectId };
     }
     function onStartNewThread(group: SidebarGroup): void {
         deps.emit('start-new-thread', getNewThreadTarget(group));
@@ -83,17 +88,6 @@ export function createSidebarMenus(deps: {
             // Clipboard writes can be blocked by browser permissions; the menu action is best-effort.
         }
     }
-    function onThreadRowLeave(threadId: string, event?: MouseEvent): void {
-        if (openThreadMenuId.value !== threadId)
-            return;
-        if (event) {
-            const relatedTarget = event.relatedTarget;
-            const panelElement = openThreadMenuPanelRef.value;
-            if (relatedTarget instanceof Node && panelElement && panelElement.contains(relatedTarget))
-                return;
-        }
-        closeThreadMenu();
-    }
     function isThreadMenuOpen(threadId: string): boolean {
         return openThreadMenuId.value === threadId;
     }
@@ -101,7 +95,7 @@ export function createSidebarMenus(deps: {
         openThreadMenuId.value = '';
         openThreadMenuStyle.value = {};
     }
-    function toggleThreadMenu(threadId: string): void {
+    function toggleThreadMenu(threadId: string, keyboard: boolean): void {
         inlineDeleteConfirmThreadId.value = '';
         if (openThreadMenuId.value === threadId) {
             closeThreadMenu();
@@ -112,24 +106,25 @@ export function createSidebarMenus(deps: {
         openThreadMenuId.value = threadId;
         nextTick(() => {
             updateOpenThreadMenuPlacement(threadId);
+            if (keyboard && openThreadMenuId.value === threadId) {
+                openThreadMenuPanelRef.value?.querySelector('button')?.focus();
+            }
         });
     }
-    function onThreadRowContextMenu(event: MouseEvent, threadId: string): void {
-        event.preventDefault();
-        inlineDeleteConfirmThreadId.value = '';
-        openThreadMenuId.value = threadId;
+    function dismissThreadMenu(): void {
+        const trigger = threadMenuWrapElementById.get(openThreadMenuId.value)?.querySelector('button');
+        closeThreadMenu();
+        trigger?.focus();
     }
-    function openRouteInNewTab(location: RouteLocationRaw): void {
-        const { href } = deps.router.resolve(location);
+    function openHrefInNewTab(href: string): void {
         window.open(href, '_blank', 'noopener,noreferrer');
     }
-    function onOpenGroupInNewTab(group: SidebarGroup): void {
-        const { cwd, projectId } = getNewThreadTarget(group);
-        openRouteInNewTab({ name: 'home', query: { ...(projectId ? { projectId } : {}), ...(cwd ? { cwd } : {}) } });
+    function onOpenGroupInNewTab(href: string): void {
+        openHrefInNewTab(href);
         closeProjectMenu();
     }
     function onOpenThreadInNewTab(threadId: string): void {
-        openRouteInNewTab({ name: 'thread', params: { threadId } });
+        openHrefInNewTab(sidebarHref(deps.router, threadRoute(threadId)));
         closeThreadMenu();
     }
     function openRenameThreadDialog(threadId: string, currentTitle: string): void {
@@ -236,11 +231,10 @@ export function createSidebarMenus(deps: {
         openProjectMenuId.value = projectName;
         scheduleProjectMenuDirection(projectName);
     }
-    function openProjectContextMenu(projectName: string): void {
-        closeThreadMenu();
-        isOrganizeMenuOpen.value = false;
-        openProjectMenuId.value = projectName;
-        scheduleProjectMenuDirection(projectName);
+    function dismissProjectMenu(): void {
+        const trigger = projectMenuWrapElementByName.get(openProjectMenuId.value)?.querySelector('button');
+        closeProjectMenu();
+        trigger?.focus();
     }
     function onRenameProject(group: SidebarGroup): void {
         if (group.kind !== 'project' || !canRemoveProject(group)) return;
@@ -426,9 +420,7 @@ export function createSidebarMenus(deps: {
                 isOrganizeMenuOpen.value = false;
             }
         }
-        if (!openProjectMenuId.value)
-            return;
-        if (!isEventInsideOpenProjectMenu(event)) {
+        if (openProjectMenuId.value && !isEventInsideOpenProjectMenu(event)) {
             closeProjectMenu();
         }
         if (!openThreadMenuId.value)
@@ -487,13 +479,13 @@ onTogglePinFromMenu,
 onSelect,
 onCopyThreadChat,
 onForkThread,
+getNewThreadTarget,
 onStartNewThread,
 onOpenGroupInNewTab,
 onCopyThreadPath,
-onThreadRowLeave,
 isThreadMenuOpen,
 toggleThreadMenu,
-onThreadRowContextMenu,
+dismissThreadMenu,
 onOpenThreadInNewTab,
 openRenameThreadDialog,
 closeRenameThreadDialog,
@@ -508,7 +500,7 @@ isProjectMenuOpen,
 toggleOrganizeMenu,
 setThreadViewMode,
 toggleProjectMenu,
-openProjectContextMenu,
+dismissProjectMenu,
 onRemoveProject,
 onRenameProject,
 canMoveProject,

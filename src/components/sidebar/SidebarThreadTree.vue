@@ -31,10 +31,9 @@
             :delete-confirming="isInlineDeleteConfirming(thread.id)"
             :relative-time="formatRelativeThread(thread)"
             @select="onSelect(thread.id)"
-            @leave="onThreadRowLeave(thread.id, $event)"
-            @contextmenu="onThreadRowContextMenu($event, thread.id)"
             @delete="onInlineDeleteClick(thread.id)"
-            @toggle-menu="toggleThreadMenu(thread.id)"
+            @toggle-menu="toggleThreadMenu(thread.id, $event)"
+            @dismiss-menu="dismissThreadMenu"
             @menu-anchor="setThreadMenuWrapRef(thread.id, $event)"
           />
         </li>
@@ -117,10 +116,9 @@
           :delete-confirming="isInlineDeleteConfirming(thread.id)"
           :relative-time="formatRelativeThread(thread)"
           @select="onSelect(thread.id)"
-          @leave="onThreadRowLeave(thread.id, $event)"
-          @contextmenu="onThreadRowContextMenu($event, thread.id)"
           @delete="onInlineDeleteClick(thread.id)"
-          @toggle-menu="toggleThreadMenu(thread.id)"
+          @toggle-menu="toggleThreadMenu(thread.id, $event)"
+          @dismiss-menu="dismissThreadMenu"
           @menu-anchor="setThreadMenuWrapRef(thread.id, $event)"
         />
       </li>
@@ -138,15 +136,12 @@
         :style="projectGroupStyle(group.key)"
       >
           <SidebarMenuRow
-            as="div"
             class="project-header-row"
+            :href="groupHrefByKey.get(group.key)"
+            :expanded="!isCollapsed(group.key)"
             :data-active="group.key === activeGroupKey"
-            role="button"
-            tabindex="0"
-            @click="toggleGroupCollapse(group)"
-            @contextmenu="onGroupContextMenu($event, group)"
-            @keydown.enter.prevent="toggleGroupCollapse(group)"
-            @keydown.space.prevent="toggleGroupCollapse(group)"
+            :data-menu-open="isProjectMenuOpen(group.key)"
+            @activate="toggleGroupCollapse(group)"
           >
             <template #left>
               <span class="project-icon-stack">
@@ -160,9 +155,7 @@
                 </span>
               </span>
             </template>
-            <span
-              class="project-main-button"
-            >
+            <span class="project-main-label">
               <span
                 class="project-title"
                 :class="{ 'folder-title-disambiguated': group.kind === 'folder' && ambiguousFolderNames.has(group.name) }"
@@ -171,14 +164,20 @@
                 {{ getGroupTitle(group) }}
               </span>
             </span>
-            <template #right>
-              <div v-if="group.kind === 'project' || group.cwd" class="project-hover-controls">
-                <div :ref="(el) => setProjectMenuWrapRef(group.key, el)" class="project-menu-wrap">
+            <template #actions>
+              <div class="project-hover-controls">
+                <div
+                  :ref="(el) => setProjectMenuWrapRef(group.key, el)"
+                  class="project-menu-wrap"
+                  @keydown.esc="isProjectMenuOpen(group.key) && dismissProjectMenu()"
+                >
                   <button
                     class="project-menu-trigger"
                     type="button"
                     :title="group.kind === 'project' ? 'project_menu' : 'Folder actions'"
-                    @click.stop="toggleProjectMenu(group.key)"
+                    :aria-label="group.kind === 'project' ? 'Project actions' : 'Folder actions'"
+                    :aria-expanded="isProjectMenuOpen(group.key)"
+                    @click="toggleProjectMenu(group.key)"
                   >
                     <IconTablerDots class="thread-icon" />
                   </button>
@@ -189,7 +188,7 @@
                     :data-open-direction="projectMenuDirectionById[group.key] ?? 'down'"
                     @click.stop
                   >
-                    <button class="project-menu-item" type="button" @click="onOpenGroupInNewTab(group)">
+                    <button class="project-menu-item" type="button" @click="onOpenGroupInNewTab(groupHrefByKey.get(group.key)!)">
                       Open in new tab
                     </button>
                     <button v-if="canRemoveProject(group)" class="project-menu-item" type="button" @click="onRenameProject(group)">
@@ -212,15 +211,15 @@
                   </div>
                 </div>
 
-                <button
+                <SidebarLink
                   class="thread-start-button"
-                  type="button"
+                  :href="groupHrefByKey.get(group.key)!"
                   :aria-label="getNewThreadButtonAriaLabel(group)"
                   :title="getNewThreadButtonAriaLabel(group)"
-                  @click.stop="onStartNewThread(group)"
+                  @activate="onStartNewThread(group)"
                 >
                   <IconTablerFilePencil class="thread-icon" />
-                </button>
+                </SidebarLink>
               </div>
             </template>
           </SidebarMenuRow>
@@ -240,10 +239,9 @@
                 :delete-confirming="isInlineDeleteConfirming(thread.id)"
                 :relative-time="formatRelativeThread(thread)"
                 @select="onSelect(thread.id)"
-                @leave="onThreadRowLeave(thread.id, $event)"
-                @contextmenu="onThreadRowContextMenu($event, thread.id)"
                 @delete="onInlineDeleteClick(thread.id)"
-                @toggle-menu="toggleThreadMenu(thread.id)"
+                @toggle-menu="toggleThreadMenu(thread.id, $event)"
+                @dismiss-menu="dismissThreadMenu"
                 @menu-anchor="setThreadMenuWrapRef(thread.id, $event)"
               />
             </li>
@@ -276,6 +274,7 @@
         :style="openThreadMenuStyle"
         :data-open-direction="getThreadMenuDirection(openThreadMenuThread.id)"
         @click.stop
+        @keydown.esc.stop.prevent="dismissThreadMenu"
       >
         <button class="thread-menu-item" type="button" @click="onOpenThreadInNewTab(openThreadMenuThread.id)">
           Open in new tab
@@ -351,7 +350,8 @@
 <script setup lang="ts">
 import { readPreferenceRecord, readPreferenceRecords, savePreferenceRecords } from '../../utils/browserPreferenceRecords'
 import { readUiPreference, writeUiPreference } from '../../utils/browserUiStorage'
-import type { NewThreadTarget, SidebarProps } from "./sidebarContracts"
+import type { SidebarProps } from './sidebarContracts'
+import { newThreadRoute, sidebarHref, type NewThreadTarget } from '../../router/sidebarRoutes'
 import { createSidebarMenus } from './sidebarMenus'
 import { createSidebarThreads } from './sidebarThreads'
 import { projectGroupKey, type SidebarGroup } from './sidebarGroups'
@@ -372,6 +372,7 @@ import IconTablerFolderOpen from '../icons/IconTablerFolderOpen.vue'
 
 import SidebarMenuRow from './SidebarMenuRow.vue'
 import SidebarThreadRow from './SidebarThreadRow.vue'
+import SidebarLink from './SidebarLink.vue'
 
 const router = useRouter()
 
@@ -444,13 +445,13 @@ const {
   onSelect,
   onCopyThreadChat,
   onForkThread,
+  getNewThreadTarget,
   onStartNewThread,
   onOpenGroupInNewTab,
   onCopyThreadPath,
-  onThreadRowLeave,
   isThreadMenuOpen,
   toggleThreadMenu,
-  onThreadRowContextMenu,
+  dismissThreadMenu,
   onOpenThreadInNewTab,
   openRenameThreadDialog,
   closeRenameThreadDialog,
@@ -465,7 +466,7 @@ const {
   toggleOrganizeMenu,
   setThreadViewMode,
   toggleProjectMenu,
-  openProjectContextMenu,
+  dismissProjectMenu,
   onRemoveProject,
   onRenameProject,
   canMoveProject,
@@ -474,6 +475,10 @@ const {
   setThreadMenuWrapRef,
   getThreadMenuDirection,
 } = menus
+
+const groupHrefByKey = computed(() => new Map(threads.sidebarGroups.value.map(group => [
+  group.key, sidebarHref(router, newThreadRoute(getNewThreadTarget(group))),
+])))
 
 const groupsContainerRef = ref<HTMLElement | null>(null)
 const measuredHeightByProject = ref<Record<string, number>>({})
@@ -622,12 +627,6 @@ function getGroupTooltip(group: SidebarGroup): string {
 
 function getNewThreadButtonAriaLabel(group: SidebarGroup): string {
   return `start new thread ${getGroupTitle(group)}`
-}
-
-function onGroupContextMenu(event: MouseEvent, group: SidebarGroup): void {
-  if (group.kind === 'folder' && !group.cwd) return
-  event.preventDefault()
-  openProjectContextMenu(group.key)
 }
 
 function isCollapsed(groupKey: string): boolean {
@@ -807,7 +806,7 @@ onBeforeUnmount(() => {
 }
 
 .thread-start-button {
-  @apply h-5 w-5 rounded text-zinc-500 flex items-center justify-center transition hover:bg-zinc-200 hover:text-zinc-700;
+  @apply h-5 w-5 rounded text-zinc-500 flex items-center justify-center transition hover:bg-zinc-200 hover:text-zinc-700 pointer-events-auto;
 }
 
 .thread-tree-loading {
@@ -831,15 +830,20 @@ onBeforeUnmount(() => {
 }
 
 .project-header-row {
-  @apply hover:bg-zinc-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400;
+  @apply hover:bg-zinc-200;
+  --sidebar-row-link-right-padding: 3.5rem;
 }
 
 .project-header-row[data-active='true'] {
   @apply bg-zinc-200;
 }
 
-.project-main-button {
-  @apply min-w-0 w-full text-left rounded px-0 py-0 flex items-center gap-1.5 min-h-5 cursor-pointer;
+.project-header-row[data-menu-open='true'] {
+  @apply z-20;
+}
+
+.project-main-label {
+  @apply min-w-0 flex items-center min-h-5;
 }
 
 .project-icon-stack {
@@ -872,11 +876,11 @@ onBeforeUnmount(() => {
 }
 
 .project-menu-trigger {
-  @apply h-4 w-4 rounded p-0 text-zinc-600 flex items-center justify-center;
+  @apply h-4 w-4 rounded p-0 text-zinc-600 flex items-center justify-center pointer-events-auto;
 }
 
 .project-menu-panel {
-  @apply absolute right-0 top-full mt-1 z-20 min-w-36 rounded-md border border-zinc-200 bg-white p-1 shadow-md flex flex-col gap-0.5;
+  @apply absolute right-0 top-full mt-1 z-20 min-w-36 rounded-md border border-zinc-200 bg-white p-1 shadow-md flex flex-col gap-0.5 pointer-events-auto;
 }
 
 .project-menu-panel[data-open-direction='up'] {

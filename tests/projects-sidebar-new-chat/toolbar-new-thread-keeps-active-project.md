@@ -10,11 +10,11 @@ The global Start new thread action opens the new-thread composer with the active
 ## Steps
 1. In light theme, open `http://127.0.0.1:4173/#/`.
 2. Select a thread inside a project from the sidebar.
-3. Click the toolbar Start new thread button.
+3. Click the toolbar **Start new thread** link.
 4. Confirm the home/new-thread composer opens with the same project folder selected, not an empty or projectless selection.
 5. Send a first message and confirm the new thread appears under the same project in the sidebar.
-6. While already on the home/new-thread route with a folder selected, click Start new thread again and confirm the selected folder is not cleared.
-7. Repeat the selection and Start new thread flow in dark theme.
+6. While already on the home/new-thread route with a folder selected, right-click **Start new thread** and copy its address. Verify Ctrl/Cmd+click and middle-click open the same folder in a new tab and reload the new tab. Click normally again and verify the selected folder remains.
+7. Repeat the flow with the mobile header at 375×812, with its drawer open. A normal click or keyboard activation closes the drawer. Repeat in dark theme and verify a visible keyboard focus outline.
 
 ## Expected Results
 - The toolbar Start new thread action preserves the active thread's project context.
@@ -57,7 +57,7 @@ The global Start new thread action opens the new-thread composer with the active
 2. Reload and wait for the candidate list to load. The dropdown shows the project name. Selected folder shows the folder basename. The full path remains in the URL and in both controls’ tooltips.
 3. Open a home URL with an unregistered `cwd`. Both controls show the folder basename and retain the full path in their tooltips. Reload and confirm the selection remains after candidates arrive. No folder is registered or created.
 4. Navigate between home URLs with different `cwd` values, then use Back and Forward. The selected folder follows each URL. An absent or empty `cwd` clears selection.
-5. From a project thread, use toolbar Start new thread and project-specific new creation. Both push a home entry carrying the resolved project path. Chats new-chat pushes home without `cwd`.
+5. From a project thread, use toolbar **Start new thread** and the owning project's pencil. Each pushes one home history entry carrying the resolved project path. The **Unassigned** link carries only the available workspace `cwd`. The **No working directory** folder link points to bare home.
 6. Add an existing folder, create a project, and clone a repository. Each successful selection updates home `cwd`. A successful `openProjectPath` startup takes precedence over an existing home `cwd`.
 7. Visit a thread and Skills. Folder state changes must not add `cwd` to either route. Home URL changes must not persist prompt text, model, or runtime settings.
 

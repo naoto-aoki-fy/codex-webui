@@ -199,6 +199,15 @@
   @apply text-zinc-300;
 }
 
+:is(.sidebar-link, .thread-delete-button, .thread-menu-trigger, .project-menu-trigger):focus-visible {
+  @apply outline-2 outline-zinc-500;
+  outline-offset: -2px;
+}
+
+:root.dark :is(.sidebar-link, .thread-delete-button, .thread-menu-trigger, .project-menu-trigger):focus-visible {
+  @apply outline-zinc-400;
+}
+
 :root.dark .thread-composer-shell {
   @apply border-zinc-700 bg-zinc-800;
 }
@@ -396,8 +405,12 @@
   @apply text-rose-300 hover:bg-rose-900/40;
 }
 
-:root.dark .thread-menu-trigger {
+:root.dark :is(.thread-menu-trigger, .project-menu-trigger, .thread-start-button) {
   @apply text-zinc-400;
+}
+
+:root.dark .thread-start-button:hover {
+  @apply bg-zinc-700 text-zinc-200;
 }
 
 :root.dark .rename-thread-panel {
