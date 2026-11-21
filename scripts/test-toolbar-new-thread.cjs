@@ -1,11 +1,13 @@
 // Runs against the current Vite server on 4173 with a context-wide API fixture for new tabs.
-const { chromium } = require('playwright')
+const { chromium, firefox } = require('playwright')
 const assert = require('node:assert/strict')
 const { mkdirSync } = require('node:fs')
 const { resolve } = require('node:path')
 
 const baseUrl = 'http://127.0.0.1:4173'
 const outputDir = resolve('output/playwright')
+const useFirefox = process.argv.includes('--firefox')
+const screenshotPrefix = useFirefox ? 'toolbar-new-thread-firefox' : 'toolbar-new-thread'
 const projectRoot = '/spaces/日本語 folder/#main&docs'
 const alternateRoot = '/spaces/alternate'
 const worktree = '/worktrees/日本語 branch/#work&tree'
@@ -160,8 +162,13 @@ async function verifyNavigation(browser) {
     assert.equal(await composer(page).inputValue(), 'An unsent draft stays here')
     assert.equal(requests.get(page).length, originalRequests)
 
+    await popup.bringToFront()
     await composer(popup).fill('First prompt in the new tab')
-    await popup.locator('.thread-composer-submit').click()
+    await Promise.all([
+      popup.waitForResponse(response => response.url() === `${baseUrl}/codex-api/rpc`
+        && response.request().postDataJSON()?.method === 'turn/start'),
+      popup.locator('.thread-composer-submit').click(),
+    ])
     await popup.waitForURL('**/#/thread/created')
     const startup = requests.get(popup).filter(call => call.method === 'thread/start')
     assert.equal(startup.length, 1)
@@ -247,7 +254,9 @@ async function verifyMenus(browser, viewport, colorScheme) {
         event.preventDefault()
       }, { once: true }))
       await trigger.click({ button: 'right', modifiers: ['Shift'] })
-      assert.equal(await trigger.getAttribute('data-context-handled'), 'false')
+      const handled = await trigger.getAttribute('data-context-handled')
+      // Firefox can handle Shift-right-click without dispatching contextmenu to the page.
+      assert(handled === 'false' || (useFirefox && handled === null))
       assert.equal(await menu.count(), 0)
     }
 
@@ -259,7 +268,7 @@ async function verifyMenus(browser, viewport, colorScheme) {
     const background = await menu.evaluate(element => getComputedStyle(element).backgroundColor)
     assert.notEqual(background === 'rgb(255, 255, 255)', colorScheme === 'dark')
     await page.waitForTimeout(2200)
-    const screenshot = resolve(outputDir, `toolbar-new-thread-${viewport.width}-${colorScheme}.png`)
+    const screenshot = resolve(outputDir, `${screenshotPrefix}-${viewport.width}-${colorScheme}.png`)
     await page.screenshot({ path: screenshot })
     await page.locator('.content-title').click()
     await menu.waitFor({ state: 'detached' })
@@ -307,7 +316,7 @@ async function verifyMenus(browser, viewport, colorScheme) {
 
 async function main() {
   mkdirSync(outputDir, { recursive: true })
-  const browser = await chromium.launch()
+  const browser = await (useFirefox ? firefox : chromium).launch()
   try {
     await verifyNavigation(browser)
     for (const viewport of [{ width: 1280, height: 900 }, { width: 375, height: 812 }, { width: 768, height: 1024 }]) {

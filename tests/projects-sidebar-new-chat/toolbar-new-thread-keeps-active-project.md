@@ -8,7 +8,7 @@ The global **Start new thread** pencil opens the new-thread composer in the curr
 2. Register a project whose root contains Japanese characters, spaces, `#`, and `&`. Have one thread in a separate worktree, one with a project ID whose root is unavailable, one unassigned with a cwd, and one without a cwd.
 3. Open DevTools Network with **Preserve log** and filter for `codex-api`. Load an ordinary home tab as the initialization baseline. Repeat the menu checks in light and dark themes at 1280×900, 375×812, and 768×1024.
 
-Run `node scripts/test-toolbar-new-thread.cjs` against the same Vite server for the automated Chromium fixture.
+Run `node scripts/test-toolbar-new-thread.cjs` against the same Vite server for the automated browser fixture. Add `--firefox` to run with Playwright's Firefox build.
 
 ## Steps
 1. Open the worktree thread from `http://127.0.0.1:4173/#/` and type an unsent draft. Record its URL and selected row.
