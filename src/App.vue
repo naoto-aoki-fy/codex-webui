@@ -16,6 +16,7 @@
             @start-new-thread="onStartNewThreadFromToolbar"
           >
             <button
+              ref="sidebarSearchToggleRef"
               class="sidebar-search-toggle"
               type="button"
               :aria-pressed="isSidebarSearchVisible"
@@ -45,8 +46,8 @@
               v-model="sidebarSearchQuery"
               class="sidebar-search-input"
               type="text"
-              :placeholder="('Filter threads...')"
-              @keydown="onSidebarSearchKeydown"
+              aria-label="Search sidebar"
+              placeholder="Search..."
             />
             <button
               v-if="sidebarSearchQuery.length > 0"
@@ -58,9 +59,18 @@
               <IconTablerX class="sidebar-search-clear-icon" />
             </button>
           </div>
+          <div v-if="!isSidebarCollapsed && isSidebarSearchVisible" class="sidebar-search-targets" role="group" aria-label="Search target">
+            <button
+              v-for="target in sidebarSearchTargets"
+              :key="target.scope"
+              class="sidebar-search-target"
+              type="button"
+              :aria-pressed="sidebarSearchScope === target.scope"
+              @click="sidebarSearchScope = target.scope"
+            >{{ target.label }}</button>
+          </div>
 
-          <p v-if="threadSearchError" role="alert">{{ threadSearchError }}</p>
-          <SidebarThreadTree :groups="sidebarSearchGroups" :project-display-name-by-id="projectDisplayNameById"
+          <SidebarThreadTree :groups="projectGroups" :projects="projects" :project-display-name-by-id="projectDisplayNameById"
             :removable-project-ids="nativeProjectIds"
             :resolve-new-thread-cwd="resolveProjectNewThreadCwd"
             :active-project-name="activeProjectName"
@@ -68,9 +78,8 @@
             v-if="!isSidebarCollapsed"
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
             :is-fork-disabled="isForkOperationPending || isRollingBack"
-            :is-thread-list-fully-loaded="isThreadListFullyLoaded"
-            :search-query="sidebarSearchQuery"
-            :search-matched-thread-ids="serverMatchedThreadIds"
+            :search="sidebarSearch"
+            @retry-search="retrySidebarSearch"
             @select="onSelectThread"
             @archive="onArchiveThread" @start-new-thread="onStartNewThread"
             @rename-thread="onRenameThread"
@@ -409,6 +418,7 @@ import ManagementDialog from './components/shared/ManagementDialog.vue'
 import ArchivedThreads from './components/sidebar/ArchivedThreads.vue'
 import AccountSettingsPanel from './components/sidebar/AccountSettingsPanel.vue'
 import SidebarThreadTree from './components/sidebar/SidebarThreadTree.vue'
+import type { SidebarSearch, SidebarSearchScope } from './components/sidebar/sidebarSearch'
 import { newThreadRoute, sidebarHref, threadRoute, type NewThreadTarget } from './router/sidebarRoutes'
 import ContentHeader from './components/content/ContentHeader.vue'
 import FolderPickerModal from './components/content/FolderPickerModal.vue'
@@ -426,7 +436,8 @@ import IconTablerX from './components/icons/IconTablerX.vue'
 import { useDesktopState } from './composables/useDesktopState'
 import { useFolderPicker } from './composables/useFolderPicker'
 import { useMobile } from './composables/useMobile'
-import { getHomeDirectory, searchThreads } from './api/codexGateway'
+import { useSidebarMessageSearch } from './composables/useSidebarMessageSearch'
+import { getHomeDirectory } from './api/codexGateway'
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import { normalizePathForUi } from './pathUtils.js'
@@ -511,6 +522,13 @@ const {
   hasMoreOlderMessages,
   isLoadingThreads,
   isThreadListFullyLoaded,
+  threadListError,
+  isThreadListPagingPaused,
+  setThreadListSearchActive,
+  retryThreadListSearch,
+  isLoadingProjects,
+  projectListError,
+  retryProjectList,
   isLoadingMessages,
   isLoadingOlderMessages,
   isSendingMessage,
@@ -601,27 +619,56 @@ useNewThreadCwdRoute(router, newThreadCwd)
 const isSidebarCollapsed = ref(loadSidebarCollapsed())
 const sidebarSearchQuery = ref('')
 const isSidebarSearchVisible = ref(false)
+const sidebarSearchScope = ref<SidebarSearchScope>('content')
+const sidebarSearchTargets: { label: string; scope: SidebarSearchScope }[] = [
+  { label: 'Messages', scope: 'content' },
+  { label: 'Thread Name', scope: 'thread-title' },
+  { label: 'Project', scope: 'project' },
+  { label: 'Folder', scope: 'folder' },
+]
 const sidebarScrollableRef = ref<HTMLElement | null>(null)
 const sidebarSearchInputRef = ref<HTMLInputElement | null>(null)
+const sidebarSearchToggleRef = ref<HTMLButtonElement | null>(null)
 const settingsAreaRef = ref<HTMLElement | null>(null)
 const settingsButtonRef = ref<HTMLElement | null>(null)
-const serverMatchedThreadIds = ref<string[] | null>(null)
-const serverSearchGroups = ref<typeof projectGroups.value>([])
-const threadSearchError = ref('')
-const sidebarSearchGroups = computed(() => {
-  if (!sidebarSearchQuery.value.trim()) return projectGroups.value
-  const groups = projectGroups.value.map(group => ({ ...group, threads: [...group.threads] }))
-  const ids = new Set(groups.flatMap(group => group.threads.map(thread => thread.id)))
-  for (const group of serverSearchGroups.value) {
-    const missing = group.threads.filter(thread => !ids.has(thread.id))
-    missing.forEach(thread => ids.add(thread.id))
-    const existing = groups.find(row => row.projectName === group.projectName)
-    if (existing) existing.threads.push(...missing)
-    else groups.push({ ...group, threads: missing })
+const activeSidebarSearchTerm = computed(() =>
+  isSidebarSearchVisible.value && !isSidebarCollapsed.value && !isComposerExpanded.value ? sidebarSearchQuery.value.trim() : '')
+const messageSearch = useSidebarMessageSearch(computed(() =>
+  sidebarSearchScope.value === 'content' ? activeSidebarSearchTerm.value : ''))
+const searchesThreadList = computed(() => Boolean(activeSidebarSearchTerm.value)
+  && (sidebarSearchScope.value === 'thread-title' || sidebarSearchScope.value === 'folder'))
+const searchesProjectList = computed(() => sidebarSearchScope.value === 'project' || sidebarSearchScope.value === 'folder')
+watch(searchesThreadList, setThreadListSearchActive)
+
+const sidebarSearch = computed<SidebarSearch | null>(() => {
+  const query = activeSidebarSearchTerm.value
+  if (!query) return null
+  const scope = sidebarSearchScope.value
+  if (scope === 'content') {
+    return {
+      scope, query, threads: messageSearch.threads.value, error: messageSearch.error.value,
+      pending: messageSearch.pending.value ? 'Searching messages…' : undefined,
+    }
   }
-  return groups
+
+  const projectError = searchesProjectList.value ? projectListError.value : ''
+  const threadError = searchesThreadList.value ? threadListError.value : ''
+  const error = [projectError && `Could not load projects. ${projectError}`,
+    threadError && `Could not load threads. ${threadError}`].filter(Boolean).join(' ')
+  let pending: string | undefined
+  if (searchesThreadList.value && !isThreadListFullyLoaded.value) {
+    pending = isThreadListPagingPaused.value ? 'Waiting for responses to finish…' : 'Loading more threads…'
+  } else if (searchesProjectList.value && isLoadingProjects.value) {
+    pending = 'Loading projects…'
+  }
+  return { scope, query, error, pending, canRetry: Boolean(error) }
 })
-let threadSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+function retrySidebarSearch(): void {
+  if (searchesThreadList.value && threadListError.value) retryThreadListSearch()
+  if (searchesProjectList.value && projectListError.value) void retryProjectList()
+}
+
 let sidebarScrollTop = 0
 let sidebarScrollRestoreRequestId = 0
 let isRestoringSidebarScroll = false
@@ -805,7 +852,7 @@ const threadContextTooltip = computed(() => buildThreadContextTooltip(selectedTh
 const newThreadFolderOptions = computed(() => projects.value.map(project => ({ value: project.id, label: project.name })))
 const nativeProjectIds = computed(() => projects.value.map(project => project.id))
 const projectRootById = computed(() => new Map(projects.value.map(project => [project.id, project.roots[0]?.path ?? ''])))
-const projectFallbackCwdById = computed(() => new Map(sidebarSearchGroups.value.map(group => [
+const projectFallbackCwdById = computed(() => new Map(projectGroups.value.map(group => [
   group.projectName, group.threads.find(thread => thread.cwd?.trim())?.cwd?.trim() ?? '',
 ])))
 
@@ -854,10 +901,6 @@ onUnmounted(() => {
   window.visualViewport?.removeEventListener('resize', updateVisualViewportState)
   window.visualViewport?.removeEventListener('scroll', updateVisualViewportState)
   darkModeMediaQuery?.removeEventListener('change', applyDarkMode)
-  if (threadSearchTimer) {
-    clearTimeout(threadSearchTimer)
-    threadSearchTimer = null
-  }
   stopPolling()
 })
 
@@ -868,46 +911,23 @@ function updateVisualViewportState(): void {
   visualViewportOffsetTop.value = window.visualViewport?.offsetTop ?? 0
 }
 
-watch(sidebarSearchQuery, (value) => {
-  const query = value.trim()
-  serverSearchGroups.value = []
-  threadSearchError.value = ''
-  serverMatchedThreadIds.value = null
-  if (threadSearchTimer) {
-    clearTimeout(threadSearchTimer)
-    threadSearchTimer = null
-  }
-  if (!query) {
-    serverMatchedThreadIds.value = null
-    return
-  }
-
-  threadSearchTimer = setTimeout(() => {
-    void searchThreads(query)
-      .then((result) => {
-        if (sidebarSearchQuery.value.trim() !== query) return
-        serverSearchGroups.value = result.groups
-        serverMatchedThreadIds.value = result.threadIds
-      })
-      .catch((error: unknown) => {
-        if (sidebarSearchQuery.value.trim() !== query) return
-        threadSearchError.value = `Conversation content search unavailable. Use a Codex server supporting thread/search with experimentalApi enabled. ${error instanceof Error ? error.message : String(error)}`
-        serverMatchedThreadIds.value = null
-      })
-  }, 220)
-})
-
 function onSkillsChanged(): void {
   void refreshSkills({ force: true })
 }
 
 function toggleSidebarSearch(): void {
-  isSidebarSearchVisible.value = !isSidebarSearchVisible.value
   if (isSidebarSearchVisible.value) {
-    nextTick(() => sidebarSearchInputRef.value?.focus())
-  } else {
-    sidebarSearchQuery.value = ''
+    closeSidebarSearch()
+    return
   }
+  sidebarSearchScope.value = 'content'
+  isSidebarSearchVisible.value = true
+  void nextTick(() => sidebarSearchInputRef.value?.focus())
+}
+
+function closeSidebarSearch(): void {
+  isSidebarSearchVisible.value = false
+  sidebarSearchQuery.value = ''
 }
 
 function clearSidebarSearch(): void {
@@ -966,11 +986,11 @@ function restoreSidebarScrollPosition(): void {
   void nextTick(() => restore(0))
 }
 
-function onSidebarSearchKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') {
-    isSidebarSearchVisible.value = false
-    sidebarSearchQuery.value = ''
-  }
+function onSidebarSearchEscape(event: KeyboardEvent): void {
+  if (!isSidebarSearchVisible.value || isComposerExpanded.value || event.isComposing) return
+  event.preventDefault()
+  closeSidebarSearch()
+  void nextTick(() => sidebarSearchToggleRef.value?.focus())
 }
 
 function onSelectThread(threadId: string): void {
@@ -1056,6 +1076,7 @@ async function handleServerRequestResponse(payload: UiServerRequestReply): Promi
 function setSidebarCollapsed(nextValue: boolean): void {
   if (isSidebarCollapsed.value === nextValue) return
   if (nextValue) {
+    closeSidebarSearch()
     const currentScrollTop = getSidebarScrollableElement()?.scrollTop
     if (typeof currentScrollTop === 'number' && (currentScrollTop > 0 || sidebarScrollTop === 0)) {
       sidebarScrollTop = currentScrollTop
@@ -1070,8 +1091,9 @@ function setSidebarCollapsed(nextValue: boolean): void {
 
 function onWindowKeyDown(event: KeyboardEvent): void {
   if (event.defaultPrevented) return
-  if (event.key === 'Escape' && isSettingsOpen.value) {
-    isSettingsOpen.value = false
+  if (event.key === 'Escape') {
+    if (isSettingsOpen.value) isSettingsOpen.value = false
+    else onSidebarSearchEscape(event)
     return
   }
   if (!event.ctrlKey && !event.metaKey) return
@@ -1518,6 +1540,18 @@ watch(isMobile, (mobile) => {
 
 .sidebar-search-clear-icon {
   @apply w-3.5 h-3.5;
+}
+
+.sidebar-search-targets {
+  @apply mx-2 flex flex-wrap gap-1;
+}
+
+.sidebar-search-target {
+  @apply rounded-md border border-transparent px-1.5 py-1 text-xs text-zinc-600 transition hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-zinc-500;
+}
+
+.sidebar-search-target[aria-pressed='true'] {
+  @apply border-zinc-300 bg-zinc-100 text-zinc-900;
 }
 
 .sidebar-thread-controls-header-host {

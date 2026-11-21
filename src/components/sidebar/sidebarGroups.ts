@@ -44,6 +44,10 @@ export function folderGroupKey(value: string | undefined): string {
   return `folder:${normalized}`
 }
 
+export function getFolderName(cwd: string): string {
+  return isWindowsCwd(cwd) ? getPathLeafName(cwd) : (cwd.replace(/\/+$/u, '').split('/').at(-1) ?? '')
+}
+
 export function groupThreadsByFolder(groups: UiProjectGroup[]): FolderGroup[] {
   const folders = new Map<string, FolderGroup>()
   for (const { threads } of groups) {
@@ -52,7 +56,7 @@ export function groupThreadsByFolder(groups: UiProjectGroup[]): FolderGroup[] {
       let folder = folders.get(key)
       if (!folder) {
         const cwd = normalizePathForUi(thread.cwd ?? '')
-        const name = isWindowsCwd(cwd) ? getPathLeafName(cwd) : cwd.replace(/\/+$/u, '').split('/').at(-1)
+        const name = getFolderName(cwd)
         folder = { kind: 'folder', key, cwd, name: name || cwd || 'No working directory', threads: [] }
         folders.set(key, folder)
       }

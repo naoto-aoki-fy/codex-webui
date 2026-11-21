@@ -94,11 +94,6 @@ const DEFAULT_COLLABORATION_MODE_OPTIONS: CollaborationModeOption[] = [
 
 
 
-type ThreadSearchResult = {
-  threadIds: string[]
-  groups: UiProjectGroup[]
-}
-
 export type LocalDirectoryEntry = {
   name: string
   path: string
@@ -981,23 +976,15 @@ export async function searchComposerFiles(cwd: string, query: string, limit = 20
   return suggestions
 }
 
-export async function searchThreads(query: string): Promise<ThreadSearchResult> {
-  const threads: ThreadListResponse['data'] = []
-  const cursors = new Set<string>()
-  let cursor: string | null = null
-  if (!query.trim()) return { threadIds: [], groups: [] }
-  do {
-    const page: { data: Array<{ thread: ThreadListResponse['data'][number] }>; nextCursor: string | null } =
-      await callRpc('thread/search', {
-        searchTerm: query.trim(), archived: false, sortKey: 'updated_at',
-        sortDirection: 'desc', limit: 100, cursor,
-      })
-    threads.push(...page.data.map(row => row.thread))
-    cursor = page.nextCursor
-    if (cursor && cursors.has(cursor)) throw new Error('Thread search returned a repeated pagination cursor')
-    if (cursor) cursors.add(cursor)
-  } while (cursor)
-  return { threadIds: threads.map(thread => thread.id), groups: normalizeThreadGroupsV2({ data: threads, nextCursor: null }) }
+export async function searchThreadsPage(
+  query: string, cursor: string | null, signal: AbortSignal,
+): Promise<{ threads: UiThread[]; nextCursor: string | null }> {
+  const page = await rpcCall<{ data: Array<{ thread: ThreadListResponse['data'][number] }>; nextCursor: string | null }>(
+    'thread/search', {
+      searchTerm: query, archived: false, sortKey: 'updated_at', sortDirection: 'desc', limit: 100, cursor,
+    }, signal,
+  )
+  return { threads: page.data.map(row => normalizeThreadSummaryV2(row)), nextCursor: page.nextCursor }
 }
 
 function getErrorMessageFromPayload(payload: unknown, fallback: string): string {

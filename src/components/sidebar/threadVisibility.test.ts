@@ -22,13 +22,10 @@ describe('history visibility through normalization, workspace union and sidebar'
       createdAt: 1, updatedAt: 1, recencyAt: null,
     })))
     const matches = (thread: { id: string }) => thread.id !== 'archiving'
-    const projects = filterSidebarGroups(toSidebarProjectGroups(groups), matches, false, projectGroupKey('__codexapp_unassigned__'))
+    const projects = filterSidebarGroups(toSidebarProjectGroups(groups), matches)
     expect(projects.find(group => group.key === projectGroupKey('__codexapp_unassigned__'))?.threads.map(thread => thread.id)).toEqual(['dated', 'pinned', 'missing', 'blank'])
     expect(collectChronologicalThreads(groups, matches, new Set(['pinned'])).map(thread => thread.id)).toEqual(expect.arrayContaining(['dated', 'missing', 'blank']))
     expect(collectChronologicalThreads(groups, matches, new Set(['pinned']))).toHaveLength(3)
     expect(new Set(groups.map(group => group.projectName)).size).toBe(groups.length)
-    const search = (thread: { preview: string }) => thread.preview.includes('needle')
-    expect(filterSidebarGroups(toSidebarProjectGroups(groups), search, true, null).flatMap(group => group.threads).map(thread => thread.id)).toEqual(['dated'])
-    expect(collectChronologicalThreads(groups, search, new Set()).map(thread => thread.id)).toEqual(['dated'])
   })
 })

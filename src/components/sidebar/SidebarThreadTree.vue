@@ -1,7 +1,51 @@
 <template>
   <section class="thread-tree-root">
-    <p v-if="pinStateError" class="thread-tree-action-error" role="alert">{{ pinStateError }}</p>
-    <section v-if="pinnedThreads.length > 0" class="pinned-section">
+    <section v-if="search" aria-label="Sidebar search results">
+      <ul v-if="searchThreads.length || searchLocations.length" class="thread-list" aria-label="Search results">
+        <li
+          v-for="thread in searchThreads"
+          :key="thread.id"
+          class="thread-row-item"
+          :data-menu-open="isThreadMenuOpen(thread.id) ? 'true' : 'false'"
+        >
+          <SidebarThreadRow
+            :thread="thread"
+            :active="thread.id === selectedThreadId"
+            :pinned="isPinned(thread.id)"
+            :menu-open="isThreadMenuOpen(thread.id)"
+            :delete-confirming="isInlineDeleteConfirming(thread.id)"
+            :relative-time="formatRelativeThread(thread)"
+            @select="onSelect(thread.id)"
+            @delete="onInlineDeleteClick(thread.id)"
+            @toggle-menu="toggleThreadMenu(thread.id, $event)"
+            @dismiss-menu="dismissThreadMenu"
+            @menu-anchor="setThreadMenuWrapRef(thread.id, $event)"
+          />
+        </li>
+        <SidebarMenuRow
+          v-for="row in searchLocations"
+          :key="row.key"
+          as="li"
+          class="sidebar-search-location"
+          :href="row.href"
+          :title="row.target.cwd || row.name"
+          @activate="emit('start-new-thread', row.target)"
+        >
+          <template #left><IconTablerFolder class="thread-icon" /></template>
+          <span class="project-title sidebar-search-location-name">{{ row.name }}</span>
+          <span v-if="row.pathLabel" class="sidebar-search-location-detail">{{ row.pathLabel }}</span>
+          <span v-if="row.idLabel" class="sidebar-search-location-detail">{{ row.idLabel }}</span>
+        </SidebarMenuRow>
+      </ul>
+      <div v-if="search.error" class="thread-tree-action-error sidebar-search-error" role="alert">
+        <p>{{ search.error }}</p>
+        <button v-if="search.canRetry" class="sidebar-search-retry" type="button" @click="emit('retry-search')">Retry</button>
+      </div>
+      <p v-else-if="search.pending" class="sidebar-search-status" role="status">{{ search.pending }}</p>
+      <p v-else-if="!searchThreads.length && !searchLocations.length" class="sidebar-search-status" role="status">No results found</p>
+    </section>
+    <p v-if="!search && pinStateError" class="thread-tree-action-error" role="alert">{{ pinStateError }}</p>
+    <section v-if="!search && pinnedThreads.length > 0" class="pinned-section">
       <SidebarMenuRow
         as="button"
         class="section-toggle-row"
@@ -40,7 +84,7 @@
       </ul>
     </section>
 
-    <section class="projects-section">
+    <section v-if="!search" class="projects-section">
       <SidebarMenuRow class="thread-tree-header-row">
         <span class="thread-tree-header" role="heading" aria-level="2">{{ isChronologicalView ? 'Threads' : isFolderView ? 'Folders' : 'Projects' }}</span>
         <template #right>
@@ -97,9 +141,7 @@
         </template>
       </SidebarMenuRow>
 
-      <p v-if="isSearchActive && filteredGroups.length === 0" class="thread-tree-no-results">{{ ('No matching threads') }}</p>
-
-      <p v-else-if="isLoading && groups.length === 0" class="thread-tree-loading">{{ ('Loading threads...') }}</p>
+      <p v-if="isLoading && groups.length === 0" class="thread-tree-loading">{{ ('Loading threads...') }}</p>
 
       <ul v-else-if="isChronologicalView" class="thread-list thread-list-global">
       <li
@@ -251,7 +293,7 @@
             <template #left>
               <span class="project-empty-spacer" />
             </template>
-            <span class="project-empty">{{ isSearchActive ? ('No matching threads') : ('No threads') }}</span>
+            <span class="project-empty">No threads</span>
           </SidebarMenuRow>
 
           <SidebarMenuRow v-if="hasHiddenThreads(group)" class="thread-show-more-row">
@@ -355,6 +397,7 @@ import { newThreadRoute, sidebarHref, type NewThreadTarget } from '../../router/
 import { createSidebarMenus } from './sidebarMenus'
 import { createSidebarThreads } from './sidebarThreads'
 import { projectGroupKey, type SidebarGroup } from './sidebarGroups'
+import { findFolderNames, findProjectNames, findThreadTitles } from './sidebarSearch'
 
 import ForkSplitButton from '../content/ForkSplitButton.vue'
 import type { ForkMethod } from '../../types/codex'
@@ -388,6 +431,7 @@ const emit = defineEmits<{
   'move-project': [payload: { projectId: string; direction: -1 | 1 }]
   'copy-thread-chat': [threadId: string]
   'fork-thread': [payload: { threadId: string; method: ForkMethod }]
+  'retry-search': []
 }>()
 
 const PROJECT_GROUP_EXPANDED_GAP_PX = 6
@@ -407,7 +451,6 @@ const {
   threadViewMode,
   isFolderView,
   activeGroupKey,
-  isSearchActive,
   filteredGroups,
   isChronologicalView,
   globalThreads,
@@ -419,6 +462,24 @@ const {
   hasHiddenThreads,
   hasThreads,
 } = threads
+
+const searchThreads = computed(() => {
+  const search = props.search
+  if (search?.scope === 'content') {
+    return (search.threads ?? []).filter(threads.isVisibleThread).map(thread => threads.knownSearchThreads.value.get(thread.id) ?? thread)
+  }
+  if (search?.scope === 'thread-title') return findThreadTitles(threads.knownSearchThreads.value.values(), search.query)
+  return []
+})
+
+const searchLocations = computed(() => {
+  const search = props.search
+  const projects = props.projects ?? []
+  const rows = search?.scope === 'project'
+    ? findProjectNames(projects, search.query, props.resolveNewThreadCwd ?? (() => ''))
+    : search?.scope === 'folder' ? findFolderNames(projects, threads.knownSearchThreads.value.values(), search.query) : []
+  return rows.map(row => ({ ...row, href: sidebarHref(router, newThreadRoute(row.target)) }))
+})
 
 const isPinnedSectionExpanded = ref(loadPinnedSectionExpansion())
 
@@ -547,10 +608,12 @@ watch(threads.threadViewMode, (value) => {
   writeUiPreference(THREAD_VIEW_MODE_STORAGE_KEY, value)
 })
 
-watch([threads.pinnedThreadIds, threads.threadById, () => props.isLoading], () => {
+watch([threads.pinnedThreadIds, threads.threadById, () => props.isLoading, () => Boolean(props.search)], () => {
   if (!threads.hasLoadedPinnedThreadState) return
   void threads.hydrateMissingPinnedThreads()
 })
+
+watch([() => props.search?.scope, () => props.search?.query], () => dismissThreadMenu())
 
 onUnmounted(threads.unsubscribeSections)
 onMounted(threads.refreshPinnedThreadState)
@@ -825,8 +888,28 @@ onBeforeUnmount(() => {
   @apply px-3 py-2 text-sm text-zinc-500;
 }
 
-.thread-tree-no-results {
-  @apply px-3 py-2 text-sm text-zinc-400;
+.sidebar-search-status {
+  @apply px-3 py-2 text-sm text-zinc-500;
+}
+
+.sidebar-search-location {
+  @apply hover:bg-zinc-200;
+}
+
+.sidebar-search-location-name {
+  @apply block;
+}
+
+.sidebar-search-location-detail {
+  @apply block text-xs text-zinc-500 wrap-anywhere;
+}
+
+.sidebar-search-error {
+  @apply wrap-anywhere;
+}
+
+.sidebar-search-retry {
+  @apply mt-1 underline underline-offset-2;
 }
 
 .thread-tree-action-error {

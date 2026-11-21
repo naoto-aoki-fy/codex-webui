@@ -4,8 +4,8 @@ Conversation content search uses the experimental Codex app-server `thread/searc
 RPC. Codex 0.167.2 was verified against an independently managed server at
 `ws://127.0.0.1:4500`. Earlier versions are not certified; method availability,
 rather than a guessed minimum version, is the compatibility boundary. Unsupported
-servers show an explicit content-search error while loaded title/preview filtering
-continues. There is no history-scanning fallback.
+servers show an explicit error in the **Messages** results. The **Thread Name**,
+**Project**, and **Folder** targets match sidebar metadata.
 
 ## Authoritative protocol and implementation
 
@@ -21,9 +21,10 @@ Initialization already sends `capabilities: { experimentalApi: true }` in
 `appServerWebSocketClient.ts`; the transport test now explicitly asserts it.
 The gateway sends `searchTerm`, `archived: false`, `sortKey: updated_at`,
 `sortDirection: desc`, `limit: 100`, and an opaque `cursor`. Responses contain
-`data: [{ thread, snippet }]`, `nextCursor`, and `backwardsCursor`. Forward search
-follows every `nextCursor` to exhaustion and rejects repeated cursors rather than
-silently accepting partial results. The old 1,000-result truncation is removed.
+`data: [{ thread, snippet }]`, `nextCursor`, and `backwardsCursor`. Search
+publishes each page, requests the next cursor sequentially, and reports repeated
+cursors as an error. Changing the query or target or closing search cancels the
+browser request and stops pagination for that search.
 
 Source filtering remains the native interactive-source default, matching the old
 scanner's `thread/list` default. Attached threads remain excluded; account filtering
@@ -41,23 +42,18 @@ Native search covers older persisted conversation bodies too, and returns fresh
 results on each query. It searches persisted data; visibility of an in-flight
 message depends on Codex persistence. Snippets are currently unused.
 
-Native search does not guarantee title-only matches or command/output-only matches.
-The existing sidebar title/preview substring matcher is retained and unioned with
-native content IDs. Title-only discovery therefore covers metadata already loaded
-in the sidebar; it cannot guarantee a title-only match in an unloaded page. The old
-implementation could match command output in the newest 100; this is an explicit
-limitation of native message search. The smallest way to retain command-output
-search would require an upstream API enhancement; no speculative local scanner is
-retained. Matching across concatenated message boundaries is also not guaranteed.
-Unicode case folding can differ from JavaScript `toLowerCase`; English and Japanese
-literal content matches were verified, not every Unicode normalization variant.
+**Messages** uses native user and assistant text matching. Command output and
+matches across message boundaries are outside that scope. Unicode case folding
+can differ from JavaScript `toLowerCase`.
 
-Native order is requested as updated-at descending (its default is created-at).
-Existing project grouping and pin ordering still govern display. Results open the
-normal thread route by ID. Search errors explain the capability/version requirement;
-loaded metadata filtering remains available. No new indexing or caching exists.
+Search displays a single list. **Messages** uses native updated-at descending
+order. **Thread Name** searches displayed titles and **Folder** searches path
+leaves. Both reuse the sidebar's cursor for older thread metadata and pause
+pagination while a response is generating. **Project** includes registered
+Projects without threads. See the [sidebar search procedure](../tests/thread-loading-state/thread-search-freshness.md)
+for navigation, ranking, and request checks.
 
-## Verification and performance
+## Original native search verification and performance
 
 Real Codex 0.167.2, read-only probes against existing history: 195 threads listed;
 user, assistant, body-only, Japanese, and a thread beyond position 100 matched.

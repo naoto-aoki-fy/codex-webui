@@ -10,6 +10,7 @@ import { groupThreadsByProject } from '../../utils/desktopProjectGroups'
 import { folderGroupKey, projectGroupKey, type SidebarGroup, type ThreadViewMode } from './sidebarGroups'
 import SidebarThreadTree from './SidebarThreadTree.vue'
 import type { createSidebarThreads } from './sidebarThreads'
+import type { SidebarSearch } from './sidebarSearch'
 import { getPinnedThreadState, getThreadSummary, setThreadPinned } from '../../api/codexGateway'
 
 vi.mock('vue-router', async (importOriginal) => ({
@@ -84,9 +85,9 @@ async function mountNativeSidebar(resolveNewThreadCwd?: (projectId: string) => s
     row('z-old', 'Zulu', 20, 30), row('z-new', 'Zulu', 30, 50),
   ] }), nativeProjects)
   const props = reactive({ groups, projectDisplayNameById: {}, selectedThreadId: '',
-    activeProjectName: null, isLoading: false, isThreadListFullyLoaded: false,
+    activeProjectName: null, isLoading: false,
     newThreadCwd: undefined as string | undefined,
-    searchQuery: '', searchMatchedThreadIds: null as string[] | null,
+    search: null as SidebarSearch | null,
     removableProjectIds: nativeProjects.map(project => project.id),
     resolveNewThreadCwd,
   })
@@ -372,9 +373,7 @@ it('keeps folder rows current with selection, sort, search, pins, pagination and
   await nextTick()
   expect(state.activeGroupKey).toBe(other)
 
-  // A server search can surface an unloaded row, even if its preview does not match.
   const page = normalizeThreadGroupsV2({ data: [
-    row('server-hit', null, 100, 100, '/other/shared'),
     ...Array.from({ length: 10 }, (_, index) => row(`page-${index}`, null, 5, 5)),
   ] })
   props.groups.push(...page)
@@ -383,18 +382,19 @@ it('keeps folder rows current with selection, sort, search, pins, pagination and
   state.toggleGroupExpansion(shared)
   expect(sharedRows()).toHaveLength(13)
 
-  props.searchQuery = 'does not occur in previews'
-  props.searchMatchedThreadIds = ['server-hit', 'page-2']
+  // Native message matches can include unloaded rows and a pinned thread once.
+  const hits = normalizeThreadGroupsV2({ data: [row('server-hit', null, 100, 100, '/other/shared')] })[0]!.threads
+  props.search = { scope: 'content', query: 'does not occur in previews', threads: [hits[0]!, ...state.pinnedThreads] }
   await nextTick()
-  state.toggleGroupCollapse(byKey(state, shared))
-  expect(sharedRows()).toEqual(['page-2'])
-  expect(ids(state.visibleThreads(byKey(state, other)))).toEqual(['server-hit'])
-  expect(state.pinnedThreads).toEqual([])
+  const searchHtml = await renderToString(createSSRApp(SidebarThreadTree, props))
+  expect(searchHtml).toContain('aria-label="Search results"')
+  expect(searchHtml).toContain('href="/thread/server-hit"')
+  expect(searchHtml.match(/href="\/thread\/z-new"/g)).toHaveLength(1)
+  expect(searchHtml).not.toContain('Organize threads')
+  expect(state.threads.findThread('server-hit')?.cwd).toBe('/other/shared')
 
-  props.searchMatchedThreadIds = null
-  props.searchQuery = ''
+  props.search = null
   await nextTick()
-  state.toggleGroupCollapse(byKey(state, shared))
   // The new-thread adapter publishes a cwd immediately, then replaces its summary.
   const pending = normalizeThreadGroupsV2({ data: [row('new', null, 200, 200, '/shared/')] })
   const unassigned = props.groups.find(group => group.projectName === pending[0]!.projectName)!
