@@ -15,6 +15,7 @@ The global Start new thread action opens the new-thread composer with the active
 5. Send a first message and confirm the new thread appears under the same project in the sidebar.
 6. While already on the home/new-thread route with a folder selected, right-click **Start new thread** and copy its address. Verify Ctrl/Cmd+click and middle-click open the same folder in a new tab and reload the new tab. Click normally again and verify the selected folder remains.
 7. Repeat the flow with the mobile header at 375×812, with its drawer open. A normal click or keyboard activation closes the drawer. Repeat in dark theme and verify a visible keyboard focus outline.
+8. In a fixture with a pinned thread outside the loaded thread list, open that thread in a new tab and reload it. Once its conversation loads, verify **Start new thread** still points to its workspace. The older pin's three-dot menu opens and allows **Open in new tab**.
 
 ## Expected Results
 - The toolbar Start new thread action preserves the active thread's project context.

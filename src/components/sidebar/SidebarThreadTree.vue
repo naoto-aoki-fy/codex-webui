@@ -137,7 +137,7 @@
       >
           <SidebarMenuRow
             class="project-header-row"
-            :href="groupHrefByKey.get(group.key)"
+            :href="groupDestinationByKey.get(group.key)!.href"
             :expanded="!isCollapsed(group.key)"
             :data-active="group.key === activeGroupKey"
             :data-menu-open="isProjectMenuOpen(group.key)"
@@ -188,7 +188,7 @@
                     :data-open-direction="projectMenuDirectionById[group.key] ?? 'down'"
                     @click.stop
                   >
-                    <button class="project-menu-item" type="button" @click="onOpenGroupInNewTab(groupHrefByKey.get(group.key)!)">
+                    <button class="project-menu-item" type="button" @click="onOpenGroupInNewTab(groupDestinationByKey.get(group.key)!.href)">
                       Open in new tab
                     </button>
                     <button v-if="canRemoveProject(group)" class="project-menu-item" type="button" @click="onRenameProject(group)">
@@ -213,10 +213,10 @@
 
                 <SidebarLink
                   class="thread-start-button"
-                  :href="groupHrefByKey.get(group.key)!"
+                  :href="groupDestinationByKey.get(group.key)!.href"
                   :aria-label="getNewThreadButtonAriaLabel(group)"
                   :title="getNewThreadButtonAriaLabel(group)"
-                  @activate="onStartNewThread(group)"
+                  @activate="emit('start-new-thread', groupDestinationByKey.get(group.key)!.target)"
                 >
                   <IconTablerFilePencil class="thread-icon" />
                 </SidebarLink>
@@ -446,7 +446,6 @@ const {
   onCopyThreadChat,
   onForkThread,
   getNewThreadTarget,
-  onStartNewThread,
   onOpenGroupInNewTab,
   onCopyThreadPath,
   isThreadMenuOpen,
@@ -476,9 +475,22 @@ const {
   getThreadMenuDirection,
 } = menus
 
-const groupHrefByKey = computed(() => new Map(threads.sidebarGroups.value.map(group => [
-  group.key, sidebarHref(router, newThreadRoute(getNewThreadTarget(group))),
-])))
+type GroupDestination = { target: NewThreadTarget; href: string }
+const groupDestinationByKey = computed<Map<string, GroupDestination>>((previous) => {
+  const destinations = new Map<string, GroupDestination>()
+  for (const group of threads.sidebarGroups.value) {
+    const target = getNewThreadTarget(group)
+    const last = previous?.get(group.key)
+    // Read state and other row updates can replace the group without changing its destination.
+    destinations.set(
+      group.key,
+      last && last.target.cwd === target.cwd && last.target.projectId === target.projectId
+        ? last
+        : { target, href: sidebarHref(router, newThreadRoute(target)) },
+    )
+  }
+  return destinations
+})
 
 const groupsContainerRef = ref<HTMLElement | null>(null)
 const measuredHeightByProject = ref<Record<string, number>>({})

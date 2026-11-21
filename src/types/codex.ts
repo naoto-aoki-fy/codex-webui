@@ -13,6 +13,8 @@ export type CollaborationModeKind = 'default' | 'plan'
 
 export type NativeThreadReadState = { firstUnread: { type: 'threadStart' } | { type: 'turn'; turnId: string } | null; revision: string }
 
+export type ThreadWorkspace = Pick<UiThread, 'cwd' | 'projectId'>
+
 export type UiThread = {
   projectId?: string | null
   nativeReadState?: NativeThreadReadState

@@ -63,6 +63,7 @@ import type {
   SpeedMode,
   CollaborationModeKind,
   CollaborationModeOption,
+  ThreadWorkspace,
   UiMessage,
   UiProjectGroup,
   UiThread,
@@ -176,18 +177,12 @@ async function getThreadSummaryV2(threadId: string): Promise<UiThread> {
   return normalizeThreadSummaryV2(payload)
 }
 
-async function getThreadDetailV2(threadId: string, retainedTurnIds: string[]): Promise<{
-  questionResponses?: QuestionResponse[]
-  turnOutcomes?: ThreadTurnOutcomes
-  nativeReadState?: import('../types/codex').NativeThreadReadState
-  model: string
-  modelProvider: string
-  messages: UiMessage[]
-  inProgress: boolean
-  activeTurnId: string
-  olderCursor: string | null
-  turnIndexByTurnId: ThreadTurnIndexById
-}> {
+function readThreadWorkspace(payload: Pick<ThreadReadResponse, 'thread'>, threadId: string): ThreadWorkspace | undefined {
+  if (payload.thread?.id !== threadId) return undefined
+  return { cwd: normalizePathForUi(normalizeThreadCwdFromPayload(payload)), projectId: payload.thread.projectId }
+}
+
+async function getThreadDetailV2(threadId: string, retainedTurnIds: string[]): Promise<ThreadDetail> {
   const payload = await callRpc<ThreadReadResponse & { questionResponses?: QuestionResponse[] }>('thread/read', {
     threadId,
     includeTurns: true,
@@ -195,6 +190,7 @@ async function getThreadDetailV2(threadId: string, retainedTurnIds: string[]): P
   })
   const normalized = normalizeThreadMessagesV2(payload)
   return {
+    workspace: readThreadWorkspace(payload, threadId),
     model: normalizeThreadModelFromPayload(payload),
     modelProvider: normalizeThreadModelProviderFromPayload(payload),
     nativeReadState: (payload as ThreadReadResponse & { readState?: import('../types/codex').NativeThreadReadState | null }).readState ?? undefined,
@@ -256,18 +252,7 @@ export async function getThreadSummary(threadId: string): Promise<UiThread> {
   }
 }
 
-export async function getThreadDetail(threadId: string, retainedTurnIds: string[] = []): Promise<{
-  questionResponses?: QuestionResponse[]
-  turnOutcomes?: ThreadTurnOutcomes
-  nativeReadState?: import('../types/codex').NativeThreadReadState
-  model: string
-  modelProvider: string
-  messages: UiMessage[]
-  inProgress: boolean
-  activeTurnId: string
-  olderCursor: string | null
-  turnIndexByTurnId: ThreadTurnIndexById
-}> {
+export async function getThreadDetail(threadId: string, retainedTurnIds: string[] = []): Promise<ThreadDetail> {
   try {
     return await getThreadDetailV2(threadId, retainedTurnIds)
   } catch (error) {
@@ -323,9 +308,9 @@ export async function getAccountRateLimits(): Promise<UiRateLimitSnapshot | null
   }
 }
 
-export type ResumedThread = {
+type ThreadDetail = {
+  workspace?: ThreadWorkspace
   questionResponses?: QuestionResponse[]
-  security?: import('./threadSecurity').ThreadSecurity | null
   turnOutcomes?: ThreadTurnOutcomes
   nativeReadState?: import('../types/codex').NativeThreadReadState
   model: string
@@ -336,6 +321,8 @@ export type ResumedThread = {
   olderCursor: string | null
   turnIndexByTurnId: ThreadTurnIndexById
 }
+
+export type ResumedThread = ThreadDetail & { security?: import('./threadSecurity').ThreadSecurity | null }
 
 const RESUME_THREAD_COALESCE_TTL_MS = 30_000
 const recentResumeThreadById = new Map<string, { promise: Promise<ResumedThread>; retained: Set<string> }>()
@@ -356,6 +343,7 @@ export async function resumeThread(threadId: string, retainedTurnIds: string[] =
     const messages = normalizeThreadMessagesV2(payload)
     return {
       security: threadSecurity(payload),
+      workspace: readThreadWorkspace(payload, threadId),
       model: normalizeThreadModelFromPayload(payload),
       modelProvider: normalizeThreadModelProviderFromPayload(payload),
       messages,

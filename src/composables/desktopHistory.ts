@@ -1,8 +1,8 @@
 import type { QuestionResponse } from '../questionResponses';
-import type { Ref } from 'vue';
-import { ref } from 'vue';
+import type { Ref, ShallowRef } from 'vue';
+import { ref, shallowReactive, shallowRef } from 'vue';
 import { getOlderThreadMessages, getThreadDetail, resumeThread } from '../api/codexGateway';
-import type { CollaborationModeKind, ReasoningEffort, UiMessage, UiProjectGroup, UiThread } from '../types/codex';
+import type { CollaborationModeKind, ReasoningEffort, ThreadWorkspace, UiMessage, UiProjectGroup, UiThread } from '../types/codex';
 import { hasOptimisticUserMessages, mergeMessages, removeRedundantLiveAgentMessages } from '../utils/desktopMessageReconciliation';
 function flattenThreads(groups: UiProjectGroup[]): UiThread[] {
     return groups.flatMap((group) => group.threads);
@@ -20,6 +20,7 @@ function omitKey<TValue>(record: Record<string, TValue>, key: string): Record<st
     return next;
 }
 type HistoryReadOwner = {
+    workspace: ShallowRef<ThreadWorkspace | undefined>;
     olderCursor?: string | null;
     latestTurnIds?: Set<string>;
 };
@@ -103,11 +104,11 @@ export function createDesktopHistory(deps: {
     }
     const loadMessagePromiseByThreadId = new Map<string, Promise<void>>();
     const reconnectingThreadHistory = new Set<string>();
-    const historyReadOwnerByThreadId = new Map<string, HistoryReadOwner>();
+    const historyReadOwnerByThreadId = shallowReactive(new Map<string, HistoryReadOwner>());
     function historyReadOwner(threadId: string): HistoryReadOwner {
         let owner = historyReadOwnerByThreadId.get(threadId);
         if (!owner) {
-            owner = {};
+            owner = { workspace: shallowRef<ThreadWorkspace>() };
             historyReadOwnerByThreadId.set(threadId, owner);
         }
         return owner;
@@ -189,6 +190,7 @@ export function createDesktopHistory(deps: {
                 const detail = resumedThread ?? await (retained.length ? getThreadDetail(threadId, retained) : getThreadDetail(threadId));
                 if (!isCurrent())
                     return;
+                owner.workspace.value = detail.workspace;
                 const currentThread = flattenThreads(deps.sourceGroups.value).find(row => row.id === threadId);
                 if ('nativeReadState' in detail && currentThread?.nativeReadState?.revision === observedReadRevision && currentThread) {
                     currentThread.nativeReadState = detail.nativeReadState;
