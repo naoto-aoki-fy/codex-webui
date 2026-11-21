@@ -455,6 +455,10 @@ export function useDesktopState({ onSelectedThreadAttention }: {
 
   watch(selectedThreadId, history.syncMessageLoading, { flush: 'sync' })
   const isThreadListFullyLoaded = ref(false)
+  const threadListError = ref('')
+  const isThreadListPagingPaused = computed(hasActiveInProgressThreads)
+  const isLoadingProjects = ref(true)
+  const projectListError = ref('')
 
   const isUpdatingSpeedMode = ref(false)
   const isRollingBack = ref(false)
@@ -490,8 +494,10 @@ export function useDesktopState({ onSelectedThreadAttention }: {
   let threadListNextCursor: string | null = null
   let threadListBackgroundTimer: number | null = null
   let threadListGeneration = 0
+  let isSearchingThreadList = false
+  const loadedThreadListCursors = new Set<string>()
   let pendingForcedThreadLoad = false
-  let remainingThreadPageRequest: { generation: number; cursor: string } | null = null
+  let remainingThreadPageRequest: { cursor: string } | null = null
   let hasLoadedAllThreadPages = false
   let loadedThreadListGroups: UiProjectGroup[] = []
   let projectOperationPromise: Promise<void> = Promise.resolve()
@@ -2261,15 +2267,27 @@ export function useDesktopState({ onSelectedThreadAttention }: {
     if (projectListRequest) return projectListRequest
     const lifecycle = connection.lifecycleGeneration
     projectsNeedRefresh = false
+    isLoadingProjects.value = true
+    projectListError.value = ''
     projectListRequest = getProjects().then(rows => {
       if (lifecycle !== connection.lifecycleGeneration) return
       projects.value = rows
     }).catch((cause: unknown) => {
       if (lifecycle === connection.lifecycleGeneration) {
-        error.value = cause instanceof Error ? cause.message : 'Failed to load projects'
+        projectListError.value = cause instanceof Error ? cause.message : 'Failed to load projects'
+        error.value = projectListError.value
       }
-    }).finally(() => { projectListRequest = null })
+    }).finally(() => {
+      projectListRequest = null
+      isLoadingProjects.value = false
+    })
     return projectListRequest
+  }
+
+  async function retryProjectList(): Promise<void> {
+    const lifecycle = connection.lifecycleGeneration
+    await refreshProjects()
+    if (lifecycle === connection.lifecycleGeneration && !projectListError.value) applyThreadGroups(loadedThreadListGroups)
   }
 
   async function changeProject<T>(operation: () => Promise<T>): Promise<T> {
@@ -2406,55 +2424,75 @@ export function useDesktopState({ onSelectedThreadAttention }: {
     return Object.values(inProgressById.value).some((value) => value === true)
   }
 
-  function invalidateThreadListGeneration(): number {
-    threadListGeneration += 1
-    remainingThreadPageRequest = null
+  function clearThreadListPageTimer(): void {
     if (threadListBackgroundTimer !== null && typeof window !== 'undefined') {
       window.clearTimeout(threadListBackgroundTimer)
       threadListBackgroundTimer = null
     }
+  }
+
+  function invalidateThreadListGeneration(): number {
+    threadListGeneration += 1
+    remainingThreadPageRequest = null
+    clearThreadListPageTimer()
     return threadListGeneration
   }
 
   function scheduleRemainingThreadPages(): void {
-    if (!threadListNextCursor || remainingThreadPageRequest || loadThreadsPromise || hasActiveInProgressThreads()) return
+    if (!threadListNextCursor || threadListError.value || remainingThreadPageRequest || loadThreadsPromise
+      || hasActiveInProgressThreads()) return
     const generation = threadListGeneration
     const cursor = threadListNextCursor
     if (typeof window === 'undefined') {
       void loadRemainingThreadPages()
       return
     }
-    if (threadListBackgroundTimer !== null) window.clearTimeout(threadListBackgroundTimer)
+    clearThreadListPageTimer()
     threadListBackgroundTimer = window.setTimeout(() => {
       if (generation !== threadListGeneration || cursor !== threadListNextCursor) return
       threadListBackgroundTimer = null
       if (hasActiveInProgressThreads()) return
       void loadRemainingThreadPages()
-    }, BACKGROUND_THREAD_PAGINATION_DELAY_MS)
+    }, isSearchingThreadList ? 0 : BACKGROUND_THREAD_PAGINATION_DELAY_MS)
+  }
+
+  function setThreadListSearchActive(active: boolean): void {
+    isSearchingThreadList = active
+    clearThreadListPageTimer()
+    scheduleRemainingThreadPages()
+  }
+
+  function retryThreadListSearch(): void {
+    threadListError.value = ''
+    if (hasLoadedThreads.value) scheduleRemainingThreadPages()
+    else void loadThreads().catch(() => { /* The list error is shown in the sidebar. */ })
   }
 
   async function loadRemainingThreadPages(): Promise<void> {
     if (remainingThreadPageRequest || loadThreadsPromise || !threadListNextCursor || hasActiveInProgressThreads()) return
-    const request = { generation: threadListGeneration, cursor: threadListNextCursor }
+    const request = { cursor: threadListNextCursor }
     remainingThreadPageRequest = request
-    let applied = false
     try {
       const page = await getThreadGroupsPage(request.cursor, getBackgroundThreadListLimit())
-      if (request !== remainingThreadPageRequest || request.generation !== threadListGeneration
-        || request.cursor !== threadListNextCursor) return
-      threadListNextCursor = page.nextCursor === request.cursor ? null : page.nextCursor
+      if (request !== remainingThreadPageRequest || request.cursor !== threadListNextCursor) return
+      if (page.nextCursor && (page.nextCursor === request.cursor || loadedThreadListCursors.has(page.nextCursor))) {
+        throw new Error('Thread list returned a repeated pagination cursor')
+      }
+      loadedThreadListCursors.add(request.cursor)
+      threadListNextCursor = page.nextCursor
       hasLoadedAllThreadPages = threadListNextCursor === null
       isThreadListFullyLoaded.value = hasLoadedAllThreadPages
       loadedThreadListGroups = mergeThreadGroupPages(loadedThreadListGroups, page.groups)
       // Roots may have changed while this history request was in flight.
       applyThreadGroups(loadedThreadListGroups)
-      applied = true
-    } catch {
-      // Retain the last list and cursor; retry only after a later refresh.
+    } catch (cause) {
+      if (request === remainingThreadPageRequest) {
+        threadListError.value = cause instanceof Error ? cause.message : 'Failed to load older threads'
+      }
     } finally {
-      if (request === remainingThreadPageRequest && request.generation === threadListGeneration) {
+      if (request === remainingThreadPageRequest) {
         remainingThreadPageRequest = null
-        if (applied) scheduleRemainingThreadPages()
+        scheduleRemainingThreadPages()
       }
     }
   }
@@ -2465,7 +2503,7 @@ export function useDesktopState({ onSelectedThreadAttention }: {
     if (loadThreadsPromise) {
       if (options.force === true && !pendingForcedThreadLoad) {
         pendingForcedThreadLoad = true
-        invalidateThreadListGeneration()
+        if (!isSearchingThreadList || options.refreshProjects || !hasLoadedThreads.value) invalidateThreadListGeneration()
       }
       return loadThreadsPromise
     }
@@ -2480,7 +2518,10 @@ export function useDesktopState({ onSelectedThreadAttention }: {
       do {
         pendingForcedThreadLoad = false
         failure = undefined
-        const generation = invalidateThreadListGeneration()
+        // Refresh the head after thread events without restarting a search's older scan.
+        const preserveCursor = isSearchingThreadList && hasLoadedThreads.value && !options.refreshProjects
+        const generation = preserveCursor ? threadListGeneration : invalidateThreadListGeneration()
+        clearThreadListPageTimer()
         if (!hasLoadedThreads.value) isLoadingThreads.value = true
         try {
           const [page] = await Promise.all([
@@ -2491,9 +2532,11 @@ export function useDesktopState({ onSelectedThreadAttention }: {
             loadedThreadListGroups = hasLoadedThreads.value
               ? mergeThreadGroupPages(loadedThreadListGroups, page.groups)
               : page.groups
-            threadListNextCursor = hasLoadedThreads.value && !force && !hasLoadedAllThreadPages
-              ? threadListNextCursor
-              : page.nextCursor
+            if (!preserveCursor && (!hasLoadedThreads.value || force || hasLoadedAllThreadPages)) {
+              loadedThreadListCursors.clear()
+              threadListNextCursor = page.nextCursor
+            }
+            if (!preserveCursor) threadListError.value = ''
             hasLoadedAllThreadPages = threadListNextCursor === null
             isThreadListFullyLoaded.value = hasLoadedAllThreadPages
             applyThreadGroups(loadedThreadListGroups)
@@ -2503,7 +2546,13 @@ export function useDesktopState({ onSelectedThreadAttention }: {
             pruneThreadScopedState(flattenThreads(projectGroups.value))
           }
         } catch (cause) {
-          if (generation === threadListGeneration) failure = cause
+          if (generation === threadListGeneration) {
+            failure = cause
+            if (preserveCursor) completedGeneration = generation
+            if (!hasLoadedThreads.value) {
+              threadListError.value = cause instanceof Error ? cause.message : 'Failed to load threads'
+            }
+          }
         }
         if (lifecycle !== connection.lifecycleGeneration || requestGeneration !== threadListLoadGeneration) return
         force = pendingForcedThreadLoad
@@ -2919,10 +2968,6 @@ export function useDesktopState({ onSelectedThreadAttention }: {
       rateLimitRefreshTimer = null
     }
     refreshModelsWithRateLimits = false
-    if (threadListBackgroundTimer !== null && typeof window !== 'undefined') {
-      window.clearTimeout(threadListBackgroundTimer)
-      threadListBackgroundTimer = null
-    }
     if (typeof window !== 'undefined') {
       for (const timerId of delayedTurnSyncTimerByThreadId.values()) {
         window.clearTimeout(timerId)
@@ -3017,6 +3062,13 @@ export function useDesktopState({ onSelectedThreadAttention }: {
     hasMoreOlderMessages,
     isLoadingThreads,
     isThreadListFullyLoaded,
+    threadListError,
+    isThreadListPagingPaused,
+    setThreadListSearchActive,
+    retryThreadListSearch,
+    isLoadingProjects,
+    projectListError,
+    retryProjectList,
     isLoadingMessages: history.isLoadingMessages,
     isLoadingOlderMessages,
     isSendingMessage: turns.isSendingMessage,

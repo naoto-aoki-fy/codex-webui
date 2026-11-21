@@ -119,10 +119,12 @@ const sleep = ms => new Promise(done => setTimeout(done, ms))
       const row = page.locator('.thread-row > a').filter({ hasText: v.title })
       assert.equal(await row.count() > 0, expected, 'Fresh-start sidebar discovery: ' + v.label + '/' + stage)
       await page.getByRole('button', { name: 'Search threads', exact: true }).click()
+      await page.getByRole('button', { name: 'Thread Name', exact: true }).click()
       await page.locator('.sidebar-search-input').fill(v.title)
       await page.waitForTimeout(2500)
       assert.equal(await row.count() > 0, expected, 'Fresh-start UI search discovery: ' + v.label + '/' + stage)
       const titleSearchDiscoverable = await row.count() > 0
+      await page.getByRole('button', { name: 'Messages', exact: true }).click()
       await page.locator('.sidebar-search-input').fill(sourceAnswer)
       await page.waitForTimeout(2500)
       const contentSearchDiscoverable = await row.count() > 0

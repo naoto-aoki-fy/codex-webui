@@ -1,4 +1,6 @@
 import type { UiProjectGroup } from '../../types/codex';
+import type { Project } from '../../server/protocol/0.167.2/v2/Project'
+import type { SidebarSearch } from './sidebarSearch'
 export type SidebarProps = {
     isForkDisabled?: boolean;
     groups: UiProjectGroup[];
@@ -9,8 +11,7 @@ export type SidebarProps = {
     activeProjectName: string | null;
     newThreadCwd?: string;
     isLoading: boolean;
-    isThreadListFullyLoaded: boolean;
-    searchQuery: string;
-    searchMatchedThreadIds: string[] | null;
+    projects?: readonly Project[];
+    search?: SidebarSearch | null;
 };
 export type MenuDirection = 'up' | 'down';

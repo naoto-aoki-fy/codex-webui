@@ -18,7 +18,7 @@ function setup(cwd = '  /work/Project with spaces/日本語  ') {
     router, emit,
     props: { groups: [{ projectName: 'empty project', threads: [] }],
       projectDisplayNameById: {}, selectedThreadId: 'selected', activeProjectName: 'other',
-      isLoading: false, isThreadListFullyLoaded: true, searchQuery: '', searchMatchedThreadIds: null,
+      isLoading: false,
       removableProjectIds: ['removable', '/work/Project with spaces/日本語'], resolveNewThreadCwd },
     threads: { findThread: id => id === 'selected' ? { cwd } : undefined } as Parameters<typeof createSidebarMenus>[0]['threads'],
   })

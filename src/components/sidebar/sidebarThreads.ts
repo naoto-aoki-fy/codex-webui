@@ -27,25 +27,10 @@ export function createSidebarThreads(deps: {
     const isFolderView = computed(() => threadViewMode.value === 'folder');
     const sidebarGroups = computed(() => isFolderView.value ? groupThreadsByFolder(deps.props.groups) : toSidebarProjectGroups(deps.props.groups));
     const sortedGroups = computed(() => sortThreadGroups(sidebarGroups.value, chatSortMode.value, isFolderView.value ? undefined : deps.props.removableProjectIds));
-    const normalizedSearchQuery = computed(() => deps.props.searchQuery.trim().toLowerCase());
-    const isSearchActive = computed(() => normalizedSearchQuery.value.length > 0);
-    const matchedThreadIdSet = computed(() => {
-        if (!deps.props.searchMatchedThreadIds)
-            return null;
-        return new Set(deps.props.searchMatchedThreadIds);
-    });
     const pinnedThreadIdSet = computed(() => new Set(pinnedThreadIds.value));
     const optimisticallyArchivedThreadIdSet = computed(() => new Set(optimisticallyArchivedThreadIds.value));
-    function threadMatchesSearch(thread: UiThread): boolean {
-        if (optimisticallyArchivedThreadIdSet.value.has(thread.id))
-            return false;
-        if (!isSearchActive.value)
-            return true;
-        if (matchedThreadIdSet.value?.has(thread.id)) {
-            return true;
-        }
-        const q = normalizedSearchQuery.value;
-        return thread.title.toLowerCase().includes(q) || thread.preview.toLowerCase().includes(q);
+    function isVisibleThread(thread: UiThread): boolean {
+        return !optimisticallyArchivedThreadIdSet.value.has(thread.id);
     }
     const activeGroupKey = computed(() => {
         if (!isFolderView.value) {
@@ -57,9 +42,9 @@ export function createSidebarThreads(deps: {
         const thread = findThread(deps.props.selectedThreadId);
         return thread ? folderGroupKey(thread.cwd) : null;
     });
-    const filteredGroups = computed(() => filterSidebarGroups(sortedGroups.value, threadMatchesSearch, isSearchActive.value, activeGroupKey.value));
+    const filteredGroups = computed(() => filterSidebarGroups(sortedGroups.value, isVisibleThread));
     const isChronologicalView = computed(() => threadViewMode.value === 'chronological');
-    const globalThreads = computed(() => collectChronologicalThreads(deps.props.groups, threadMatchesSearch, pinnedThreadIdSet.value).sort(compareThreads(chatSortMode.value)));
+    const globalThreads = computed(() => collectChronologicalThreads(deps.props.groups, isVisibleThread, pinnedThreadIdSet.value).sort(compareThreads(chatSortMode.value)));
     const threadById = computed(() => {
         const map = new Map<string, UiThread>();
         for (const group of deps.props.groups) {
@@ -71,12 +56,21 @@ export function createSidebarThreads(deps: {
         }
         return map;
     });
+    const knownSearchThreads = computed(() => new Map([
+        ...pinnedThreadIds.value.flatMap(id => {
+            const thread = hydratedPinnedThreadById.value[id];
+            return thread && isVisibleThread(thread) ? [[id, thread] as const] : [];
+        }),
+        ...threadById.value,
+    ]));
     function findThread(threadId: string): UiThread | undefined {
-        return threadById.value.get(threadId) ?? hydratedPinnedThreadById.value[threadId];
+        if (optimisticallyArchivedThreadIdSet.value.has(threadId)) return undefined;
+        return threadById.value.get(threadId) ?? hydratedPinnedThreadById.value[threadId]
+            ?? deps.props.search?.threads?.find(thread => thread.id === threadId);
     }
     let pinnedThreadHydrationVersion = 0;
     async function hydrateMissingPinnedThreads(): Promise<void> {
-        if (deps.props.isLoading)
+        if (deps.props.isLoading || deps.props.search)
             return;
         const missingThreadIds = pinnedThreadIds.value.filter((threadId) => !threadById.value.has(threadId) && !hydratedPinnedThreadById.value[threadId]);
         if (missingThreadIds.length === 0)
@@ -146,8 +140,7 @@ export function createSidebarThreads(deps: {
     });
     const pinnedThreads = computed(() => pinnedThreadIds.value
         .map(findThread)
-        .filter((thread): thread is UiThread => thread !== undefined)
-        .filter(threadMatchesSearch));
+        .filter((thread): thread is UiThread => thread !== undefined));
     async function togglePin(threadId: string): Promise<void> {
         if (pinStateError.value)
             return;
@@ -176,16 +169,12 @@ export function createSidebarThreads(deps: {
         return unpinnedThreadsByGroupKey.value.get(group.key) ?? [];
     }
     function visibleThreads(group: SidebarGroup): UiThread[] {
-        if (isSearchActive.value)
-            return groupThreads(group);
         if (deps.isCollapsed(group.key))
             return [];
         const rows = groupThreads(group);
         return isExpanded(group.key) ? rows : rows.slice(0, 10);
     }
     function hasHiddenThreads(group: SidebarGroup): boolean {
-        if (isSearchActive.value)
-            return false;
         return !deps.isCollapsed(group.key) && groupThreads(group).length > 10;
     }
     function hasThreads(group: SidebarGroup): boolean {
@@ -203,13 +192,14 @@ threadViewMode,
 loadThreadViewMode,
 isFolderView,
 activeGroupKey,
-isSearchActive,
 pinnedThreadIdSet,
 optimisticallyArchivedThreadIdSet,
 filteredGroups,
 isChronologicalView,
 globalThreads,
 threadById,
+knownSearchThreads,
+isVisibleThread,
 findThread,
 hydrateMissingPinnedThreads,
 pinStateError,

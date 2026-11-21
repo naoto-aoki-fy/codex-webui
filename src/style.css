@@ -159,6 +159,23 @@
   @apply text-zinc-200 placeholder-zinc-500;
 }
 
+:root.dark .sidebar-search-target {
+  @apply text-zinc-400 hover:bg-zinc-800;
+}
+
+:root.dark .sidebar-search-target[aria-pressed='true'] {
+  @apply border-zinc-600 bg-zinc-800 text-zinc-100;
+}
+
+:root.dark .sidebar-search-location {
+  @apply hover:bg-zinc-800;
+}
+
+:root.dark .sidebar-search-location-detail,
+:root.dark .sidebar-search-status {
+  @apply text-zinc-400;
+}
+
 :root.dark .thread-tree-header {
   @apply text-zinc-500;
 }

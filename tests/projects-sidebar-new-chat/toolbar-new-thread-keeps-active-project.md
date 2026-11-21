@@ -36,7 +36,7 @@ The global Start new thread action opens the new-thread composer with the active
 ### Actions and Expected Results
 1. Select a project-backed thread, then a thread in another project. Exactly one project header has the selection background, spanning its icon, normal-weight name, and action buttons. It matches the selected thread: `bg-zinc-200` in light mode and `bg-zinc-800` in dark mode.
 2. Collapse the selected thread's project, expand it, pin the thread, and collapse the Pinned section. The owning project's header stays highlighted throughout.
-3. Search for text that excludes the selected thread, including a query with no results. The active project header remains highlighted and shows `No matching threads` when appropriate. Clear search; thread selection and project expansion still work.
+3. Open sidebar search and select **Thread Name**. Enter a query with no results and wait for **No results found**. The toolbar's new-thread link still points to the active project. Clear the query to restore the highlighted project header and its previous expansion state.
 4. Click the toolbar Start new thread action. The retained project folder determines the highlight. Change folders in the composer dropdown; the highlight moves immediately.
 5. Select each same-name folder separately, including the empty one. Only the project with the matching full path is highlighted. Select the uniquely named empty project and confirm it also highlights without creating a thread.
 6. Select the canonical folder of a registered project that has only worktree threads. Its project header highlights.
