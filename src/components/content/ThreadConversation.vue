@@ -57,6 +57,49 @@
             </div>
           </div>
         </div>
+        <div v-else-if="isCompactExecution(message)" class="message-row" data-role="system">
+          <div class="message-stack" data-role="system">
+            <button
+              v-if="message.webSearchGroup"
+              type="button"
+              class="cmd-row cmd-row-group cmd-compact execution-trigger"
+              :class="{ 'cmd-expanded': isWebSearchGroupExpanded(message) }"
+              :aria-expanded="isWebSearchGroupExpanded(message)"
+              @click="toggleWebSearchGroup(message)"
+            >
+              <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isWebSearchGroupExpanded(message) }" aria-hidden="true">▶</span>
+              <span class="cmd-group-label">{{ message.webSearchGroup.length }} web searches</span>
+            </button>
+            <div
+              v-if="!message.webSearchGroup || isWebSearchGroupExpanded(message)"
+              class="execution-rows"
+              :class="{ 'cmd-group-inner': message.webSearchGroup }"
+            >
+              <div
+                v-for="item in message.webSearchGroup ?? [message]"
+                :key="item.id"
+                class="execution-details"
+                :data-message-id="item.id === message.id ? undefined : item.id"
+              >
+                <button
+                  type="button"
+                  class="cmd-row cmd-row-group cmd-compact execution-trigger"
+                  :class="{ 'cmd-expanded': isExecutionExpanded(message, item) }"
+                  :aria-expanded="isExecutionExpanded(message, item)"
+                  @click="toggleExecution(message, item)"
+                >
+                  <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isExecutionExpanded(message, item) }" aria-hidden="true">▶</span>
+                  <span class="cmd-group-label" :title="item.executionLabel">{{ item.executionLabel }}</span>
+                </button>
+                <div v-if="isExecutionExpanded(message, item)" class="cmd-output-wrap cmd-output-visible">
+                  <div class="cmd-output-inner">
+                    <pre class="cmd-output" v-text="item.text"></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
         <div v-else-if="message.executionLabel" class="message-row" data-role="system">
         <details class="execution-details feature-panel">
           <summary>{{ message.executionLabel }}</summary>
@@ -903,6 +946,8 @@ import IconTablerX from '../icons/IconTablerX.vue'
 const expandedCommandIds = ref<Set<string>>(new Set())
 const collapsedAutoCommandIds = ref<Set<string>>(new Set())
 const expandedCommandGroupIds = ref<Set<string>>(new Set())
+const expandedExecutionIds = reactive(new Set<string>())
+const webSearchGroupExpansion = reactive(new Map<string, boolean>())
 const expandedWorkedIds = ref<Set<string>>(new Set())
 const expandedFileChangeSummaryIds = ref<Set<string>>(new Set())
 const collapsedPlanIds = reactive(new Set<string>())
@@ -918,6 +963,32 @@ const { isMobile } = useMobile()
 
 function isCommandMessage(message: UiMessage): boolean {
   return message.messageType === 'commandExecution' && !!message.commandExecution
+}
+
+type ConversationRow = QuestionResponseRow & { webSearchGroup?: UiMessage[] }
+
+function isCompactExecution(message: UiMessage): boolean {
+  return Boolean(message.executionLabel) && (message.messageType === 'webSearch' || message.messageType === 'mcpToolCall')
+}
+
+function isWebSearchGroupExpanded(row: ConversationRow): boolean {
+  // Keep a search visible if a second search arrives while its details are open.
+  return webSearchGroupExpansion.get(row.id) ?? selectedWebSearchIds.value.has(row.id)
+}
+
+function toggleWebSearchGroup(row: ConversationRow): void {
+  webSearchGroupExpansion.set(row.id, !isWebSearchGroupExpanded(row))
+}
+
+function isExecutionExpanded(row: ConversationRow, item: UiMessage): boolean {
+  return row.webSearchGroup ? selectedWebSearchIds.value.get(row.id) === item.id : expandedExecutionIds.has(item.id)
+}
+
+function toggleExecution(row: ConversationRow, item: UiMessage): void {
+  const wasExpanded = isExecutionExpanded(row, item)
+  if (row.webSearchGroup) webSearchGroupExpansion.set(row.id, true)
+  for (const search of row.webSearchGroup ?? [item]) expandedExecutionIds.delete(search.id)
+  if (!wasExpanded) expandedExecutionIds.add(item.id)
 }
 
 function togglePlan(messageId: string): void {
@@ -1266,28 +1337,62 @@ const hasConversationContent = computed(() =>
   props.messages.length > 0 || props.pendingRequests.length > 0 || Boolean(props.pendingQuestion || props.liveOverlay || props.questionResponses?.length),
 )
 const pendingQuestionRowKey = Symbol('pendingQuestion')
-const conversationRows = computed(() => {
-  const visible = visibleMessages.value.filter(message =>
-    !hiddenGroupedCommandIds.value.has(message.id) && !hiddenFileChangeMessageIds.value.has(message.id),
-  )
-  const rows: Array<QuestionResponseRow | null> = props.isLoading ? [] : insertQuestionResponseRows(
-    props.messages, visible, props.questionResponses ?? [], visibleMessages.value[0]?.id,
-  )
-  if (!props.pendingQuestion) return rows
+function isHiddenConversationMessage(message: UiMessage): boolean {
+  return hiddenGroupedCommandIds.value.has(message.id) || hiddenFileChangeMessageIds.value.has(message.id)
+}
 
-  const turnId = props.pendingQuestion.turnId
-  let insertAt = rows.length
-  if (turnId) {
-    for (let index = rows.length - 1; index >= 0; index--) {
-      if (rows[index]?.turnId === turnId) {
-        insertAt = index + 1
-        break
+const conversationRows = computed(() => {
+  const visible = visibleMessages.value
+  let rows: Array<QuestionResponseRow | null> = props.isLoading ? [] : insertQuestionResponseRows(
+    props.messages, visible, props.questionResponses ?? [], visible[0]?.id,
+  )
+
+  if (props.pendingQuestion) {
+    rows = rows.slice()
+    const turnId = props.pendingQuestion.turnId
+    let insertAt = rows.length
+    if (turnId) {
+      for (let index = rows.length - 1; index >= 0; index--) {
+        const row = rows[index]
+        if (row?.turnId === turnId && !isHiddenConversationMessage(row)) {
+          insertAt = index + 1
+          break
+        }
       }
     }
+    // Keep the question a keyed sibling of its anchor so a change in position keeps its draft.
+    rows.splice(insertAt, 0, null)
   }
-  // Keep the question a keyed sibling of its anchor so a change in position keeps its draft.
-  rows.splice(insertAt, 0, null)
-  return rows
+
+  const result: Array<ConversationRow | null> = []
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index]
+    if (row && isHiddenConversationMessage(row)) continue
+    if (!row?.turnId || row.messageType !== 'webSearch' || !row.executionLabel) {
+      result.push(row)
+      continue
+    }
+
+    const searches = [row]
+    // Inspect original rows so even hidden entries can separate searches.
+    while (index + 1 < rows.length) {
+      const following = rows[index + 1]
+      if (following?.turnId !== row.turnId || following.messageType !== 'webSearch' || !following.executionLabel) break
+      searches.push(following)
+      index++
+    }
+    result.push(searches.length > 1 ? { ...row, webSearchGroup: searches } : row)
+  }
+  return result
+})
+
+const selectedWebSearchIds = computed(() => {
+  const selected = new Map<string, string>()
+  for (const row of conversationRows.value) {
+    const item = row?.webSearchGroup?.find(search => expandedExecutionIds.has(search.id))
+    if (row && item) selected.set(row.id, item.id)
+  }
+  return selected
 })
 
 function readAnchoredFileChangeSummary(message: UiMessage): TurnFileChangeSummary | null {
@@ -1511,6 +1616,8 @@ watch(
     expandedCommandIds.value = new Set()
     collapsedAutoCommandIds.value = new Set()
     expandedCommandGroupIds.value = new Set()
+    expandedExecutionIds.clear()
+    webSearchGroupExpansion.clear()
     expandedWorkedIds.value = new Set()
     expandedFileChangeSummaryIds.value = new Set()
     collapsedPlanIds.clear()
@@ -2357,6 +2464,19 @@ onBeforeUnmount(() => {
 
 .cmd-output {
   @apply m-0 px-3 py-2 text-xs font-mono text-zinc-200 whitespace-pre-wrap break-words max-h-60 overflow-y-auto;
+}
+
+.execution-rows {
+  width: 100%;
+  min-width: 0;
+}
+
+.execution-trigger {
+  min-height: 2rem;
+}
+
+.execution-rows .cmd-output {
+  overflow-wrap: anywhere;
 }
 
 .cmd-output.cmd-output-condensed {

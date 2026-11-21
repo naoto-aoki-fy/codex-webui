@@ -20,6 +20,12 @@ it('omits URL userinfo credentials in public execution text',()=>{
  expect(executionText('https://user:password@example.test/path')).not.toContain('user:password')
 })
 
+it('uses the public query as a single-line search label with a fallback for empty queries', () => {
+  const search = (query: string) => normalizeExecutionItem({ id: 'w', type: 'webSearch', query })
+  expect(search('  test\n\tquery token=secret  ')?.executionLabel).toBe('test query token=[redacted]')
+  expect(search('  \n')?.executionLabel).toBe('Web search')
+})
+
 it('renders public structured results without confusing absent text with an empty result',()=>{
  const message=normalizeExecutionItem({id:'s',type:'mcpToolCall',server:'s',tool:'t',status:'completed',result:{content:[],structuredContent:{answer:'public structured result',apiKey:'SECRET',debug:{hidden:'INTERNAL'}},_meta:{hidden:'INTERNAL'}}})!
  expect(message.text).toContain('public structured result');expect(message.text).not.toContain('Empty result');expect(message.text).not.toMatch(/SECRET|INTERNAL/)
