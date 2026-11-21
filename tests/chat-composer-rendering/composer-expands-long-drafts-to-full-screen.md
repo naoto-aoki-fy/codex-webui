@@ -71,6 +71,11 @@ Full-screen editing and Enter behavior in the shared Home and conversation compo
       For an unchanged draft, manually expand again before acknowledgment and
       verify it clears while the composer stays full screen. Switch to another
       conversation while expanded and verify its own draft opens inline.
+      For a pending first message, switch away from Home and return to the same
+      folder URL. Edit and expand the restored draft. The send shortcut must
+      issue no additional request while the original send is pending. When the
+      original send is accepted, verify Home remains open with the edited draft
+      still expanded.
 
     Back inline, verify Enter sends with **Require ⌘ + enter to send** off. With
     it on, verify Enter inserts a line break and the shortcut sends. Check that
@@ -120,6 +125,8 @@ checks the current production assets with intercepted protocol fixtures at
 `http://127.0.0.1:4173`. It verifies button clearance, native line-break insertion,
 zero additional API requests during layout changes and newline insertion, and
 immediate return to the normal layout for held send responses in both themes.
+It also holds the new conversation's history refresh to verify that Home
+navigation proceeds after the send acknowledgment.
 Reports and screenshots are saved under
 `output/playwright/composer-fullscreen-*`. This is not live server validation.
 

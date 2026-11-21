@@ -24,6 +24,7 @@ export type ComposerProps = {
     isStopPending?: boolean;
     isInterruptingTurn?: boolean;
     isUpdatingSpeedMode?: boolean;
+    submissionPending?: boolean;
     disabled?: boolean;
     sendWithEnter?: boolean;
 };

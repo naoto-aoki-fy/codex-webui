@@ -628,6 +628,23 @@ describe('message visibility during sends and history synchronization', () => {
     expect(state.messages.value.filter((message) => message.text === nextUser.text)).toEqual([nextUser])
   })
 
+  it.each(['existing', 'steer', 'home'])('acknowledges a %s send while its history refresh is pending', async mode => {
+    const state = await loadState()
+    if (mode === 'steer') turnStarted()
+    const history = deferred<ResumedThread>()
+    gateway.getThreadDetail.mockReturnValueOnce(history.promise)
+    const settle = vi.fn()
+    const sending = mode === 'home' ? state.sendMessageToNewThread(nextUser.text, '/tmp/project')
+      : state.sendMessageToSelectedThread(nextUser.text)
+    void sending.then(settle)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gateway.startThreadTurn).toHaveBeenCalledOnce()
+    expect(gateway.getThreadDetail).toHaveBeenCalledOnce()
+    expect(settle).toHaveBeenCalledExactlyOnceWith(mode === 'home' ? thread.id : true)
+    history.resolve(activeDetail)
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
   it('fetches completion inside the two-second cache window and survives reload', async () => {
     const state = await loadState()
     gateway.startThreadTurn.mockImplementation(async () => { turnStarted(); return 'turn-2' })

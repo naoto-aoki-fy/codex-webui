@@ -44,7 +44,7 @@ export function createNativeQueue(deps:{selected:Ref<string>;epoch:Ref<number>;r
    const row=queueEntry(result?.queuedSubmission);if(row.clientId!==clientId)throw new Error('Queue acknowledgment identity mismatch')
    await writeQueueSubmissionReceipt(id,null,clientId)
    status.value=`Accepted by native queue: ${row.id}. Native settings apply when it runs.`
-   if(deps.selected.value===id){stale.value=true;await refresh()}
+   if(deps.selected.value===id){stale.value=true;void refresh()}
    return true
   }catch(e){if(token===writeJob){if(nativeWriteRejected(e)){try{await writeQueueSubmissionReceipt(id,null,clientId)}catch{/* Retain a conservative recovery marker if storage failed. */}status.value=`Native queue rejected the submission. ${nativeWriteError(e)}`}
    else{uncertainByThread.value={...uncertainByThread.value,[id]:`Queue outcome unknown. Client message: ${clientId}. Inspect queue and history before another submission. ${nativeWriteError(e)}`};status.value=uncertainByThread.value[id]!}}throw new Error(nativeWriteError(e))}
