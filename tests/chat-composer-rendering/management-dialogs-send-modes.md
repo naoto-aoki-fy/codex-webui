@@ -45,12 +45,12 @@ use a disposable native conversation and a supported independently managed serve
 
 ## Queue mode controls and submission
 
-1. Start a new conversation, including New conversation while already on Home.
-   Open **+** and confirm **Queue mode** starts off. Enter a draft and click the
-   switch. Confirm it turns on and the menu stays open. Press Enter and then
-   Space with the switch focused. Confirm it turns off and then on, with focus
-   still on the switch. Check the draft and verify that switching has issued
-   zero turn starts, steers or queue writes.
+1. Start a new conversation and select a workspace. Enter a draft, open **+**,
+   and confirm **Queue mode** starts off. Click the switch and confirm it turns
+   on and the menu stays open. Press Enter and then Space with the switch focused.
+   Confirm it turns off and then on, with focus still on the switch. Check the
+   draft and verify that switching has issued zero turn starts, steers or queue
+   writes.
 2. Before the first message, check the menu description and **Queue ×** above
    the draft. Send the first message and confirm it creates the conversation
    and starts a turn. Confirm **Queue ×** is still visible after navigation.
@@ -70,8 +70,10 @@ use a disposable native conversation and a supported independently managed serve
    draft stays editable and **Queue prompt** stays disabled.
 6. Enable Queue mode, switch to another existing conversation and revisit the
    original. Enable it again and reload. Confirm Queue mode is off after each
-   navigation or reload, with any saved draft intact. Opening or closing
-   management dialogs preserves the current selection.
+   navigation or reload, with any saved draft intact. From Home, select a
+   workspace if needed, enable Queue mode, and select **Start new thread** again.
+   Confirm Queue mode is off. Opening or closing management dialogs preserves the
+   current selection.
 
 Cleanup: close fixture pages. In a manual disposable thread, explicitly inspect
 and remove pending prompts using the existing confirmed queue actions, restore
