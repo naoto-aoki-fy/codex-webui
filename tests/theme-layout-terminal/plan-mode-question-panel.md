@@ -23,6 +23,11 @@ async function main() {
       })),
     })
     const historyDelay = Number(process.env.HISTORY_DELAY_MS ?? 0)
+    const replyMode = process.env.QUESTION_REPLY ?? 'approval'
+    const isDelayedReply = replyMode !== 'approval'
+    const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
+    let replyAttempts = 0
+    const fixtureThread = { ...thread }
     const questionTurn = {
       id: 'question-turn', status: 'completed',
       items: [
@@ -32,34 +37,53 @@ async function main() {
     }
     const { emit } = await setup(page, async (body, _page, url) => {
       if (url.pathname.endsWith('/server-requests/respond')) {
-        console.log('Request reply', JSON.stringify(body))
-        if (body.id === 200) {
+        if (body.id !== 200) {
+          console.log('Request reply', JSON.stringify(body))
+          return { json: { ok: true } }
+        }
+        replyAttempts++
+        if (replyMode === 'approval') {
+          console.log('Request reply', JSON.stringify(body))
           setTimeout(() => emit('server/request', {
             id: 201,
             method: 'item/commandExecution/requestApproval',
             params: { threadId: thread.id, turnId: 'latest', command: 'echo approved' },
           }), 500)
+        } else {
+          console.log('Question reply', { id: body.id, attempt: replyAttempts })
+          await delay(3000)
+          if (replyMode === 'retry' && replyAttempts === 1) {
+            return { status: 502, json: { error: 'Question reply was not sent.', code: 'question_reply_not_sent' } }
+          }
+          console.log('Codex closed the question')
+          emit('server/request/resolved', { id: body.id, threadId: thread.id })
+          await delay(5000)
+          if (replyMode === 'unconfirmed') {
+            return { status: 502, json: { error: 'Question reply could not be confirmed. Your draft is kept.' } }
+          }
         }
-        if (body.id === 200) {
-          const response = { id: 'saved-scope', threadId: thread.id, turnId: 'question-turn',
-            anchorItemId: 'before-question', submittedAt: new Date().toISOString(),
-            questions: [{ id: 'scope', heading: 'Documentation scope', answers: body.result.answers.scope.answers }] }
-          return { json: { ok: true, response, saved: true } }
-        }
-        return { json: { ok: true } }
+        const scope = { id: 'scope', heading: 'Documentation scope' }
+        const response = { id: 'saved-scope', threadId: thread.id, turnId: 'question-turn',
+          anchorItemId: 'before-question', submittedAt: new Date().toISOString(),
+          questions: [replyMode === 'approval' ? { ...scope, answers: body.result.answers.scope.answers } : { ...scope, provided: true }] }
+        return { json: { ok: true, response, saved: true } }
+      }
+      if (body.method === 'thread/list') {
+        return { json: { result: { data: [fixtureThread], nextCursor: null } } }
       }
       if (body.method === 'thread/resume' || body.method === 'thread/read') {
         const turns = [
           history('earlier', 'Earlier message'),
-          ...(historyDelay ? [] : [questionTurn]),
+          ...(historyDelay || isDelayedReply ? [] : [questionTurn]),
           history('later', 'Later message'),
           { id: 'latest', status: 'completed', items: [{ type: 'agentMessage', id: 'answer', text: 'Fixture answer' }] },
+          ...(isDelayedReply ? [questionTurn] : []),
         ]
-        return { json: { result: { thread: { ...thread, turns }, model: 'fixture-model', modelProvider: 'fixture', olderCursor: historyDelay ? 'older-fixture' : null } } }
+        return { json: { result: { thread: { ...fixtureThread, turns }, model: 'fixture-model', modelProvider: 'fixture', olderCursor: historyDelay ? 'older-fixture' : null } } }
       }
       if (body.method === 'thread/turns/list' && historyDelay) {
         console.log(`Returning the question turn in ${historyDelay} ms`)
-        await new Promise(resolve => setTimeout(resolve, historyDelay))
+        await delay(historyDelay)
         return { json: { result: { data: [questionTurn], nextCursor: null } } }
       }
     }, false)
@@ -73,6 +97,7 @@ async function main() {
       header: 'Documentation scope',
       question: 'Which scope should the plan use?',
       isOther: true,
+      isSecret: isDelayedReply,
       options: [
         { label: 'Quick update', description: 'Update the setup notes.' },
         { label: 'Full review', description: 'Review the whole guide.' },
@@ -84,6 +109,11 @@ async function main() {
       header: `Review section ${index + 1}`,
       isOther: false,
     })) : []
+    if (isDelayedReply) {
+      fixtureThread.status = { type: 'active', activeFlags: [] }
+      questionTurn.status = 'inProgress'
+      emit('turn/started', { threadId: thread.id, turn: questionTurn })
+    }
     emit('server/request', {
       id: 200,
       method: 'item/tool/requestUserInput',
@@ -128,9 +158,9 @@ NODE
 
 #### Automated fixture
 
-Run `node scripts/test-plan-mode-question-panel.cjs` against the same development server. It checks question placement, draft retention, keyboard toggles, reopening, approval and MCP input in the footer, and the jump flows above. The keyboard jump and history restoration both land inside the history pagination threshold and verify zero additional API requests. The fixture also checks that native closure changes the heading to **Awaiting confirmation…**, makes the fields read-only, clears the pending sidebar indicator, and restores **Stop**. Click **Stop** to send one interrupt for that turn. Send an ordinary prompt while the closed draft is visible and verify that it starts a new turn. Dismiss the retained draft. The fixture saves screenshots for each theme and viewport under `output/playwright/`.
+Run `node scripts/test-plan-mode-question-panel.cjs` against the same development server. It checks question placement, draft retention, keyboard toggles, reopening, approval and MCP input in the footer, and the jump flows above. The keyboard jump and history restoration both land inside the history pagination threshold and verify zero additional API requests. The fixture holds the submission HTTP response open to check that the card and question jump disappear immediately, two buffered clicks produce one request, and native closure clears the pending sidebar indicator and restores the composer and **Stop**. It clicks **Stop**, verifies one interrupt, and sends an ordinary prompt after the failure restores the draft. It also verifies retry, dismissal, and redacted history, and saves screenshots for each theme and viewport under `output/playwright/`.
 
-With a fresh pending question in the fixture, change the choice and type into **Other answer**. Return the choice to its default and clear the text. Simulate native closure or reconnect with an empty pending list. The card disappears. Repeat with edited text still present and check that **Unsent draft** appears. Collapse the card and select **Dismiss draft**. The card disappears without an API request. Finally, submit a reply and dismiss the collapsed card after native closure, while **Awaiting confirmation…** is visible. A successful reply through the original HTTP request still shows one redacted history entry. A failed reply leaves the card gone. Close the fixture browser to clear its drafts.
+The fixture also closes an unanswered question with the fields reset to their defaults and checks that the card disappears. With edited text, it checks that **Unsent draft** appears and **Dismiss draft** removes it without an API request.
 
 #### Cleanup
 
@@ -145,6 +175,30 @@ Close the fixture browser. Its theme preference and response are isolated from y
 5. Close fixture browsers, remove temporary fixture profile data, and unarchive any live thread used for the check if needed.
 
 #### Delivery confirmation and in-session drafts
+
+For each of the following cases, open a fresh fixture and repeat in light and
+dark. Open the Network panel and filter for `/server-requests/respond`.
+
+1. Replace `node` in the setup command with `QUESTION_REPLY=success node`.
+   Select **Full review**, enter a private value and press **Send** twice
+   quickly. While the HTTP response is pending, verify that the card and
+   **Jump to question** disappear and that the Network panel shows one response
+   submission. When the terminal prints that Codex closed the question, verify
+   that the regular composer and **Stop** return and the card stays hidden.
+   When the response completes, verify one history entry under the original
+   question turn with **Answer hidden**.
+2. Repeat with `QUESTION_REPLY=retry node`. After the first request fails,
+   verify the original choice, masked text, error and **Retry** reappear.
+   Click **Retry** once. Verify the card disappears and the Network panel shows
+   one additional request with the same answer. After closure and confirmation,
+   verify the card remains hidden and there is one redacted history entry.
+3. Repeat with `QUESTION_REPLY=unconfirmed node`. After closure and the failed
+   HTTP response, verify that the card returns with the original choice,
+   read-only masked text, the delivery error and **Dismiss draft**. Verify
+   there is no **Retry**, history entry or second request. Dismiss the draft and
+   close the fixture browser.
+
+Additional lifecycle checks:
 
 1. Run the question panel browser fixture in light and dark at 1280×900,
    768×1024 and 375×812. Choose **Full review** and enter text in the private
@@ -192,7 +246,7 @@ that asks Codex to use `request_user_input`. Answer the question and wait for
 successful turn completion. Verify one saved answer, masked private values,
 and one native reply with the default event settings. Reload the thread to
 resume it, check the saved bubble, and answer a second Plan question. Interrupt
-a third turn with **Stop** after Codex closes the question and while the card
-shows **Awaiting confirmation…**. Verify the interrupted turn has no saved
-answer, then dismiss its closed draft.
+a third turn with **Stop** after Codex closes the question while the card is
+hidden. Verify the interrupted turn has no saved answer and the draft returns
+with an error, then dismiss it.
 Archive the disposable thread and preserve the independent App Server process.

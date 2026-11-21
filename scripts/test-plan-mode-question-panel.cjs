@@ -108,10 +108,14 @@ async function verify(page, viewport, theme) {
   let pendingOnReload = null
   let historyResponse = null
   let secondHistoryResponse = null
-  let finishFailedReply
-  let finishInterruptedReply
   const delayedReplies = new Map()
-  let retryableAttempts = 0
+  const delayReply = id => {
+    let release
+    delayedReplies.set(id, new Promise(resolve => { release = resolve }))
+    return release
+  }
+  const finishInterruptedReply = delayReply(263)
+  const retryableAttempts = new Map()
   const turns = [
     { id: 'first-turn', status: 'completed', items: [{ type: 'agentMessage', id: 'first', text: 'Fixture start' }] },
     history('Earlier history'),
@@ -136,19 +140,23 @@ async function verify(page, viewport, theme) {
   })
   const { calls, emit, errors } = await setup(page, async (body, _page, url) => {
     if (url.pathname.endsWith('/server-requests/respond')) {
-      if (body.id === 260) return new Promise(resolve => { finishFailedReply = resolve })
-      if (body.id === 263) return new Promise(resolve => { finishInterruptedReply = resolve })
-      if (delayedReplies.has(body.id)) return delayedReplies.get(body.id)
-      if (body.id === 262 && ++retryableAttempts === 1) return { status: 502, json: {
-        error: 'Question reply was not sent. Your draft is kept. You can retry.', code: 'question_reply_not_sent',
-      } }
-      const request = [200, 201, 204, 262].includes(body.id) && body.result?.answers
+      const delayed = await delayedReplies.get(body.id)
+      if (delayed) return delayed
+      const privateScope = body.id === 262 || body.id === 269
+      if (privateScope) {
+        const attempts = (retryableAttempts.get(body.id) ?? 0) + 1
+        retryableAttempts.set(body.id, attempts)
+        if (attempts === 1) return { status: 502, json: {
+          error: 'Question reply was not sent. Your draft is kept. You can retry.', code: 'question_reply_not_sent',
+        } }
+      }
+      const request = ([200, 201, 204].includes(body.id) || privateScope) && body.result?.answers
       if (!request) return { json: { ok: true } }
       const turnId = body.id === 201 ? 'live' : body.id === 204 ? 'first-turn' : 'question-turn'
       const response = {
         id: 'answer-' + body.id, threadId: thread.id, turnId,
         anchorItemId: body.id === 201 ? 'live-agent' : body.id === 204 ? 'first' : 'question-agent', submittedAt: '2026-11-20T01:05:00.000Z',
-        questions: [
+        questions: privateScope ? [{ id: 'scope', heading: 'Documentation scope', provided: true }] : [
           { id: 'scope', heading: 'Documentation scope', answers: body.result.answers.scope.answers },
           { id: 'secret', heading: 'Private answer', provided: true },
         ],
@@ -189,6 +197,19 @@ async function verify(page, viewport, theme) {
   const jumpQuestion = page.getByRole('button', { name: 'Jump to question', exact: true })
   const jumpLatest = page.getByRole('button', { name: 'Jump to latest output', exact: true })
   const pager = list.getByRole('button', { name: 'Load earlier messages', exact: true })
+  const waitForReply = id => page.waitForRequest(request => new URL(request.url()).pathname === '/codex-api/server-requests/respond' &&
+    request.postDataJSON()?.id === id)
+  const assertQuestionHidden = async () => {
+    await panel.waitFor({ state: 'detached' })
+    await jumpQuestion.waitFor({ state: 'detached' })
+    assert.equal(await footer.locator('[data-pending-question-heading]').count(), 0)
+    assert.equal(await page.getByText(/Awaiting confirmation/).count(), 0)
+  }
+  const clickTwice = button => button.evaluate(element => {
+    // Deliver both clicks before Vue removes the card.
+    element.click()
+    element.click()
+  })
   const bottomGap = () => list.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)
   const outerScroll = () => list.evaluate(element => {
     const positions = []
@@ -428,10 +449,17 @@ async function verify(page, viewport, theme) {
 
   await showCardEnd()
   await jumpQuestion.waitFor()
-  await send.click()
-  await jumpQuestion.waitFor({ state: 'hidden' })
+  const releaseLongReply = delayReply(204)
+  const longSubmitted = waitForReply(204)
+  await clickTwice(send)
+  await longSubmitted
+  await assertQuestionHidden()
+  const longAnswer = list.locator('[data-message-id="question-response-answer-204"]')
+  assert.equal(await longAnswer.count(), 0)
+  releaseLongReply()
+  await longAnswer.waitFor()
+  await assertQuestionHidden()
   await input.waitFor()
-  assert.equal(await heading.count(), 0)
   assert.deepEqual(replies().at(-1).result.answers.scope.answers, ['Quick update', draft])
   assert.equal(replies().length, 5)
 
@@ -584,14 +612,16 @@ async function verify(page, viewport, theme) {
   await input.waitFor()
   const failedQuestion = questionRequest(260, 'question-turn')
   failedQuestion.params.questions[0].isSecret = true
+  const finishFailedReply = delayReply(260)
   emit('server/request', failedQuestion)
   await heading.waitFor()
   await choice.click()
   await panel.getByRole('button', { name: 'Full review', exact: true }).click()
   await other.fill(draft)
+  const failedSubmitted = waitForReply(260)
   await send.click()
-  await panel.getByRole('button', { name: 'Awaiting confirmation…' }).waitFor()
-  assert(finishFailedReply)
+  await failedSubmitted
+  await assertQuestionHidden()
   emit('server/request', {
     id: 261, method: 'item/commandExecution/requestApproval',
     params: { threadId: thread.id, turnId: 'live', command: 'echo replacement' },
@@ -648,7 +678,7 @@ async function verify(page, viewport, theme) {
   assert.equal(await panel.getByRole('alert').count(), 0)
   assert.equal(await choice.innerText(), defaultChoice)
   assert.equal(await other.inputValue(), '')
-  assert.equal(retryableAttempts, 1, 'dismissing the draft does not send a reply')
+  assert.equal(retryableAttempts.get(262), 1, 'dismissing the draft does not send a reply')
   const refreshedPending = page.waitForResponse(response => response.url().endsWith('/server-requests/pending'))
   emit('app-server/reconnected', {})
   await refreshedPending
@@ -664,6 +694,34 @@ async function verify(page, viewport, theme) {
     ['Full review', draft], [defaultChoice],
   ])
 
+  const retryQuestion = questionRequest(269, 'question-turn')
+  retryQuestion.params.questions[0].isSecret = true
+  emit('server/request', retryQuestion)
+  await heading.waitFor()
+  await choice.click()
+  await panel.getByRole('button', { name: 'Full review', exact: true }).click()
+  await other.fill(draft)
+  await send.click()
+  const retry = panel.getByRole('button', { name: 'Retry', exact: true })
+  await retry.waitFor()
+  await panel.getByRole('alert').filter({ hasText: 'Question reply was not sent' }).waitFor()
+  assert.equal(await choice.innerText(), 'Full review')
+  assert.equal(await other.inputValue(), draft)
+  assert.equal(await other.getAttribute('type'), 'password')
+  assert.equal(retryableAttempts.get(269), 1)
+  const releaseRetry = delayReply(269)
+  const retrySubmitted = waitForReply(269)
+  await clickTwice(retry)
+  await retrySubmitted
+  await assertQuestionHidden()
+  releaseRetry()
+  const retriedAnswer = list.locator('[data-message-id="question-response-answer-269"]')
+  await retriedAnswer.getByText('Answer hidden', { exact: true }).waitFor()
+  await assertQuestionHidden()
+  assert.deepEqual(replies().filter(reply => reply.id === 269).map(reply => reply.result.answers.scope.answers), [
+    ['Full review', draft], ['Full review', draft],
+  ])
+
   pendingOnReload = null
   const runningTurnId = 'running-after-question'
   emit('turn/started', { threadId: thread.id, turn: { id: runningTurnId, status: 'inProgress', items: [] } })
@@ -676,20 +734,20 @@ async function verify(page, viewport, theme) {
   if (viewport.width === 1280) await pendingChip.waitFor()
   assert.equal(await stop.isVisible(), false)
   await other.fill(draft)
+  const interruptedSubmitted = waitForReply(263)
   await send.click()
-  const confirming = panel.getByRole('button', { name: 'Awaiting confirmation…', exact: true })
-  await confirming.waitFor()
+  await interruptedSubmitted
+  await assertQuestionHidden()
+  assert.equal(await stop.isVisible(), false)
   emit('server/request/resolved', { id: 263, threadId: thread.id })
+  await input.waitFor()
   await stop.waitFor()
   await pendingChip.waitFor({ state: 'hidden' })
-  await confirming.and(heading).waitFor()
-  await dismiss.waitFor()
+  await assertQuestionHidden()
   assert.equal(await stop.isEnabled(), true)
-  assert.equal(await other.inputValue(), draft)
-  assert.equal(await other.getAttribute('readonly'), '')
-  assert.equal(await choice.isDisabled(), true)
+  assert.equal(await list.locator('[data-message-id="question-response-answer-263"]').count(), 0)
   if (await jumpLatest.isVisible()) await jumpLatest.click()
-  const stopScreenshot = resolve(output, `question-confirmation-stop-${viewport.width}-${theme}.png`)
+  const stopScreenshot = resolve(output, `question-submitted-stop-${viewport.width}-${theme}.png`)
   await page.waitForTimeout(2200)
   await page.screenshot({ path: stopScreenshot })
   await stop.click()
@@ -699,6 +757,9 @@ async function verify(page, viewport, theme) {
   ])
   assert.equal(replies().filter(reply => reply.id === 263).length, 1)
   assert.equal(await other.inputValue(), draft)
+  assert.equal(await other.getAttribute('readonly'), '')
+  assert.equal(await choice.isDisabled(), true)
+  assert.equal(await retry.count(), 0)
   const nextTurn = page.waitForRequest(request => new URL(request.url()).pathname === '/codex-api/rpc' &&
     request.postDataJSON()?.method === 'turn/start')
   await input.fill('Continue after the interrupted turn')
@@ -748,59 +809,51 @@ async function verify(page, viewport, theme) {
   await heading.click()
   emit('server/request/resolved', { id: unsentQuestion.id, threadId: thread.id })
   await heading.filter({ hasText: 'Unsent draft' }).and(page.locator('[aria-expanded="false"]')).waitFor()
+  const requestsBeforeDismiss = requests.length
   await dismiss.click()
-  await panel.waitFor({ state: 'hidden' })
+  await assertQuestionHidden()
+  assert.deepEqual(requests.slice(requestsBeforeDismiss), [], 'dismissing an unsent draft must not make API requests')
 
-  const collapsedDraftScreenshot = resolve(output, `question-draft-collapsed-${viewport.width}-${theme}.png`)
   for (const [id, success] of [[267, true], [268, false]]) {
-    let finishReply
-    delayedReplies.set(id, new Promise(resolve => { finishReply = resolve }))
+    const finishReply = delayReply(id)
     const request = questionRequest(id, 'follow-up')
     request.params.questions[0].isSecret = true
     emit('server/request', request)
     await heading.waitFor()
     await other.fill(draft)
-    const submitted = page.waitForRequest(request => new URL(request.url()).pathname === '/codex-api/server-requests/respond' &&
-      request.postDataJSON()?.id === id)
+    const submitted = waitForReply(id)
     await send.click()
     await submitted
-    await confirming.waitFor()
-    await heading.click()
+    await assertQuestionHidden()
     emit('server/request/resolved', { id, threadId: thread.id })
-    await confirming.and(heading).and(page.locator('[aria-expanded="false"]')).waitFor()
-    if (success) {
-      assert.equal(await panel.evaluate(element => element.scrollWidth <= element.clientWidth), true)
-      await dismiss.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(2200)
-      await page.screenshot({ path: collapsedDraftScreenshot })
-    }
-    const apiCount = requests.length
-    await dismiss.click()
-    await panel.waitFor({ state: 'hidden' })
-    emit('server/request/resolved', { id, threadId: thread.id })
-    await page.waitForTimeout(200)
-    assert.deepEqual(requests.slice(apiCount), [], 'dismissing during confirmation must not make API requests')
+    await input.waitFor()
+    await assertQuestionHidden()
     // The browser only receives the delayed confirmation through the original HTTP reply.
-    const httpReply = page.waitForResponse(response => response.url().endsWith('/server-requests/respond') &&
-      response.request().postDataJSON()?.id === id)
     finishReply(success ? { json: { ok: true, saved: true, response: {
       id: 'answer-' + id, threadId: thread.id, turnId: 'follow-up', submittedAt: '2026-11-20T01:05:00.000Z',
       questions: [{ id: 'scope', heading: 'Documentation scope', provided: true }],
-    } } } : { status: 502, json: { error: 'Question reply could not be confirmed. Your draft is kept.' } })
-    await (await httpReply).finished()
+    } } } : { status: 502, json: { error: 'Question reply was not sent.', code: 'question_reply_not_sent' } })
     const answer = list.locator('[data-message-id="question-response-answer-' + id + '"]')
     if (success) {
       await answer.getByText('Answer hidden', { exact: true }).waitFor()
       assert.equal(await answer.count(), 1)
+      assert.equal(await answer.getByText(draft, { exact: false }).count(), 0)
+      await assertQuestionHidden()
     } else {
+      await panel.getByRole('alert').filter({ hasText: 'Question reply was not sent' }).waitFor()
+      assert.equal(await heading.innerText(), 'Unsent draft')
+      assert.equal(await other.inputValue(), draft)
+      assert.equal(await other.getAttribute('readonly'), '')
+      assert.equal(await retry.count(), 0)
       assert.equal(await answer.count(), 0)
+      await dismiss.click()
+      await assertQuestionHidden()
     }
-    await panel.waitFor({ state: 'hidden' })
     assert.equal(replies().filter(reply => reply.id === id).length, 1)
   }
 
   assert.deepEqual(errors, [])
-  return { url, viewport, theme, stopScreenshot, failedScreenshot, dismissedScreenshot, collapsedDraftScreenshot, answerScreenshot, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0, dismissApiRequests: 0 }
+  return { url, viewport, theme, stopScreenshot, failedScreenshot, dismissedScreenshot, answerScreenshot, jumpActions, expanded, minimized, historyRestored, keyboardHistoryRestored, historyActions, colors, readingPosition: positionBefore, toggleApiRequests: 0, jumpApiRequests: 0, extraHistoryJumpRequests: 0, dismissApiRequests: 0 }
 }
 
 async function main() {

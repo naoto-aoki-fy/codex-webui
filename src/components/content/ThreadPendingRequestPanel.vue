@@ -234,9 +234,9 @@
             <button v-if="canRetryQuestion" type="button" class="thread-pending-request-secondary"
               @click="emit('dismissQuestionDraft', request.id)">Dismiss draft</button>
             <button v-if="!request.questionClosed && (!questionError || canRetryQuestion)" type="button" class="thread-pending-request-primary"
-              :disabled="isAwaitingQuestionConfirmation || !hasToolAnswer"
+              :disabled="!hasToolAnswer"
               @click="onRespondToolRequestUserInput(request)">
-              {{ isAwaitingQuestionConfirmation ? 'Awaiting confirmation…' : (canRetryQuestion ? 'Retry' : 'Send') }}
+              {{ canRetryQuestion ? 'Retry' : 'Send' }}
             </button>
           </footer>
         </section>
@@ -322,10 +322,8 @@ const questionBodyId = useId()
 const selectedApprovalDecision = ref<ApprovalDecision>('accept')
 const approvalFreeformText = ref('')
 const questionAttempt = computed(() => props.questionDraft?.attempt)
-const questionError = computed(() => props.request?.questionClosed && questionAttempt.value?.retryable
-  ? '' : questionAttempt.value?.error || '')
+const questionError = computed(() => questionAttempt.value?.error || '')
 const canRetryQuestion = computed(() => questionAttempt.value?.retryable && !props.request?.questionClosed && !props.request?.answerAttempted)
-const isAwaitingQuestionConfirmation = computed(() => !questionError.value && Boolean(questionAttempt.value || props.request?.answerAttempted))
 const hasToolAnswer = computed(() => {
   const request = props.request
   return request && readToolQuestions(request).some(question =>
@@ -404,9 +402,7 @@ function requestPanelTitle(request: UiServerRequest): string {
   if (isMcpElicitationRequest(request)) return 'MCP server input required'
   if (request.method === QUESTION_REQUEST) {
     if (!request.questionClosed) return 'Awaiting response'
-    if (questionError.value) return 'Answer unconfirmed'
-    if (questionAttempt.value && !questionAttempt.value.retryable) return 'Awaiting confirmation…'
-    return 'Unsent draft'
+    return questionError.value && !questionAttempt.value?.retryable ? 'Answer unconfirmed' : 'Unsent draft'
   }
   if (request.method === 'item/tool/call') return 'Tool call waiting for response'
   return request.method
