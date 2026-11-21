@@ -69,7 +69,7 @@ export function createComposerInput(deps: {
     const canSubmit = computed(() => {
         if(queueMode.value&&deps.props.activeThreadId!=='__new-thread__'&&!deps.props.queueReady)return false;
         if (appsUnavailable.value) return false;
-        if (isSubmitting.value)
+        if (isSubmitting.value || deps.props.submissionPending)
             return false;
         if (deps.props.disabled)
             return false;

@@ -34,6 +34,27 @@ it('requires an observed supported list, sends structured input once and validat
  const pending=owner.add(payload);await expect(owner.add(payload)).rejects.toThrow();await vi.waitFor(()=>expect(sent).toBeTruthy());expect(sent.clientUserMessageId).toBeTruthy();resolve({queuedSubmission:queued(sent.clientUserMessageId)})
  await expect(pending).resolves.toBe(true);expect(request.mock.calls.filter(c=>c[0]==='thread/queue/add')).toHaveLength(1);stop()
 })
+it('acknowledges registration while refreshing the queue and blocks another add until the refresh finishes', async () => {
+ const entry = queued()
+ let releaseRefresh!: (page: { data: typeof entry[]; nextCursor: null }) => void
+ const refresh = new Promise<{ data: typeof entry[]; nextCursor: null }>(resolve => { releaseRefresh = resolve })
+ let listRequests = 0
+ const request = vi.fn(async (method, params) => {
+  if (method === 'thread/queue/list') return ++listRequests === 1 ? { data: [], nextCursor: null } : refresh
+  return { queuedSubmission: { ...entry, clientUserMessageId: params.clientUserMessageId } }
+ })
+ const { owner, stop } = setup(request)
+ await owner.refresh()
+ await expect(owner.add(payload)).resolves.toBe(true)
+ expect(owner.reading.value).toBe(true)
+ expect(owner.status.value).toContain('Accepted by native queue')
+ await expect(owner.add(payload)).rejects.toThrow('Read')
+ releaseRefresh({ data: [entry], nextCursor: null })
+ await vi.waitFor(() => expect(owner.available.value).toBe(true))
+ expect(owner.rows.value.map(row => row.id)).toEqual(['q'])
+ expect(request.mock.calls.filter(([method]) => method === 'thread/queue/add')).toHaveLength(1)
+ stop()
+})
 it('preserves images, local file prompt, skill and exact native app mentions',()=>{
  const input=queuedInput({...payload,imageUrls:['data:image/png;base64,AAAA'],fileAttachments:[{label:'a',path:'/remote/a',fsPath:'/remote/a'}],skills:[{name:'skill',path:'/remote/SKILL.md'}],apps:[{id:'native-id',name:'Native app'}]})
  expect(input.map(p=>p.type)).toEqual(['text','image','skill','mention']);expect(input[0]?.text).toContain('/remote/a');expect(input[3]?.path).toBe('app://native-id')

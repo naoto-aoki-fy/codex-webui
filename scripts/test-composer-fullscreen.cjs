@@ -86,13 +86,15 @@ async function waitForSubmitEnabled(page) {
         let uploadPath = '/remote/uploads/fullscreen.txt'
         let pendingSubmission
         let createdThreadCount = 0
+        let releaseAcceptedHistory
+        const acceptedHistory = new Promise(resolve => { releaseAcceptedHistory = resolve })
         const holdSubmission = () => {
           let release
           pendingSubmission = new Promise(resolve => { release = resolve })
           return response => { pendingSubmission = undefined; release(response) }
         }
         await page.route('**/codex-local-image?*', route => route.fulfill({ contentType:'image/png', body:png }))
-        const { calls, errors, emit } = await setup(page, (body, _page, url) => {
+        const { calls, errors, emit } = await setup(page, async (body, _page, url) => {
           if (url.pathname.endsWith('/upload-file')) return { json:{ path:uploadPath } }
           if (url.pathname.endsWith('/server-requests/respond')) return { json:{ ok:true } }
           if (body.method === 'model/list') return { json:{ result:{ data:['fixture-model', 'fixture-alternative'].map(model => ({ id:model, model, supportedReasoningEfforts:['low','high'], defaultReasoningEffort:'low' })), nextCursor:null } } }
@@ -102,6 +104,7 @@ async function waitForSubmitEnabled(page) {
             return { json:{ result:{ thread:created, model:'fixture-model', modelProvider:'fixture' } } }
           }
           if (['thread/read', 'thread/resume'].includes(body.method) && body.params.threadId?.startsWith('fullscreen-new-')) {
+            if (body.params.threadId === 'fullscreen-new-2' && body.params.includeTurns) await acceptedHistory
             return { json:{ result:{ thread:{ ...thread, id:body.params.threadId, name:'New fullscreen fixture', turns:[] }, model:'fixture-model', modelProvider:'fixture' } } }
           }
           if (body.method === 'thread/queue/list') return { json:{ result:{ data:[], nextCursor:null } } }
@@ -369,12 +372,39 @@ async function waitForSubmitEnabled(page) {
         await page.waitForURL('**/#/thread/fullscreen-new-2')
         await expand.waitFor()
         acceptedHome.assertSingleSubmission()
+        const acceptedHistoryCalls = calls.filter(call => call.method === 'thread/read' && call.params.threadId === 'fullscreen-new-2' && call.params.includeTurns)
+        assert.equal(acceptedHistoryCalls.length, 1, 'navigation reuses the held history request')
+        releaseAcceptedHistory()
         await page.evaluate(() => { window.location.hash = '#/' })
         await page.locator('.new-thread-empty').waitFor()
         assert.equal(await input.inputValue(), '')
 
+        await page.locator('.new-thread-folder-dropdown .composer-dropdown-trigger').click()
+        await page.locator('.composer-dropdown-option').filter({ hasText:'Fixture project' }).click()
+        const homeHash = await page.evaluate(() => window.location.hash)
+        const detachedHome = await beginExpandedSubmission(page, calls, holdSubmission, {
+          text:'Fullscreen draft before navigation', label:'Send message', createsThread:true,
+        })
+        await page.evaluate(() => { window.location.hash = '#/thread/approved-fixture' })
+        await page.getByText('Fixture answer', { exact:true }).waitFor()
+        await page.evaluate(hash => { window.location.hash = hash }, homeHash)
+        await page.locator('.new-thread-empty').waitFor()
+        assert.equal(await input.inputValue(), 'Fullscreen draft before navigation')
+        await expand.click()
+        await input.fill('Edited after returning to Home')
+        assert.equal(await page.getByRole('button', { name:'Send message', exact:true }).isDisabled(), true)
+        await input.press('Control+Enter')
+        assert.equal(await exit.isVisible(), true)
+        detachedHome.assertSingleSubmission()
+        detachedHome.release(acceptedTurn)
+        await waitForSubmitEnabled(page)
+        assert.equal(await page.evaluate(() => window.location.hash), homeHash)
+        assert.equal(await input.inputValue(), 'Edited after returning to Home')
+        assert.equal(await exit.isVisible(), true)
+        detachedHome.assertSingleSubmission()
+
         assert.deepEqual(errors, [])
-        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, screenshot, submitScreenshot, composerBox, background, zeroApiToggleCycles:3, toggleRoundTripMs:cycles, submissions:5 })
+        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, screenshot, submitScreenshot, composerBox, background, zeroApiToggleCycles:3, toggleRoundTripMs:cycles, submissions:6, heldHomeHistoryRequests:acceptedHistoryCalls.length })
         console.log('PASS', viewport.width, theme, 'full screen, native Enter, attachments, held sends, draft recovery, steering, queue, Home, zero-request cycles')
         await page.close()
       }

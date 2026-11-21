@@ -309,6 +309,7 @@ export function createDesktopTurns(deps: {
                 effort: context.reasoningEffort,
                 collaborationMode,
             });
+        const pendingRequest = pendingTurnRequestByThreadId.value[threadId];
         const ownsAttempt = () => generation === deps.lifecycleGeneration;
         let submissionAttempted = false;
         let submissionAccepted = false;
@@ -349,9 +350,12 @@ export function createDesktopTurns(deps: {
             }
             deps.pendingThreadMessageRefresh.add(threadId);
             context.onAccepted?.();
-            await deps.syncFromNotifications();
-            if (generation === deps.lifecycleGeneration)
-                deps.scheduleDelayedTurnSync(threadId);
+            // The write is acknowledged. History reconciliation can finish independently.
+            void deps.syncFromNotifications().then(() => {
+                if (generation === deps.lifecycleGeneration && pendingRequest
+                    && pendingTurnRequestByThreadId.value[threadId] === pendingRequest)
+                    deps.scheduleDelayedTurnSync(threadId);
+            });
         }
         catch (unknownError) {
             if (!ownsAttempt())

@@ -1,4 +1,4 @@
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, shallowRef } from 'vue'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createAppTransferDialog } from './appTransferDialog'
 import { createAppRouteCoordinator } from './appRouteCoordinator'
@@ -156,14 +156,14 @@ it('does not let a cancelled preparation replace a newer dialog provider (CAP-00
   expect(cancelConversationTransfer).toHaveBeenCalledExactlyOnceWith('old-snapshot')
 })
 function routing(projectId = 'native-project') {
-  const route = reactive({ name: 'thread', fullPath: '/thread/A' })
+  const route = shallowRef({ name: 'thread', fullPath: '/thread/A' })
   const target = ref('A'), selected = ref('')
   const selectThread = vi.fn(async (id: string) => { selected.value = id; return 'ok' as const })
   const send = vi.fn(async () => 'new-thread'), replace = vi.fn(async () => {})
-  const controller = createAppRouteCoordinator({ route, routeThreadId: computed(() => target.value),
+  const controller = createAppRouteCoordinator({ routeThreadId: computed(() => target.value),
     selectedThreadId: selected, selectThread, ensureThreadMessagesLoaded: vi.fn(async () => {}),
     newThreadCwd: ref('/fixture'), desktopError: ref(''), sendMessageToNewThread: send,
-    newThreadProjectId: computed(() => projectId), router: { replace }, scheduleMobileConversationJumpToLatest: vi.fn(),
+    newThreadProjectId: computed(() => projectId), router: { replace, currentRoute: route }, scheduleMobileConversationJumpToLatest: vi.fn(),
   })
   return { controller, route, target, selected, selectThread, send, replace }
 }
@@ -189,24 +189,22 @@ it('does not navigate or replay a failed first submission', async () => {
   expect(f.send).toHaveBeenCalledTimes(1)
   expect(f.replace).not.toHaveBeenCalled()
 })
-it.each([true, false])('settles the first draft before navigation and respects a route change (stay on Home=%s)', async stayOnHome => {
+it.each(['stay', 'leave', 'return'])('settles before navigation when the original Home visit is current (%s)', async navigation => {
   const f = routing()
-  f.route.name = 'home'
-  f.route.fullPath = '/?cwd=/fixture'
+  const home = { name: 'home', fullPath: '/?cwd=/fixture' }
+  f.route.value = home
   const pending = deferred<string>()
   const accepted = vi.fn(() => { expect(f.replace).not.toHaveBeenCalled() })
   f.send.mockReturnValueOnce(pending.promise)
   const submission = f.controller.submitFirstMessageForNewThread('prompt', [], [], [], accepted)
   expect(accepted).not.toHaveBeenCalled()
   expect(f.replace).not.toHaveBeenCalled()
-  if (!stayOnHome) {
-    f.route.name = 'thread'
-    f.route.fullPath = '/thread/B'
-  }
+  if (navigation !== 'stay') f.route.value = { name: 'thread', fullPath: '/thread/B' }
+  if (navigation === 'return') f.route.value = { ...home }
   pending.resolve('new-thread')
   await expect(submission).resolves.toBe(true)
   expect(accepted).toHaveBeenCalledOnce()
-  expect(f.replace).toHaveBeenCalledTimes(Number(stayOnHome))
+  expect(f.replace).toHaveBeenCalledTimes(Number(navigation === 'stay'))
 })
 it.each([
   { projectId: '', expected: undefined },

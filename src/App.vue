@@ -214,6 +214,8 @@
                 :inert="!newThreadCwd.trim()" :aria-disabled="!newThreadCwd.trim()">
                 <ThreadComposer @update:expanded="isComposerExpanded=$event" ref="homeThreadComposerRef" :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
+                  :submission-pending="pendingComposerSubmissions.has(composerThreadContextId)"
+                  :connection-epoch="operationEpoch"
                   :selected-queue-mode="composerSendMode.queue.value"
                   @update:selected-queue-mode="composerSendMode.queue.value=$event"
                   :disabled="modelPreferencesLoading || !newThreadCwd.trim()"
@@ -283,6 +285,7 @@
                   :has-pending-request="!!selectedThreadPendingRequest"
                   :disabled="nativeDeletion?.selectedBlocking.value || isSelectedThreadImportIncomplete || compaction.selectedBusy.value || review.selectedBusy.value || permissionChanges.blocking.value"
                   :active-thread-id="composerThreadContextId"
+                  :submission-pending="pendingComposerSubmissions.has(composerThreadContextId)"
                   :queue-ready="nativeQueue.available.value"
                   :cwd="composerCwd"
                   :selected-queue-mode="composerSendMode.queue.value"
@@ -406,7 +409,7 @@ import { createAppTransferDialog } from './appTransferDialog'
 
 
 import { parseModelSelection } from './api/modelCapabilities'
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNewThreadCwdRoute } from './composables/useNewThreadCwdRoute'
 import { useThreadTabIndicator } from './composables/useThreadTabIndicator'
@@ -440,7 +443,7 @@ import { useSidebarMessageSearch } from './composables/useSidebarMessageSearch'
 import { getHomeDirectory } from './api/codexGateway'
 import { QUESTION_REQUEST } from './serverRequestMethod'
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
-import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
+import type { SubmitPayload, ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import { normalizePathForUi } from './pathUtils.js'
 import { formatChatPageTitle, getChatFolderName, getThreadContextLabel } from './utils/chatFolderLabels'
 import { copyTextToClipboard } from './utils/clipboard'
@@ -594,12 +597,12 @@ const route = useRoute()
 const router = useRouter()
 const { isMobile } = useMobile()
 const isComposerExpanded = ref(false)
+const pendingComposerSubmissions = reactive(new Set<string>())
 const homeThreadComposerRef = ref<ThreadComposerExposed | null>(null)
 const threadGoalPanelRef = ref<InstanceType<typeof ThreadGoalPanel> | null>(null)
 const threadComposerRef = ref<ThreadComposerExposed | null>(null)
 const threadConversationRef = ref<{ jumpToLatest: () => void } | null>(null)
 const routing = createAppRouteCoordinator({
-  get route() { return route; },
   get selectedThreadId() { return selectedThreadId; },
   get selectThread() { return selectThread; },
   get routeThreadId() { return routeThreadId; },
@@ -1137,16 +1140,25 @@ async function revealNativeQueue() {
 }
 
 function onSubmitThreadMessage(
-  payload: { queue?:boolean; apps?: import('./api/apps').AppReference[]; text: string; imageUrls: string[]; fileAttachments: Array<{ label: string; path: string; fsPath: string }>; skills: Array<{ name: string; path: string }> },
-  settle: (accepted: boolean) => void,
+  payload: SubmitPayload,
+  onSettled: (accepted: boolean) => void,
 ): void {
+  const submittedContext = composerThreadContextId.value
+  if (pendingComposerSubmissions.has(submittedContext)) {
+    onSettled(false)
+    return
+  }
+  pendingComposerSubmissions.add(submittedContext)
+  const settle = (accepted: boolean) => {
+    pendingComposerSubmissions.delete(submittedContext)
+    onSettled(accepted)
+  }
   scheduleMobileConversationJumpToLatest()
   if (isHomeRoute.value && !payload.queue) {
     void routing.submitFirstMessageForNewThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments, () => settle(true))
       .then(accepted => { if (!accepted) settle(false) })
     return
   }
-  const submittedContext = composerThreadContextId.value
   const submittedMode = composerCollaborationMode.value
   const submittedEpoch = operationEpoch.value
   const submission = payload.queue

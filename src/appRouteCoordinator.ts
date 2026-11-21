@@ -4,7 +4,6 @@ import type { RouteLocationNormalizedLoadedGeneric, Router } from 'vue-router';
 import type { FileAttachment } from './utils/composerDraftStorage';
 /** Owns serialized route-selection work and first-submission navigation. Route watchers and startup remain in App; pending selection coalesces through one per-instance gate. */
 export function createAppRouteCoordinator(deps: {
-    route: Pick<RouteLocationNormalizedLoadedGeneric, 'name' | 'fullPath'>;
     selectedThreadId: Ref<string, string>;
     selectThread: (threadId: string) => Promise<'ok' | 'not-found' | 'error'>;
     routeThreadId: ComputedRef<string>;
@@ -19,7 +18,7 @@ export function createAppRouteCoordinator(deps: {
     }>, fileAttachments?: FileAttachment[], projectId?: string) => Promise<string>;
     newThreadProjectId: ComputedRef<string>;
     onThreadCreated?: (threadId: string) => void;
-    router: Pick<Router, 'replace'>;
+    router: Pick<Router, 'replace'> & { currentRoute: Readonly<Ref<Pick<RouteLocationNormalizedLoadedGeneric, 'name'>>> };
     scheduleMobileConversationJumpToLatest: () => void;
 }) {
     const isRouteSyncInProgress = ref(false);
@@ -33,13 +32,14 @@ export function createAppRouteCoordinator(deps: {
         try {
             do {
                 hasPendingRouteSync = false;
-                if (deps.route.name === 'home' || deps.route.name === 'skills') {
+                const routeName = deps.router.currentRoute.value.name;
+                if (routeName === 'home' || routeName === 'skills') {
                     if (deps.selectedThreadId.value !== '') {
                         await deps.selectThread('');
                     }
                     continue;
                 }
-                if (deps.route.name === 'thread') {
+                if (routeName === 'thread') {
                     const threadId = deps.routeThreadId.value;
                     if (!threadId)
                         continue;
@@ -69,7 +69,7 @@ export function createAppRouteCoordinator(deps: {
         path: string;
         fsPath: string;
     }> = [], onAccepted?: () => void): Promise<boolean> {
-        const submittedPath = deps.route.fullPath;
+        const submittedRoute = deps.router.currentRoute.value;
         const targetCwd = deps.newThreadCwd.value;
         if (!targetCwd.trim()) {
             deps.desktopError.value = 'Select an existing workspace before starting a conversation.';
@@ -80,7 +80,7 @@ export function createAppRouteCoordinator(deps: {
         if (!threadId)
             return false;
         onAccepted?.();
-        if (deps.route.fullPath !== submittedPath)
+        if (deps.router.currentRoute.value !== submittedRoute)
             return true;
         try {
             deps.onThreadCreated?.(threadId);
