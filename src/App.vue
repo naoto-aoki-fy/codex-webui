@@ -491,6 +491,7 @@ const {
   projectGroups,
   projectDisplayNameById, projects,
   selectedThread,
+  selectedThreadWorkspace,
   selectedThreadGoal,
   selectedThreadTokenUsage,
   selectedThreadServerRequests,
@@ -804,17 +805,17 @@ const threadContextTooltip = computed(() => buildThreadContextTooltip(selectedTh
 const newThreadFolderOptions = computed(() => projects.value.map(project => ({ value: project.id, label: project.name })))
 const nativeProjectIds = computed(() => projects.value.map(project => project.id))
 const projectRootById = computed(() => new Map(projects.value.map(project => [project.id, project.roots[0]?.path ?? ''])))
-const projectFallbackCwdById = computed(() => new Map(projectGroups.value.map(group => [
+const projectFallbackCwdById = computed(() => new Map(sidebarSearchGroups.value.map(group => [
   group.projectName, group.threads.find(thread => thread.cwd?.trim())?.cwd?.trim() ?? '',
 ])))
 
 const toolbarNewThreadTarget = computed<NewThreadTarget>(() => {
   if (isHomeRoute.value) return { cwd: newThreadCwd.value, projectId: newThreadProjectId.value }
-  const thread = selectedThread.value
-  if (!thread || thread.id !== routeThreadId.value) return { cwd: '' }
+  const workspace = selectedThreadWorkspace.value
+  if (!workspace || selectedThreadId.value !== routeThreadId.value) return { cwd: '' }
 
-  const projectId = thread.projectId || undefined
-  const cwd = (projectId && projectRootById.value.get(projectId)) || thread.cwd?.trim() || ''
+  const projectId = workspace.projectId || undefined
+  const cwd = (projectId && projectRootById.value.get(projectId)) || workspace.cwd.trim()
   return { cwd, projectId }
 })
 const toolbarNewThreadHref = computed(() => sidebarHref(router, newThreadRoute(toolbarNewThreadTarget.value)))

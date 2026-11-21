@@ -9,6 +9,7 @@ const outputDir = resolve('output/playwright')
 const folder = '/work/日本語 + # & % ?'
 const emptyProject = { id: 'empty & test', name: 'Empty project', roots: [{ path: '/work/空 + #' }], position: 1, metadata: {} }
 const pinned = { ...thread, id: 'pinned-fixture', name: 'Pinned fixture' }
+const olderPinned = { ...thread, id: 'older-pinned-fixture', name: 'Older pinned fixture', cwd: folder, projectId: null }
 const unassigned = { ...thread, id: 'folder-fixture', name: 'Folder fixture', cwd: folder, projectId: null }
 const blank = { ...thread, id: 'blank-fixture', name: 'No folder fixture', cwd: '', projectId: null }
 const stale = { ...thread, id: 'stale-fixture', name: 'Stale project fixture', projectId: 'stale-project' }
@@ -136,7 +137,7 @@ async function run(browser, viewport, theme) {
     let threads = [thread, pinned, unassigned, blank, stale, disposable]
     let projects = [{ id: 'p', name: 'Fixture project', roots: [{ path: '/remote/project' }], position: 0, metadata: {} }, emptyProject]
     const { calls, items } = await setup(page, (body, _, url) => {
-      if (url.pathname.endsWith('/thread-pins')) return { json: { data: { threadIds: [pinned.id] } } }
+      if (url.pathname.endsWith('/thread-pins')) return { json: { data: { threadIds: [pinned.id, olderPinned.id] } } }
       if (body.method === 'thread/list') return rpc({ data: threads, nextCursor: null })
       if (body.method === 'project/list') return rpc({ data: projects, nextCursor: null })
       if (body.method === 'thread/archive') {
@@ -148,9 +149,9 @@ async function run(browser, viewport, theme) {
         return rpc({})
       }
       if (['thread/read', 'thread/resume'].includes(body.method) && body.params.threadId !== thread.id) {
-        const target = threads.find(row => row.id === body.params.threadId)
+        const target = body.params.threadId === olderPinned.id ? olderPinned : threads.find(row => row.id === body.params.threadId)
         if (target) return rpc({
-          thread: { ...target, turns: [{ id: 't', status: 'completed', items }] },
+          thread: { ...target, turns: body.params.includeTurns === false ? [] : [{ id: 't', status: 'completed', items }] },
           model: 'fixture-model', modelProvider: 'fixture',
         })
       }
@@ -223,6 +224,18 @@ async function run(browser, viewport, theme) {
       assert.equal(await page.locator('.thread-menu-panel, .project-menu-panel').count(), 0)
       assert.equal(page.url(), originalUrl)
       await openTab(page, () => pinnedLink.click({ modifiers: ['ControlOrMeta'] }), tab => assertThread(tab, pinned))
+      const olderPinnedLink = threadRow(page, olderPinned.name).locator('a')
+      await openTab(page, () => olderPinnedLink.click({ modifiers: ['ControlOrMeta'] }), async tab => {
+        await tab.waitForURL('**/#/thread/' + olderPinned.id)
+        await tab.getByText('Fixture answer', { exact: true }).waitFor()
+        const destination = tab.locator(headerClass).getByRole('link', { name: 'Start new thread', exact: true })
+        assert.deepEqual(queryOf(await destination.getAttribute('href')), { cwd: folder })
+      })
+      const olderPinnedDots = threadRow(page, olderPinned.name).getByRole('button', { name: 'Thread actions' })
+      await olderPinnedDots.press('Enter')
+      const olderPinnedMenuItem = page.locator('.thread-menu-panel').getByRole('button', { name: 'Open in new tab', exact: true })
+      await olderPinnedMenuItem.waitFor()
+      await olderPinnedMenuItem.press('Escape')
       await openTab(page, () => threadRow(page, unassigned.name).locator('.thread-row-time').click({ button: 'middle' }), tab => assertThread(tab, unassigned))
       await openTab(page, () => groupRow(folderGroup).click({ button: 'middle' }), tab => assertCreation(tab, { cwd: folder }))
       await folderGroup.getByRole('button', { name: 'Folder actions', exact: true }).click()
@@ -324,8 +337,28 @@ async function run(browser, viewport, theme) {
     await confirm.click()
     await threadRow(page, disposable.name).waitFor({ state: 'detached' })
     assert.deepEqual(calls.filter(call => call.method === 'thread/archive').map(call => call.params.threadId), [disposable.id])
+
+    const olderPinRequests = requests.length
+    await checkClickedOnce(page, () => threadRow(page, olderPinned.name).locator('a').click(), async () => {
+      await page.waitForURL('**/#/thread/' + olderPinned.id)
+      await page.getByText('Fixture answer', { exact: true }).waitFor()
+      await page.waitForFunction(({ selector, cwd }) => {
+        const link = document.querySelector(selector)
+        return new URLSearchParams(link?.hash.slice(3)).get('cwd') === cwd
+      }, { selector: headerClass + ' a[aria-label="Start new thread"]', cwd: folder })
+    })
+    if (mobile) await page.locator('.mobile-drawer').waitFor({ state: 'hidden' })
+    const olderPinReads = requests.slice(olderPinRequests).map(request => request.body)
+      .filter(body => body?.params?.threadId === olderPinned.id && ['thread/read', 'thread/resume'].includes(body.method))
+    assert.deepEqual(olderPinReads.map(call => call.method), ['thread/resume'])
+    await checkClickedOnce(page, () => toolbar.click(), () => assertCreation(page, { cwd: folder }))
+
     assert.deepEqual(errors, [])
-    return { theme, url: testedUrl, viewport, screenshot, groupRequests, selectedThreadRequests: selectedCalls.map(call => call.method) }
+    return {
+      theme, url: testedUrl, viewport, screenshot, groupRequests,
+      selectedThreadRequests: selectedCalls.map(call => call.method),
+      olderPinRequests: olderPinReads.map(call => call.method),
+    }
   } finally {
     await context.close()
   }

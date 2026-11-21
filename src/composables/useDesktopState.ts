@@ -504,6 +504,9 @@ export function useDesktopState({ onSelectedThreadAttention }: {
   const selectedThread = computed(() =>
     allThreads.value.find((thread) => thread.id === selectedThreadId.value) ?? null,
   )
+  const selectedThreadWorkspace = computed(() =>
+    selectedThread.value ?? history.historyReadOwnerByThreadId.get(selectedThreadId.value)?.workspace.value,
+  )
   const isSelectedThreadInterruptPending = computed(() => {
     const threadId = selectedThreadId.value
     if (!threadId) return false
@@ -2812,6 +2815,7 @@ export function useDesktopState({ onSelectedThreadAttention }: {
       const owner = history.historyReadOwner(threadId)
       const detail = await getThreadDetailForRevert(threadId)
       if (history.historyReadOwnerByThreadId.get(threadId) !== owner) return ''
+      owner.workspace.value = detail.workspace
       setPersistedMessagesForThread(threadId, detail.messages)
       history.retainQuestionResponses(threadId, detail.questionResponses ?? [], detail.turnIndexByTurnId)
       turnIndexByTurnIdByThreadId.value = { ...turnIndexByTurnIdByThreadId.value, [threadId]: detail.turnIndexByTurnId }
@@ -2982,6 +2986,7 @@ export function useDesktopState({ onSelectedThreadAttention }: {
     projectGroups,
     projectDisplayNameById, projects,
     selectedThread,
+    selectedThreadWorkspace,
     selectedThreadTokenUsage,
     isSelectedThreadInterruptPending,
     selectedThreadServerRequests,

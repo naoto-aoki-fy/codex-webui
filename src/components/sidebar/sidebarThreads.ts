@@ -54,8 +54,7 @@ export function createSidebarThreads(deps: {
         if (deps.props.newThreadCwd !== undefined) {
             return deps.props.newThreadCwd.trim() ? folderGroupKey(deps.props.newThreadCwd) : null;
         }
-        const id = deps.props.selectedThreadId;
-        const thread = threadById.value.get(id) ?? hydratedPinnedThreadById.value[id];
+        const thread = findThread(deps.props.selectedThreadId);
         return thread ? folderGroupKey(thread.cwd) : null;
     });
     const filteredGroups = computed(() => filterSidebarGroups(sortedGroups.value, threadMatchesSearch, isSearchActive.value, activeGroupKey.value));
@@ -72,6 +71,9 @@ export function createSidebarThreads(deps: {
         }
         return map;
     });
+    function findThread(threadId: string): UiThread | undefined {
+        return threadById.value.get(threadId) ?? hydratedPinnedThreadById.value[threadId];
+    }
     let pinnedThreadHydrationVersion = 0;
     async function hydrateMissingPinnedThreads(): Promise<void> {
         if (deps.props.isLoading)
@@ -143,8 +145,8 @@ export function createSidebarThreads(deps: {
         return map;
     });
     const pinnedThreads = computed(() => pinnedThreadIds.value
-        .map((threadId) => threadById.value.get(threadId) ?? hydratedPinnedThreadById.value[threadId] ?? null)
-        .filter((thread): thread is UiThread => thread !== null)
+        .map(findThread)
+        .filter((thread): thread is UiThread => thread !== undefined)
         .filter(threadMatchesSearch));
     async function togglePin(threadId: string): Promise<void> {
         if (pinStateError.value)
@@ -208,6 +210,7 @@ filteredGroups,
 isChronologicalView,
 globalThreads,
 threadById,
+findThread,
 hydrateMissingPinnedThreads,
 pinStateError,
 refreshPinnedThreadState,

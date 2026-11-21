@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { ref } from 'vue'
 import { newThreadRoute, sidebarHref } from '../../router/sidebarRoutes'
 import { UNASSIGNED_PROJECT } from '../../utils/desktopProjectGroups'
 import { folderGroupKey, projectGroupKey, type FolderGroup, type SidebarGroup } from './sidebarGroups'
@@ -21,7 +20,7 @@ function setup(cwd = '  /work/Project with spaces/日本語  ') {
       projectDisplayNameById: {}, selectedThreadId: 'selected', activeProjectName: 'other',
       isLoading: false, isThreadListFullyLoaded: true, searchQuery: '', searchMatchedThreadIds: null,
       removableProjectIds: ['removable', '/work/Project with spaces/日本語'], resolveNewThreadCwd },
-    threads: { threadById: ref(new Map([['selected', { cwd }]])) } as Parameters<typeof createSidebarMenus>[0]['threads'],
+    threads: { findThread: id => id === 'selected' ? { cwd } : undefined } as Parameters<typeof createSidebarMenus>[0]['threads'],
   })
   return { menus, open, emit, resolveNewThreadCwd, router }
 }
@@ -107,8 +106,7 @@ it('starts a folder composer in either tab using only its cwd, even when a Proje
   expect(emit).not.toHaveBeenCalled()
 
   await router.push('/?cwd=/other&projectId=removable')
-  menus.onStartNewThread(folder)
-  expect(emit).toHaveBeenLastCalledWith('start-new-thread', { cwd })
+  expect(menus.getNewThreadTarget(folder)).toEqual({ cwd })
   menus.toggleProjectMenu(folder.key)
   menus.onOpenGroupInNewTab(sidebarHref(router, newThreadRoute(menus.getNewThreadTarget(folder))))
   const href = open.mock.calls[0]![0] as string
@@ -117,8 +115,7 @@ it('starts a folder composer in either tab using only its cwd, even when a Proje
   expect(router.currentRoute.value.query.projectId).toBe('removable')
   expect(resolveNewThreadCwd).not.toHaveBeenCalled()
 
-  menus.onStartNewThread(project('removable'))
-  expect(emit).toHaveBeenLastCalledWith('start-new-thread', { cwd: '/work/Empty project', projectId: 'removable' })
+  expect(menus.getNewThreadTarget(project('removable'))).toEqual({ cwd: '/work/Empty project', projectId: 'removable' })
 })
 
 it('omits the Unassigned project ID and opens the no-directory folder at bare home', () => {

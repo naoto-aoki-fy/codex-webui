@@ -384,6 +384,28 @@ describe('Goal and pending request notifications', () => {
 })
 
 describe('browser notification reconnection recovery', () => {
+  it('updates an unlisted thread workspace from its recovery read', async () => {
+    gateway.getThreadGroupsPage.mockResolvedValue({ groups: [], nextCursor: null })
+    const originalWorkspace = { cwd: '/work/original', projectId: null }
+    const movedWorkspace = { cwd: '/work/moved', projectId: 'project' }
+    gateway.resumeThread.mockResolvedValue({ ...oldDetail, workspace: originalWorkspace })
+    const state = await loadState()
+    await notificationReady()
+    expect(state.selectedThread.value).toBeNull()
+    expect(state.selectedThreadWorkspace.value).toEqual(originalWorkspace)
+
+    const recovery = deferred<ResumedThread>()
+    gateway.getThreadDetail.mockReturnValueOnce(recovery.promise)
+    await notificationReady()
+    expect(gateway.getThreadDetail).toHaveBeenCalledTimes(1)
+    expect(state.selectedThreadWorkspace.value).toEqual(originalWorkspace)
+
+    recovery.resolve({ ...completedDetail, workspace: movedWorkspace })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.selectedThreadWorkspace.value).toEqual(movedWorkspace)
+    expect(gateway.getThreadDetail).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the idle initial ready cheap but reloads cached history after a missed completion', async () => {
     const onSelectedThreadAttention = vi.fn()
     const state = await loadState({ onSelectedThreadAttention })

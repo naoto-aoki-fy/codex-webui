@@ -11,7 +11,7 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 /** Owns menu/dialog refs, action handlers, placement maps and listener callbacks. The component scopes menu-open watchers and invokes both listener disposers on unmount; tree measurement remains in the component. */
 export function createSidebarMenus(deps: {
     threads: ReturnType<typeof createSidebarThreads>;
-    emit: ((evt: "select", threadId: string) => void) & ((evt: "archive", threadId: string) => void) & ((evt: "start-new-thread", target: NewThreadTarget) => void) & ((evt: "rename-thread", payload: {
+    emit: ((evt: "select", threadId: string) => void) & ((evt: "archive", threadId: string) => void) & ((evt: "rename-thread", payload: {
         threadId: string;
         title: string;
     }) => void) & ((evt: "rename-project", payload: { projectId: string; name: string }) => void)
@@ -44,7 +44,7 @@ export function createSidebarMenus(deps: {
     const isOrganizeMenuOpen = ref(false);
     const openThreadMenuThread = computed(() => {
         const threadId = openThreadMenuId.value;
-        return threadId ? (deps.threads.threadById.value.get(threadId) ?? null) : null;
+        return threadId ? (deps.threads.findThread(threadId) ?? null) : null;
     });
     function onTogglePinFromMenu(threadId: string): void {
         deps.threads.togglePin(threadId);
@@ -73,11 +73,8 @@ export function createSidebarMenus(deps: {
         const cwd = deps.props.resolveNewThreadCwd?.(group.projectId) ?? '';
         return group.projectId === UNASSIGNED_PROJECT ? { cwd } : { cwd, projectId: group.projectId };
     }
-    function onStartNewThread(group: SidebarGroup): void {
-        deps.emit('start-new-thread', getNewThreadTarget(group));
-    }
     async function onCopyThreadPath(threadId: string): Promise<void> {
-        const path = deps.threads.threadById.value.get(threadId)?.cwd?.trim() ?? '';
+        const path = deps.threads.findThread(threadId)?.cwd?.trim() ?? '';
         closeThreadMenu();
         if (!path)
             return;
@@ -480,7 +477,6 @@ onSelect,
 onCopyThreadChat,
 onForkThread,
 getNewThreadTarget,
-onStartNewThread,
 onOpenGroupInNewTab,
 onCopyThreadPath,
 isThreadMenuOpen,

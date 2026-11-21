@@ -44,7 +44,7 @@ type SidebarState = {
   isChronologicalView: boolean
   isPinnedSectionExpanded: boolean
   isCollapsed(projectName: string): boolean
-  groupHrefByKey: Map<string, string>
+  groupDestinationByKey: Map<string, { href: string }>
   threadViewMode: ThreadViewMode
   activeGroupKey: string | null
   setThreadViewMode(mode: ThreadViewMode): void
@@ -73,7 +73,7 @@ afterEach(() => {
 const row = (id: string, projectId: string | null, createdAt: number, updatedAt: number, cwd = '/shared') =>
   ({ id, projectId, cwd, createdAt, updatedAt, preview: id }) as Thread
 
-async function mountNativeSidebar() {
+async function mountNativeSidebar(resolveNewThreadCwd?: (projectId: string) => string) {
   vi.clearAllMocks()
   const nativeProjects = ['Alpha', 'Empty', 'Zulu'].map((name, position) => ({
     id: name, name, roots: [{ path: '/shared' }], metadata: {}, position,
@@ -88,6 +88,7 @@ async function mountNativeSidebar() {
     newThreadCwd: undefined as string | undefined,
     searchQuery: '', searchMatchedThreadIds: null as string[] | null,
     removableProjectIds: nativeProjects.map(project => project.id),
+    resolveNewThreadCwd,
   })
   let state!: SidebarState
   const component = {
@@ -96,7 +97,7 @@ async function mountNativeSidebar() {
       state = (getCurrentInstance() as unknown as { setupState: SidebarState }).setupState
       // Read the display pipeline as the template does.
       void state.filteredGroups
-      void state.groupHrefByKey
+      void state.groupDestinationByKey
       return null
     },
   }
@@ -313,17 +314,37 @@ it('persists folder mode and isolates collapse and Show more from a matching nat
 })
 
 it('keeps group links stable while the selected thread changes', async () => {
-  const { props, state } = await mountNativeSidebar()
-  const links = state.groupHrefByKey
-  expect(links.get(projectGroupKey('Empty'))).toBe('/?projectId=Empty')
+  const roots = reactive(new Map<string, string>())
+  const { props, state } = await mountNativeSidebar(id => roots.get(id) ?? '')
+  const links = state.groupDestinationByKey
+  expect(links.get(projectGroupKey('Empty'))?.href).toBe('/?projectId=Empty')
 
   await sidebarRouter.push('/thread/z-new')
   props.selectedThreadId = 'z-new'
   await nextTick()
-  expect(state.groupHrefByKey).toBe(links)
+  expect(state.groupDestinationByKey).toBe(links)
 
-  state.setThreadViewMode('folder')
-  expect(state.groupHrefByKey.get(folderGroupKey('/shared'))).toBe('/?cwd=/shared')
+  const resolve = vi.spyOn(sidebarRouter, 'resolve')
+  try {
+    // Read-state refresh can replace the groups without changing their workspaces.
+    props.groups = props.groups.map(group => ({
+      ...group, threads: group.threads.map(thread => ({ ...thread, unread: false })),
+    }))
+    await nextTick()
+    expect(state.groupDestinationByKey.get(projectGroupKey('Empty'))).toBe(links.get(projectGroupKey('Empty')))
+    expect(resolve).not.toHaveBeenCalled()
+
+    roots.set('Empty', '/new/root')
+    expect(state.groupDestinationByKey.get(projectGroupKey('Empty'))?.href).toBe('/?projectId=Empty&cwd=/new/root')
+    expect(resolve).toHaveBeenCalledTimes(1)
+    resolve.mockClear()
+
+    state.setThreadViewMode('folder')
+    expect(state.groupDestinationByKey.get(folderGroupKey('/shared'))?.href).toBe('/?cwd=/shared')
+    expect(resolve).toHaveBeenCalledTimes(1)
+  } finally {
+    resolve.mockRestore()
+  }
 })
 
 it('keeps folder rows current with selection, sort, search, pins, pagination and reconciliation', async () => {
