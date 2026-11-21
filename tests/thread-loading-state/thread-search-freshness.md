@@ -46,6 +46,8 @@ pending responses, paging, and failures.
    finish…**. Once generation finishes, the shared list continues one page at a
    time. Simulate a failed page and confirm existing results remain, with a
    **Retry** button. Retry and confirm paging resumes from the failed cursor.
+   If a refresh of the first page fails before paging can start, Retry fetches
+   the first page again and continues with its new cursor.
    An empty result set shows **No results found** once discovery finishes.
 6. With a message request pending, change the query, switch to another target,
    and press **Esc**. Confirm late responses never appear or request a follow-up

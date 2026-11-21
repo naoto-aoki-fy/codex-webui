@@ -1181,6 +1181,76 @@ describe('existing conversation model identity', () => {
 
 
 describe('history discovery across pagination and workspace removal', () => {
+  const listOptions = { includeSelectedThreadMessages: false }
+  const group = (...rows: ReturnType<typeof thread>[]): UiProjectGroup[] => [{ projectName: 'project', threads: rows }]
+  function startSearchPage(): void {
+    const timer = vi.mocked(window.setTimeout).mock.calls.filter(call => call[1] === 0).at(-1)
+    expect(timer).toBeDefined()
+    ;(timer![0] as () => void)()
+  }
+
+  it('exposes a retry when search opens during a failing thread list refresh', async () => {
+    installTestWindow()
+    const first = thread('first', '/tmp/project')
+    const older = thread('older', '/tmp/older')
+    gatewayMocks.getThreadGroupsPage.mockResolvedValueOnce({ groups: group(first), nextCursor: 'obsolete' })
+    const state = useDesktopState()
+    await state.refreshAll(listOptions)
+    let rejectRefresh!: (error: Error) => void
+    gatewayMocks.getThreadGroupsPage.mockImplementationOnce(() => new Promise((_, reject) => { rejectRefresh = reject }))
+    const refreshing = state.refreshAll({ ...listOptions, forceThreadRefresh: true })
+    state.setThreadListSearchActive(true)
+    rejectRefresh(new Error('Head refresh failed'))
+    await refreshing
+    expect(state.threadListError.value).toBe('Head refresh failed')
+    expect(state.projectGroups.value.flatMap(row => row.threads.map(thread => thread.id))).toEqual(['first'])
+
+    gatewayMocks.getThreadGroupsPage.mockResolvedValueOnce({ groups: group(first), nextCursor: 'fresh' })
+      .mockResolvedValueOnce({ groups: group(older), nextCursor: null })
+    vi.mocked(window.setTimeout).mockClear()
+    state.retryThreadListSearch()
+    await vi.waitFor(() => expect(vi.mocked(window.setTimeout).mock.calls.some(call => call[1] === 0)).toBe(true))
+    startSearchPage()
+    await vi.waitFor(() => expect(state.isThreadListFullyLoaded.value).toBe(true))
+    expect(state.threadListError.value).toBe('')
+    expect(gatewayMocks.getThreadGroupsPage.mock.calls).toEqual([[], [], [], ['fresh', 100]])
+    state.stopPolling()
+  })
+
+  it('retains refreshed titles and paths when an in-flight older page overlaps the head', async () => {
+    installTestWindow()
+    const first = thread('first', '/tmp/project')
+    const second = thread('second', '/tmp/second')
+    const archived = thread('archived', '/tmp/archived')
+    const older = thread('older', '/tmp/older')
+    const refreshed = { ...first, title: 'Refreshed', cwd: '/tmp/refreshed' }
+    gatewayMocks.getThreadGroupsPage.mockResolvedValueOnce({ groups: group(first, second, archived), nextCursor: 'older' })
+    const state = useDesktopState()
+    await state.refreshAll(listOptions)
+    let finishPage!: (page: { groups: UiProjectGroup[]; nextCursor: null }) => void
+    gatewayMocks.getThreadGroupsPage.mockImplementationOnce(() => new Promise(resolve => { finishPage = resolve }))
+    vi.mocked(window.setTimeout).mockClear()
+    state.setThreadListSearchActive(true)
+    startSearchPage()
+    gatewayMocks.getThreadGroupsPage.mockResolvedValueOnce({ groups: group(refreshed, second), nextCursor: 'new-head-cursor' })
+    await state.refreshAll({ ...listOptions, forceThreadRefresh: true })
+    gatewayMocks.renameThread.mockResolvedValueOnce(undefined)
+    await state.renameThreadById('second', 'Renamed')
+    gatewayMocks.archiveThread.mockResolvedValueOnce(undefined)
+    await state.archiveThreadById(archived.id)
+    finishPage({ groups: group(first, archived, older), nextCursor: null })
+    await vi.waitFor(() => expect(state.isThreadListFullyLoaded.value).toBe(true))
+    const rows = state.projectGroups.value.flatMap(group => group.threads)
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: first.id, title: refreshed.title, cwd: refreshed.cwd }),
+      expect.objectContaining({ id: second.id, title: 'Renamed' }),
+      expect.objectContaining({ id: older.id }),
+    ]))
+    expect(rows.some(row => row.id === archived.id)).toBe(false)
+    expect(gatewayMocks.getThreadGroupsPage.mock.calls).toEqual([[], ['older', 100], []])
+    state.stopPolling()
+  })
+
   it('keeps dated history after unregistering, background paging and a fresh state', async () => {
     installTestWindow()
     const cwd = '/home/user/Documents/Codex/2026-11-12/hello'

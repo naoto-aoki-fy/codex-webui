@@ -56,7 +56,7 @@ async function run(browser, viewport, theme, exerciseRequests) {
       if (method === 'thread/search') {
         if (params.searchTerm === 'unsupported') return { status: 502, json: { rpcCode: -32601, error: 'Method not found' } }
         if (params.searchTerm === 'network-error') return { status: 503, json: { error: 'Fixture connection unavailable' } }
-        if (params.searchTerm === 'stale') {
+        if (params.searchTerm === 'stale' || params.searchTerm === 'closed') {
           await new Promise(resolve => { releaseStale = resolve })
           return hits([{ ...old, name: 'Stale response' }], 'stale-next')
         }
@@ -112,6 +112,11 @@ async function run(browser, viewport, theme, exerciseRequests) {
       await row(first.name).waitFor()
       await page.getByText('Waiting for responses to finish…', { exact: true }).waitFor()
       assert.deepEqual(moreCalls(), [])
+      const completionRefresh = page.waitForResponse(response => {
+        if (!response.url().endsWith('/codex-api/rpc')) return false
+        const rpc = response.request().postDataJSON()
+        return rpc?.method === 'thread/list' && !rpc.params?.cursor
+      })
       emit('turn/completed', { threadId: first.id, turn: { id: 't', status: 'completed' } })
 
       await results.getByRole('link').filter({ hasText: first.name }).waitFor()
@@ -129,7 +134,8 @@ async function run(browser, viewport, theme, exerciseRequests) {
       await page.getByText('Loading more threads…', { exact: true }).waitFor({ state: 'hidden' })
       assert.deepEqual(moreCalls(), ['older', 'last', 'last'])
       assert.equal(maxPaging, 1)
-      // Header refresh on turn completion does not rescan the cursors.
+      // Exclude the known turn-driven refresh before measuring cached searches.
+      await completionRefresh
       await page.waitForFunction(() => !document.querySelector('.sidebar-search-error'))
       assert.equal(messages().length, 0)
     }
@@ -165,20 +171,20 @@ async function run(browser, viewport, theme, exerciseRequests) {
     const screenshot = resolve(output, `sidebar-search-${viewport.width}-${theme}.png`)
     await page.screenshot({ path: screenshot })
     const testedUrl = page.url()
-    const colors = await pick('Folder').evaluate(el => {
-      const location = document.querySelector('.sidebar-search-location-detail')
+    const colors = await row(longPath).evaluate(el => {
+      const location = el.querySelector('.sidebar-search-location-detail')
+      const target = el.closest('aside').querySelector('.sidebar-search-target[aria-pressed=true]')
       return {
-        button: getComputedStyle(el).backgroundColor,
+        button: getComputedStyle(target).backgroundColor,
         wrapper: getComputedStyle(el.closest('aside')).backgroundColor,
-        wraps: getComputedStyle(location).overflowWrap === 'anywhere',
+        wraps: getComputedStyle(location).overflowWrap === 'anywhere'
+          && location.getBoundingClientRect().height > parseFloat(getComputedStyle(location).lineHeight),
         fits: location.scrollWidth <= location.clientWidth,
       }
     })
     assert.match(colors.button, theme === 'dark' ? /oklch\(0\.2|rgb\(39, 39, 42\)/ : /oklch\(0\.9|rgb\(244, 244, 245\)/)
     assert.equal(colors.wraps && colors.fits, true)
-    const cachedRequests = calls.slice(cachedStart).filter(call => ['thread/list', 'project/list', 'thread/search'].includes(call.method))
-    // Turn completion may refresh the live head, but must never replay an older cursor.
-    const searchRequests = cachedRequests.filter(call => call.method !== 'thread/list' || call.params?.cursor)
+    const searchRequests = calls.slice(cachedStart).filter(call => ['thread/list', 'project/list', 'thread/search'].includes(call.method))
     assert.deepEqual(searchRequests, [])
     assert.deepEqual(historyCalls(calls.slice(beforeSearch)).filter(call => call.params.threadId !== first.id), [])
 
@@ -215,10 +221,21 @@ async function run(browser, viewport, theme, exerciseRequests) {
       await page.getByText('Fixture answer', { exact: true }).waitFor()
       assert(historyCalls(calls.slice(beforeSearch)).some(call => call.params.threadId === message.id))
 
+      releaseStale = undefined
+      await field.fill('closed')
+      for (let i = 0; i < 100 && !releaseStale; i++) await pause(25)
+      assert(releaseStale)
+      await field.press('Escape')
+      await field.waitFor({ state: 'hidden' })
+      await assertFocused(toggle)
+      releaseStale()
+      await toggle.press('Enter')
+      assert.equal(await field.inputValue(), '')
       await field.fill('unsupported')
       await page.getByText('Message search requires a Codex server', { exact: false }).waitFor()
       await field.fill('network-error')
       await page.getByText('Fixture connection unavailable', { exact: false }).waitFor()
+      assert.deepEqual(messages().slice(3), [['closed', null], ['unsupported', null], ['network-error', null]])
       await pick('Thread Name').click()
       await field.fill(old.name)
       await results.getByRole('link').first().click()
