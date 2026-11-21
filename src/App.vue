@@ -269,7 +269,7 @@
                   :save-goal="selectedThreadGoal.save"
                 />
                 <ThreadPendingRequestPanel
-                  v-if="selectedThreadPendingRequest && selectedThreadPendingRequest !== selectedThreadPendingQuestion"
+                  v-if="selectedThreadPendingRequest && selectedThreadPendingRequest.method !== QUESTION_REQUEST"
                   :request="selectedThreadPendingRequest"
                   :request-count="selectedThreadLiveRequests.length"
                   @respond-server-request="onRespondServerRequest"
@@ -438,6 +438,7 @@ import { useFolderPicker } from './composables/useFolderPicker'
 import { useMobile } from './composables/useMobile'
 import { useSidebarMessageSearch } from './composables/useSidebarMessageSearch'
 import { getHomeDirectory } from './api/codexGateway'
+import { QUESTION_REQUEST } from './serverRequestMethod'
 import type { ReasoningEffort, SpeedMode, UiServerRequest, UiServerRequestReply, UiThreadTokenUsage } from './types/codex'
 import type { ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import { normalizePathForUi } from './pathUtils.js'
@@ -769,12 +770,19 @@ const composerReasoningEffort = computed(() => readReasoningEffortForThread(comp
 const composerReasoningOptions = computed(() => readReasoningOptionsForThread(composerThreadContextId.value))
 const composerCollaborationMode = computed(() => readCollaborationModeForThread(composerThreadContextId.value))
 const composerSelectedModelId = computed(() => readModelIdForThread(composerThreadContextId.value))
+// The question still blocks the composer until Codex closes the request.
 const selectedThreadLiveRequests = computed(() => selectedThreadServerRequests.value.filter(request => !request.questionClosed))
 const selectedThreadPendingRequest = computed<UiServerRequest | null>(() => selectedThreadLiveRequests.value.at(-1) ?? null)
 const selectedThreadPendingQuestion = computed(() => {
   const request = selectedThreadPendingRequest.value
-  if (request?.method === 'item/tool/requestUserInput') return request
-  return selectedThreadServerRequests.value.filter(row => row.questionClosed).at(-1) ?? null
+  const question = request?.method === QUESTION_REQUEST
+    ? request
+    : selectedThreadServerRequests.value.filter(row => row.questionClosed).at(-1)
+  if (!question) return null
+
+  const attempt = readQuestionDraft(question)?.attempt
+  const isConfirming = attempt ? !attempt.error : !question.questionClosed && question.answerAttempted
+  return isConfirming ? null : question
 })
 function onUpdateQuestionDraft(questionId: string, field: 'choice' | 'text', value: string): void {
   const request = selectedThreadPendingQuestion.value

@@ -39,7 +39,7 @@ export function createDesktopApprovals(deps: {
     function shouldKeepClosedQuestionDraft(request: UiServerRequest): boolean {
         const draft = readQuestionDraft(request);
         if (!draft) return false;
-        if (draft.attempt && !draft.attempt.retryable) return true;
+        if (draft.attempt) return true;
         for (const { choice, text } of draft.fields.values()) {
             if (choice || text?.trim()) return true;
         }
@@ -88,6 +88,7 @@ export function createDesktopApprovals(deps: {
         const request = findPendingRequest(id);
         if (!request || request.method !== QUESTION_REQUEST) return;
         const attempt = readQuestionDraft(request)?.attempt;
+        if (attempt && !attempt.error) return;
         if (!request.questionClosed && (!attempt?.retryable || request.answerAttempted)) return;
         clearQuestionDraft(request.threadId, questionDraftKey(request));
         if (request.questionClosed) {
@@ -314,7 +315,8 @@ export function createDesktopApprovals(deps: {
     async function respondToPendingServerRequest(reply: UiServerRequestReply): Promise<boolean> {
         const generation = deps.lifecycleGeneration;
         const request = findPendingRequest(reply.id);
-        const isQuestion = request?.method === QUESTION_REQUEST;
+        if (!request) return false;
+        const isQuestion = request.method === QUESTION_REQUEST;
         let draft: QuestionDraft | undefined;
         if (isQuestion) {
             const previous = readQuestionDraft(request)?.attempt;
@@ -336,18 +338,12 @@ export function createDesktopApprovals(deps: {
         catch (unknownError) {
             if (generation !== deps.lifecycleGeneration) return false;
             if (isQuestion && closedRequestIds.has(reply.id)) return true;
-            if (draft && request) {
+            if (draft) {
                 if (readQuestionDraft(request) !== draft) return false;
                 const pending = findPendingRequest(reply.id);
-                const notSent = unknownError instanceof CodexApiError && unknownError.code === QUESTION_REPLY_NOT_SENT;
-                if (notSent && pending?.questionClosed) {
-                    draft.attempt = undefined;
-                    if (!shouldKeepClosedQuestionDraft(pending)) removeRequestAndDraft(reply.id, pending);
-                    return false;
-                }
-                const retryable = Boolean(pending && notSent);
+                const retryable = unknownError instanceof CodexApiError && unknownError.code === QUESTION_REPLY_NOT_SENT;
                 if (retryable && pending?.answerAttempted) upsertPendingServerRequest({ ...pending, answerAttempted: false });
-                const message = retryable && unknownError instanceof Error ? unknownError.message : QUESTION_REPLY_UNCONFIRMED;
+                const message = retryable ? 'Question reply was not sent. Your draft is kept.' : QUESTION_REPLY_UNCONFIRMED;
                 draft.attempt = { error: message, retryable };
                 deps.error.value = message;
                 return false;

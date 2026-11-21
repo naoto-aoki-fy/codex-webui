@@ -67,42 +67,76 @@ describe('closed question drafts', () => {
     expect(approvals.readQuestionDraft(rows()[0]!)?.fields.get('scope')?.choice).toBe('Full review')
   })
 
-  it('removes an empty draft if the bridge confirms it never sent the answer', async () => {
-    const { approvals, rows, request, close, send } = setup()
-    vi.mocked(replyToServerRequest).mockRejectedValue(new CodexApiError('Reply not sent', { code: QUESTION_REPLY_NOT_SENT }))
-    expect(await send()).toBe(false)
-    expect(approvals.readQuestionDraft(request)?.attempt?.retryable).toBe(true)
-    close()
-    expect(rows()).toEqual([])
-    expect(approvals.readQuestionDraft(request)).toBeUndefined()
-  })
-
-  it.each(['', 'Edited answer'])('handles a late not-sent response after closure with draft %j', async text => {
+  it.each([
+    ['before', 'Edited answer'],
+    ['after', ''],
+  ])('retains a failed answer when native closure happens %s the HTTP failure with draft text %j', async (timing, text) => {
     const { approvals, error, rows, request, edit, close, send } = setup()
     let rejectReply!: (reason: Error) => void
     vi.mocked(replyToServerRequest).mockReturnValue(new Promise((_, reject) => { rejectReply = reject }))
     edit('text', text)
     const pending = send()
-    close()
-    expect(rows()[0]?.questionClosed).toBe(true)
+    if (timing === 'before') close()
     rejectReply(new CodexApiError('Reply not sent', { code: QUESTION_REPLY_NOT_SENT }))
     expect(await pending).toBe(false)
-    expect(error.value).toBe('')
-    if (text) {
-      expect(rows()[0]?.questionClosed).toBe(true)
-      expect(approvals.readQuestionDraft(request)?.attempt).toBeUndefined()
-      expect(approvals.readQuestionDraft(request)?.fields.get('scope')?.text).toBe(text)
-    } else {
-      expect(rows()).toEqual([])
-      expect(approvals.readQuestionDraft(request)).toBeUndefined()
-    }
+    if (timing === 'after') close()
+    expect(rows()[0]?.questionClosed).toBe(true)
+    expect(error.value).toBe('Question reply was not sent. Your draft is kept.')
+    expect(approvals.readQuestionDraft(request)?.attempt?.error).toBe(error.value)
+    expect(approvals.readQuestionDraft(request)?.fields.get('scope')?.text).toBe(text)
+    expect(await send()).toBe(false)
+    expect(replyToServerRequest).toHaveBeenCalledTimes(1)
   })
 
-  it('accepts HTTP-only confirmation after dismissal and ignores a stale pending snapshot', async () => {
+  it('keeps the pending answer and sends only once across native closure and HTTP confirmation', async () => {
+    const { approvals, retainQuestionResponse, rows, request, edit, close, send, dismiss } = setup()
+    let resolveReply!: (value: QuestionSubmission) => void
+    vi.mocked(replyToServerRequest).mockReturnValue(new Promise(resolve => { resolveReply = resolve }))
+    edit('text', 'Original answer')
+    const pending = send()
+    expect(approvals.readQuestionDraft(request)?.attempt).toEqual({})
+    expect(await send()).toBe(false)
+    close()
+    dismiss()
+    expect(rows()[0]?.questionClosed).toBe(true)
+    expect(approvals.readQuestionDraft(request)?.fields.get('scope')?.text).toBe('Original answer')
+    expect(await send()).toBe(false)
+    vi.mocked(getPendingServerRequests).mockResolvedValue([question])
+    await approvals.loadPendingServerRequestsFromBridge()
+    expect(rows()[0]?.questionClosed).toBe(true)
+    expect(retainQuestionResponse).not.toHaveBeenCalled()
+    resolveReply(submission)
+    expect(await pending).toBe(true)
+    expect(rows()).toEqual([])
+    expect(approvals.readQuestionDraft(request)).toBeUndefined()
+    expect(retainQuestionResponse).toHaveBeenCalledExactlyOnceWith(submission.response)
+    expect(await send()).toBe(false)
+    expect(replyToServerRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows one explicit retry when the bridge confirms the reply was never sent', async () => {
+    const { approvals, retainQuestionResponse, rows, request, edit, send } = setup()
+    vi.mocked(replyToServerRequest)
+      .mockRejectedValueOnce(new CodexApiError('Reply not sent', { code: QUESTION_REPLY_NOT_SENT }))
+      .mockResolvedValueOnce(submission)
+    edit('choice', 'Full review')
+    expect(await send()).toBe(false)
+    expect(approvals.readQuestionDraft(request)?.attempt?.retryable).toBe(true)
+    expect(approvals.readQuestionDraft(request)?.fields.get('scope')?.choice).toBe('Full review')
+    const retry = send()
+    expect(await send()).toBe(false)
+    expect(await retry).toBe(true)
+    expect(rows()).toEqual([])
+    expect(retainQuestionResponse).toHaveBeenCalledExactlyOnceWith(submission.response)
+    expect(replyToServerRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('accepts a late HTTP confirmation after disconnect and dismissal', async () => {
     const { approvals, retainQuestionResponse, rows, close, send, dismiss } = setup()
     let resolveReply!: (value: QuestionSubmission) => void
     vi.mocked(replyToServerRequest).mockReturnValue(new Promise(resolve => { resolveReply = resolve }))
     const pending = send()
+    approvals.clearPendingAfterDisconnect()
     close()
     expect(rows()[0]?.questionClosed).toBe(true)
     dismiss()
@@ -117,14 +151,13 @@ describe('closed question drafts', () => {
   })
 
   it('ignores a late failure after dismissal', async () => {
-    const { approvals, error, retainQuestionResponse, rows, request, edit, close, send, dismiss } = setup()
+    const { approvals, error, retainQuestionResponse, rows, request, edit, send, dismiss } = setup()
     let rejectReply!: (reason: Error) => void
     vi.mocked(replyToServerRequest).mockReturnValue(new Promise((_, reject) => { rejectReply = reject }))
     edit('text', 'Unconfirmed draft')
     const pending = send()
-    close()
+    approvals.clearPendingAfterDisconnect()
     dismiss()
-    close()
     error.value = 'Newer error'
     rejectReply(new Error('Reply unconfirmed'))
     expect(await pending).toBe(false)
