@@ -18,23 +18,32 @@ const {setup,assert,openToolsDialog,enableQueueMode}=require('./approved-fixture
   assert.equal(calls.some(c=>c.method?.startsWith('thread/queue/')),false)
   const draft=page.locator('.thread-composer-input');await draft.fill('Queue fixture prompt')
   const composerMenu=page.locator('.thread-composer-attach-menu')
-  await page.getByRole('button',{name:'Add attachments and settings',exact:true}).click()
+  const composerMenuTrigger=page.getByRole('button',{name:'Add attachments and settings',exact:true})
+  await composerMenuTrigger.click()
   const queueSwitch=page.getByRole('switch',{name:'Queue mode',exact:true})
   await queueSwitch.click()
   const queuePanel=page.locator('#native-prompt-queue')
   const inspectQueue=page.getByRole('button',{name:'Inspect native prompt queue',exact:true})
   const queueNotice=page.getByRole('alert').filter({has:inspectQueue})
   await queueNotice.getByText('Native queue unavailable',{exact:false}).waitFor()
-  for(const theme of ['light','dark']){
-   await page.evaluate(dark=>document.documentElement.classList.toggle('dark',dark),theme==='dark')
-   assert.equal(await queueSwitch.getAttribute('aria-checked'),'true')
-   assert.equal(await page.getByRole('button',{name:'Queue prompt',exact:true}).isDisabled(),true)
-   const menuBox=await composerMenu.boundingBox(),noticeBox=await queueNotice.boundingBox()
-   assert(menuBox.y+menuBox.height<=noticeBox.y,'Queue notice must stay clear of the open composer menu')
-   assert.equal(await inspectQueue.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}),true)
-   assert.equal(await draft.inputValue(),'Queue fixture prompt')
-   await page.waitForTimeout(2200)
-   await page.screenshot({path:`output/playwright/queue-readiness-${width}-${theme}.png`})
+  for(const expanded of [false,true]){
+   if(expanded){
+    await composerMenuTrigger.click()
+    await page.getByRole('button',{name:'Expand composer',exact:true}).click()
+    await composerMenuTrigger.click()
+   }
+   for(const theme of ['light','dark']){
+    await page.evaluate(dark=>document.documentElement.classList.toggle('dark',dark),theme==='dark')
+    assert.equal(await queueSwitch.getAttribute('aria-checked'),'true')
+    assert.equal(await page.getByRole('button',{name:'Queue prompt',exact:true}).isDisabled(),true)
+    const menuBox=await composerMenu.boundingBox(),noticeBox=await queueNotice.boundingBox()
+    assert(menuBox&&noticeBox&&menuBox.y+menuBox.height<=noticeBox.y,'Queue notice must stay visible and clear of the open composer menu')
+    assert.equal(await inspectQueue.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}),true)
+    assert.equal(await draft.inputValue(),'Queue fixture prompt')
+    await page.waitForTimeout(2200)
+    const view=expanded?'queue-readiness-fullscreen':'queue-readiness'
+    await page.screenshot({path:`output/playwright/${view}-${width}-${theme}.png`})
+   }
   }
   assert.equal(calls.filter(c=>c.method==='thread/queue/list').length,1)
   assert(!calls.some(c=>/^(turn\/(start|steer)|thread\/queue\/add)$/.test(c.method)))
@@ -48,6 +57,7 @@ const {setup,assert,openToolsDialog,enableQueueMode}=require('./approved-fixture
    assert.equal(calls.filter(c=>c.method==='thread/queue/list').length,reads+1)
    await page.keyboard.press('Escape')
   }
+  await page.getByRole('button',{name:'Exit full screen composer',exact:true}).click()
   await page.getByRole('button',{name:'Queue prompt',exact:true}).click();await openToolsDialog(page)
   await page.getByText('queued-fixture · Client message:',{exact:false}).waitFor();assert.equal(await draft.inputValue(),'');assert.equal(calls.some(c=>c.method==='turn/start'||c.method==='turn/steer'),false)
   await page.getByText('Pending prompt preview (first 8,000 characters)',{exact:true}).click();await page.getByText('Queue fixture prompt',{exact:true}).waitFor()
@@ -60,5 +70,5 @@ const {setup,assert,openToolsDialog,enableQueueMode}=require('./approved-fixture
   const recovery=await page.evaluate(()=>new Promise((resolve,reject)=>{const open=indexedDB.open('codex-web-local.persistence.v1');open.onerror=()=>reject(open.error);open.onsuccess=()=>{const db=open.result,tx=db.transaction('records','readonly'),read=tx.objectStore('records').get('codex-profile.approved-fixture.codex-web-local.queue-submissions.v1');read.onsuccess=()=>resolve(JSON.stringify(read.result));tx.oncomplete=()=>db.close()}}));assert(recovery);assert.equal(recovery.includes('Uncertain queue fixture'),false)
   assert.deepEqual(errors,[]);await page.close()
  }
- await browser.close();console.log('PASS 07 explicit queue vs steering, native persistence after refresh, acknowledgment, duplicate and uncertain writes; six views')
+ await browser.close();console.log('PASS 07 readiness in normal and full-screen composers, native persistence after refresh, acknowledgment, duplicate and uncertain writes')
 })().catch(e=>{console.error(e);process.exit(1)})

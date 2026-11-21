@@ -299,7 +299,7 @@
                   @update:selected-speed-mode="onSelectSpeedMode"
                   @edit-goal="threadGoalPanelRef?.edit()"
                   @interrupt="onInterruptTurn" />
-                <p v-if="composerSendMode.queue.value && (nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value)" class="composer-runtime-error" role="alert">
+                <p v-if="composerSendMode.queue.value && (nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value)" class="composer-runtime-error composer-queue-notice" role="alert">
                   {{ nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value }}
                   <button type="button" @click="openNativeQueue">Inspect native prompt queue</button>
                 </p>
@@ -1589,7 +1589,7 @@ watch(isMobile, (mobile) => {
 /* Preserve mounted conversation/editor state while exposing only the writing surface. */
 .content-root.is-composer-expanded > :not(.content-body),
 .content-root.is-composer-expanded .content-grid > :not(.composer-container),
-.content-root.is-composer-expanded .composer-container > :not(.thread-composer) {
+.content-root.is-composer-expanded .composer-container > :not(.thread-composer, .composer-queue-notice) {
   display: none;
 }
 
@@ -1601,6 +1601,13 @@ watch(isMobile, (mobile) => {
 
 .content-root.is-composer-expanded .content-grid-home {
   overflow: visible;
+}
+
+.content-root.is-composer-expanded .composer-queue-notice {
+  @apply w-auto shrink-0;
+  margin-left: max(0.75rem, env(safe-area-inset-left, 0px));
+  margin-right: max(0.75rem, env(safe-area-inset-right, 0px));
+  margin-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
 }
 
 .composer-container.is-disabled {
