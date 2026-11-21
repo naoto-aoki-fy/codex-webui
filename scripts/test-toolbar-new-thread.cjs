@@ -126,6 +126,18 @@ async function verifyNavigation(browser) {
     await regularHome.close()
 
     const originalRequests = requests.get(page).length
+    // Linux Chromium exercises Ctrl-click below. Verify that the app also leaves Meta-click to the browser.
+    const metaClickHandled = await link.evaluate(element => {
+      let handled
+      element.addEventListener('click', event => {
+        handled = event.defaultPrevented
+        event.preventDefault()
+      }, { once: true })
+      element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
+      return handled
+    })
+    assert.equal(metaClickHandled, false)
+
     await link.click({ button: 'right' })
     assert.equal(await menuItem(page).getAttribute('href'), href)
     const popup = await openTab(page, () => page.keyboard.press('Enter'))
@@ -188,6 +200,9 @@ async function verifyNavigation(browser) {
       await page.waitForURL(`**/#/thread/${id}`)
       const tab = await openTab(page, () => link.click({ button: 'middle' }))
       await checkFolder(tab, cwd, projectId, label)
+      await tab.reload()
+      await tab.waitForLoadState('networkidle')
+      await checkFolder(tab, cwd, projectId, label)
       await tab.close()
       await link.click()
       await checkFolder(page, cwd, projectId, label)
@@ -201,7 +216,8 @@ async function verifyNavigation(browser) {
 }
 
 async function verifyMenus(browser, viewport, colorScheme) {
-  const context = await browser.newContext({ viewport, colorScheme })
+  const hasTouch = viewport.width < 768
+  const context = await browser.newContext({ viewport, colorScheme, hasTouch })
   try {
     const { requests, errors } = await installFixture(context)
     const page = await context.newPage()
@@ -262,15 +278,28 @@ async function verifyMenus(browser, viewport, colorScheme) {
     }
     const alternateRequests = requests.get(page).length
     assert.equal(await pencil(alternate).getAttribute('href'), href)
-    await arrow(alternate).click()
+    await composer(page).fill('Draft in the original toolbar tab')
+    if (hasTouch) await arrow(alternate).tap()
+    else await arrow(alternate).click()
     await item.waitFor()
     assert.equal(await item.getAttribute('href'), await pencil(alternate).getAttribute('href'))
     await page.keyboard.press('Escape')
     await menu.waitFor({ state: 'detached' })
     assert.equal(page.url(), url)
     assert.deepEqual(requests.get(page).slice(alternateRequests), [])
+
+    await arrow(alternate).press('ArrowDown')
+    await item.waitFor()
+    const tab = await openTab(page, () => page.keyboard.press('Enter'))
+    await checkFolder(tab, projectRoot, 'registered', 'Registered project')
+    assert.equal(await tab.evaluate(() => window.opener), null)
+    await tab.close()
+    assert.equal(page.url(), url)
+    assert.equal(await page.locator('.content-title').textContent(), 'Worktree chat')
+    assert.equal(await composer(page).inputValue(), 'Draft in the original toolbar tab')
+    assert.deepEqual(requests.get(page).slice(alternateRequests), [])
     assert.deepEqual(errors, [])
-    console.log(JSON.stringify({ url, viewport, colorScheme, screenshot, result: 'shared menu, keyboard, Escape, outside click, Shift delegation, theme and bounds passed', menuApiRequests: 0 }))
+    console.log(JSON.stringify({ url, viewport, colorScheme, screenshot, result: 'shared menu, keyboard, Escape, outside click, Shift delegation, theme, bounds and alternate toolbar navigation passed', menuApiRequests: 0 }))
   } finally {
     await context.close()
   }
