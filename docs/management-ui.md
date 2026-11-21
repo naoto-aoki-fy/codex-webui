@@ -8,12 +8,12 @@
 | General preferences and rate limits | Sidebar → Settings → General |
 | Codex account, native authentication and usage | Sidebar → Settings → Codex account |
 | MCP connection/authentication/configuration and curated plugins | Sidebar → Settings → Apps / Connectors; also linked from Skills and the conversation App picker |
-| Current conversation context usage | Conversation header … → Context; the dialog identifies the title and native ID |
-| Conversation inspection and detailed operations | Conversation header … → Conversation tools…; the dialog identifies the title and native ID |
+| Current conversation context usage | Conversation header … → Context |
+| Conversation inspection and detailed operations | Conversation header … → Conversation tools… |
 | Copy conversation, archive | Conversation header …; the sidebar offers Copy chat |
 | Conversation App references | Composer + → Apps / Connectors, in a compact picker |
 | Native goals and plan mode | Composer + → Goal… or Plan mode |
-| Send-mode selection | Composer + → Send mode |
+| Queue mode | Composer + → Queue mode switch |
 
 The shared `ManagementDialog` teleports to `body`, uses a native modal dialog,
 contains Tab/Shift+Tab focus, handles Escape and backdrop dismissal, restores entry
