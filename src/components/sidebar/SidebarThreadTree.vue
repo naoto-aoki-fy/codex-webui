@@ -925,22 +925,10 @@ onBeforeUnmount(() => {
   @apply relative z-40;
 }
 
-.thread-menu-panel {
-  @apply absolute right-0 top-full mt-1 z-20 min-w-36 rounded-md border border-zinc-200 bg-white p-1 shadow-md flex flex-col gap-0.5;
-}
-
-.thread-menu-panel-fixed {
-  @apply fixed top-0 right-auto bottom-auto left-0 mt-0 z-50;
-}
-
 .thread-menu-panel:not(.thread-menu-panel-fixed)[data-open-direction='up'] {
   top: auto;
   bottom: calc(100% + 0.25rem);
   margin-top: 0;
-}
-
-.thread-menu-item {
-  @apply rounded px-2 py-1 text-left text-sm text-zinc-700 hover:bg-zinc-100;
 }
 
 .thread-menu-item:disabled {

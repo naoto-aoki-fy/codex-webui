@@ -11,7 +11,7 @@
             v-if="!isSidebarCollapsed"
             class="sidebar-thread-controls-host"
             :is-sidebar-collapsed="isSidebarCollapsed"
-            :show-new-thread-button="true"
+            :new-thread-href="toolbarNewThreadHref"
             @toggle-sidebar="setSidebarCollapsed(!isSidebarCollapsed)"
             @start-new-thread="onStartNewThreadFromToolbar"
           >
@@ -115,7 +115,7 @@
               v-if="isSidebarCollapsed || isMobile"
               class="sidebar-thread-controls-header-host"
               :is-sidebar-collapsed="isSidebarCollapsed"
-              :show-new-thread-button="true"
+              :new-thread-href="toolbarNewThreadHref"
               @toggle-sidebar="setSidebarCollapsed(!isSidebarCollapsed)"
               @start-new-thread="onStartNewThreadFromToolbar"
             />
@@ -673,6 +673,20 @@ const routeThreadId = computed(() => {
 
 const isHomeRoute = computed(() => route.name === 'home')
 const isSkillsRoute = computed(() => route.name === 'skills')
+const toolbarNewThreadTarget = computed<NewThreadTarget>(() => {
+  if (isHomeRoute.value) {
+    const cwd = newThreadCwd.value
+    return cwd.trim() ? { cwd, projectId: newThreadProjectId.value } : { cwd: '' }
+  }
+
+  const thread = selectedThread.value
+  if (route.name !== 'thread' || !thread || thread.id !== routeThreadId.value) return { cwd: '' }
+
+  const projectId = thread.projectId || undefined
+  const cwd = projectId ? resolvePreferredLocalCwd(projectId, thread.cwd) : thread.cwd.trim()
+  return cwd ? { cwd, projectId } : { cwd: '' }
+})
+const toolbarNewThreadHref = computed(() => router.resolve(newThreadLocation(toolbarNewThreadTarget.value)).href)
 const activeProjectName = computed<string | null>(() => {
   if (isSkillsRoute.value) return null
   if (!isHomeRoute.value) {
@@ -1007,30 +1021,19 @@ function resolveProjectNewThreadCwd(projectName: string): string {
   return resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
 }
 
-function onStartNewThread({ cwd, projectId }: NewThreadTarget): void {
+function newThreadLocation({ cwd, projectId }: NewThreadTarget) {
+  return { name: 'home', query: { ...(cwd ? { cwd } : {}), ...(projectId ? { projectId } : {}) } }
+}
+
+function onStartNewThread(target: NewThreadTarget): void {
   restoreNewConversationPreferences()
   composerSendMode.reset()
   if (isMobile.value) setSidebarCollapsed(true)
-  void router.push({ name: 'home', query: { ...(cwd ? { cwd } : {}), ...(projectId ? { projectId } : {}) } })
-}
-
-function resolveSelectedThreadProjectCwd(): string {
-  const thread = selectedThread.value
-  if (!thread) return ''
-  const projectName = thread.projectName?.trim() ?? ''
-  if (!projectName) return thread.cwd?.trim() ?? ''
-  return resolvePreferredLocalCwd(projectName, thread.cwd?.trim() ?? '')
+  void router.push(newThreadLocation(target))
 }
 
 function onStartNewThreadFromToolbar(): void {
-  restoreNewConversationPreferences()
-  composerSendMode.reset()
-  const resolvedCwd = resolveSelectedThreadProjectCwd()
-  if (resolvedCwd) {
-    newThreadCwd.value = resolvedCwd
-  }
-  if (isMobile.value) setSidebarCollapsed(true)
-  void router.push({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value, ...(selectedThread.value?.projectId ? { projectId: selectedThread.value.projectId } : {}) } : {} })
+  onStartNewThread(toolbarNewThreadTarget.value)
 }
 
 function onRenameThread(payload: { threadId: string; title: string }): void {

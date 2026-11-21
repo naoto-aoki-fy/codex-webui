@@ -1,30 +1,32 @@
 # Toolbar new thread keeps active project
 
 ## Feature/Change Name
-The global Start new thread action opens the new-thread composer with the active thread's project selected.
+The global **Start new thread** pencil opens the new-thread composer in the current tab. Middle-click, Ctrl/⌘-click, and **Open in new tab** carry the same folder selection to a separate tab.
 
 ## Prerequisites/Setup
 1. Start local Vite: `pnpm run dev --host 127.0.0.1 --port 4173`.
-2. Use a workspace with at least one project-backed thread.
+2. Register a project whose root contains Japanese characters, spaces, `#`, and `&`. Have one thread in a separate worktree, one with a project ID whose root is unavailable, one unassigned with a cwd, and one without a cwd.
+3. Open DevTools Network with **Preserve log** and filter for `codex-api`. Load an ordinary home tab as the initialization baseline. Repeat the menu checks in light and dark themes at 1280×900, 375×812, and 768×1024.
+
+Run `node scripts/test-toolbar-new-thread.cjs` against the same Vite server for the automated Chromium fixture.
 
 ## Steps
-1. In light theme, open `http://127.0.0.1:4173/#/`.
-2. Select a thread inside a project from the sidebar.
-3. Click the toolbar Start new thread button.
-4. Confirm the home/new-thread composer opens with the same project folder selected, not an empty or projectless selection.
-5. Send a first message and confirm the new thread appears under the same project in the sidebar.
-6. While already on the home/new-thread route with a folder selected, click Start new thread again and confirm the selected folder is not cleared.
-7. Repeat the selection and Start new thread flow in dark theme.
+1. Open the worktree thread from `http://127.0.0.1:4173/#/` and type an unsent draft. Record its URL and selected row.
+2. Right-click the pencil. Press Down Arrow to check focus on **Open in new tab**, then Esc to close and return focus to the pencil. Right-click the arrow and click outside to dismiss the same menu. Click the arrow to open it again. Shift-right-click the pencil and arrow to check the browser context menu. Compare the API request count before and after these menu interactions.
+3. Focus the arrow, press Down Arrow, then press Enter on **Open in new tab**. Repeat with a middle-click and Ctrl-click (⌘-click on macOS) on the pencil. In each new tab, check the registered project root and `projectId` in the home URL, check the folder selection, and compare startup requests with the regular home tab. Reload a new tab and check the selection again.
+4. Return to the original tab and compare its URL, selected row, and draft with step 1. Send a first message in one new tab and verify that its thread appears in the registered project.
+5. Click the pencil normally on the worktree thread. On the resulting home screen, select a different project and open another tab with the arrow. Click the pencil normally on home again and check that the new selection is still in use.
+6. Repeat ordinary and new-tab opening from a thread whose project root is unavailable, an unassigned thread with a cwd, and a thread with an empty cwd. First use a home URL with a selected folder so the empty-cwd case also checks against inheriting a stale selection.
+7. Repeat the menu checks with the sidebar expanded and collapsed. At 375×812, use both the content header and the open mobile drawer.
 
 ## Expected Results
-- The toolbar Start new thread action preserves the active thread's project context.
-- The new-thread folder dropdown shows the project folder immediately after navigation.
-- Existing home-route folder selection is preserved when no active thread project resolves.
-- New threads created from that composer are grouped under the same project.
-- Light and dark theme controls remain readable.
+- Normal clicks navigate in the current tab. New-tab actions leave the original tab's URL, selected thread, and draft intact.
+- A registered project root takes priority over a worktree cwd. An unavailable root falls back to the thread cwd, and an unassigned thread carries only its cwd. An empty cwd opens **Choose folder**. Opening from home carries the current folder and any selected project ID.
+- The full path survives URL encoding and reload. Opening and closing the menu makes zero API requests. A new tab runs one regular home initialization, and `thread/start` and `turn/start` first appear when the first prompt is submitted.
+- Each toolbar location shows the same readable menu, fully within the viewport and operable using the keyboard.
 
 ## Rollback/Cleanup
-- Stop the temporary Vite server if it was only used for this check.
+- Close the test tabs, restore the theme and sidebar preferences, and remove only disposable fixture projects and threads. Leave the shared verification server on port 4173 running.
 
 ## Project selection background
 
