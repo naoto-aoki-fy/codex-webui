@@ -14,8 +14,9 @@ queue, paid turn or real conversation mutation is required by automation.
    through the header tools menu.
    Unsupported/error responses disable queue submission without falling back to
    a chat send. The draft stays editable. In a fresh fixture page, make the queue
-   read fail and check that the notice stays clear of the open menu. Click
-   **Inspect native prompt queue** under the composer.
+   read fail and check that the notice stays visible below the composer and clear
+   of the open menu. Expand the composer and repeat the layout check. Click
+   **Inspect native prompt queue** from the expanded composer.
    Conversation tools opens with the queue disclosure expanded and scrolled into
    view. One read-only refresh is issued. Close the dialog and repeat with the
    tools already loaded. Restore the fixture response before continuing.
@@ -44,8 +45,9 @@ queue, paid turn or real conversation mutation is required by automation.
 
 Automation: `pnpm exec vitest run src/composables/nativeQueue.test.ts src/components/content/ThreadComposer.submission.test.ts src/homeComposer.test.ts src/utils/composerDraftStorage.test.ts`,
 `pnpm run typecheck`, `PLAYWRIGHT_BROWSERS_PATH=/tmp/codex-feature-browsers node scripts/test-risk-queue.cjs`.
-Screenshots are saved as `output/playwright/risk-07-{1280,375,768}-{light,dark}.png`
-and `output/playwright/queue-readiness-{1280,375,768}-{light,dark}.png`.
+Screenshots are saved as `output/playwright/risk-07-{1280,375,768}-{light,dark}.png`,
+`output/playwright/queue-readiness-{1280,375,768}-{light,dark}.png`, and
+`output/playwright/queue-readiness-fullscreen-{1280,375,768}-{light,dark}.png`.
 Performance audit is recorded in `docs/risk-first-features.md`; native long-running
 queue execution has not been measured live.
 
