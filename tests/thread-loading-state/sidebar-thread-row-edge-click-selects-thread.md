@@ -1,7 +1,7 @@
 ### Sidebar thread row edge click selects thread
 
 #### Feature/Change Name
-Thread rows now select when clicking anywhere on the highlighted row area (including left/right edge/time area), while pin/menu buttons keep their own actions.
+The thread link covers the full highlighted row, including the timestamp and both padded edges. Delete and the three-dot menu have separate controls.
 
 #### Prerequisites/Setup
 1. Dev server running (`pnpm run dev`)
@@ -10,16 +10,16 @@ Thread rows now select when clicking anywhere on the highlighted row area (inclu
 
 #### Steps
 1. Hover a thread row and confirm the row highlight appears
-2. Click near the left edge (outside the title text and not on pin icon)
+2. Click near the left edge, clear of the delete icon
 3. Click near the right edge/time area (outside the menu button)
 4. Click the thread title/body area
-5. Click the pin button and menu button to verify their behavior
+5. Click Delete once and open the three-dot menu to verify their behavior
 
 #### Expected Results
 - Steps 2, 3, and 4 all select/open the clicked thread
 - Hover highlight and click target area now match user expectations
-- Pin button toggles pin state without selecting due to event bubbling
-- Menu button opens thread menu without selecting due to event bubbling
+- Delete shows inline confirmation without selecting the thread
+- The three-dot menu opens without selecting the thread and includes the pin action
 
 #### Rollback/Cleanup
 - None
@@ -36,8 +36,8 @@ Thread rows now select when clicking anywhere on the highlighted row area (inclu
 #### Exact Actions
 1. In both light and dark themes, inspect pinned, project, chronological (Organize > Chronological list), and Chats rows.
 2. Select rows through their title, empty edge, and timestamp. Tab to the title and activate with Enter and Space.
-3. Tab to delete and menu controls; confirm focus reveals controls and hides status indicators as before.
-4. Open the dots menu and right-click menu. Rename a thread, dismiss with Escape, and pin/unpin it. Verify menus anchor to the correct row after moving between lists.
+3. Tab to delete and menu controls. Confirm there is a visible focus outline on each control. At 375×812, also tap each action and verify that it works independently of the row link.
+4. Open the three-dot menu; rename a thread, dismiss with Escape, and pin/unpin it. Verify menus anchor to the correct row after moving between lists.
 5. Click inline delete once, then select another row to cancel confirmation. Do not confirm deletion unless using a disposable thread.
 6. Resize the sidebar and verify long titles truncate while timestamps, worktree icons, and request chips retain their layout.
 

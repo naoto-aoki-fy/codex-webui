@@ -1,13 +1,13 @@
 const assert = require('node:assert/strict')
 const {resolve}=require('node:path')
 const thread = {id:'approved-fixture',name:'Approved fixture',cwd:'/remote/project',projectId:'p',preview:'fixture',createdAt:1,updatedAt:1,status:{type:'idle'}}
-async function setup(page, handle = () => undefined, openTools = true) {
+async function setup(page, handle = () => undefined, openTools = true, { network = page } = {}) {
  const calls=[], sockets=new Set(), errors=[]
  const items=[{type:'userMessage',id:'u',content:[{type:'text',text:'Fixture request'}]}, {type:'agentMessage',id:'a',text:'Fixture answer'},
  {type:'mcpToolCall',id:'m',server:'fixture',tool:'lookup',status:'completed',arguments:{q:'safe'},result:{content:[{type:'text',text:'<script>window.BAD=true</script> token=secret'}],structuredContent:{answer:'Structured fixture result',apiKey:'STRUCTURED_SECRET',debug:{hidden:'INTERNAL_DIAGNOSTIC'}},_meta:{hidden:'HIDDEN_META'}}},
  {type:'webSearch',id:'w',query:'fixture query',results:[]}]
  page.on('pageerror',e=>errors.push(e.message))
- await page.route('**/codex-api/**',async route=>{
+ await network.route('**/codex-api/**',async route=>{
   const url=new URL(route.request().url()); let body={};try{body=route.request().postDataJSON()||{}}catch{}
   if (url.pathname === '/codex-api/connection-profile') {
    const profile = await handle(body, page, url)
@@ -29,8 +29,8 @@ async function setup(page, handle = () => undefined, openTools = true) {
   if(url.pathname.endsWith('/pending')||url.pathname.endsWith('/methods'))payload={data:[]}
   await route.fulfill({json:payload})
  })
- await page.routeWebSocket('**/codex-api/ws',ws=>{sockets.add(ws);ws.onClose(()=>sockets.delete(ws))})
- if(process.env.APPROVED_DIST_ROOT)await page.route('**/*',route=>{
+ await network.routeWebSocket('**/codex-api/ws',ws=>{sockets.add(ws);ws.onClose(()=>sockets.delete(ws))})
+ if(process.env.APPROVED_DIST_ROOT)await network.route('**/*',route=>{
   const url=new URL(route.request().url())
   if(url.origin==='http://127.0.0.1:4173'&&(url.pathname==='/'||url.pathname.startsWith('/assets/')))return route.fulfill({path:resolve(process.env.APPROVED_DIST_ROOT,'dist',url.pathname==='/'?'index.html':url.pathname.slice(1)),contentType:url.pathname==='/'?'text/html':url.pathname.endsWith('.css')?'text/css':'application/javascript'})
   return route.fallback()

@@ -1,7 +1,7 @@
 ### Sidebar thread inline delete confirmation and menu pin action
 
 #### Feature/Change Name
-Thread rows show an inline delete button that morphs to `Confirm`, while pin/unpin moves to the thread context menu.
+Thread rows show an inline delete button that morphs to `Confirm`. The three-dot menu contains the pin/unpin action.
 
 #### Prerequisites/Setup
 1. Dev server running (`pnpm run dev`)
@@ -14,7 +14,7 @@ Thread rows show an inline delete button that morphs to `Confirm`, while pin/unp
 3. Click a different thread row and verify the pending `Confirm` state clears
 4. Hover the disposable thread row again, click delete, then click `Confirm`
 5. Verify the thread is removed from the sidebar immediately and, if it was pinned, removed from the `Pinned` section too
-6. Open another thread row context menu and verify it contains `Pin thread` for an unpinned thread
+6. Open another thread row's three-dot menu and verify it contains `Pin thread` for an unpinned thread
 7. Click `Pin thread`, reopen the same thread menu, and verify it now shows `Unpin thread`
 8. Switch to dark theme and repeat steps 1 through 7 with another disposable thread
 
@@ -22,8 +22,8 @@ Thread rows show an inline delete button that morphs to `Confirm`, while pin/unp
 - The inline row action is delete, not pin
 - Delete requires two clicks: delete icon, then `Confirm`
 - Confirming archives/removes the correct thread immediately from the sidebar and clears any pinned state for that thread
-- Pin/unpin is available from the thread context menu and updates the `Pinned` section immediately
-- Delete icon, `Confirm` button, and context menu items are readable in both light theme and dark theme
+- Pin/unpin is available from the three-dot menu and updates the `Pinned` section immediately
+- Delete icon, `Confirm` button, and menu items are readable in both light theme and dark theme
 
 #### Rollback/Cleanup
 - Delete or unpin any disposable threads created only for this test
@@ -38,10 +38,10 @@ Thread rows show an inline delete button that morphs to `Confirm`, while pin/unp
 
 #### Steps
 1. Select one thread, then right-click a different thread in the sidebar.
-2. Click `Open in new tab` at the top of the context menu.
-3. Verify the new tab opens the right-clicked thread and reload it to confirm the URL still identifies that thread.
-4. Return to the original tab and verify its selected thread and URL are unchanged and the menu is closed.
-5. Repeat for pinned, project, and regular chat rows, including the currently selected thread and the ellipsis menu.
+2. Choose **Copy link address** from the browser menu and paste it into a new tab. Verify the new tab opens the target thread and reload it to confirm the URL still identifies that thread.
+3. Return to the original tab and verify its selected thread and URL are unchanged.
+4. Repeat with Ctrl/Cmd+click on the title, middle-click on the timestamp, and **Open in new tab** from the three-dot menu. Verify the app menu dismisses after opening the tab.
+5. Repeat for pinned, chronological, and grouped thread rows, including the currently selected thread.
 6. Repeat in dark theme; verify the item text, background, and hover state remain readable in both themes.
 
 #### Expected Results

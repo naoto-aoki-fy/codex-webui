@@ -13,16 +13,15 @@
 
     <slot />
 
-    <button
-      v-if="showNewThreadButton"
+    <SidebarLink
       class="sidebar-thread-controls-button"
-      type="button"
+      :href="newThreadHref"
       :aria-label="('Start new thread')"
       :title="('Start new thread')"
-      @click="$emit('start-new-thread')"
+      @activate="$emit('start-new-thread')"
     >
       <IconTablerFilePencil class="sidebar-thread-controls-icon" />
-    </button>
+    </SidebarLink>
   </div>
 </template>
 
@@ -30,10 +29,11 @@
 import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerLayoutSidebar from '../icons/IconTablerLayoutSidebar.vue'
 import IconTablerLayoutSidebarFilled from '../icons/IconTablerLayoutSidebarFilled.vue'
+import SidebarLink from './SidebarLink.vue'
 
 defineProps<{
   isSidebarCollapsed: boolean
-  showNewThreadButton?: boolean
+  newThreadHref: string
 }>()
 
 defineEmits<{

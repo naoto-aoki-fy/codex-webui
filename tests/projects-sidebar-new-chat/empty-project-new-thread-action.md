@@ -28,16 +28,16 @@
 - Select an existing thread and note the current URL.
 
 #### Steps
-1. Right-click the empty project's header and choose `Open in new tab`.
+1. Click the empty project's header normally to collapse and expand it. Right-click the header and copy its address from the browser menu, then paste it into a new tab.
 2. Confirm the new tab opens the home composer with that project and its workspace root selected; inspect `projectId` and `cwd` in the URL.
 3. Reload the new tab and confirm its project/directory selection is restored.
 4. Return to the original tab; confirm its URL and selected thread are unchanged and the project menu is closed.
-5. Repeat using the project's three-dot menu, then repeat with a project that has threads and one that cannot be removed.
+5. Repeat using Ctrl/Cmd+click on the header, middle-click on the pencil, and **Open in new tab** from the three-dot menu. Repeat with a project that has threads and one that cannot be removed.
 6. Confirm `Remove` appears only for eligible projects, and still removes an eligible project.
 7. Repeat in light and dark themes and compare the menu with the thread menu.
 
 #### Expected Results
-- Both entry points expose the same `Open in new tab` action for every project, including empty and non-removable projects.
+- The header link, pencil link, and **Open in new tab** menu command share the same destination for every project, including empty and non-removable projects.
 - The destination preserves the exact project ID and directory, including spaces, using the same resolution as the existing new-thread button.
 - The current tab retains its selected thread and page, and dismisses the menu.
 - Menu styling remains consistent in both themes; removal eligibility is unchanged.

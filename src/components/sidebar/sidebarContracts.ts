@@ -1,10 +1,9 @@
 import type { UiProjectGroup } from '../../types/codex';
-export type NewThreadTarget = { cwd: string; projectId?: string };
 export type SidebarProps = {
     isForkDisabled?: boolean;
     groups: UiProjectGroup[];
     removableProjectIds?: string[];
-    resolveNewThreadCwd?: (projectName: string) => string;
+    resolveNewThreadCwd?: (projectId: string) => string;
     projectDisplayNameById: Record<string, string>;
     selectedThreadId: string;
     activeProjectName: string | null;

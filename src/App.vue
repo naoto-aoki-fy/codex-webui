@@ -11,7 +11,7 @@
             v-if="!isSidebarCollapsed"
             class="sidebar-thread-controls-host"
             :is-sidebar-collapsed="isSidebarCollapsed"
-            :show-new-thread-button="true"
+            :new-thread-href="toolbarNewThreadHref"
             @toggle-sidebar="setSidebarCollapsed(!isSidebarCollapsed)"
             @start-new-thread="onStartNewThreadFromToolbar"
           >
@@ -115,7 +115,7 @@
               v-if="isSidebarCollapsed || isMobile"
               class="sidebar-thread-controls-header-host"
               :is-sidebar-collapsed="isSidebarCollapsed"
-              :show-new-thread-button="true"
+              :new-thread-href="toolbarNewThreadHref"
               @toggle-sidebar="setSidebarCollapsed(!isSidebarCollapsed)"
               @start-new-thread="onStartNewThreadFromToolbar"
             />
@@ -409,7 +409,7 @@ import ManagementDialog from './components/shared/ManagementDialog.vue'
 import ArchivedThreads from './components/sidebar/ArchivedThreads.vue'
 import AccountSettingsPanel from './components/sidebar/AccountSettingsPanel.vue'
 import SidebarThreadTree from './components/sidebar/SidebarThreadTree.vue'
-import type { NewThreadTarget } from './components/sidebar/sidebarContracts'
+import { newThreadRoute, sidebarHref, threadRoute, type NewThreadTarget } from './router/sidebarRoutes'
 import ContentHeader from './components/content/ContentHeader.vue'
 import FolderPickerModal from './components/content/FolderPickerModal.vue'
 import ThreadGoalPanel from './components/content/ThreadGoalPanel.vue'
@@ -803,10 +803,21 @@ const threadContextTooltip = computed(() => buildThreadContextTooltip(selectedTh
 
 const newThreadFolderOptions = computed(() => projects.value.map(project => ({ value: project.id, label: project.name })))
 const nativeProjectIds = computed(() => projects.value.map(project => project.id))
+const projectRootById = computed(() => new Map(projects.value.map(project => [project.id, project.roots[0]?.path ?? ''])))
+const projectFallbackCwdById = computed(() => new Map(projectGroups.value.map(group => [
+  group.projectName, group.threads.find(thread => thread.cwd?.trim())?.cwd?.trim() ?? '',
+])))
 
-function resolveWorkspaceRootCwd(projectId: string): string {
-  return projects.value.find(project => project.id === projectId)?.roots[0]?.path || ''
-}
+const toolbarNewThreadTarget = computed<NewThreadTarget>(() => {
+  if (isHomeRoute.value) return { cwd: newThreadCwd.value, projectId: newThreadProjectId.value }
+  const thread = selectedThread.value
+  if (!thread || thread.id !== routeThreadId.value) return { cwd: '' }
+
+  const projectId = thread.projectId || undefined
+  const cwd = (projectId && projectRootById.value.get(projectId)) || thread.cwd?.trim() || ''
+  return { cwd, projectId }
+})
+const toolbarNewThreadHref = computed(() => sidebarHref(router, newThreadRoute(toolbarNewThreadTarget.value)))
 const darkModeMediaQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
 const chatWidthLabel = computed(() => (CHAT_WIDTH_PRESETS[chatWidth.value].label))
 const contentStyle = computed(() => {
@@ -963,9 +974,9 @@ function onSidebarSearchKeydown(event: KeyboardEvent): void {
 
 function onSelectThread(threadId: string): void {
   if (!threadId) return
-  if (route.name === 'thread' && routeThreadId.value === threadId) return
-  void router.push({ name: 'thread', params: { threadId } })
   if (isMobile.value) setSidebarCollapsed(true)
+  if (route.name === 'thread' && routeThreadId.value === threadId) return
+  void router.push(threadRoute(threadId))
 }
 
 function onArchiveThread(threadId: string): void {
@@ -998,39 +1009,19 @@ const {
   onForkThreadFromMessage,
 } = transfers
 
-function resolvePreferredLocalCwd(projectId: string, fallbackCwd = ''): string {
-  return resolveWorkspaceRootCwd(projectId) || fallbackCwd.trim()
+function resolveProjectNewThreadCwd(projectId: string): string {
+  return projectRootById.value.get(projectId) || projectFallbackCwdById.value.get(projectId) || ''
 }
 
-function resolveProjectNewThreadCwd(projectName: string): string {
-  const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
-  return resolvePreferredLocalCwd(projectName, projectGroup?.threads[0]?.cwd?.trim() ?? '')
-}
-
-function onStartNewThread({ cwd, projectId }: NewThreadTarget): void {
-  restoreNewConversationPreferences()
+function onStartNewThread(target: NewThreadTarget): void {
+  if (isHomeRoute.value) restoreNewConversationPreferences()
   composerSendMode.reset()
   if (isMobile.value) setSidebarCollapsed(true)
-  void router.push({ name: 'home', query: { ...(cwd ? { cwd } : {}), ...(projectId ? { projectId } : {}) } })
-}
-
-function resolveSelectedThreadProjectCwd(): string {
-  const thread = selectedThread.value
-  if (!thread) return ''
-  const projectName = thread.projectName?.trim() ?? ''
-  if (!projectName) return thread.cwd?.trim() ?? ''
-  return resolvePreferredLocalCwd(projectName, thread.cwd?.trim() ?? '')
+  void router.push(newThreadRoute(target))
 }
 
 function onStartNewThreadFromToolbar(): void {
-  restoreNewConversationPreferences()
-  composerSendMode.reset()
-  const resolvedCwd = resolveSelectedThreadProjectCwd()
-  if (resolvedCwd) {
-    newThreadCwd.value = resolvedCwd
-  }
-  if (isMobile.value) setSidebarCollapsed(true)
-  void router.push({ name: 'home', query: newThreadCwd.value ? { cwd: newThreadCwd.value, ...(selectedThread.value?.projectId ? { projectId: selectedThread.value.projectId } : {}) } : {} })
+  onStartNewThread(toolbarNewThreadTarget.value)
 }
 
 function onRenameThread(payload: { threadId: string; title: string }): void {
@@ -1157,9 +1148,9 @@ function scheduleMobileConversationJumpToLatest(): void {
 }
 
 function onSelectNewThreadFolder(projectId: string): void {
-  const project = projects.value.find(p => p.id === projectId)
-  if (!project) return
-  void router.replace({ name: 'home', query: { ...route.query, cwd: project.roots[0]?.path || '', projectId } })
+  const cwd = projectRootById.value.get(projectId)
+  if (cwd === undefined) return
+  void router.replace({ name: 'home', query: { ...route.query, cwd, projectId } })
 }
 
 async function onConfirmExistingFolder(path = resolvedExistingFolderPath.value): Promise<void> {
