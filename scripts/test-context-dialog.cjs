@@ -1,24 +1,31 @@
 const {chromium}=require('playwright')
-const {setup,assert,enableQueueMode}=require('./approved-fixture.cjs')
+const {setup,thread,assert,enableQueueMode}=require('./approved-fixture.cjs')
 const {mkdirSync,writeFileSync}=require('node:fs')
 const path=require('node:path')
 const results=[]
+const otherThread={...thread,id:'other-fixture',name:'Other fixture'}
 async function openContext(page){
  await page.locator('.conversation-header-menu > summary').click()
  await page.getByRole('button',{name:'Context',exact:true}).click()
  const dialog=page.getByRole('dialog',{name:'Context',exact:true})
  await dialog.waitFor();return dialog
 }
-function usage(emit,last,window){
+function usage(emit,last,window,threadId=thread.id){
  const breakdown=n=>({totalTokens:n,inputTokens:n,cachedInputTokens:0,outputTokens:0,reasoningOutputTokens:0})
- emit('thread/tokenUsage/updated',{threadId:'approved-fixture',tokenUsage:{total:breakdown(456789),last:breakdown(last),...(window?{modelContextWindow:window}:{})}})
+ emit('thread/tokenUsage/updated',{threadId,tokenUsage:{total:breakdown(456789),last:breakdown(last),...(window?{modelContextWindow:window}:{})}})
 }
 ;(async()=>{
  mkdirSync('output/playwright',{recursive:true})
  const browser=await chromium.launch()
  for(const [width,height] of [[1280,900],[320,900],[375,812],[768,1024]]){
   const page=await browser.newPage({viewport:{width,height}})
-  const {calls,emit,errors}=await setup(page,body=>body.method==='thread/queue/list'?{json:{result:{data:[],nextCursor:null}}}:undefined,false)
+  const {calls,emit,errors}=await setup(page,body=>{
+   if(body.method==='thread/queue/list')return {json:{result:{data:[],nextCursor:null}}}
+   if(body.method==='thread/list')return {json:{result:{data:[thread,otherThread],nextCursor:null}}}
+   if(['thread/read','thread/resume'].includes(body.method)&&body.params?.threadId===otherThread.id){
+    return {json:{result:{thread:{...otherThread,turns:[]},model:'fixture-model',modelProvider:'fixture'}}}
+   }
+  },false)
   await page.locator('.thread-composer-input').fill('Context must retain this draft')
   await enableQueueMode(page)
   await page.waitForTimeout(700)
@@ -75,11 +82,19 @@ function usage(emit,last,window){
   await page.keyboard.press('Escape')
   const collapse=page.locator('.mobile-drawer').getByRole('button',{name:'Collapse sidebar',exact:true});if(await collapse.count())await collapse.click()
   await openContext(page)
-  await page.evaluate(()=>location.hash='#/thread/other-fixture')
+  await page.evaluate(id=>location.hash=`#/thread/${id}`,otherThread.id)
   await page.waitForFunction(()=>!document.querySelector('dialog[open]'))
+  await page.waitForURL(`**/#/thread/${otherThread.id}`)
   dialog=await openContext(page)
-  await page.waitForURL('**/#/thread/other-fixture')
   await dialog.getByText('Awaiting data',{exact:false}).waitFor()
+  usage(emit,34000,200000,otherThread.id)
+  const destinationUsage=dialog.getByText('Current context usage: 34,000 tokens',{exact:false})
+  await destinationUsage.waitFor()
+  usage(emit,98000,200000)
+  // The next event on the same socket confirms that the old thread update has arrived.
+  emit('item/agentMessage/delta',{threadId:otherThread.id,turnId:'other-live',itemId:'other-context-stream',delta:'Destination thread streaming'})
+  await page.locator('[data-message-id="other-context-stream"]').waitFor()
+  assert.equal(await destinationUsage.isVisible(),true)
   await page.keyboard.press('Escape')
   await page.evaluate(()=>location.hash='#/')
   await page.waitForTimeout(200)
