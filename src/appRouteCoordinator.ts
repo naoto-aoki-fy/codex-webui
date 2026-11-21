@@ -4,7 +4,7 @@ import type { RouteLocationNormalizedLoadedGeneric, Router } from 'vue-router';
 import type { FileAttachment } from './utils/composerDraftStorage';
 /** Owns serialized route-selection work and first-submission navigation. Route watchers and startup remain in App; pending selection coalesces through one per-instance gate. */
 export function createAppRouteCoordinator(deps: {
-    route: Pick<RouteLocationNormalizedLoadedGeneric, 'name'>;
+    route: Pick<RouteLocationNormalizedLoadedGeneric, 'name' | 'fullPath'>;
     selectedThreadId: Ref<string, string>;
     selectThread: (threadId: string) => Promise<'ok' | 'not-found' | 'error'>;
     routeThreadId: ComputedRef<string>;
@@ -68,25 +68,29 @@ export function createAppRouteCoordinator(deps: {
         label: string;
         path: string;
         fsPath: string;
-    }> = []): Promise<boolean> {
+    }> = [], onAccepted?: () => void): Promise<boolean> {
+        const submittedPath = deps.route.fullPath;
+        const targetCwd = deps.newThreadCwd.value;
+        if (!targetCwd.trim()) {
+            deps.desktopError.value = 'Select an existing workspace before starting a conversation.';
+            return false;
+        }
+        const threadId = await deps.sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments, deps.newThreadProjectId.value || undefined)
+            .catch(() => ''); // The send path already surfaces the error.
+        if (!threadId)
+            return false;
+        onAccepted?.();
+        if (deps.route.fullPath !== submittedPath)
+            return true;
         try {
-            let targetCwd = deps.newThreadCwd.value;
-            if (!targetCwd.trim()) {
-                deps.desktopError.value = 'Select an existing workspace before starting a conversation.';
-                return false;
-            }
-            const threadId = await deps.sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments, deps.newThreadProjectId.value || undefined);
-            if (!threadId)
-                return false;
             deps.onThreadCreated?.(threadId);
             await deps.router.replace({ name: 'thread', params: { threadId } });
             deps.scheduleMobileConversationJumpToLatest();
-            return true;
         }
-        catch {
-            // Error is already reflected in state.
-            return false;
+        catch (error) {
+            deps.desktopError.value = error instanceof Error ? error.message : String(error);
         }
+        return true;
     }
     return {
 isRouteSyncInProgress,

@@ -1,6 +1,6 @@
 // Build first. APPROVED_DIST_ROOT=. intercepts assets from this checkout as well as protocol calls.
 const { chromium } = require('playwright')
-const { setup, assert, openToolsDialog, openComposerEntry } = require('./approved-fixture.cjs')
+const { setup, thread, assert, openToolsDialog, openComposerEntry, enableQueueMode } = require('./approved-fixture.cjs')
 const { mkdirSync, writeFileSync } = require('node:fs')
 const { resolve } = require('node:path')
 const base = 'http://127.0.0.1:4173'
@@ -35,6 +35,44 @@ async function assertNativeLineBreak(input, calls) {
   assert.equal(calls.length, before, 'inserting a line break adds no API calls')
 }
 
+const submissionMethods = ['thread/start', 'turn/start', 'turn/steer', 'thread/queue/add']
+const rejection = { status:400, json:{ error:'Fixture rejected the message' } }
+const acceptedTurn = { json:{ result:{ turn:{ id:'accepted-turn', status:'inProgress', items:[] } } } }
+
+async function beginExpandedSubmission(page, calls, hold, { text, label, shortcut, method = 'turn/start', createsThread = false }) {
+  const input = page.locator('.thread-composer-input')
+  await input.fill(text)
+  await page.getByRole('button', { name:'Expand composer', exact:true }).click()
+  const submit = page.getByRole('button', { name:label, exact:true })
+  await page.waitForFunction(label => {
+    const button = document.querySelector('.thread-composer-submit')
+    return button?.getAttribute('aria-label') === label && !button.disabled
+  }, label)
+  const before = calls.length
+  const release = hold()
+  const request = page.waitForRequest(request => request.method() === 'POST'
+    && request.url().endsWith('/codex-api/rpc') && request.postDataJSON().method === method)
+  if (shortcut) await input.press(shortcut)
+  else await submit.click()
+  const { params } = (await request).postDataJSON()
+  await page.locator('.content-root:not(.is-composer-expanded)').waitFor()
+  assert.equal(await input.inputValue(), text, 'draft is intact while the response is held')
+  assert.equal(await page.locator('.thread-composer-submit').isDisabled(), true)
+  const assertSingleSubmission = () => assert.deepEqual(
+    calls.slice(before).map(call => call.method).filter(method => submissionMethods.includes(method)),
+    createsThread ? ['thread/start', method] : [method],
+  )
+  assertSingleSubmission()
+  return { params, release, assertSingleSubmission }
+}
+
+async function waitForSubmitEnabled(page) {
+  await page.waitForFunction(() => {
+    const button = document.querySelector('.thread-composer-submit')
+    return button && !button.disabled
+  })
+}
+
 ;(async () => {
   mkdirSync('output/playwright', { recursive:true })
   const browser = await chromium.launch({ headless:true })
@@ -46,12 +84,31 @@ async function assertNativeLineBreak(input, calls) {
         const page = await browser.newPage({ viewport })
         activePage = page
         let uploadPath = '/remote/uploads/fullscreen.txt'
+        let pendingSubmission
+        let createdThreadCount = 0
+        const holdSubmission = () => {
+          let release
+          pendingSubmission = new Promise(resolve => { release = resolve })
+          return response => { pendingSubmission = undefined; release(response) }
+        }
         await page.route('**/codex-local-image?*', route => route.fulfill({ contentType:'image/png', body:png }))
         const { calls, errors, emit } = await setup(page, (body, _page, url) => {
           if (url.pathname.endsWith('/upload-file')) return { json:{ path:uploadPath } }
           if (url.pathname.endsWith('/server-requests/respond')) return { json:{ ok:true } }
           if (body.method === 'model/list') return { json:{ result:{ data:['fixture-model', 'fixture-alternative'].map(model => ({ id:model, model, supportedReasoningEfforts:['low','high'], defaultReasoningEffort:'low' })), nextCursor:null } } }
           if (body.method === 'skills/list') return { json:{ result:{ data:[{ cwd:'/remote/project', skills:[{ name:'fullscreen-skill', description:'Full-screen skill', path:'/remote/skills/fullscreen-skill/SKILL.md', enabled:true }], errors:[] }] } } }
+          if (body.method === 'thread/start') {
+            const created = { ...thread, id:`fullscreen-new-${++createdThreadCount}`, name:'New fullscreen fixture', projectId:body.params.projectId }
+            return { json:{ result:{ thread:created, model:'fixture-model', modelProvider:'fixture' } } }
+          }
+          if (['thread/read', 'thread/resume'].includes(body.method) && body.params.threadId?.startsWith('fullscreen-new-')) {
+            return { json:{ result:{ thread:{ ...thread, id:body.params.threadId, name:'New fullscreen fixture', turns:[] }, model:'fixture-model', modelProvider:'fixture' } } }
+          }
+          if (body.method === 'thread/queue/list') return { json:{ result:{ data:[], nextCursor:null } } }
+          if (['turn/start', 'turn/steer', 'thread/queue/add'].includes(body.method)) {
+            assert(pendingSubmission, 'unexpected extra submission')
+            return pendingSubmission
+          }
         }, false)
         await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), theme === 'dark')
         const input = page.locator('.thread-composer-input')
@@ -228,6 +285,56 @@ async function assertNativeLineBreak(input, calls) {
         assert.equal(calls.filter(c => c.method === 'turn/interrupt').length, 1)
         await input.fill(longDraft)
         await exit.click()
+
+        // A rejected send keeps the original text and both attachment types, even after reload.
+        await page.locator('.thread-composer-hidden-input').setInputFiles([
+          { name:'rejected.png', mimeType:'image/png', buffer:png },
+          { name:'rejected.txt', mimeType:'text/plain', buffer:Buffer.from('retained file') },
+        ])
+        await page.getByRole('button', { name:'Remove rejected.png', exact:true }).waitFor()
+        await page.getByRole('button', { name:'Remove dropped.txt', exact:true }).waitFor()
+        const failed = await beginExpandedSubmission(page, calls, holdSubmission, {
+          text:'Fullscreen conversation draft', label:'Send message',
+        })
+        await page.locator('.content-thread').waitFor()
+        const submitScreenshot = resolve(`output/playwright/composer-fullscreen-send-pending-${viewport.width}-${theme}.png`)
+        await page.waitForTimeout(2200)
+        await page.screenshot({ path:submitScreenshot })
+        failed.release(rejection)
+        await waitForSubmitEnabled(page)
+        failed.assertSingleSubmission()
+        assert.equal(await input.inputValue(), 'Fullscreen conversation draft')
+        assert.equal(await page.getByRole('button', { name:'Remove rejected.png', exact:true }).isVisible(), true)
+        await page.reload()
+        await page.getByText('Fixture answer', { exact:true }).waitFor()
+        await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), theme === 'dark')
+        assert.equal(await input.inputValue(), 'Fullscreen conversation draft')
+        for (const name of ['Remove Image 1', 'Remove dropped.txt']) {
+          await page.getByRole('button', { name, exact:true }).click()
+        }
+
+        emit('turn/started', { threadId:'approved-fixture', turn:{ id:'steering', status:'inProgress', items:[] } })
+        await page.getByRole('button', { name:'Steer', exact:true }).waitFor()
+        const steer = await beginExpandedSubmission(page, calls, holdSubmission, {
+          text:'Fullscreen steering draft', label:'Steer', shortcut:'Control+Enter',
+        })
+        steer.release(rejection)
+        await waitForSubmitEnabled(page)
+        steer.assertSingleSubmission()
+        assert.equal(await input.inputValue(), 'Fullscreen steering draft')
+
+        await enableQueueMode(page)
+        const queued = await beginExpandedSubmission(page, calls, holdSubmission, {
+          text:'Fullscreen queue draft', label:'Queue prompt', method:'thread/queue/add', shortcut:'Meta+Enter',
+        })
+        await expand.click()
+        await input.press('Meta+Enter')
+        queued.release({ json:{ result:{ queuedSubmission:{ id:'queued', ...queued.params } } } })
+        await page.waitForFunction(() => document.querySelector('.thread-composer-input')?.value === '')
+        queued.assertSingleSubmission()
+        assert.equal(await exit.isVisible(), true)
+        await exit.click()
+
         // Route replacement/unmount must release the layout; Home also expands.
         await expand.click()
         await page.evaluate(() => { window.location.hash = '#/' })
@@ -245,9 +352,30 @@ async function assertNativeLineBreak(input, calls) {
         await exit.click()
         assert.equal(await page.locator('.new-thread-empty').isVisible(), true)
         assert.equal(await input.inputValue(), 'first\nsecond')
+
+        const failedHome = await beginExpandedSubmission(page, calls, holdSubmission, {
+          text:'Fullscreen first message', label:'Send message', shortcut:'Control+Enter', createsThread:true,
+        })
+        await page.locator('.new-thread-empty').waitFor()
+        failedHome.release(rejection)
+        await waitForSubmitEnabled(page)
+        failedHome.assertSingleSubmission()
+        assert.equal(await input.inputValue(), 'Fullscreen first message')
+        assert.equal(await page.locator('.new-thread-empty').isVisible(), true)
+        const acceptedHome = await beginExpandedSubmission(page, calls, holdSubmission, {
+          text:'Fullscreen first message', label:'Send message', createsThread:true,
+        })
+        acceptedHome.release(acceptedTurn)
+        await page.waitForURL('**/#/thread/fullscreen-new-2')
+        await expand.waitFor()
+        acceptedHome.assertSingleSubmission()
+        await page.evaluate(() => { window.location.hash = '#/' })
+        await page.locator('.new-thread-empty').waitFor()
+        assert.equal(await input.inputValue(), '')
+
         assert.deepEqual(errors, [])
-        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, screenshot, composerBox, background, zeroApiToggleCycles:3, toggleRoundTripMs:cycles })
-        console.log('PASS', viewport.width, theme, 'full screen, native Enter, control clearance, attachments, draft, pending request, dialog headers, Home, zero-request cycles')
+        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, screenshot, submitScreenshot, composerBox, background, zeroApiToggleCycles:3, toggleRoundTripMs:cycles, submissions:5 })
+        console.log('PASS', viewport.width, theme, 'full screen, native Enter, attachments, held sends, draft recovery, steering, queue, Home, zero-request cycles')
         await page.close()
       }
     }

@@ -625,6 +625,7 @@ defineExpose<ThreadComposerExposed>({
 })
 
 onBeforeUnmount(() => {
+  attachments.attachmentSessionToken += 1
   emit('update:expanded', false)
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('drop', attachments.onWindowDragCleanup)
@@ -642,6 +643,7 @@ watch(
       persistDraftForThread(lastActiveThreadId, input.getCurrentDraftPayload())
     }
     isComposerCollapsed.value = false
+    isComposerExpanded.value = false
     input.clearDraftState()
     const restored = loadPersistedDraftForThread(nextThreadId)
     draftSaveWarning.value = draftStorageError
