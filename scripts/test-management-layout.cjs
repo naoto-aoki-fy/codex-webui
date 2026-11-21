@@ -39,7 +39,7 @@ async function screenshot(page,name,width,theme) {
   await draft.fill('Retained draft fixture')
   const originalRoute=page.url()
   const mcp=page.locator('[data-message-id="m"] .execution-details')
-  await mcp.locator('summary').click()
+  await mcp.getByRole('button',{name:'MCP · fixture · lookup',exact:true}).click()
   const alignment=await page.evaluate(()=>{
    const a=document.querySelector('[data-message-id="a"] .message-row').getBoundingClientRect()
    const m=document.querySelector('[data-message-id="m"] .message-row').getBoundingClientRect()

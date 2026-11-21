@@ -30,7 +30,9 @@ at `http://127.0.0.1:4173/#/thread/approved-fixture`.
    three native items and retrieves two older turns containing three more items
    in one `thread/turns/list` request. Verify the same IDs and order after opening
    the older group. Searches outside the current render window appear only
-   after loading that window.
+   after loading that window. If loading expands an existing group to include
+   earlier searches, the group retains its open or closed state and its selected
+   search.
 
 The script saves six screenshots under `output/playwright/` and closes its
 browser. It uses isolated browser contexts and fixture data.

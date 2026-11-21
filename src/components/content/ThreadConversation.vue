@@ -972,21 +972,25 @@ function isCompactExecution(message: UiMessage): boolean {
 }
 
 function isWebSearchGroupExpanded(row: ConversationRow): boolean {
-  // Keep a search visible if a second search arrives while its details are open.
-  return webSearchGroupExpansion.get(row.id) ?? selectedWebSearchIds.value.has(row.id)
+  return webSearchGroupState.value.get(row.id)?.expanded ?? false
+}
+
+function setWebSearchGroupExpanded(row: ConversationRow, expanded: boolean): void {
+  // History window changes can move the group heading to another member.
+  for (const search of row.webSearchGroup ?? []) webSearchGroupExpansion.set(search.id, expanded)
 }
 
 function toggleWebSearchGroup(row: ConversationRow): void {
-  webSearchGroupExpansion.set(row.id, !isWebSearchGroupExpanded(row))
+  setWebSearchGroupExpanded(row, !isWebSearchGroupExpanded(row))
 }
 
 function isExecutionExpanded(row: ConversationRow, item: UiMessage): boolean {
-  return row.webSearchGroup ? selectedWebSearchIds.value.get(row.id) === item.id : expandedExecutionIds.has(item.id)
+  return row.webSearchGroup ? webSearchGroupState.value.get(row.id)?.selectedId === item.id : expandedExecutionIds.has(item.id)
 }
 
 function toggleExecution(row: ConversationRow, item: UiMessage): void {
   const wasExpanded = isExecutionExpanded(row, item)
-  if (row.webSearchGroup) webSearchGroupExpansion.set(row.id, true)
+  if (row.webSearchGroup) setWebSearchGroupExpanded(row, true)
   for (const search of row.webSearchGroup ?? [item]) expandedExecutionIds.delete(search.id)
   if (!wasExpanded) expandedExecutionIds.add(item.id)
 }
@@ -1386,13 +1390,21 @@ const conversationRows = computed(() => {
   return result
 })
 
-const selectedWebSearchIds = computed(() => {
-  const selected = new Map<string, string>()
+const webSearchGroupState = computed(() => {
+  const groups = new Map<string, { expanded: boolean; selectedId: string | undefined }>()
   for (const row of conversationRows.value) {
-    const item = row?.webSearchGroup?.find(search => expandedExecutionIds.has(search.id))
-    if (row && item) selected.set(row.id, item.id)
+    if (!row?.webSearchGroup) continue
+    let expanded: boolean | undefined
+    let selectedId: string | undefined
+    for (const search of row.webSearchGroup) {
+      expanded ??= webSearchGroupExpansion.get(search.id)
+      if (!selectedId && expandedExecutionIds.has(search.id)) selectedId = search.id
+      if (expanded !== undefined && selectedId) break
+    }
+    // Keep an open standalone search visible if it becomes part of a new group.
+    groups.set(row.id, { expanded: expanded ?? Boolean(selectedId), selectedId })
   }
-  return selected
+  return groups
 })
 
 function readAnchoredFileChangeSummary(message: UiMessage): TurnFileChangeSummary | null {
