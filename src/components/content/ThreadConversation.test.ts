@@ -34,7 +34,7 @@ function setup(initial: Record<string, unknown> = {}) {
   const markdownCode = ts.transpileModule(markdownSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const instrumentedSource = source
   const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, loadMoreAbove, conversationListRef, renderWindowStart: viewport.renderWindowStart, isLoadingMore, scheduleConversationScroll: viewport.scheduleConversationScroll, editMessage, forkResponse, bindPendingImageHandlers: viewport.bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput: viewport.autoFollowOutput, messageBlockCache: markdown.messageBlockCache, inlineSegmentCache: markdown.inlineSegmentCache, markdownHtmlCache: markdown.markdownHtmlCache, highlightHtmlCache: markdown.highlightHtmlCache,
-    conversationRows, toggleExecution, isExecutionExpanded, isWebSearchGroupExpanded };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+    conversationRows, toggleExecution, isExecutionExpanded, toggleWebSearchGroup, isWebSearchGroupExpanded };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const state = scope.run(() => new Function('exports', 'require', 'defineProps', 'defineEmits', 'defineExpose', 'recordParse', code)({}, (path: string) => {
     if (path.endsWith('/conversationMarkdown')) {
       const exports = {}
@@ -53,7 +53,11 @@ function setup(initial: Record<string, unknown> = {}) {
 afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.unstubAllGlobals(); update.mockReset() })
 const deferred = () => { let resolve!: (value: any) => void; let reject!: (error: Error) => void; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
 
-it('only groups visible searches and preserves the selected item when the render window grows', async () => {
+it.each([
+  { mode: 'selected details', expanded: true, selected: true },
+  { mode: 'collapsed group', expanded: false, selected: true },
+  { mode: 'headings only', expanded: true, selected: false },
+])('only groups visible searches and preserves $mode when the render window grows', async ({ expanded, selected }) => {
   const messages: UiMessage[] = Array.from({ length: 80 }, (_, index) => ({
     id: String(index), role: 'assistant', text: 'Reply', turnId: 'turn',
   }))
@@ -64,15 +68,18 @@ it('only groups visible searches and preserves the selected item when the render
   state.renderWindowStart.value = 30
   const visibleGroup = state.conversationRows.value[0]
   expect(visibleGroup.webSearchGroup.map((item: UiMessage) => item.id)).toEqual(['30', '31'])
-  state.toggleExecution(visibleGroup, messages[31])
+  state.toggleWebSearchGroup(visibleGroup)
+  if (selected) state.toggleExecution(visibleGroup, messages[31])
+  if (!expanded) state.toggleWebSearchGroup(visibleGroup)
 
   state.autoFollowOutput.value = false
   state.conversationListRef.value = { scrollHeight: 1000, scrollTop: 10 }
   await state.loadMoreAbove()
   const olderGroup = state.conversationRows.value[29]
   expect(olderGroup.webSearchGroup.map((item: UiMessage) => item.id)).toEqual(['29', '30', '31'])
-  expect(state.isWebSearchGroupExpanded(olderGroup)).toBe(true)
-  expect(state.isExecutionExpanded(olderGroup, messages[31])).toBe(true)
+  expect(state.isWebSearchGroupExpanded(olderGroup)).toBe(expanded)
+  if (!expanded) state.toggleWebSearchGroup(olderGroup)
+  expect(state.isExecutionExpanded(olderGroup, messages[31])).toBe(selected)
 
   props.activeThreadId = 'B'
   expect(state.isWebSearchGroupExpanded(olderGroup)).toBe(false)
