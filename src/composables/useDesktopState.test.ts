@@ -711,8 +711,6 @@ describe('locally created threads awaiting sidebar indexing', () => {
   async function create(id = 'new-chat', cwd = '/tmp/project') {
     gatewayMocks.startThread.mockResolvedValueOnce({ threadId: id, model: 'gpt-5.5' })
     await state.sendMessageToNewThread('hello', cwd)
-    // Let the detached turn-start and its message synchronization finish.
-    await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0))
   }
 
   function complete(id = 'new-chat') {
@@ -808,7 +806,7 @@ describe('locally created threads awaiting sidebar indexing', () => {
     const now = Date.now()
     vi.spyOn(Date, 'now').mockReturnValue(now)
     gatewayMocks.startThreadTurn.mockRejectedValueOnce(new Error('turn failed'))
-    await create()
+    await expect(create()).rejects.toThrow('turn failed')
     vi.mocked(Date.now).mockReturnValue(now + 120001)
     await refresh()
     expect(ids()).not.toContain('new-chat')

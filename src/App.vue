@@ -1141,14 +1141,17 @@ function onSubmitThreadMessage(
   settle: (accepted: boolean) => void,
 ): void {
   scheduleMobileConversationJumpToLatest()
+  if (isHomeRoute.value && !payload.queue) {
+    void routing.submitFirstMessageForNewThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments, () => settle(true))
+      .then(accepted => { if (!accepted) settle(false) })
+    return
+  }
   const submittedContext = composerThreadContextId.value
   const submittedMode = composerCollaborationMode.value
   const submittedEpoch = operationEpoch.value
   const submission = payload.queue
     ? isHomeRoute.value ? Promise.reject(new Error('Select an existing native thread before queuing')) : nativeQueue.add(payload)
-    : isHomeRoute.value
-    ? routing.submitFirstMessageForNewThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments)
-    : sendMessageToSelectedThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments, undefined, payload.apps).then(() => true)
+    : sendMessageToSelectedThread(payload.text, payload.imageUrls, payload.skills, payload.fileAttachments, undefined, payload.apps)
   void submission.then(accepted => {
     if (accepted && payload.queue && submittedMode === 'plan' && submittedEpoch === operationEpoch.value) {
       resetSubmittedPlanMode(submittedContext)
@@ -1265,7 +1268,9 @@ function onImplementPlan(): void {
   if (isHomeRoute.value || !selectedThreadId.value) return
   setSelectedCollaborationMode('default')
   scheduleMobileConversationJumpToLatest()
-  void sendMessageToSelectedThread('Implement', [], [], [], 'default')
+  void sendMessageToSelectedThread('Implement', [], [], [], 'default').catch(failure => {
+    desktopError.value = failure instanceof Error ? failure.message : String(failure)
+  })
 }
 
 async function onCopyThreadChat(threadId: string): Promise<void> {

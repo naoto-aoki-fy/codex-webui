@@ -42,15 +42,44 @@ Full-screen editing and Enter behavior in the shared Home and conversation compo
 9. Switch to dark theme and repeat. Repeat at 375×812 and 768×1024, including with
    the mobile keyboard open; controls and exit remain inside the visible viewport
    and clear device safe areas. A disabled editor must still permit full-screen exit.
-10. In a disposable chat, send separate drafts while expanded using Ctrl+Enter
-    (Command+Enter on Mac) and the Send button. After returning inline, verify
-    Enter sends with **Require ⌘ + enter to send** off. With it on, verify Enter
-    inserts a line break and the shortcut sends. Hover over the setting and check
-    that its tooltip explains the full-screen behavior.
+10. In both light and dark themes, try each action from full screen with a unique
+    draft. Alternate between clicking the send control and pressing Ctrl+Enter
+    (Command+Enter on Mac). Use DevTools network throttling or the fixture below
+    to keep each request pending long enough to inspect the layout.
+
+    - **First message from Home.** Choose a folder and send. The Home layout
+      returns with the draft still visible while submission is pending. After
+      acceptance, the new conversation opens inline. Return to Home and confirm
+      that the sent draft has cleared.
+    - **Existing conversation.** Click **Send** or use the shortcut. The header
+      and history return while the draft is still visible. With a request pending,
+      press the shortcut again and verify there is only one submission. After
+      acceptance, the unchanged draft clears.
+    - **Active response.** Wait for a response to begin and send new instructions
+      using **Steer** or the shortcut. Verify the conversation becomes visible
+      while the submission is pending and one set of instructions is accepted.
+    - **Queue.** With the native queue available, enable **+ → Queue mode**, expand
+      the composer, and use **Queue prompt** or the shortcut. The conversation
+      becomes visible immediately, and the queue contains one new entry after
+      acknowledgment.
+    - **Failed submission.** Attach an image and a file, then simulate a rejected
+      send. Verify the inline composer retains the text and attachments after the
+      error and after reload. For Home, reject the first turn after thread
+      creation and verify the Home draft remains available.
+    - **Interaction while pending.** Send, then append text or start attaching a
+      file before the result arrives. Verify the newer draft survives success.
+      For an unchanged draft, manually expand again before acknowledgment and
+      verify it clears while the composer stays full screen. Switch to another
+      conversation while expanded and verify its own draft opens inline.
+
+    Back inline, verify Enter sends with **Require ⌘ + enter to send** off. With
+    it on, verify Enter inserts a line break and the shortcut sends. Check that
+    the setting tooltip explains the full-screen behavior.
 11. While expanded, press Enter with a file or skill suggestion highlighted and
     verify it selects the suggestion. With an IME conversion in progress, press
-    Enter and verify it confirms the conversion. For each check, verify that no
-    message sends.
+    Enter and verify it confirms the conversion. Clear the draft and try the
+    send shortcut with the send button disabled. For each check, verify that
+    the composer stays expanded and no message sends.
 12. In light and dark themes, turn **Require ⌘ + enter to send** off and expand
     the composer. Open the **Network** panel in DevTools and filter for
     `composer-file-search`. For each check, clear the Network log and the draft,
@@ -78,7 +107,9 @@ Full-screen editing and Enter behavior in the shared Home and conversation compo
 #### Expected Results
 - Empty, short and long drafts show the icon-only expand control when inline.
 - **Minimize message input** is a separate inline action; see [collapsible composer](composer-collapse.md).
-- Full-screen mode uses the same draft state and submit controls as inline mode.
+- Each valid submission restores the normal layout before the result arrives.
+  Acknowledgment clears only the matching draft. Manual expansion during
+  submission and newer edits survive settlement.
 - Full-screen and inline states are readable in light theme and dark theme.
 - Expanding/exiting and inserting a plain line break issue zero API requests.
 - The editor stays mounted; layout changes do not reset textarea selection or drafts.
@@ -87,7 +118,8 @@ Full-screen editing and Enter behavior in the shared Home and conversation compo
 `APPROVED_DIST_ROOT=. node scripts/test-composer-fullscreen.cjs` after building
 checks the current production assets with intercepted protocol fixtures at
 `http://127.0.0.1:4173`. It verifies button clearance, native line-break insertion,
-and zero additional API requests during layout changes and newline insertion.
+zero additional API requests during layout changes and newline insertion, and
+immediate return to the normal layout for held send responses in both themes.
 Reports and screenshots are saved under
 `output/playwright/composer-fullscreen-*`. This is not live server validation.
 

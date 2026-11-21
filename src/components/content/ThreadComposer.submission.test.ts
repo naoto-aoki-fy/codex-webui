@@ -76,6 +76,15 @@ function pressEnter(input: Node, modifiers: Partial<KeyboardEvent> = {}) {
   return preventDefault
 }
 
+function composerButton(c: ReturnType<typeof mount>, label: string) {
+  return c.nodes().find(n => n.props['aria-label'] === label)!
+}
+
+function savedDraft(c: ReturnType<typeof mount>, threadId = 'child') {
+  const raw = [...c.storage.entries()].find(([key]) => key.startsWith(`codex-unbound.codex-web-local.thread-draft.v2.${threadId}.`))?.[1]
+  return raw ? JSON.parse(raw) : undefined
+}
+
 it('hides the skills selector by default and toggles it without losing selected chips or submission skills', async () => {
   const skill = { name: 'review', description: 'Review changes', path: '/skills/review' }
   const c = mount({ skills: [skill], reasoningEffortOptions: [{ value: 'high', label: 'High' }] })
@@ -132,6 +141,7 @@ it('keeps slash skill selection available while the selector is hidden', async (
   expect(pressEnter(input)).toHaveBeenCalledOnce()
   await vue.nextTick()
   expect(c.submitted).not.toHaveBeenCalled()
+  expect(composerButton(c, 'Exit full screen composer')).toBeDefined()
   expect(c.nodes().some(n => n.props['aria-label'] === 'Remove skill review')).toBe(true)
   expect(c.nodes().some(n => n.tag === 'skill-dropdown')).toBe(false)
   c.exposed.appendTextToDraft('Please review')
@@ -156,6 +166,7 @@ it('selects the highlighted file with Enter while maximized', async () => {
     await vue.nextTick()
     expect(c.nodes().some(n => n.props['aria-label'] === 'Remove README.md')).toBe(true)
     expect(c.submitted).not.toHaveBeenCalled()
+    expect(composerButton(c, 'Exit full screen composer')).toBeDefined()
   } finally {
     vi.useRealTimers()
   }
@@ -230,36 +241,94 @@ it.each([
   await vue.nextTick()
   expect(emptyPanel()).toBeUndefined()
   expect(c.submitted).not.toHaveBeenCalled()
+  expect(composerButton(c, 'Exit full screen composer')).toBeDefined()
 })
 
 it('preserves text, images, files, skills and persisted draft when the app rejects a rendered submission', async () => {
-  const c = mount()
+  const expanded = vi.fn()
+  const c = mount({ 'onUpdate:expanded': expanded })
   c.exposed.hydrateDraft(payload)
   await vue.nextTick()
-  c.submit()
+  composerButton(c, 'Expand composer').props.onClick()
+  await vue.nextTick()
+  composerButton(c, 'Send message').props.onClick()
+  await vue.nextTick()
+  expect(composerButton(c, 'Expand composer')).toBeDefined()
   expect(c.exposed.hasUnsavedDraft()).toBe(true)
-  expect(JSON.parse([...c.storage.entries()].find(([key]) => key.startsWith('codex-unbound.codex-web-local.thread-draft.v2.child.'))?.[1]!)).toEqual(payload)
-  expect(c.submitted).toHaveBeenCalledTimes(1)
+  expect(savedDraft(c)).toEqual(payload)
+  expect(c.submitted).toHaveBeenCalledOnce()
+  expect(expanded).toHaveBeenLastCalledWith(false)
+  expect(expanded.mock.invocationCallOrder.at(-1)!).toBeLessThan(c.submitted.mock.invocationCallOrder[0]!)
   expect(c.submitted.mock.calls[0]![0]).toEqual(payload)
   c.submitted.mock.calls[0]![1](false)
   await vue.nextTick()
+  expect(composerButton(c, 'Expand composer')).toBeDefined()
   expect(c.exposed.hasUnsavedDraft()).toBe(true)
-  expect(JSON.parse([...c.storage.entries()].find(([key]) => key.startsWith('codex-unbound.codex-web-local.thread-draft.v2.child.'))?.[1]!)).toEqual(payload)
+  expect(savedDraft(c)).toEqual(payload)
+  expect(composerButton(c, 'Remove Image 1')).toBeDefined()
+  expect(composerButton(c, 'Remove file')).toBeDefined()
+  expect(composerButton(c, 'Remove skill skill')).toBeDefined()
   c.submit()
+  expect(c.submitted).toHaveBeenCalledTimes(2)
   c.submitted.mock.calls[1]![1](true)
   await vue.nextTick()
   expect(c.exposed.hasUnsavedDraft()).toBe(false)
-  expect(JSON.parse([...c.storage.entries()].find(([key]) => key.startsWith('codex-unbound.codex-web-local.thread-draft.v2.child.'))![1]).text).toBe('')
+  expect(savedDraft(c)).toEqual({ text: '', imageUrls: [], fileAttachments: [], skills: [] })
 })
 it('does not clear newer edits when an earlier submission is accepted', async () => {
   const c = mount()
   c.exposed.hydrateDraft(payload)
   await vue.nextTick()
+  composerButton(c, 'Expand composer').props.onClick()
+  await vue.nextTick()
   c.submit()
-  c.exposed.hydrateDraft({ ...payload, text: 'new edit' })
+  c.exposed.appendTextToDraft('new edit')
   c.submitted.mock.calls[0]![1](true)
   await vue.nextTick()
-  expect(JSON.parse([...c.storage.entries()].find(([key]) => key.startsWith('codex-unbound.codex-web-local.thread-draft.v2.child.'))?.[1]!).text).toBe('new edit')
+  expect(savedDraft(c)).toEqual({ ...payload, text: 'follow-up\nnew edit' })
+  expect(composerButton(c, 'Expand composer')).toBeDefined()
+})
+
+it('keeps a new attachment upload when the submitted draft is acknowledged', async () => {
+  const c = mount()
+  let finishUpload!: (response: Response) => void
+  const upload = vi.fn(() => new Promise<Response>(resolve => { finishUpload = resolve }))
+  vi.stubGlobal('fetch', upload)
+  c.exposed.hydrateDraft(payload)
+  await vue.nextTick()
+  c.submit()
+  const picker = c.nodes().find(n => n.props.class === 'thread-composer-hidden-input')!
+  picker.props.onChange({ target: { files: [new File(['note'], 'note.txt', { type: 'text/plain' })] } })
+  expect(upload).toHaveBeenCalledOnce()
+  c.submitted.mock.calls[0]![1](true)
+  finishUpload(new Response(JSON.stringify({ path: '/uploads/note.txt' })))
+  await vi.waitFor(() => expect(composerButton(c, 'Remove note.txt')).toBeDefined())
+  expect(savedDraft(c)).toEqual({ ...payload, fileAttachments: [...payload.fileAttachments, {
+    label: 'note.txt', path: '/uploads/note.txt', fsPath: '/uploads/note.txt',
+  }] })
+})
+
+it('keeps both drafts and opens the next conversation inline when switching during a submission', async () => {
+  const c = mount({ activeThreadId: 'other' })
+  c.exposed.appendTextToDraft('other draft')
+  await vue.nextTick()
+  c.props.activeThreadId = 'child'
+  await vue.nextTick()
+  c.exposed.hydrateDraft(payload)
+  composerButton(c, 'Expand composer').props.onClick()
+  await vue.nextTick()
+  c.submit()
+  await vue.nextTick()
+  composerButton(c, 'Expand composer').props.onClick()
+  await vue.nextTick()
+  c.props.activeThreadId = 'other'
+  await vue.nextTick()
+  expect(composerButton(c, 'Expand composer')).toBeDefined()
+  expect(c.nodes().find(n => n.tag === 'textarea')).toHaveProperty('value', 'other draft')
+  c.submitted.mock.calls[0]![1](true)
+  await vue.nextTick()
+  expect(savedDraft(c, 'other').text).toBe('other draft')
+  expect(savedDraft(c)).toEqual(payload)
 })
 
 it('reactively filters models by provider and replaces a previous provider selection', async () => {
@@ -469,19 +538,75 @@ it.each([true, false])('uses the Enter send preference only in the normal view (
   await vue.nextTick()
   expect(pressEnter(input)).not.toHaveBeenCalled()
   expect(c.submitted).not.toHaveBeenCalled()
-  for (const modifiers of [{ ctrlKey: true }, { metaKey: true }]) {
-    expect(pressEnter(input, modifiers)).toHaveBeenCalledOnce()
-    expect(c.submitted.mock.lastCall![0]).toEqual(payload)
-    c.submitted.mock.lastCall![1](false)
-  }
-  button('Send message').props.onClick()
-  expect(c.submitted).toHaveBeenCalledTimes(3)
-  expect(c.submitted.mock.lastCall![0]).toEqual(payload)
-  c.submitted.mock.lastCall![1](false)
-
   button('Exit full screen composer').props.onClick()
   await vue.nextTick()
   checkNormalEnter()
+})
+
+it.each([
+  { mode: 'Home', props: { activeThreadId: '__new-thread__' }, label: 'Send message' },
+  { mode: 'conversation', props: {}, label: 'Send message' },
+  { mode: 'steer', props: { isTurnInProgress: true }, label: 'Steer' },
+  { mode: 'queue', props: { selectedQueueMode: true, queueReady: true }, label: 'Queue prompt' },
+])('restores the layout before exactly one $mode submission per action', async ({ mode, props, label }) => {
+  const expanded = vi.fn()
+  const c = mount({ ...props, 'onUpdate:expanded': expanded })
+  const button = (name: string) => composerButton(c, name)
+  const input = c.nodes().find(n => n.tag === 'textarea')!
+  const expectedPayload = mode === 'queue' ? { ...payload, queue: true } : payload
+  const actions = [
+    () => button(label).props.onClick(),
+    () => expect(pressEnter(input, { ctrlKey: true })).toHaveBeenCalledOnce(),
+    () => expect(pressEnter(input, { metaKey: true })).toHaveBeenCalledOnce(),
+  ]
+  for (const [index, send] of actions.entries()) {
+    c.exposed.hydrateDraft(payload)
+    button('Expand composer').props.onClick()
+    await vue.nextTick()
+    send()
+    expect(c.submitted).toHaveBeenCalledTimes(index + 1)
+    expect(c.submitted.mock.lastCall![0]).toEqual(expectedPayload)
+    expect(expanded).toHaveBeenLastCalledWith(false)
+    expect(expanded.mock.invocationCallOrder.at(-1)!).toBeLessThan(c.submitted.mock.invocationCallOrder.at(-1)!)
+    await vue.nextTick()
+    expect(button('Expand composer')).toBeDefined()
+    expect(c.exposed.hasUnsavedDraft()).toBe(true)
+    expect(savedDraft(c, c.props.activeThreadId)).toEqual(payload)
+
+    button('Expand composer').props.onClick()
+    await vue.nextTick()
+    expect(button(label).props.disabled).toBe(true)
+    button(label).props.onClick()
+    pressEnter(input, { ctrlKey: true })
+    expect(c.submitted).toHaveBeenCalledTimes(index + 1)
+    expect(expanded).toHaveBeenLastCalledWith(true)
+
+    c.submitted.mock.lastCall![1](true)
+    await vue.nextTick()
+    expect(c.exposed.hasUnsavedDraft()).toBe(false)
+    expect(expanded).toHaveBeenLastCalledWith(true)
+    button('Exit full screen composer').props.onClick()
+    await vue.nextTick()
+  }
+})
+
+it('keeps full screen when the draft is empty or Enter is confirming an IME conversion', async () => {
+  const expanded = vi.fn()
+  const c = mount({ 'onUpdate:expanded': expanded })
+  composerButton(c, 'Expand composer').props.onClick()
+  await vue.nextTick()
+  const input = c.nodes().find(n => n.tag === 'textarea')!
+  expect(composerButton(c, 'Send message').props.disabled).toBe(true)
+  composerButton(c, 'Send message').props.onClick()
+  for (const modifiers of [{ ctrlKey: true }, { metaKey: true }]) {
+    expect(pressEnter(input, modifiers)).toHaveBeenCalledOnce()
+  }
+  c.exposed.appendTextToDraft('IME conversion')
+  await vue.nextTick()
+  expect(pressEnter(input, { ctrlKey: true, isComposing: true })).not.toHaveBeenCalled()
+  expect(c.submitted).not.toHaveBeenCalled()
+  expect(expanded).toHaveBeenCalledExactlyOnceWith(true)
+  expect(composerButton(c, 'Exit full screen composer')).toBeDefined()
 })
 
 it('collapses empty and populated drafts independently of full-screen editing without losing selections', async () => {

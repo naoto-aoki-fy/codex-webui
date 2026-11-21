@@ -126,64 +126,59 @@ export function createDesktopTurns(deps: {
     async function sendMessageToSelectedThread(text: string, imageUrls: string[] = [], skills: Array<{
         name: string;
         path: string;
-    }> = [], fileAttachments: FileAttachment[] = [], collaborationModeOverride?: CollaborationModeKind, apps?: import('../api/apps').AppReference[]): Promise<void> {
+    }> = [], fileAttachments: FileAttachment[] = [], collaborationModeOverride?: CollaborationModeKind, apps?: import('../api/apps').AppReference[]): Promise<boolean> {
         const generation = deps.lifecycleGeneration;
         const submissionContext = { generation, ...(apps?.length ? {apps} : {}), speedMode: deps.selectedSpeedMode.value, modelId: deps.readModelIdForThread(deps.selectedThreadId.value), reasoningEffort: deps.selectedReasoningEffort.value };
         if (deps.isUpdatingSpeedMode.value)
-            return;
+            return false;
         let threadId = deps.selectedThreadId.value;
         const nextText = text.trim();
         if (deps.history.persistedMessagesByThreadId.value[threadId]?.some(message => message.id === `import-status-${threadId}`)) {
             throw new Error('This conversation import is incomplete. Inspect the destination; do not replay injection.');
         }
         if (!threadId || (!nextText && imageUrls.length === 0 && fileAttachments.length === 0))
-            return;
+            return false;
         const submittedMode = collaborationModeOverride ?? deps.selectedCollaborationMode.value;
         if (apps?.length && deps.approvals.getThreadPendingRequests(threadId).some(request => request.method === 'item/tool/requestUserInput')) throw new Error('App references cannot be included in a pending tool answer.')
         if (await maybeReplyToPendingUserInputRequest(threadId, nextText, imageUrls, skills, fileAttachments)) {
             if (generation === deps.lifecycleGeneration && submittedMode === 'plan')
                 deps.resetSubmittedPlanMode(threadId);
-            return;
+            return true;
         }
         if (generation !== deps.lifecycleGeneration) {
             await startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, submittedMode, undefined, submissionContext);
-            return;
+            return true;
         }
         const isInProgress = deps.inProgressById.value[threadId] === true;
         const optimisticMessageId = deps.appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments, submittedMode);
-        if (isInProgress) {
-            void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, submittedMode, optimisticMessageId, submissionContext).catch((unknownError) => {
-                if (generation !== deps.lifecycleGeneration)
-                    return;
-                const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error';
-                deps.setTurnErrorForThread(threadId, errorMessage);
-                deps.error.value = errorMessage;
+        if (!isInProgress) {
+            deps.error.value = '';
+            deps.setTurnSummaryForThread(threadId, null);
+            deps.setTurnActivityForThread(threadId, {
+                label: 'Thinking',
+                details: buildPendingTurnDetails(deps.readModelIdForThread(threadId), deps.selectedReasoningEffort.value, collaborationModeOverride === 'plan'
+                    ? 'plan'
+                    : collaborationModeOverride === 'default'
+                        ? 'default'
+                        : deps.selectedCollaborationMode.value),
             });
-            return;
+            deps.setTurnErrorForThread(threadId, null);
+            deps.setThreadInProgress(threadId, true);
         }
-        deps.error.value = '';
-        deps.setTurnSummaryForThread(threadId, null);
-        deps.setTurnActivityForThread(threadId, {
-            label: 'Thinking',
-            details: buildPendingTurnDetails(deps.readModelIdForThread(threadId), deps.selectedReasoningEffort.value, collaborationModeOverride === 'plan'
-                ? 'plan'
-                : collaborationModeOverride === 'default'
-                    ? 'default'
-                    : deps.selectedCollaborationMode.value),
-        });
-        deps.setTurnErrorForThread(threadId, null);
-        deps.setThreadInProgress(threadId, true);
         try {
             await startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, submittedMode, optimisticMessageId, submissionContext);
+            return true;
         }
         catch (unknownError) {
             if (generation !== deps.lifecycleGeneration)
                 throw unknownError;
-            deps.setThreadInProgress(threadId, false);
-            deps.setTurnActivityForThread(threadId, null);
-            clearPendingTurnRequest(threadId);
-            if (deps.activeTurnIdByThreadId.value[threadId]) {
-                deps.activeTurnIdByThreadId.value = omitKey(deps.activeTurnIdByThreadId.value, threadId);
+            if (!isInProgress) {
+                deps.setThreadInProgress(threadId, false);
+                deps.setTurnActivityForThread(threadId, null);
+                clearPendingTurnRequest(threadId);
+                if (deps.activeTurnIdByThreadId.value[threadId]) {
+                    deps.activeTurnIdByThreadId.value = omitKey(deps.activeTurnIdByThreadId.value, threadId);
+                }
             }
             const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error';
             deps.setTurnErrorForThread(threadId, errorMessage);
@@ -196,6 +191,7 @@ export function createDesktopTurns(deps: {
         path: string;
     }> = [], fileAttachments: FileAttachment[] = [], projectId?: string): Promise<string> {
         const generation = deps.lifecycleGeneration;
+        const previousThreadId = deps.selectedThreadId.value;
         if (deps.isUpdatingSpeedMode.value)
             return '';
         const nextText = text.trim();
@@ -220,12 +216,16 @@ export function createDesktopTurns(deps: {
                 : projectId ? await startThread(targetCwd, selection.model || undefined, undefined, projectId) : await startThread(targetCwd, selection.model || undefined);
             threadId = startedThread.threadId;
             const submissionModel = modelSelectionKey(startedThread.modelProvider || parseModelSelection(selectedModel).provider, startedThread.model?.trim() || parseModelSelection(selectedModel).model);
-            const submissionContext = { generation, speedMode, modelId: submissionModel, reasoningEffort, resumed: true };
+            const submissionContext = {
+                generation, speedMode, modelId: submissionModel, reasoningEffort, resumed: true,
+                onAccepted: () => {
+                    if (deps.selectedThreadId.value === previousThreadId)
+                        deps.setSelectedThreadId(threadId);
+                },
+            };
             if (generation !== deps.lifecycleGeneration) {
                 if (threadId) {
-                    void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode, undefined, submissionContext).catch(() => {
-                        // The server submission continues, but this lifecycle no longer owns UI errors.
-                    });
+                    await startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode, undefined, submissionContext);
                 }
                 return threadId;
             }
@@ -240,7 +240,6 @@ export function createDesktopTurns(deps: {
                 ...deps.resumedThreadById.value,
                 [threadId]: true,
             };
-            deps.setSelectedThreadId(threadId);
             deps.setTurnSummaryForThread(threadId, null);
             deps.setTurnActivityForThread(threadId, {
                 label: 'Thinking',
@@ -248,24 +247,7 @@ export function createDesktopTurns(deps: {
             });
             deps.setTurnErrorForThread(threadId, null);
             deps.setThreadInProgress(threadId, true);
-            void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode, optimisticMessageId, submissionContext)
-                .catch((unknownError) => {
-                if (generation !== deps.lifecycleGeneration)
-                    return;
-                deps.setThreadInProgress(threadId, false);
-                deps.setTurnActivityForThread(threadId, null);
-                clearPendingTurnRequest(threadId);
-                if (deps.activeTurnIdByThreadId.value[threadId]) {
-                    deps.activeTurnIdByThreadId.value = omitKey(deps.activeTurnIdByThreadId.value, threadId);
-                }
-                const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error';
-                deps.setTurnErrorForThread(threadId, errorMessage);
-                deps.error.value = errorMessage;
-            })
-                .finally(() => {
-                if (generation === deps.lifecycleGeneration)
-                    isSendingMessage.value = false;
-            });
+            await startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode, optimisticMessageId, submissionContext);
             return threadId;
         }
         catch (unknownError) {
@@ -274,14 +256,21 @@ export function createDesktopTurns(deps: {
             if (threadId) {
                 deps.setThreadInProgress(threadId, false);
                 deps.setTurnActivityForThread(threadId, null);
+                clearPendingTurnRequest(threadId);
+                if (deps.activeTurnIdByThreadId.value[threadId]) {
+                    deps.activeTurnIdByThreadId.value = omitKey(deps.activeTurnIdByThreadId.value, threadId);
+                }
             }
             const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error';
             if (threadId) {
                 deps.setTurnErrorForThread(threadId, errorMessage);
             }
             deps.error.value = errorMessage;
-            isSendingMessage.value = false;
             throw unknownError;
+        }
+        finally {
+            if (generation === deps.lifecycleGeneration)
+                isSendingMessage.value = false;
         }
     }
     async function startTurnForThread(threadId: string, nextText: string, imageUrls: string[] = [], skills: Array<{
@@ -293,6 +282,7 @@ export function createDesktopTurns(deps: {
         reasoningEffort: ReasoningEffort | '';
         speedMode?: SpeedMode;
         resumed?: boolean;
+        onAccepted?: () => void;
         apps?: import('../api/apps').AppReference[];
     } = {
         generation: deps.lifecycleGeneration,
@@ -358,6 +348,7 @@ export function createDesktopTurns(deps: {
                 deps.maybeUnblockInterruptForActiveTurn(threadId, startedTurnId);
             }
             deps.pendingThreadMessageRefresh.add(threadId);
+            context.onAccepted?.();
             await deps.syncFromNotifications();
             if (generation === deps.lifecycleGeneration)
                 deps.scheduleDelayedTurnSync(threadId);

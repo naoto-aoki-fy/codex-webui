@@ -94,29 +94,34 @@ export function createComposerInput(deps: {
             ? ('Loading models for plan mode...')
             : ('Type a message... (@ for files)'));
     function onSubmit(): void {
-        const text = draft.value.trim();
         if (!canSubmit.value)
             return;
         const threadId = deps.props.activeThreadId;
+        const connectionEpoch = deps.props.connectionEpoch;
+        const attachmentSession = deps.attachments.attachmentSessionToken;
         const payload = getCurrentDraftPayload();
         const snapshot = JSON.stringify(payload);
+        const queue = queueMode.value && threadId !== '__new-thread__';
         isSubmitting.value = true;
         let settled = false;
-        deps.emit('submit', { ...payload, text, ...(queueMode.value&&threadId!=='__new-thread__'?{queue:true}:{}) }, (accepted) => {
+        isComposerExpanded.value = false;
+        deps.emit('submit', { ...payload, text: payload.text.trim(), ...(queue ? { queue: true } : {}) }, (accepted) => {
             if (settled)
                 return;
             settled = true;
             isSubmitting.value = false;
             if (!accepted)
                 return;
-            // Acceptance may arrive after a thread switch or after the user edits again.
-            if (deps.props.activeThreadId !== threadId || JSON.stringify(getCurrentDraftPayload()) !== snapshot)
+            // Attachment work and draft replacement can happen while the send is pending.
+            if (deps.props.activeThreadId !== threadId || deps.props.connectionEpoch !== connectionEpoch
+                || deps.attachments.attachmentSessionToken !== attachmentSession
+                || deps.attachments.pendingAttachmentCount.value > 0
+                || JSON.stringify(getCurrentDraftPayload()) !== snapshot)
                 return;
             clearPersistedDraftForThread(threadId);
             clearDraftState();
-            isComposerExpanded.value = false;
-            deps.isAttachMenuOpen.value = false;
-            closeFileMention();
+            if (isComposerExpanded.value)
+                return;
             if (isAndroid || deps.isMobile.value)
                 inputRef.value?.blur();
             else
@@ -147,7 +152,6 @@ export function createComposerInput(deps: {
             fileAttachments: [],
             skills: [],
         });
-        isComposerExpanded.value = false;
     }
     function clearPersistedDraftForThread(threadId: string): void {
         persistDraftForThread(threadId, {

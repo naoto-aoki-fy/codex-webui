@@ -156,7 +156,7 @@ it('does not let a cancelled preparation replace a newer dialog provider (CAP-00
   expect(cancelConversationTransfer).toHaveBeenCalledExactlyOnceWith('old-snapshot')
 })
 function routing(projectId = 'native-project') {
-  const route = reactive({ name: 'thread' })
+  const route = reactive({ name: 'thread', fullPath: '/thread/A' })
   const target = ref('A'), selected = ref('')
   const selectThread = vi.fn(async (id: string) => { selected.value = id; return 'ok' as const })
   const send = vi.fn(async () => 'new-thread'), replace = vi.fn(async () => {})
@@ -182,10 +182,31 @@ it('serializes route selection and applies the latest route after a pending sele
 })
 it('does not navigate or replay a failed first submission', async () => {
   const f = routing()
+  const accepted = vi.fn()
   f.send.mockRejectedValueOnce(new Error('Outcome unknown'))
-  expect(await f.controller.submitFirstMessageForNewThread('prompt')).toBe(false)
+  expect(await f.controller.submitFirstMessageForNewThread('prompt', [], [], [], accepted)).toBe(false)
+  expect(accepted).not.toHaveBeenCalled()
   expect(f.send).toHaveBeenCalledTimes(1)
   expect(f.replace).not.toHaveBeenCalled()
+})
+it.each([true, false])('settles the first draft before navigation and respects a route change (stay on Home=%s)', async stayOnHome => {
+  const f = routing()
+  f.route.name = 'home'
+  f.route.fullPath = '/?cwd=/fixture'
+  const pending = deferred<string>()
+  const accepted = vi.fn(() => { expect(f.replace).not.toHaveBeenCalled() })
+  f.send.mockReturnValueOnce(pending.promise)
+  const submission = f.controller.submitFirstMessageForNewThread('prompt', [], [], [], accepted)
+  expect(accepted).not.toHaveBeenCalled()
+  expect(f.replace).not.toHaveBeenCalled()
+  if (!stayOnHome) {
+    f.route.name = 'thread'
+    f.route.fullPath = '/thread/B'
+  }
+  pending.resolve('new-thread')
+  await expect(submission).resolves.toBe(true)
+  expect(accepted).toHaveBeenCalledOnce()
+  expect(f.replace).toHaveBeenCalledTimes(Number(stayOnHome))
 })
 it.each([
   { projectId: '', expected: undefined },
