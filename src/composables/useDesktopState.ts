@@ -455,7 +455,8 @@ export function useDesktopState({ onSelectedThreadAttention }: {
 
   watch(selectedThreadId, history.syncMessageLoading, { flush: 'sync' })
   const isThreadListFullyLoaded = ref(false)
-  const threadListError = ref('')
+  const threadListFailure = shallowRef<{ page: 'head' | 'older'; message: string } | null>(null)
+  const threadListError = computed(() => threadListFailure.value?.message ?? '')
   const isThreadListPagingPaused = computed(hasActiveInProgressThreads)
   const isLoadingProjects = ref(true)
   const projectListError = ref('')
@@ -1054,9 +1055,11 @@ export function useDesktopState({ onSelectedThreadAttention }: {
   }
 
   function applyNativeThreadName(threadId: string, title: string): void {
-    sourceGroups.value = sourceGroups.value.map(group => ({
+    const update = (groups: UiProjectGroup[]) => groups.map(group => ({
       ...group, threads: group.threads.map(thread => thread.id === threadId ? { ...thread, title } : thread),
     }))
+    loadedThreadListGroups = update(loadedThreadListGroups)
+    sourceGroups.value = update(sourceGroups.value)
     applyThreadFlags()
   }
 
@@ -2388,16 +2391,21 @@ export function useDesktopState({ onSelectedThreadAttention }: {
     }, LOCAL_THREAD_RECONCILIATION_INTERVAL_MS)
   }
 
-  function mergeThreadGroupPages(previous: UiProjectGroup[], incoming: UiProjectGroup[]): UiProjectGroup[] {
-    if (previous.length === 0) return incoming
+  function mergeThreadGroupPages(
+    previous: UiProjectGroup[], incoming: UiProjectGroup[], groupsAtRequest = previous,
+  ): UiProjectGroup[] {
+    if (previous.length === 0 && previous === groupsAtRequest) return incoming
     if (incoming.length === 0) return previous
 
     const threadById = new Map<string, UiThread>()
     for (const thread of flattenThreads(previous)) {
       threadById.set(thread.id, thread)
     }
+    const beforeById = previous === groupsAtRequest ? null
+      : new Map(flattenThreads(groupsAtRequest).map(thread => [thread.id, thread]))
     for (const thread of flattenThreads(incoming)) {
-      threadById.set(thread.id, thread)
+      // Keep newer observations and removals that landed while the page was pending.
+      if (!beforeById || beforeById.get(thread.id) === threadById.get(thread.id)) threadById.set(thread.id, thread)
     }
     const groupsByProject = new Map<string, UiThread[]>()
     for (const thread of threadById.values()) {
@@ -2439,7 +2447,7 @@ export function useDesktopState({ onSelectedThreadAttention }: {
   }
 
   function scheduleRemainingThreadPages(): void {
-    if (!threadListNextCursor || threadListError.value || remainingThreadPageRequest || loadThreadsPromise
+    if (!threadListNextCursor || threadListFailure.value || remainingThreadPageRequest || loadThreadsPromise
       || hasActiveInProgressThreads()) return
     const generation = threadListGeneration
     const cursor = threadListNextCursor
@@ -2463,14 +2471,18 @@ export function useDesktopState({ onSelectedThreadAttention }: {
   }
 
   function retryThreadListSearch(): void {
-    threadListError.value = ''
-    if (hasLoadedThreads.value) scheduleRemainingThreadPages()
-    else void loadThreads().catch(() => { /* The list error is shown in the sidebar. */ })
+    if (threadListFailure.value?.page === 'head') {
+      void loadThreads({ force: true }).catch(() => { /* The list error is shown in the sidebar. */ })
+      return
+    }
+    threadListFailure.value = null
+    scheduleRemainingThreadPages()
   }
 
   async function loadRemainingThreadPages(): Promise<void> {
     if (remainingThreadPageRequest || loadThreadsPromise || !threadListNextCursor || hasActiveInProgressThreads()) return
     const request = { cursor: threadListNextCursor }
+    const groupsAtRequest = loadedThreadListGroups
     remainingThreadPageRequest = request
     try {
       const page = await getThreadGroupsPage(request.cursor, getBackgroundThreadListLimit())
@@ -2482,12 +2494,12 @@ export function useDesktopState({ onSelectedThreadAttention }: {
       threadListNextCursor = page.nextCursor
       hasLoadedAllThreadPages = threadListNextCursor === null
       isThreadListFullyLoaded.value = hasLoadedAllThreadPages
-      loadedThreadListGroups = mergeThreadGroupPages(loadedThreadListGroups, page.groups)
+      loadedThreadListGroups = mergeThreadGroupPages(loadedThreadListGroups, page.groups, groupsAtRequest)
       // Roots may have changed while this history request was in flight.
       applyThreadGroups(loadedThreadListGroups)
     } catch (cause) {
       if (request === remainingThreadPageRequest) {
-        threadListError.value = cause instanceof Error ? cause.message : 'Failed to load older threads'
+        threadListFailure.value = { page: 'older', message: cause instanceof Error ? cause.message : 'Failed to load older threads' }
       }
     } finally {
       if (request === remainingThreadPageRequest) {
@@ -2519,8 +2531,10 @@ export function useDesktopState({ onSelectedThreadAttention }: {
         pendingForcedThreadLoad = false
         failure = undefined
         // Refresh the head after thread events without restarting a search's older scan.
-        const preserveCursor = isSearchingThreadList && hasLoadedThreads.value && !options.refreshProjects
+        const retryingHead = threadListFailure.value?.page === 'head'
+        const preserveCursor = isSearchingThreadList && hasLoadedThreads.value && !options.refreshProjects && !retryingHead
         const generation = preserveCursor ? threadListGeneration : invalidateThreadListGeneration()
+        if (retryingHead) threadListFailure.value = null
         clearThreadListPageTimer()
         if (!hasLoadedThreads.value) isLoadingThreads.value = true
         try {
@@ -2536,7 +2550,7 @@ export function useDesktopState({ onSelectedThreadAttention }: {
               loadedThreadListCursors.clear()
               threadListNextCursor = page.nextCursor
             }
-            if (!preserveCursor) threadListError.value = ''
+            if (!preserveCursor) threadListFailure.value = null
             hasLoadedAllThreadPages = threadListNextCursor === null
             isThreadListFullyLoaded.value = hasLoadedAllThreadPages
             applyThreadGroups(loadedThreadListGroups)
@@ -2548,9 +2562,10 @@ export function useDesktopState({ onSelectedThreadAttention }: {
         } catch (cause) {
           if (generation === threadListGeneration) {
             failure = cause
-            if (preserveCursor) completedGeneration = generation
-            if (!hasLoadedThreads.value) {
-              threadListError.value = cause instanceof Error ? cause.message : 'Failed to load threads'
+            if (preserveCursor) {
+              completedGeneration = generation
+            } else if (!hasLoadedAllThreadPages) {
+              threadListFailure.value = { page: 'head', message: cause instanceof Error ? cause.message : 'Failed to load threads' }
             }
           }
         }
