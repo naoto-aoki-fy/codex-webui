@@ -5,6 +5,7 @@ import * as vue from 'vue'
 import hljs from 'highlight.js/lib/common'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createConversationViewport } from './conversationViewport'
+import type { UiMessage } from '../../types/codex'
 
 // Execute the real setup script with reactive props and controlled async/DOM boundaries.
 const source = readFileSync(resolve('src/components/content/ThreadConversation.vue'), 'utf8').split('<script setup lang="ts">')[1]!.split('</script>')[0]!
@@ -32,7 +33,8 @@ function setup(initial: Record<string, unknown> = {}) {
     .replace('function parseMessageBlocks(text: string): MessageBlock[] {', 'function parseMessageBlocks(text: string): MessageBlock[] { recordParse();')
   const markdownCode = ts.transpileModule(markdownSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const instrumentedSource = source
-  const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, loadMoreAbove, conversationListRef, renderWindowStart: viewport.renderWindowStart, isLoadingMore, scheduleConversationScroll: viewport.scheduleConversationScroll, editMessage, forkResponse, bindPendingImageHandlers: viewport.bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput: viewport.autoFollowOutput, messageBlockCache: markdown.messageBlockCache, inlineSegmentCache: markdown.inlineSegmentCache, markdownHtmlCache: markdown.markdownHtmlCache, highlightHtmlCache: markdown.highlightHtmlCache };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+  const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, loadMoreAbove, conversationListRef, renderWindowStart: viewport.renderWindowStart, isLoadingMore, scheduleConversationScroll: viewport.scheduleConversationScroll, editMessage, forkResponse, bindPendingImageHandlers: viewport.bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput: viewport.autoFollowOutput, messageBlockCache: markdown.messageBlockCache, inlineSegmentCache: markdown.inlineSegmentCache, markdownHtmlCache: markdown.markdownHtmlCache, highlightHtmlCache: markdown.highlightHtmlCache,
+    conversationRows, toggleExecution, isExecutionExpanded, isWebSearchGroupExpanded };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const state = scope.run(() => new Function('exports', 'require', 'defineProps', 'defineEmits', 'defineExpose', 'recordParse', code)({}, (path: string) => {
     if (path.endsWith('/conversationMarkdown')) {
       const exports = {}
@@ -50,6 +52,32 @@ function setup(initial: Record<string, unknown> = {}) {
 }
 afterEach(() => { cleanups.splice(0).forEach(fn => fn()); vi.unstubAllGlobals(); update.mockReset() })
 const deferred = () => { let resolve!: (value: any) => void; let reject!: (error: Error) => void; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
+
+it('only groups visible searches and preserves the selected item when the render window grows', async () => {
+  const messages: UiMessage[] = Array.from({ length: 80 }, (_, index) => ({
+    id: String(index), role: 'assistant', text: 'Reply', turnId: 'turn',
+  }))
+  for (const index of [29, 30, 31]) {
+    messages[index] = { ...messages[index], role: 'system', messageType: 'webSearch', executionLabel: 'Query' }
+  }
+  const { props, state } = setup({ messages })
+  state.renderWindowStart.value = 30
+  const visibleGroup = state.conversationRows.value[0]
+  expect(visibleGroup.webSearchGroup.map((item: UiMessage) => item.id)).toEqual(['30', '31'])
+  state.toggleExecution(visibleGroup, messages[31])
+
+  state.autoFollowOutput.value = false
+  state.conversationListRef.value = { scrollHeight: 1000, scrollTop: 10 }
+  await state.loadMoreAbove()
+  const olderGroup = state.conversationRows.value[29]
+  expect(olderGroup.webSearchGroup.map((item: UiMessage) => item.id)).toEqual(['29', '30', '31'])
+  expect(state.isWebSearchGroupExpanded(olderGroup)).toBe(true)
+  expect(state.isExecutionExpanded(olderGroup, messages[31])).toBe(true)
+
+  props.activeThreadId = 'B'
+  expect(state.isWebSearchGroupExpanded(olderGroup)).toBe(false)
+  expect(state.isExecutionExpanded(olderGroup, messages[31])).toBe(false)
+})
 
 describe('conversation thread state isolation', () => {
   it('dismisses diff/context state and expansions only on identity changes', async () => {

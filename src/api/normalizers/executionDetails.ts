@@ -41,6 +41,7 @@ export function normalizeExecutionItem(value: unknown, phase?: 'started' | 'comp
   const status = type === 'mcpToolCall' && ['inProgress', 'completed', 'failed'].includes(String(item.status))
     ? String(item.status) : phase === 'started' ? 'inProgress' : phase === 'completed' ? 'completed' : 'unavailable'
   const label = type === 'mcpToolCall' ? `MCP · ${executionText(item.server || 'unknown server')} · ${executionText(item.tool || 'unknown tool')}` : 'Web search'
+  let executionLabel = label.slice(0, 200)
   const details: string[] = []
   if (type === 'mcpToolCall') {
     details.push(`Arguments: ${item.arguments == null ? 'Unavailable' : executionText(item.arguments)}`)
@@ -56,12 +57,14 @@ export function normalizeExecutionItem(value: unknown, phase?: 'started' | 'comp
     if (item.error != null) details.push(`Error: ${executionText(record(item.error).message ?? 'Unavailable')}`)
   } else {
     const action = record(item.action)
-    details.push(`Query: ${typeof item.query === 'string' ? executionText(item.query) : 'Unavailable'}`)
+    const query = typeof item.query === 'string' ? executionText(item.query) : undefined
+    executionLabel = query?.trim().replace(/\s+/gu, ' ') || label
+    details.push(`Query: ${query ?? 'Unavailable'}`)
     details.push(`Action: ${executionText({ type: action.type, query: action.query, queries: action.queries, url: action.url, pattern: action.pattern })}`)
     details.push(`Results: ${!Array.isArray(item.results) ? 'Unavailable' : item.results.length === 0 ? 'Empty result' : executionText(item.results.slice(0, 40).map(value => {
       const row = record(value)
       return { title: row.title, url: row.url, snippet: row.snippet, text: row.text }
     }))}`)
   }
-  return { id: item.id, role: 'system', messageType: String(type), text: `${label}\nStatus: ${status}\n${details.join('\n')}`.slice(0, LIMIT), executionLabel: label.slice(0, 200) }
+  return { id: item.id, role: 'system', messageType: String(type), text: `${label}\nStatus: ${status}\n${details.join('\n')}`.slice(0, LIMIT), executionLabel }
 }
