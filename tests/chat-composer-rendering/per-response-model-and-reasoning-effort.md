@@ -113,10 +113,12 @@ dark themes at 1280 × 900, 768 × 1024 and 375 × 812.
    history request and one existing asynchronous rollout recovery.
 2. With the current Vite checkout running on port 4173 and Playwright Chromium
    installed, run `CODEXAPP_FIXTURE_BROWSER=1 pnpm run test:integration:fixture`.
-   A fresh browser should show the recent Plan badge while the rollout is held.
-   Click **Load earlier messages** and check the older Plan badge. The fixture
-   compares native history calls with browser requests and checks that the
-   pending rollout transfer is shared.
+   With an existing Google Chrome installation, you can also set
+   `CODEXAPP_FIXTURE_BROWSER_CHANNEL=chrome`. The fixture checks model, effort,
+   and exact Plan badges across pages in a fresh browser after a backend restart.
+   It then holds the rollout and checks that the recent Plan badge and the older
+   badge loaded through **Load earlier messages** appear while the transfer is
+   pending. The fixture compares browser requests with native history calls.
 3. Release the rollout with disagreeing execution modes for the older turn.
    Expect the older badge to disappear, the recent badge to remain, and the
    discarded fallback to stay absent on the next history read. Run

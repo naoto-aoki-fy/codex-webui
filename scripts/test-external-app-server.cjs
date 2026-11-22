@@ -5,7 +5,7 @@ const { once } = require('node:events')
 const { createServer, request } = require('node:http')
 const { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } = require('node:fs')
 const { hostname, tmpdir } = require('node:os')
-const { join } = require('node:path')
+const { join, resolve } = require('node:path')
 const { performance } = require('node:perf_hooks')
 const { brotliDecompressSync, gunzipSync } = require('node:zlib')
 const { WebSocketServer, WebSocket } = require('ws')
@@ -93,13 +93,13 @@ async function verifyRpcCompression(url, frames, entryPoint) {
   console.log('PASS', entryPoint, 'RPC compression (HTTP round trip)', measurements.join(', '))
 }
 
-async function verifyCachedPlanInBrowser(backend, threadId, loadRollout, releaseRollout) {
+async function verifyHistoryInBrowser(backend, threadId, verify) {
   const { chromium } = require('playwright')
   const viewport = { width: 1280, height: 900 }
   const url = `http://127.0.0.1:4173/#/thread/${threadId}`
-  const output = 'output/playwright'
+  const output = resolve('output/playwright')
   mkdirSync(output, { recursive: true })
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({ channel: process.env.CODEXAPP_FIXTURE_BROWSER_CHANNEL })
   let notifications
   try {
     const page = await browser.newPage({ viewport, colorScheme: 'light' })
@@ -121,6 +121,39 @@ async function verifyCachedPlanInBrowser(backend, threadId, loadRollout, release
       socket.onClose(() => notifications.terminate())
     })
     await page.goto(url)
+    await verify({ page, historyCalls, url, viewport, output })
+  } finally {
+    notifications?.terminate()
+    await browser.close()
+  }
+}
+
+async function verifyRestartedHistoryInBrowser(backend, threadId) {
+  await verifyHistoryInBrowser(backend, threadId, async ({ page, url, viewport, output }) => {
+    const expectLabel = async (turn, expected) => {
+      const label = page.locator(`[data-message-id="response-${turn}"] .message-generation-metadata`).filter({ hasText: expected })
+      await label.waitFor()
+      assert.equal((await label.textContent()).trim(), expected)
+      await label.scrollIntoViewIfNeeded()
+    }
+    await expectLabel(14, 'recent-model · reasoning: high')
+    await page.waitForTimeout(2200)
+    const recent = join(output, 'history-cache-restart-recent-1280-light.png')
+    await page.screenshot({ path: recent })
+    await page.getByRole('button', { name: 'Load earlier messages' }).click()
+    await expectLabel(1, 'older-model · reasoning: none')
+    await page.locator('[data-message-id="prompt-1"] .message-plan-badge').waitFor()
+    await page.locator('[data-message-id="prompt-2"] .message-plan-badge').waitFor()
+    assert.equal(await page.locator('[data-message-id="prompt-3"] .message-plan-badge').count(), 0)
+    await page.waitForTimeout(2200)
+    const older = join(output, 'history-cache-restart-older-1280-light.png')
+    await page.screenshot({ path: older })
+    console.log('PASS fresh browser after backend restart', url, viewport, 'exact model, effort, and Plan through pagination', recent, older)
+  })
+}
+
+async function verifyCachedPlanInBrowser(backend, threadId, loadRollout, releaseRollout) {
+  await verifyHistoryInBrowser(backend, threadId, async ({ page, historyCalls, url, viewport, output }) => {
     const recent = page.locator('[data-message-id="prompt-13"] .message-plan-badge')
     const older = page.locator('[data-message-id="prompt-2"] .message-plan-badge')
     await recent.waitFor()
@@ -139,10 +172,7 @@ async function verifyCachedPlanInBrowser(backend, threadId, loadRollout, release
     const resolved = join(output, 'plan-cache-conflict-1280-light.png')
     await page.screenshot({ path: resolved })
     console.log('PASS fresh browser', url, viewport, 'recent and older cached Plan badges during a blocked rollout and later conflict', blocked, resolved)
-  } finally {
-    notifications?.terminate()
-    await browser.close()
-  }
+  })
 }
 
 async function run() {
@@ -173,7 +203,8 @@ async function run() {
   const historyTurns = Array.from({ length: 15 }, (_, index) => ({
     id: 'turn-' + index, status: 'completed', items: [
       { id: 'prompt-' + index, type: 'userMessage', content: [{ type: 'text',
-        text: 'Fixture prompt ' + index + '\n  Keep this indentation. 日本語\t"quoted"  \n'.repeat(120) }] },
+        text: 'Fixture prompt ' + index + '\n  Keep this indentation. 日本語\t"quoted"  \n'.repeat([1, 14].includes(index) ? 1 : 120) }] },
+      ...([1, 14].includes(index) ? [{ id: 'response-' + index, type: 'agentMessage', text: 'Fixture answer ' + index }] : []),
     ],
   }))
   const historyThread = {
@@ -785,6 +816,7 @@ async function run() {
               'thread/turns/list', 'thread/turns/list',
             ])
             console.log('PASS', profile, 'restart restores exact model, effort and Plan on two history pages with zero rollout transfers or turn starts')
+            if (verifyBrowser) await verifyRestartedHistoryInBrowser(url, historyId)
           }
           assert.deepEqual(readFileSync(legacyCache), legacyCacheBytes)
           assert.deepEqual(JSON.parse(readFileSync(preferredCache, 'utf8')), {
