@@ -40,26 +40,29 @@ ID of `legacy`.
 
 ## Uploads on the App Server
 
-By default, the upload root is `.codex-webui-uploads` under the home directory
-of the OS account running the connected App Server. This is
-`~/.codex-webui-uploads` on Linux and macOS and
-`%USERPROFILE%\.codex-webui-uploads` on Windows, using the App Server account's
-profile directory. An unset or empty `CODEXUI_REMOTE_UPLOAD_DIR` uses this
-default. The WebUI uses one App Server `process/spawn` lookup per connection
-when an upload first needs the account's home. Custom `CODEX_HOME` locations
-are supported.
+The default root for new uploads is `~/.local/share/codex-webui/uploads` on
+Linux and macOS or `%USERPROFILE%\.local\share\codex-webui\uploads` on Windows.
+These paths use the home directory of the OS account running the connected
+App Server. An unset, empty, or whitespace-only `CODEXUI_REMOTE_UPLOAD_DIR`
+uses this default. The WebUI uses one App Server `process/spawn` lookup per
+connection when an upload first needs the account's home. Custom `CODEX_HOME`
+locations are supported.
 
 To override the default, set `CODEXUI_REMOTE_UPLOAD_DIR` in the WebUI backend
 environment to a dedicated absolute path on the App Server host. The App Server
 must be able to create and write to that directory. Uploaded bytes are stored
 under `codexapp-uploads/<sha256(ID)>/` within the selected root via App Server RPC.
 The backend resolves the App Server's Codex home and verifies both paths via
-remote metadata before creating directories or writing files. If the OS home
-lookup is unavailable or the default root cannot be verified, set the override
-to an absolute path outside Codex home. Use paths with no symbolic links and
-keep them stable during uploads. The protocol does not expose
+remote metadata before creating missing directories or writing files. If the
+OS home lookup is unavailable or the default root cannot be verified, set the
+override to an absolute path outside Codex home. Use paths with no symbolic
+links and keep them stable during uploads. The protocol does not expose
 directory identity or atomic path-checked writes, so avoid bind mounts, mapped
 drives, or share aliases that expose Codex home through another path.
+
+Attachments in the former `.codex-webui-uploads` directory and their accounting
+records are retained. Existing history and drafts continue to use the saved
+absolute attachment paths.
 
 The limits are 20 MiB per file and 21 MiB per multipart request. The backend
 reserves each attempt in `uploads/inventory.json` under the ID's data directory

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, readFile } from 'node:fs/promises'
-import { join, win32, type PlatformPath } from 'node:path'
+import { join, posix, win32, type PlatformPath } from 'node:path'
 import { isAbsoluteUploadPath, projectPath, remoteUploadsDirectory, storageNames } from './webuiStorage.mjs'
 import { getConnectionProfileId, profileStorageDirectory } from './connectionProfile.js'
 import { updateCodexGlobalState } from './codexGlobalState.js'
@@ -93,6 +93,9 @@ async function validateUploadDirectory(
       if (rules.dirname(component) === component) break
     }
     for (const [index, component] of paths.reverse().entries()) {
+      // POSIX / is the filesystem root, and the required Codex home lookup
+      // verifies traversal from it. Keep checking every named component.
+      if (index === 0 && rules === posix && userHome) continue
       if (await check(component)) continue
       if (allowMissing && index > 0) return
       throw new Error('Required directory is missing')
@@ -126,7 +129,7 @@ export async function stageRemoteUpload(
   })
   if (!isAbsoluteUploadPath(home)) throw new Error(homeError)
   const userHome = configuredRoot ? '' : await client.resolveUploadUserHome(home, generation)
-  const root = configuredRoot || projectPath(userHome).join(userHome, '.codex-webui-uploads')
+  const root = configuredRoot || projectPath(userHome).join(userHome, '.local', 'share', 'codex-webui', 'uploads')
   const directory = configuredDirectory || remoteUploadsDirectory(root, id)
   const rules = projectPath(directory)
   await validateUploadDirectory(client, generation, rules, root, directory, home, userHome)

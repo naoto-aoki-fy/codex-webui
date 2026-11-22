@@ -40,25 +40,38 @@ preferences, and upload inventory. Use the same endpoint for all test IDs.
    `CODEXUI_REMOTE_UPLOAD_DIR` error and no writes under Codex home.
 7. Use a disposable OS account on the App Server host and set its
    `CODEX_HOME` to a separate absolute directory. Use a different home on the
-   WebUI backend, preferably on a separate host. Use a fresh profile ID and
-   unset `CODEXUI_UPLOAD_CAPACITY_BYTES` and `CODEXUI_REMOTE_UPLOAD_DIR`.
-   Restart the backend and upload a file.
-   Verify the bytes are under
-   `<App Server account home>/.codex-webui-uploads/codexapp-uploads/<sha256(ID)>/`
-   with the App Server's native separators, and that Codex home stays untouched.
-   Repeat with an empty override. On Windows, also try a custom Codex home on
-   a different drive from the account's profile directory.
+   WebUI backend, preferably on a separate host. Use a fresh profile ID and an
+   App Server account where the default upload root is absent. Unset
+   `CODEXUI_UPLOAD_CAPACITY_BYTES` and `CODEXUI_REMOTE_UPLOAD_DIR`. Restart the
+   backend and upload a file. Verify the directories are created and contain
+   the original bytes at the following paths under the App Server account.
+
+   - Linux and macOS use `~/.local/share/codex-webui/uploads/codexapp-uploads/<sha256(ID)>/`.
+   - Windows uses `%USERPROFILE%\.local\share\codex-webui\uploads\codexapp-uploads\<sha256(ID)>\`.
+
+   Verify that Codex home stays untouched. Repeat with an empty override and a
+   whitespace-only override. On Windows, also try a custom Codex home on a
+   different drive from the account's profile directory. Set Codex home to the
+   default upload root on the disposable App Server and repeat with no override.
+   Expect an error and no directory creation or file writes under Codex home.
 8. Use a fixture that rejects the OS home lookup or returns a relative path.
    Leave the override empty and upload. Expect an error naming
    `CODEXUI_REMOTE_UPLOAD_DIR` and no remote writes or new accounting records.
    Restart with the explicit absolute root from step 4 and verify the upload
    succeeds without a home lookup.
+9. Set the override to the absolute path of the former `.codex-webui-uploads`
+   directory under the disposable App Server account's home. Submit an
+   attachment in a conversation and save another in a draft. Clear the
+   override and restart with the same App Server ID. Verify the conversation
+   and draft attachments still resolve via their saved absolute paths. Upload
+   a new file and verify it lands in the new default root and both sets of
+   records appear in the profile inventory and journal.
 
 Credential-free API entry-point coverage runs with
 `pnpm run test:integration:fixture`, and with `CODEXAPP_FIXTURE_TRANSPORT=unix`
 on Linux/macOS. OS resolver and filesystem behavior are covered in
-`connectionProfile.test.ts`, `remoteUploads.test.ts`, `appAssets.test.ts`, and
-`rolloutGenerationMetadata.test.ts`.
+`appServerClient.rpcLifecycle.test.ts`, `connectionProfile.test.ts`,
+`remoteUploads.test.ts`, `appAssets.test.ts`, and `rolloutGenerationMetadata.test.ts`.
 
 ## Browser restart
 

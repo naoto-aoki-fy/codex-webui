@@ -162,7 +162,59 @@ it('permits creating a missing upload root after checking its existing parents',
   expect(client.uploadRpc.mock.calls.slice(-2).map(([method]) => method)).toEqual(['fs/createDirectory', 'fs/writeFile'])
 })
 
-it.each(['/remote/account', '/remote/account/.codex-webui-uploads'])(
+it('creates a missing default upload tree recursively', async () => {
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', undefined)
+  const client = remoteClient('/server/core', (method, { path }) => {
+    if (method === 'fs/getMetadata' && path === '/remote/account/.local') {
+      throw Object.assign(new Error('No such file or directory (os error 2)'), { code: -32603 })
+    }
+    return directoryMetadata
+  })
+  const directory = `/remote/account/.local/share/codex-webui/uploads/codexapp-uploads/${profileDirectoryName('unit-test')}`
+  const bytes = Buffer.from([0, 255, 137])
+  const path = await stageRemoteUpload(client, 'x.bin', bytes)
+  const checks = client.uploadRpc.mock.calls.filter(([method]) => method === 'fs/getMetadata')
+  expect(checks.map(([, params]) => params.path).sort()).toEqual([
+    '/remote', '/remote/account', '/remote/account/.local', '/server', '/server/core',
+  ])
+  expect(path.startsWith(`${directory}/`)).toBe(true)
+  expect(client.uploadRpc.mock.calls.slice(-2)).toEqual([
+    ['fs/createDirectory', { path: directory, recursive: true }, 17],
+    ['fs/writeFile', { path, dataBase64: bytes.toString('base64') }, 17],
+  ])
+})
+
+it('retains files and accounting from the old default root', async () => {
+  const files = new Map<string, Buffer>()
+  const client = remoteClient('/server/core', (method, { path, dataBase64 }) => {
+    if (method === 'fs/writeFile') files.set(path, Buffer.from(dataBase64!, 'base64'))
+    return directoryMetadata
+  })
+  const oldBytes = Buffer.from('before the change')
+  const oldRoot = '/remote/account/.codex-webui-uploads'
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', oldRoot)
+  const oldPath = await stageRemoteUpload(client, 'old.txt', oldBytes)
+  const oldInventory = JSON.parse(await readFile(ledger(storageNames.inventory), 'utf8'))
+  const oldJournal = await readFile(ledger(storageNames.journal), 'utf8')
+  expect(oldInventory.records).toEqual([
+    expect.objectContaining({ path: oldPath, bytes: oldBytes.length, status: 'staged' }),
+  ])
+  expect(JSON.parse(oldJournal)).toMatchObject({ path: oldPath, bytes: oldBytes.length, status: 'unknown' })
+  client.uploadRpc.mockClear()
+
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', undefined)
+  const newPath = await stageRemoteUpload(client, 'new.txt', Buffer.from('new'))
+  expect(newPath).toContain('/remote/account/.local/share/codex-webui/uploads/codexapp-uploads/')
+  expect(files.get(oldPath)).toEqual(oldBytes)
+  expect(client.uploadRpc.mock.calls.some(([, { path }]) => path.startsWith(oldRoot))).toBe(false)
+  expect(JSON.parse(await readFile(ledger(storageNames.inventory), 'utf8')).records).toEqual([
+    ...oldInventory.records,
+    expect.objectContaining({ path: newPath, bytes: 3, status: 'staged' }),
+  ])
+  expect((await readFile(ledger(storageNames.journal), 'utf8')).startsWith(oldJournal)).toBe(true)
+})
+
+it.each(['/remote/account', '/remote/account/.local/share/codex-webui/uploads'])(
   'rejects a default upload root inside Codex home %s', async home => {
     vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', undefined)
     const client = remoteClient(home)
@@ -170,6 +222,16 @@ it.each(['/remote/account', '/remote/account/.codex-webui-uploads'])(
     expect(client.uploadRpc).not.toHaveBeenCalled()
   },
 )
+
+it('rejects symlinks in the default upload directory ancestors', async () => {
+  vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', undefined)
+  const client = remoteClient('/server/core', (_method, { path }) => ({
+    ...directoryMetadata,
+    isSymlink: path === '/remote/account/.local/share',
+  }))
+  await expect(stageRemoteUpload(client, 'x', Buffer.from('x'))).rejects.toThrow('Cannot safely verify CODEXUI_REMOTE_UPLOAD_DIR')
+  expect(client.uploadRpc.mock.calls.every(([method]) => method === 'fs/getMetadata')).toBe(true)
+})
 
 it.each([false, true])('requires the default OS home to exist and be free of symlinks (symlink=%s)', async symlink => {
   vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '')

@@ -82,9 +82,10 @@ The returned path is used for both previews
 attachment. A timeout may still have created a file on B; it is never retried.
 
 Uploads have a 20 MiB file limit (21 MiB total multipart request limit) and UUID
-names. The upload root defaults to the OS user's `~/.codex-webui-uploads` on B,
-using the native path syntax. Set `CODEXUI_REMOTE_UPLOAD_DIR` on A to override it
-with an absolute path on B outside its Codex home. The staging area is
+names. New uploads default to `~/.local/share/codex-webui/uploads` on Linux and
+macOS or `%USERPROFILE%\.local\share\codex-webui\uploads` on Windows, under the
+OS account running the App Server on B. Set `CODEXUI_REMOTE_UPLOAD_DIR` on A to
+override it with an absolute path on B outside its Codex home. The staging area is
 `codexapp-uploads/<sha256(ID)>/` under the selected root. See
 [storage and upload configuration](connection-profiles-uploads.md#uploads-on-the-app-server).
 

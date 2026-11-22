@@ -402,27 +402,37 @@ async function run() {
         assert.deepEqual((await preferences('read')).preferred, previousRuns ? preferred : null)
         assert.equal(connections, before, 'profile bootstrap and preferences do not contact the App Server')
         await preferences('update', { preferred })
+        const uploadBytes = Buffer.concat([Buffer.from([0, 255, 137]), Buffer.from(profile)])
         const attachment = new FormData()
-        attachment.set('file', new Blob([profile]), 'profile.txt')
+        attachment.set('file', new Blob([uploadBytes]), 'profile.bin')
         const beforeUpload = frames.length
         const uploadResponse = await fetch(url + '/codex-api/upload-file', { method: 'POST', body: attachment })
         const { path: uploaded, error } = await uploadResponse.json()
         assert.equal(uploadResponse.status, 200, error)
-        const uploadMethods = frames.slice(beforeUpload).map(frame => frame.method)
-        assert.equal(uploadMethods.filter(method => method === 'process/spawn').length, uploadOverride ? 0 : 1)
-        assert.equal(uploadMethods.filter(method => method === 'fs/getMetadata').length, uploadOverride ? 6 : 7)
-        assert.equal(uploadMethods.includes('config/read'), false)
-        assert.deepEqual(uploadMethods.slice(-2), ['fs/createDirectory', 'fs/writeFile'])
         const hash = profileDirectoryName(profile)
-        const uploadRoot = uploadOverride || '/fixture/remote-user/.codex-webui-uploads'
-        const profileUploadDirectory = uploadRoot + '/codexapp-uploads/' + hash + '/'
-        assert(uploaded.startsWith(profileUploadDirectory))
-        assert.equal(files.get(uploaded).toString(), profile)
+        const uploadRoot = uploadOverride || '/fixture/remote-user/.local/share/codex-webui/uploads'
+        const profileUploadDirectory = uploadRoot + '/codexapp-uploads/' + hash
+        const uploadFrames = frames.slice(beforeUpload)
+        const homeLookups = uploadFrames.filter(({ method }) => method === 'process/spawn').length
+        const metadataPaths = uploadFrames.filter(({ method }) => method === 'fs/getMetadata').map(({ params }) => params.path)
+        assert.equal(homeLookups, uploadOverride ? 0 : 1)
+        assert.equal(metadataPaths.length, uploadOverride ? 6 : 9)
+        assert.equal(new Set(metadataPaths).size, metadataPaths.length, 'no duplicate metadata queries')
+        assert.equal(uploadFrames.some(({ method }) => method === 'config/read'), false)
+        assert.deepEqual(uploadFrames.filter(({ method }) => method?.startsWith('fs/') && method !== 'fs/getMetadata')
+          .map(({ method, params }) => ({ method, params })), [
+          { method: 'fs/createDirectory', params: { path: profileUploadDirectory, recursive: true } },
+          { method: 'fs/writeFile', params: { path: uploaded, dataBase64: uploadBytes.toString('base64') } },
+        ])
+        assert(uploaded.startsWith(profileUploadDirectory + '/'))
+        assert.deepEqual(files.get(uploaded), uploadBytes)
+        console.log('PASS', profile, 'upload bytes and destination:',
+          metadataPaths.length, 'metadata queries,', homeLookups, 'home lookups, 1 directory creation, 1 write')
         const { data } = resolveWebuiStorage({ ...process.env, ...storageEnv }, process.platform, storageEnv.HOME)
         const ledger = JSON.parse(readFileSync(join(data, 'app-servers', hash, 'uploads', 'inventory.json'), 'utf8'))
         assert.equal(ledger.records.length, previousRuns + 1)
         profileRuns.set(profile, previousRuns + 1)
-        assert(ledger.records.every(record => record.path.startsWith(profileUploadDirectory)))
+        assert(ledger.records.every(record => record.path.startsWith(profileUploadDirectory + '/')))
         assert.deepEqual(readdirSync(storageEnv.CODEX_HOME).sort(), Object.keys(oldFiles).sort())
         for (const [name, raw] of Object.entries(oldFiles)) {
           assert.equal(readFileSync(join(storageEnv.CODEX_HOME, name), 'utf8'), raw)

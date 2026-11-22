@@ -342,7 +342,7 @@ it.each([
   const client = new AppServerClient()
   try {
     const uploads = [stageRemoteUpload(client, 'one.txt', Buffer.from('one')), stageRemoteUpload(client, 'two.txt', Buffer.from('two'))]
-    const root = [home, '.codex-webui-uploads', 'codexapp-uploads', ''].join(sep)
+    const root = [home, '.local', 'share', 'codex-webui', 'uploads', 'codexapp-uploads', ''].join(sep)
     const results = Promise.all(uploads)
     await flush()
     const socket = wire.sockets[0]
@@ -399,7 +399,7 @@ it('reports unavailable home discovery and still accepts an explicit remote root
     )
     const socket = wire.sockets[0]
     expect(socket.frames.map((f: any) => f.method)).toEqual(['initialize', 'initialized'])
-    vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '/server/override')
+    vi.stubEnv('CODEXUI_REMOTE_UPLOAD_DIR', '  /server/override  ')
     expect(await stageRemoteUpload(client, 'two.txt', Buffer.from('two'))).toContain('/server/override/codexapp-uploads/')
     expect(socket.frames.some((f: any) => f.method === 'process/spawn')).toBe(false)
   } finally { client.dispose() }
