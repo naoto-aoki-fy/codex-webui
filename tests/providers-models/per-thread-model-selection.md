@@ -155,8 +155,8 @@ Actions and expected results:
    local WebUI cache root. Check the version, source path, mtime, exact-turn
    execution metadata and submitted-mode map. Reopen the thread, then restart
    only the web backend and reopen. Recovery for a valid cache issues
-   `thread/read` and `fs/getMetadata` with no rollout transfer. For version 1
-   byte preservation and version 2 compatibility checks, see the
+   `thread/read` and `fs/getMetadata` with no rollout transfer. For preservation
+   checks covering both JSON versions in the old path, see the
    [legacy cache procedures](../chat-composer-rendering/per-response-model-and-reasoning-effort.md#legacy-cache-preservation).
 4. Submit a real new turn using Codex so its rollout grows, then reopen history.
    Verify source mtime invalidation, retained older evidence, and the new turn's

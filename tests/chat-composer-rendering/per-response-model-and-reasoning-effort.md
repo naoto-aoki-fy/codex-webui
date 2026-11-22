@@ -39,29 +39,38 @@ network conditions. Do not delete original rollouts or old metadata stores.
 
 ## Legacy cache preservation
 
-Use a disposable WebUI profile and thread with validated execution metadata.
-Under the local WebUI cache root, put a formatted version 1 fixture at
-`app-servers/<sha256(ID)>/model-history/v1/<sha256(threadId)>.json`. Keep an
-exact copy outside the cache and start without the corresponding `v2/` file.
+Use two disposable threads in a test profile. Give each thread enough turns for
+pagination and a rollout with known model, effort and Plan evidence. Under the
+local WebUI cache root, seed `app-servers/<sha256(ID)>/model-history/v1/<sha256(threadId)>.json`
+with JSON version 1 for one thread and version 2 for the other. In the version 2
+fixture, use the matching rollout path and mtime, a different cached model, and
+a saved Plan submission for a turn with no rollout mode. Keep a byte-for-byte
+copy of each fixture and start without either corresponding `v2/` file.
 
-1. Open the thread and wait for its response metadata. Compare the legacy file
-   against the copy byte for byte. Inspect the new `v2/` file for version 2 and
-   the validated rollout metadata.
-2. Submit a prompt in Plan mode. Compare the legacy file against the copy again.
-   Verify the new file records `submittedModes[turnId] = "plan"` using the
-   acknowledged turn ID. Restart WebUI with rollout reads blocked and reopen
-   the thread. The Plan badge should appear on that prompt.
-3. Use a second disposable thread with a valid version 2 snapshot at the legacy
-   path and no preferred file. Reopen it and inspect recovery RPCs. Expect one
-   metadata-only `thread/read` and one `fs/getMetadata`, with no `fs/readFile`.
-   Submit another Plan turn and verify the accepted mode is added to the same
-   file under `v1/` and no file appears under `v2/`.
-4. Run `pnpm run build` and `pnpm run test:integration:fixture`. With a version 1
-   fixture in place, the backend test pauses the rollout read, submits a Plan
-   turn and releases the rollout. Expect the saved version 2 snapshot and the
-   accepted mode in the same file, a byte-identical legacy file, and no rollout
-   transfer on the next history read. The fixture also checks that an older
-   submitted mode contradicted by execution evidence stays cleared.
+1. Open each thread and select **Load earlier messages** while the first rollout
+   request is pending. For each thread, expect one `fs/readFile` for the shared
+   recovery. Verify the exact model, effort and Plan evidence on its history
+   pages. The legacy-only Plan badge is absent. Compare each legacy file with
+   its copy and inspect the new `v2/` file for version 2 and the rollout values.
+2. Repeat recovery with a cold cache in the disposable profile. Hold its rollout
+   response in the fixture, submit a prompt in Plan mode, then release the
+   response. After both requests finish, verify the `v2/` file contains the rollout
+   snapshot and `submittedModes[turnId] = "plan"` for the acknowledged turn ID.
+   Compare each legacy file with its copy again.
+3. Restart WebUI. With the rollout and its mtime stable, reopen each thread and
+   load earlier messages. Verify the model, effort and Plan on their exact
+   turns. Cache validation uses a metadata-only `thread/read` and
+   `fs/getMetadata` per recovery, with zero `fs/readFile` or `turn/start` calls.
+   Restart with rollout access blocked and reopen. Verify the Plan badge for
+   the accepted submission from step 2, including on an older page when applicable.
+4. In the disposable profile, replace a `v2/` entry with malformed JSON and then
+   with an unsupported JSON version. For each case, open history with rollout
+   access restored and submit another Plan prompt. Verify that history recovers
+   the rollout values and the incompatible file retains its exact bytes.
+5. Run `pnpm run build` and `pnpm run test:integration:fixture` for RPC assertions
+   covering overlap, an unchanged cache after restart and recovery without
+   rollout access. The fixture also checks that execution evidence can clear a
+   conflicting saved badge.
 
 Cleanup: remove the disposable WebUI profile and fixture copies, archive the
 test threads and restore rollout access.

@@ -17,12 +17,12 @@ thread. Accepted WebUI submissions can also supply an explicit collaboration mod
    home's session or archive directory, then checks its modification timestamp.
    It validates the cached source path, timestamp, exact turn IDs and execution
    provenance before reuse.
-3. WebUI creates version 2 files under its local cache root at
+3. WebUI reads and writes version 2 files under its local cache root at
    `app-servers/<sha256(ID)>/model-history/v2/<sha256(threadId)>.json`.
    The schema stores the validated rollout snapshot and accepted modes separately.
-   When the preferred file is missing, WebUI checks `model-history/v1/` for the
-   same filename and continues using a version 2 file there in place. A version 1
-   file retains its original bytes. New snapshots come from a validated rollout.
+   Files under `model-history/v1/` are left untouched regardless of their JSON
+   version. A missing current cache is rebuilt from the validated rollout. A
+   Plan badge based solely on a submission saved under `v1/` is unavailable.
 4. The parser reads complete `turn_context` records for model, effort and
    `payload.collaboration_mode.mode`, and `event_msg` records with
    `payload.type = "task_started"` for `payload.collaboration_mode_kind`.
@@ -32,12 +32,12 @@ thread. Accepted WebUI submissions can also supply an explicit collaboration mod
    existing badge. A second source stat checks that the rollout stayed stable.
 5. After Codex accepts `turn/start` with an explicit mode, the bridge makes a
    best-effort write keyed by the returned turn ID before acknowledging the send.
-   Cache updates serialize, check the destination version under the write lock,
-   and atomically replace version 2 files. An existing legacy, unsupported, or
-   unreadable format is preserved. Validated
-   rollout mode supersedes submitted mode, and contradictory or conflicting
-   evidence removes the submitted fallback. A pending local read skips turns
-   superseded by newer submission or execution evidence.
+   Cache updates read the latest file under the write lock, merge accepted modes
+   with rollout evidence, and atomically replace version 2 files. Malformed or
+   unsupported files in `v2/` retain their bytes while available rollout evidence
+   is returned to history. Validated rollout mode supersedes submitted mode, and
+   contradictory or conflicting evidence removes the submitted fallback. A pending
+   local read skips turns superseded by newer submission or execution evidence.
 6. `turn/generationMetadata` carries exact-turn evidence for the requested or
    retained turns. Prompt bubbles render a badge for Plan mode. The optimistic
    badge starts with the sent mode, transfers to the acknowledged turn ID and
@@ -110,10 +110,10 @@ archive, and the bridge removes them when it observes permanent deletion.
 Recovery coalesces compatible same-thread reads, serializes source transfers and
 admits up to 16 metadata threads with one extra slot for reply confirmation.
 Confirmation runs ahead of waiting metadata reads. Bounds remain 16 MiB per source, 2 MiB per cache, 10,000
-turn IDs and 512 characters per field. Local recovery coalesces asynchronous cache
-lookups. A missing preferred file adds one local lookup of the legacy path.
-For submissions, WebUI checks whether the preferred file exists before
-reading its contents under the write lock.
+turn IDs and 512 characters per field. Concurrent history reads share an
+asynchronous read of the current cache file. Submissions go directly to the
+locked update. Refreshes merge the latest accepted modes under the same lock,
+including when the source provides no usable mtime.
 Existing metadata notifications carry the recovered evidence. No session traversal, per-message RPC,
 source-to-fork history read, synchronous filesystem work or new request fanout is
 introduced. Native metadata-only pagination does not trigger rollout recovery.
@@ -123,9 +123,10 @@ Answer history reads one profile/thread file asynchronously, filters by exact tu
 IDs before serialization and uses the existing native page. File read and write
 cost grows with the number of saved answers in that thread.
 
-The fixtures compare cold and warm RPC counts and cover legacy file byte preservation,
-in-place reuse of version 2 files, concurrent writes, accepted mode without rollout access, conflicting evidence,
-profile isolation, reconnect recovery and older pages. See the
+The fixtures compare cold and warm RPC counts and cover byte preservation for
+both JSON versions in the old directory, concurrent writes, accepted mode
+without rollout access, conflicting evidence, profile isolation, reconnect
+recovery and older pages. See the
 [Plan-mode and metadata checks](../tests/chat-composer-rendering/per-response-model-and-reasoning-effort.md)
 and [question history checks](../tests/theme-layout-terminal/plan-mode-question-panel.md#answer-history).
 

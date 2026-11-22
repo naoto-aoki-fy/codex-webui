@@ -59,13 +59,12 @@ Architecture remains:
 `thread/read` and stats it with `fs/getMetadata`. It reuses the local WebUI cache
 when the source path, schema version, positive mtime and execution provenance
 validate. Otherwise it reads the native rollout using `fs/readFile` and parses
-complete records by exact turn ID. A second stat guards publication. New files
-go under the WebUI cache root at
+complete records by exact turn ID. A second stat guards publication. Cache reads
+and writes use the WebUI cache root at
 `app-servers/<sha256(ID)>/model-history/v2/<sha256(threadId)>.json`.
-The legacy `v1/` directory is checked when the preferred file is missing. A
-version 2 file there stays in use at its existing path. Version 1 files are
-preserved. Metadata notifications merge into per-thread history state and the
-V2 normalizer/ThreadConversation display.
+Both JSON versions in the legacy `v1/` directory retain their original bytes.
+Metadata notifications merge into per-thread history state and the V2
+normalizer/ThreadConversation display.
 
 Specific evidence:
 

@@ -193,6 +193,7 @@ async function run() {
   let questionRollout = ''
   let questionStamp = 1
   let heldRollout
+  let rolloutStamp = 1
   let rolloutRead
   let connections = 0
   server.on('connection', socket => {
@@ -287,7 +288,7 @@ async function run() {
         : frame.method === 'fs/getMetadata' && frame.params.path === queuedRolloutPath
           ? { isFile: true, modifiedAtMs: 1 }
         : frame.method === 'fs/getMetadata' ? frame.params.path === rolloutPath
-          ? { isFile: true, modifiedAtMs: 1 } : { isDirectory: true, isFile: false, isSymlink: false }
+          ? { isFile: true, modifiedAtMs: rolloutStamp } : { isDirectory: true, isFile: false, isSymlink: false }
         : frame.method === 'thread/name/set' ? {}
         : frame.method === 'account/read' ? { account: { type: 'apiKey', apiKey: 'fixture-secret' }, requiresOpenaiAuth: true, authToken: 'fixture-secret' }
         : frame.method === 'account/login/start' ? { type: 'chatgpt', loginId: 'fixture-login', authUrl: 'https://example.invalid/sign-in', accessToken: 'fixture-secret' }
@@ -717,11 +718,42 @@ async function run() {
         const historyCacheFile = createHash('sha256').update(historyId).digest('hex') + '.json'
         const legacyCache = join(historyCache, 'v1', historyCacheFile)
         const preferredCache = join(historyCache, 'v2', historyCacheFile)
-        const legacyCacheBytes = Buffer.from('{\n  "version": 1,\n  "turns": []\n}\n')
+        const legacyVersion = profile === 'fixture-cli' ? 1 : 2
+        const legacyCacheBytes = Buffer.from(JSON.stringify({
+          version: legacyVersion, sourcePath: rolloutPath, modifiedAtMs: 1, rolloutModeScanned: true,
+          turns: [{ turnId: 'turn-14', metadata: { model: 'legacy-only', modelSource: 'execution' } }],
+          submittedModes: { 'turn-3': 'plan' },
+        }, null, 2) + '\n')
+        const rolloutEvidence = [
+          { turn_id: 'turn-14', model: 'recent-model', effort: 'high' },
+          { turn_id: 'turn-1', model: 'older-model', effort: 'none', collaboration_mode: { mode: 'plan' } },
+        ]
+        const executionTurns = [
+          { turnId: 'turn-14', metadata: { model: 'recent-model', modelSource: 'execution', effort: 'high', effortSource: 'execution' } },
+          { turnId: 'turn-1', metadata: { model: 'older-model', modelSource: 'execution', effort: 'none', effortSource: 'execution',
+            collaborationMode: 'plan', collaborationModeSource: 'execution' } },
+        ]
+        const loadRollout = async () => {
+          for (let attempt = 0; attempt < 100 && !rolloutRead; attempt++) await new Promise(resolve => setTimeout(resolve, 10))
+          assert(rolloutRead, 'fixture must be holding a remote rollout read')
+        }
+        const readOlderHistory = cursor => historyRequest('thread/turns/list', {
+          cursor, itemsView: 'full', sortDirection: 'desc', limit: 10,
+        })
         try {
+          rolloutStamp = 1
+          heldRollout = true
+          rolloutRead = undefined
           if (!previousRuns) {
             mkdirSync(join(historyCache, 'v1'), { recursive: true })
             writeFileSync(legacyCache, legacyCacheBytes)
+            const coldAt = frames.length
+            const recentHistory = await historyRequest('thread/read', { includeTurns: true })
+            await loadRollout()
+            const olderHistory = await readOlderHistory(recentHistory.olderCursor)
+            assert.equal(olderHistory.nextCursor, null)
+            assert.deepEqual(olderHistory.data.map(turn => turn.id), ['turn-4', 'turn-3', 'turn-2', 'turn-1', 'turn-0'])
+            assert.equal(modes.size, 0, 'legacy cache supplies no metadata while the source read is held')
             const beforeModes = frames.length
             for (const [mode, id] of [['plan', 'turn-2'], ['default', 'turn-12']]) {
               const result = await historyRequest('turn/start', { input: [], collaborationMode: { mode } })
@@ -729,12 +761,37 @@ async function run() {
             }
             assert.deepEqual(frames.slice(beforeModes).map(frame => frame.method), ['turn/start', 'turn/start'])
             await waitForModes(['turn-2', 'turn-12'])
+            rolloutRead(rolloutEvidence.map(payload => rolloutRow('turn_context', payload)).join(''))
+            await waitForModes(['turn-1', 'turn-2', 'turn-12', 'turn-14'])
+            assert.deepEqual(frames.slice(coldAt).map(frame => frame.method).sort(), [
+              'fs/getMetadata', 'fs/getMetadata', 'fs/readFile', 'thread/read', 'thread/read',
+              'thread/turns/list', 'thread/turns/list', 'turn/start', 'turn/start',
+            ])
+            console.log('PASS', profile, 'legacy version', legacyVersion, 'two history pages and overlapping submissions share one rollout transfer')
             await preferences('update', { preferred })
+          } else {
+            const warmAt = frames.length
+            const recentHistory = await historyRequest('thread/read', { includeTurns: true })
+            await waitForModes(['turn-12', 'turn-14'])
+            assert.deepEqual(modes.get('turn-14'), executionTurns[0].metadata)
+            modes.clear()
+            const olderHistory = await readOlderHistory(recentHistory.olderCursor)
+            assert.equal(olderHistory.nextCursor, null)
+            await waitForModes(['turn-1', 'turn-2'])
+            assert.deepEqual(modes.get('turn-1'), executionTurns[1].metadata)
+            assert.deepEqual(modes.get('turn-2'), { collaborationMode: 'plan', collaborationModeSource: 'submitted' })
+            assert.deepEqual(frames.slice(warmAt).map(frame => frame.method).sort(), [
+              'fs/getMetadata', 'fs/getMetadata', 'thread/read', 'thread/read', 'thread/read',
+              'thread/turns/list', 'thread/turns/list',
+            ])
+            console.log('PASS', profile, 'restart restores exact model, effort and Plan on two history pages with zero rollout transfers or turn starts')
           }
           assert.deepEqual(readFileSync(legacyCache), legacyCacheBytes)
           assert.deepEqual(JSON.parse(readFileSync(preferredCache, 'utf8')), {
-            version: 2, submittedModes: { 'turn-2': 'plan', 'turn-12': 'default' },
+            version: 2, sourcePath: rolloutPath, modifiedAtMs: 1, rolloutModeScanned: true,
+            turns: executionTurns, submittedModes: { 'turn-2': 'plan', 'turn-12': 'default' },
           })
+          heldRollout = false
           modes.clear()
           const beforeModeRecovery = frames.length
           await historyRequest('thread/read', { includeTurns: true, retainedTurnIds: ['turn-2'] })
@@ -753,13 +810,10 @@ async function run() {
             })
             if (verifyBrowser) await submitRecentPlan()
             heldRollout = true
+            rolloutStamp = 2
             rolloutRead = undefined
             modes.clear()
             const blockedAt = frames.length
-            const loadRollout = async () => {
-              for (let attempt = 0; attempt < 100 && !rolloutRead; attempt++) await new Promise(resolve => setTimeout(resolve, 10))
-              assert(rolloutRead, 'fixture must be holding a remote rollout read')
-            }
             const releaseRollout = async browserHistory => {
               const blockedFrames = frames.slice(blockedAt)
               const historyFrames = blockedFrames.filter(frame => frame.params?.threadId === historyId)
