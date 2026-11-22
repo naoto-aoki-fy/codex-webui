@@ -56,12 +56,12 @@ exact copy outside the cache and start without the corresponding `v2/` file.
    metadata-only `thread/read` and one `fs/getMetadata`, with no `fs/readFile`.
    Submit another Plan turn and verify the accepted mode is added to the same
    file under `v1/` and no file appears under `v2/`.
-4. With a fresh version 1 fixture, pause the fixture's rollout `fs/readFile`
-   response after opening history. Submit a Plan turn, then release the
-   unchanged rollout snapshot. Check that the new version 2 file contains both
-   the execution snapshot and the accepted mode, and compare the legacy bytes
-   again. Repeat with a rollout conflict for a submitted mode. The conflicting
-   fallback should stay cleared after a restart.
+4. Run `pnpm run build` and `pnpm run test:integration:fixture`. With a version 1
+   fixture in place, the backend test pauses the rollout read, submits a Plan
+   turn and releases the rollout. Expect the saved version 2 snapshot and the
+   accepted mode in the same file, a byte-identical legacy file, and no rollout
+   transfer on the next history read. The fixture also checks that an older
+   submitted mode contradicted by execution evidence stays cleared.
 
 Cleanup: remove the disposable WebUI profile and fixture copies, archive the
 test threads and restore rollout access.

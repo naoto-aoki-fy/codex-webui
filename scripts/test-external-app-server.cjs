@@ -748,7 +748,10 @@ async function run() {
           assert(!frames.slice(beforeModeRecovery).some(frame => 'retainedTurnIds' in frame.params))
           console.log('PASS', profile, previousRuns ? 'restart' : 'acceptance', 'exact retained Plan and Default mode, unavailable rollout, no extra native calls')
           if (previousRuns) {
-            await historyRequest('turn/start', { input: [{ type: 'text', text: 'Recent Plan fixture' }], collaborationMode: { mode: 'plan' } })
+            const submitRecentPlan = () => historyRequest('turn/start', {
+              input: [{ type: 'text', text: 'Recent Plan fixture' }], collaborationMode: { mode: 'plan' },
+            })
+            if (verifyBrowser) await submitRecentPlan()
             heldRollout = true
             rolloutRead = undefined
             modes.clear()
@@ -784,15 +787,35 @@ async function run() {
             } else {
               await historyRequest('thread/read', { includeTurns: true, retainedTurnIds: ['turn-2'] })
               await loadRollout()
-              await waitForModes(['turn-2', 'turn-12', 'turn-13'])
+              await waitForModes(['turn-2', 'turn-12'])
               assert.deepEqual(modes.get('turn-2'), { collaborationMode: 'plan', collaborationModeSource: 'submitted' })
+              const accepted = await submitRecentPlan()
+              assert.equal(accepted.turn.id, 'turn-13')
+              await waitForModes(['turn-2', 'turn-12', 'turn-13'])
               await releaseRollout()
             }
+            const snapshot = JSON.parse(readFileSync(preferredCache, 'utf8'))
+            assert.equal(snapshot.sourcePath, rolloutPath)
+            assert.equal(snapshot.rolloutModeScanned, true)
+            assert.deepEqual(snapshot.submittedModes, { 'turn-12': 'default', 'turn-13': 'plan' })
+            assert.deepEqual(snapshot.turns, [{
+              turnId: 'turn-2', metadata: { collaborationMode: null, collaborationModeSource: 'execution' },
+            }])
+
+            modes.clear()
+            const beforeWarmRead = frames.length
+            await historyRequest('thread/read', { includeTurns: true, retainedTurnIds: ['turn-2'] })
+            await waitForModes(['turn-2', 'turn-12', 'turn-13'])
+            assert.deepEqual(modes.get('turn-2'), { collaborationMode: null, collaborationModeSource: 'execution' })
+            assert.deepEqual(frames.slice(beforeWarmRead).map(frame => frame.method).sort(),
+              ['fs/getMetadata', 'thread/read', 'thread/read', 'thread/turns/list'])
+            assert.deepEqual(readFileSync(legacyCache), legacyCacheBytes)
+            console.log('PASS saved execution snapshot and accepted Plan with byte-identical legacy cache and no warm rollout transfer')
+
             heldRollout = false
             modes.clear()
             await historyRequest('thread/read', { includeTurns: true, retainedTurnIds: ['turn-2'] })
             await waitForModes(['turn-12', 'turn-13'])
-            assert.deepEqual(readFileSync(legacyCache), legacyCacheBytes)
             console.log('PASS blocked rollout releases exact Plan fallback immediately and later clears a conflicting badge')
           }
         } finally { metadataStream.terminate() }
