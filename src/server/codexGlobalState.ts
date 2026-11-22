@@ -45,7 +45,7 @@ async function resolveDestination(path: string, depth = 0): Promise<string> {
   return join(await resolveDestination(parent, depth + 1), basename(absolute))
 }
 
-async function readState(path: string, recoverMalformed = false, maxBytes?: number): Promise<CodexGlobalState> {
+async function readState(path: string, recoverMalformed = false, maxBytes?: number): Promise<CodexGlobalState | undefined> {
   let raw: string
   try {
     if (maxBytes === undefined) raw = await readFile(path, 'utf8')
@@ -57,7 +57,7 @@ async function readState(path: string, recoverMalformed = false, maxBytes?: numb
       } finally { await file.close() }
     }
   } catch (error) {
-    if (isMissing(error)) return {}
+    if (isMissing(error)) return undefined
     throw error
   }
   let state: unknown
@@ -73,7 +73,7 @@ async function readState(path: string, recoverMalformed = false, maxBytes?: numb
 }
 
 export async function readCodexGlobalState(path = getCodexGlobalStatePath(), recoverMalformed = false): Promise<CodexGlobalState> {
-  return readState(await resolveDestination(path), recoverMalformed)
+  return (await readState(await resolveDestination(path), recoverMalformed)) ?? {}
 }
 
 async function withStateLock<T>(path: string, mutate: (destination: string, checkLock: () => void) => Promise<T>): Promise<T> {
@@ -101,7 +101,7 @@ async function withStateLock<T>(path: string, mutate: (destination: string, chec
 }
 
 export async function updateCodexGlobalState<T>(
-  update: (state: CodexGlobalState) => T | Promise<T>,
+  update: (state: CodexGlobalState, exists: boolean) => T | Promise<T>,
   path = getCodexGlobalStatePath(),
   recoverMalformed = false,
   maxBytes?: number,
@@ -109,9 +109,10 @@ export async function updateCodexGlobalState<T>(
   return withStateLock(path, async (destination, checkLock) => {
     let temporaryPath: string | undefined
     try {
-      const state = await readState(destination, recoverMalformed, maxBytes)
+      const existing = await readState(destination, recoverMalformed, maxBytes)
+      const state = existing ?? {}
       const before: unknown = JSON.parse(JSON.stringify(state))
-      const result = await update(state)
+      const result = await update(state, existing !== undefined)
       checkLock()
       if (isDeepStrictEqual(before, state)) return result
 

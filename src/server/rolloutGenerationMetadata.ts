@@ -1,6 +1,6 @@
 import { sessionCodexHome } from './codexHomeResolver.js'
 import { createHash } from 'node:crypto'
-import { open } from 'node:fs/promises'
+import { open, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getConnectionProfileId, profileStorageDirectory } from './connectionProfile.js'
 import { storageNames } from './webuiStorage.mjs'
@@ -66,24 +66,51 @@ export function rolloutSourcePath(path: unknown, home: string): string | undefin
   return path
 }
 
-async function readCache(path: string): Promise<unknown> {
-  const file = await open(path, 'r')
+function cacheReadFailure(error: unknown): null | undefined {
+  // Probe the legacy path only when the preferred file is missing.
+  return (error as NodeJS.ErrnoException)?.code === 'ENOENT' ? undefined : null
+}
+
+async function readCache(path: string): Promise<CodexGlobalState | null | undefined> {
   try {
-    if ((await file.stat()).size > MAX_CACHE_BYTES) throw new Error('Rollout cache exceeds budget')
-    return JSON.parse(await file.readFile('utf8'))
-  } finally {
-    await file.close()
+    const file = await open(path, 'r')
+    try {
+      if ((await file.stat()).size > MAX_CACHE_BYTES) return null
+      return record(JSON.parse(await file.readFile('utf8'))) ?? null
+    } finally {
+      await file.close()
+    }
+  } catch (error) {
+    return cacheReadFailure(error)
   }
 }
 
-function cachePath(threadId: string, profileId: string): string {
-  // Keep the original directory and filename so v1 caches upgrade in place.
-  return join(profileStorageDirectory('cache', profileId), storageNames.rolloutCache, 'v1',
-    createHash('sha256').update(threadId).digest('hex') + '.json')
+type LocalCache = {
+  path: string
+  cached?: CodexGlobalState
+  allowCreate: boolean
 }
 
-function cachedEvidence(cache: ReturnType<typeof record>): Map<string, TurnGenerationMetadata> | undefined {
-  if (!Array.isArray(cache?.turns) || cache.turns.length > MAX_TURNS) return
+async function findCache(path: string, legacyPath: string, mode: 'read' | 'write'): Promise<LocalCache> {
+  // A submission only needs the destination. Read its contents under the lock.
+  const cached = mode === 'read' ? await readCache(path) : await stat(path).then(() => null, cacheReadFailure)
+  if (cached === undefined) {
+    const legacy = await readCache(legacyPath)
+    if (legacy?.version === 2) return { path: legacyPath, cached: legacy, allowCreate: false }
+  }
+  return { path, cached: cached ?? undefined, allowCreate: true }
+}
+
+function updateCache<T>(cache: LocalCache, update: (state: CodexGlobalState) => T): Promise<T | undefined> {
+  return updateCodexGlobalState((state, exists) => {
+    // Malformed files are treated as existing objects without a version.
+    if (exists ? state.version !== 2 : !cache.allowCreate) return
+    return update(state)
+  }, cache.path, true, MAX_CACHE_BYTES)
+}
+
+function cachedEvidence(cache: CodexGlobalState): Map<string, TurnGenerationMetadata> | undefined {
+  if (!Array.isArray(cache.turns) || cache.turns.length > MAX_TURNS) return
   const evidence = new Map<string, TurnGenerationMetadata>()
   for (const row of cache.turns) {
     const metadata = readGenerationMetadata(row?.metadata)
@@ -95,7 +122,7 @@ function cachedEvidence(cache: ReturnType<typeof record>): Map<string, TurnGener
   return evidence
 }
 
-function submittedModes(cache: ReturnType<typeof record>): Map<string, CollaborationModeKind> {
+function submittedModes(cache: CodexGlobalState | undefined): Map<string, CollaborationModeKind> {
   const modes = new Map<string, CollaborationModeKind>()
   if (cache?.version !== 2) return modes
   for (const [turnId, raw] of Object.entries(record(cache.submittedModes) ?? {})) {
@@ -150,19 +177,24 @@ type RolloutRead = {
 export class RolloutGenerationMetadata {
   private readonly waiting = new Map<string, RolloutRead>()
   private active?: RolloutRead
-  private readonly pendingCacheReads = new Map<string, Promise<ReturnType<typeof record>>>()
+  private readonly pendingCacheReads = new Map<string, Promise<LocalCache>>()
   constructor(private readonly client: Client) {}
 
-  private readLocalCache(path: string): Promise<ReturnType<typeof record>> {
+  private findLocalCache(threadId: string, profileId: string, mode: 'read' | 'write' = 'read'): Promise<LocalCache> {
+    const directory = join(profileStorageDirectory('cache', profileId), storageNames.rolloutCache)
+    const filename = createHash('sha256').update(threadId).digest('hex') + '.json'
+    const path = join(directory, 'v2', filename)
     const pending = this.pendingCacheReads.get(path)
     if (pending) return pending
-    const read = readCache(path).then(record, () => undefined).finally(() => this.pendingCacheReads.delete(path))
+    const lookup = findCache(path, join(directory, 'v1', filename), mode)
+    if (mode === 'write') return lookup
+    const read = lookup.finally(() => this.pendingCacheReads.delete(path))
     this.pendingCacheReads.set(path, read)
     return read
   }
 
   async readSubmittedModes(threadId: string, profileId: string): Promise<Map<string, CollaborationModeKind>> {
-    return submittedModes(await this.readLocalCache(cachePath(threadId, profileId)))
+    return submittedModes((await this.findLocalCache(threadId, profileId)).cached)
   }
 
   recover(threadId: string, force = false, reply?: RolloutQuestionReply): Promise<Map<string, TurnGenerationMetadata>> {
@@ -213,7 +245,8 @@ export class RolloutGenerationMetadata {
 
   async rememberSubmittedMode(threadId: string, turnId: string, mode: CollaborationModeKind, profileId: string): Promise<TurnGenerationMetadata | undefined> {
     if (turnId.length > 256) return
-    return updateCodexGlobalState(state => {
+    const cache = await this.findLocalCache(threadId, profileId, 'write')
+    const metadata = await updateCache<TurnGenerationMetadata>(cache, state => {
       const submitted = submittedModes(state)
       const evidence = state.version === 2 && state.rolloutModeScanned === true && Array.isArray(state.turns)
         ? readGenerationMetadata(state.turns.find(row => row?.turnId === turnId)?.metadata) : undefined
@@ -222,17 +255,17 @@ export class RolloutGenerationMetadata {
         if (!submitted.has(turnId) && submitted.size >= MAX_TURNS) submitted.delete(submitted.keys().next().value!)
         submitted.set(turnId, mode)
       }
-      const existing = state.version === 1 || state.version === 2 ? state : {}
-      storeCache(state, { ...existing, version: 2, submittedModes: Object.fromEntries(submitted) })
+      storeCache(state, { ...state, version: 2, submittedModes: Object.fromEntries(submitted) })
       return evidence?.collaborationModeSource === 'execution'
         ? { collaborationMode: evidence.collaborationMode, collaborationModeSource: 'execution' }
         : { collaborationMode: mode, collaborationModeSource: 'submitted' }
-    }, cachePath(threadId, profileId), true, MAX_CACHE_BYTES)
+    })
+    return metadata ?? { collaborationMode: mode, collaborationModeSource: 'submitted' }
   }
 
   private async read(threadId: string, profileId: string, generation: number, job: RolloutRead) {
-    const destination = cachePath(threadId, profileId)
-    const cached = await this.readLocalCache(destination)
+    const cache = await this.findLocalCache(threadId, profileId)
+    const { cached } = cache
     let submitted = submittedModes(cached)
     const current = () => generation === this.client.generation() && getConnectionProfileId() === profileId
     const fallback = () => current() ? combineEvidence(new Map(), submitted) : new Map<string, TurnGenerationMetadata>()
@@ -285,7 +318,7 @@ export class RolloutGenerationMetadata {
       discardContradictions(submitted, rollout)
       if (stamp !== undefined || submitted.size !== submittedCount) {
         try {
-          await updateCodexGlobalState(state => {
+          await updateCache(cache, state => {
             if (!current()) return
             submitted = submittedModes(state)
             discardContradictions(submitted, rollout)
@@ -303,7 +336,7 @@ export class RolloutGenerationMetadata {
             if (Buffer.byteLength(JSON.stringify(snapshot)) > MAX_CACHE_BYTES) {
               storeCache(state, { version: 2, submittedModes: submittedModesByTurn })
             } else storeCache(state, snapshot)
-          }, destination, true, MAX_CACHE_BYTES)
+          })
         } catch { /* Local cache failure does not change validated execution evidence. */ }
       }
       return current() ? combineEvidence(rollout, submitted) : new Map<string, TurnGenerationMetadata>()

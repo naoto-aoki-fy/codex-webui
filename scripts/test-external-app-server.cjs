@@ -445,7 +445,7 @@ async function run() {
         assert.deepEqual(files.get(uploaded), uploadBytes)
         console.log('PASS', profile, 'upload bytes and destination:',
           metadataPaths.length, 'metadata queries,', homeLookups, 'home lookups, 1 directory creation, 1 write')
-        const { data } = resolveWebuiStorage({ ...process.env, ...storageEnv }, process.platform, storageEnv.HOME)
+        const { data, cache } = resolveWebuiStorage({ ...process.env, ...storageEnv }, process.platform, storageEnv.HOME)
         const ledger = JSON.parse(readFileSync(join(data, 'app-servers', hash, 'uploads', 'inventory.json'), 'utf8'))
         assert.equal(ledger.records.length, previousRuns + 1)
         profileRuns.set(profile, previousRuns + 1)
@@ -713,8 +713,15 @@ async function run() {
           }
           assert.deepEqual([...modes.keys()].sort(), [...ids].sort())
         }
+        const historyCache = join(cache, 'app-servers', hash, 'model-history')
+        const historyCacheFile = createHash('sha256').update(historyId).digest('hex') + '.json'
+        const legacyCache = join(historyCache, 'v1', historyCacheFile)
+        const preferredCache = join(historyCache, 'v2', historyCacheFile)
+        const legacyCacheBytes = Buffer.from('{\n  "version": 1,\n  "turns": []\n}\n')
         try {
           if (!previousRuns) {
+            mkdirSync(join(historyCache, 'v1'), { recursive: true })
+            writeFileSync(legacyCache, legacyCacheBytes)
             const beforeModes = frames.length
             for (const [mode, id] of [['plan', 'turn-2'], ['default', 'turn-12']]) {
               const result = await historyRequest('turn/start', { input: [], collaborationMode: { mode } })
@@ -724,6 +731,10 @@ async function run() {
             await waitForModes(['turn-2', 'turn-12'])
             await preferences('update', { preferred })
           }
+          assert.deepEqual(readFileSync(legacyCache), legacyCacheBytes)
+          assert.deepEqual(JSON.parse(readFileSync(preferredCache, 'utf8')), {
+            version: 2, submittedModes: { 'turn-2': 'plan', 'turn-12': 'default' },
+          })
           modes.clear()
           const beforeModeRecovery = frames.length
           await historyRequest('thread/read', { includeTurns: true, retainedTurnIds: ['turn-2'] })
@@ -781,6 +792,7 @@ async function run() {
             modes.clear()
             await historyRequest('thread/read', { includeTurns: true, retainedTurnIds: ['turn-2'] })
             await waitForModes(['turn-12', 'turn-13'])
+            assert.deepEqual(readFileSync(legacyCache), legacyCacheBytes)
             console.log('PASS blocked rollout releases exact Plan fallback immediately and later clears a conflicting badge')
           }
         } finally { metadataStream.terminate() }

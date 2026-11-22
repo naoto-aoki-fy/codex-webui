@@ -10,8 +10,8 @@ import { mergeGenerationMetadata } from '../turnGenerationMetadata'
 import type { RolloutQuestionReply } from './questionResponses'
 
 afterEach(() => vi.unstubAllEnvs())
-const cacheDirectory = () => join(profileStorageDirectory('cache'), storageNames.rolloutCache, 'v1')
-const cachePath = (id = 't') => join(cacheDirectory(), createHash('sha256').update(id).digest('hex') + '.json')
+const cacheDirectory = (directory = 'v2') => join(profileStorageDirectory('cache'), storageNames.rolloutCache, directory)
+const cachePath = (directory = 'v2') => join(cacheDirectory(directory), createHash('sha256').update('t').digest('hex') + '.json')
 const path = '/remote/.codex/sessions/2026/11/14/rollout-test.jsonl'
 const context = (turn_id: string, fields: object) => JSON.stringify({ type: 'turn_context', timestamp: '2026-11-14T00:00:00Z', payload: { turn_id, ...fields } }) + '\n'
 const execution = (model: string, effort?: string | null) => ({ model, modelSource: 'execution', ...(effort !== undefined ? { effort, effortSource: 'execution' } : {}) })
@@ -316,50 +316,144 @@ it('parses exact collaboration-mode evidence independently of model and effort a
   ])
 })
 
-it('upgrades v1 in place and keeps explicit modes across restart with the rollout unavailable', async () => {
+async function seedCache(directory: string, contents: string): Promise<void> {
+  await mkdir(cacheDirectory(directory), { recursive: true })
+  await writeFile(cachePath(directory), contents)
+}
+
+const legacyV1 = JSON.stringify({ version: 1, sourcePath: path, modifiedAtMs: 1,
+  turns: [{ turnId: 'old', metadata: execution('legacy-model', 'low') }],
+}, null, 2) + '\n'
+
+it.each(['history', 'submission'])('preserves v1 bytes with %s first and restores Plan from v2 after restart', async first => {
   const f = fixture()
   const profile = process.env.CODEXUI_CONNECTION_PROFILE!
-  await mkdir(cacheDirectory(), { recursive: true })
-  await writeFile(cachePath(), JSON.stringify({ version: 1, sourcePath: path, modifiedAtMs: 1,
-    turns: [{ turnId: 'old', metadata: execution('A', 'high') }] }))
+  await seedCache('v1', legacyV1)
+  f.files.set(path, f.files.get(path)! + modeStart('old', 'plan'))
+  const history = async () => {
+    expect((await f.service.recover('t')).get('old')).toEqual({ ...execution('A', 'high'), ...modeEvidence('plan') })
+    expect(await readFile(cachePath('v1'))).toEqual(Buffer.from(legacyV1))
+  }
+  if (first === 'history') await history()
+
   await f.service.rememberSubmittedMode('t', 'new', 'plan', profile)
-  const upgraded = JSON.parse(await readFile(cachePath(), 'utf8'))
-  expect(upgraded).toMatchObject({ version: 2, sourcePath: path, turns: [{ turnId: 'old', metadata: execution('A', 'high') }], submittedModes: { new: 'plan' } })
+  expect(await readFile(cachePath('v1'))).toEqual(Buffer.from(legacyV1))
+  const accepted = JSON.parse(await readFile(cachePath(), 'utf8'))
+  expect(accepted).toMatchObject({ version: 2, submittedModes: { new: 'plan' } })
+  if (first === 'submission') {
+    expect(accepted).toEqual({ version: 2, submittedModes: { new: 'plan' } })
+    await history()
+  }
+  expect(JSON.parse(await readFile(cachePath(), 'utf8'))).toMatchObject({
+    version: 2, sourcePath: path, rolloutModeScanned: true,
+    turns: [{ turnId: 'old', metadata: { ...execution('A', 'high'), ...modeEvidence('plan') } },
+      { turnId: 'new', metadata: execution('B', 'none') }],
+    submittedModes: { new: 'plan' },
+  })
   const unavailable = { ...f.client, rpc: vi.fn(async () => { throw new Error('no rollout reads') }) }
   const restarted = new RolloutGenerationMetadata(unavailable)
+  expect(await restarted.readSubmittedModes('t', profile)).toEqual(new Map([['new', 'plan']]))
+  expect(unavailable.rpc).not.toHaveBeenCalled()
   expect([...await restarted.recover('t')]).toEqual([['new', modeEvidence('plan', 'submitted')]])
   expect((await restarted.recover('fork')).size).toBe(0)
-  const original = f.files.get(path)!
-  f.files.set(path, original + modeStart('old', 'plan'))
-  expect((await f.service.recover('t')).get('old')).toEqual({ ...execution('A', 'high'), ...modeEvidence('plan') })
   expect(sourceReads(f)).toBe(1)
+})
+
+it('reuses and updates version 2 in the legacy directory when the preferred file is absent', async () => {
+  const f = fixture()
+  const profile = process.env.CODEXUI_CONNECTION_PROFILE!
+  const legacyV2 = JSON.stringify({ version: 2, sourcePath: path, modifiedAtMs: 1, rolloutModeScanned: true,
+    turns: [{ turnId: 'old', metadata: execution('A', 'high') }], submittedModes: { earlier: 'plan' },
+  }, null, 2) + '\n'
+  await seedCache('v1', legacyV2)
+  expect(await f.service.readSubmittedModes('t', profile)).toEqual(new Map([['earlier', 'plan']]))
+  expect((await f.service.recover('t')).get('old')).toEqual(execution('A', 'high'))
+  expect(f.rpc.mock.calls.map(([method]) => method)).toEqual(['thread/read', 'fs/getMetadata'])
+  expect(await readFile(cachePath('v1'))).toEqual(Buffer.from(legacyV2))
+
+  await f.service.rememberSubmittedMode('t', 'new', 'plan', profile)
+  f.change()
+  await f.service.recover('t')
+  expect(JSON.parse(await readFile(cachePath('v1'), 'utf8'))).toMatchObject({
+    version: 2, modifiedAtMs: 2, submittedModes: { earlier: 'plan', new: 'plan' },
+  })
+  await expect(stat(cachePath())).rejects.toMatchObject({ code: 'ENOENT' })
+
+  await seedCache('v2', JSON.stringify({ version: 2, submittedModes: { preferred: 'plan' } }))
+  expect(await f.service.readSubmittedModes('t', profile)).toEqual(new Map([['preferred', 'plan']]))
+})
+
+it.each([
+  ['version 1', legacyV1],
+  ['unknown version', '{"version":3}'],
+  ['missing version', '{}'],
+  ['malformed JSON', '{'],
+])('preserves incompatible preferred cache bytes (%s)', async (_format, invalid) => {
+  const f = fixture()
+  const profile = process.env.CODEXUI_CONNECTION_PROFILE!
+  await seedCache('v1', '{"version":2,"submittedModes":{"legacy":"plan"}}')
+  await seedCache('v2', invalid)
+  expect(await f.service.readSubmittedModes('t', profile)).toEqual(new Map())
+  expect((await f.service.recover('t')).get('old')).toEqual(execution('A', 'high'))
+  expect(await readFile(cachePath(), 'utf8')).toBe(invalid)
+  expect(await f.service.rememberSubmittedMode('t', 'new', 'plan', profile)).toEqual(modeEvidence('plan', 'submitted'))
+  expect(await readFile(cachePath(), 'utf8')).toBe(invalid)
+  expect(await readFile(cachePath('v1'), 'utf8')).toBe('{"version":2,"submittedModes":{"legacy":"plan"}}')
+})
+
+it.each(['v1', 'v2'])('rechecks the destination format after choosing %s for a refresh', async directory => {
+  const f = fixture()
+  if (directory === 'v1') await seedCache('v1', '{"version":2,"submittedModes":{"earlier":"plan"}}')
+  const original = f.rpc.getMockImplementation()!
+  f.rpc.mockImplementation(async (method, params) => {
+    if (method === 'fs/readFile') await seedCache(directory, legacyV1)
+    return original(method, params)
+  })
+  expect((await f.service.recover('t')).get('old')).toEqual(execution('A', 'high'))
+  expect(await readFile(cachePath(directory), 'utf8')).toBe(legacyV1)
 })
 
 it('retains concurrent submission and refresh writes and discards both contradicted and conflicted fallbacks', async () => {
   const f = fixture()
   const profile = process.env.CODEXUI_CONNECTION_PROFILE!
   const concurrentBackend = new RolloutGenerationMetadata(f.client)
+  await seedCache('v1', legacyV1)
   f.files.set(path, f.files.get(path)! + modeStart('old', 'default') + modeStart('conflict', 'default') + modeContext('conflict', 'plan'))
-  const [rollout] = await Promise.all([
-    f.service.recover('t'),
-    concurrentBackend.rememberSubmittedMode('t', 'old', 'plan', profile),
-    concurrentBackend.rememberSubmittedMode('t', 'conflict', 'plan', profile),
-    f.service.rememberSubmittedMode('t', 'new', 'plan', profile),
-    f.service.rememberSubmittedMode('t', 'default', 'default', profile),
-  ])
+  const original = f.rpc.getMockImplementation()!
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  f.rpc.mockImplementation(async (method, params) => {
+    if (method === 'fs/readFile') await held
+    return original(method, params)
+  })
+  const recovery = f.service.recover('t')
+  try {
+    await vi.waitFor(() => expect(sourceReads(f)).toBe(1))
+    await Promise.all([
+      concurrentBackend.rememberSubmittedMode('t', 'old', 'plan', profile),
+      concurrentBackend.rememberSubmittedMode('t', 'conflict', 'plan', profile),
+      f.service.rememberSubmittedMode('t', 'new', 'plan', profile),
+      f.service.rememberSubmittedMode('t', 'default', 'default', profile),
+    ])
+  } finally {
+    release()
+  }
+  const rollout = await recovery
   expect(rollout.get('conflict')).toEqual(modeEvidence(null))
   expect(rollout.get('old')).toEqual({ ...execution('A', 'high'), ...modeEvidence('default') })
+  expect(rollout.get('new')).toEqual({ ...execution('B', 'none'), ...modeEvidence('plan', 'submitted') })
+  expect(await readFile(cachePath('v1'), 'utf8')).toBe(legacyV1)
   const persisted = JSON.parse(await readFile(cachePath(), 'utf8'))
   expect(persisted.submittedModes).toEqual({ new: 'plan', default: 'default' })
   expect(persisted.turns.map((row: { turnId: string }) => row.turnId)).toEqual(['old', 'new', 'conflict'])
   const unavailable = new RolloutGenerationMetadata({ ...f.client, rpc: async () => { throw new Error('offline rollout') } })
-  expect([...await unavailable.recover('t')]).toEqual([
+  expect(await unavailable.recover('t')).toEqual(new Map([
     ['new', modeEvidence('plan', 'submitted')], ['default', modeEvidence('default', 'submitted')],
-  ])
+  ]))
 })
 
 it('persists only the explicit mode on native acceptance without a metadata or history RPC', async () => {
-  const f = fixture()
+  await seedCache('v1', legacyV1)
   const instance = new AppServerClient()
   vi.spyOn(instance as any, 'ensureInitialized').mockResolvedValue(undefined)
   const call = vi.spyOn(instance as any, 'callObserved')
@@ -378,6 +472,7 @@ it('persists only the explicit mode on native acceptance without a metadata or h
     expect(await instance.rpc('turn/start', params)).toEqual({ turn: {} })
     expect(call.mock.calls.map(([method]) => method)).toEqual(['turn/start', 'turn/start', 'turn/start'])
     expect(JSON.parse(await readFile(cachePath(), 'utf8'))).toEqual({ version: 2, submittedModes: { exact: 'plan' } })
+    expect(await readFile(cachePath('v1'), 'utf8')).toBe(legacyV1)
   } finally { instance.dispose() }
 })
 

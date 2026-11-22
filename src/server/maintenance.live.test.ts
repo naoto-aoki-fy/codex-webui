@@ -100,7 +100,7 @@ it.skipIf(process.env.CODEX_MAINTENANCE_LIVE !== '1')('accepts native Projects, 
     const restarted = new RolloutGenerationMetadata(cacheClient)
     expect(await restarted.recover(sourceId)).toEqual(cold)
     expect(sourceReads()).toBe(reads)
-    const cachePath = join(profileStorageDirectory('cache'), storageNames.rolloutCache, 'v1',
+    const cachePath = join(profileStorageDirectory('cache'), storageNames.rolloutCache, 'v2',
       createHash('sha256').update(sourceId).digest('hex') + '.json')
     const stored = JSON.parse(await readFile(cachePath, 'utf8'))
     expect(stored.turns).toHaveLength(2)

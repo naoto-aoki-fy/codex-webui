@@ -65,7 +65,9 @@ preferences, and upload inventory. Use the same endpoint for all test IDs.
    override and restart with the same App Server ID. Verify the conversation
    and draft attachments still resolve via their saved absolute paths. Upload
    a new file and verify it lands in the new default root and both sets of
-   records appear in the profile inventory and journal.
+   records appear in the profile inventory and journal. Compare the original
+   attachment bytes at their saved paths and confirm the new root contains
+   only the newly uploaded file.
 
 Credential-free API entry-point coverage runs with
 `pnpm run test:integration:fixture`, and with `CODEXAPP_FIXTURE_TRANSPORT=unix`

@@ -56,15 +56,16 @@ Architecture remains:
 
 `AppServerClient` triggers optional recovery on content-bearing history reads.
 `RolloutGenerationMetadata.recover` resolves the rollout with metadata-only
-`thread/read`, stats it with `fs/getMetadata`, then reads
-`<remote CODEX_HOME>/cache/model-history/v1/<sha256(threadId)>.json` using
-`fs/readFile`. A valid source path/version/positive mtime/execution-provenance cache
-is reused. Otherwise, complete native `turn_context` rows are parsed by exact turn
-ID; a second stat guards publication, and `fs/createDirectory`/`fs/writeFile`
-persist only the compact cache. Metadata notifications merge into per-thread
-history state and the V2 normalizer/ThreadConversation display. Source rollouts
-are never written through filesystem APIs. Legacy metadata stores are untouched
-and neither read nor relabeled as rollout evidence.
+`thread/read` and stats it with `fs/getMetadata`. It reuses the local WebUI cache
+when the source path, schema version, positive mtime and execution provenance
+validate. Otherwise it reads the native rollout using `fs/readFile` and parses
+complete records by exact turn ID. A second stat guards publication. New files
+go under the WebUI cache root at
+`app-servers/<sha256(ID)>/model-history/v2/<sha256(threadId)>.json`.
+The legacy `v1/` directory is checked when the preferred file is missing. A
+version 2 file there stays in use at its existing path. Version 1 files are
+preserved. Metadata notifications merge into per-thread history state and the
+V2 normalizer/ThreadConversation display.
 
 Specific evidence:
 

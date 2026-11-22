@@ -150,10 +150,14 @@ Actions and expected results:
    no `(sent setting)` suffix for execution evidence. Unknown fields stay unknown.
 2. Load older messages. Their footers show their own turn context, never the
    latest model. Verify light and dark themes and then reload the browser.
-3. Inspect the remote `cache/model-history/v1/` SHA-256 JSON file. It contains
-   only version/source path/mtime and per-turn model/effort metadata. Reopen the
-   thread, then restart only the web backend and reopen. Cache hits read the
-   compact JSON and do not issue `fs/readFile` for the original rollout.
+3. Inspect
+   `app-servers/<sha256(ID)>/model-history/v2/<sha256(threadId)>.json` under the
+   local WebUI cache root. Check the version, source path, mtime, exact-turn
+   execution metadata and submitted-mode map. Reopen the thread, then restart
+   only the web backend and reopen. Recovery for a valid cache issues
+   `thread/read` and `fs/getMetadata` with no rollout transfer. For version 1
+   byte preservation and version 2 compatibility checks, see the
+   [legacy cache procedures](../chat-composer-rendering/per-response-model-and-reasoning-effort.md#legacy-cache-preservation).
 4. Submit a real new turn using Codex so its rollout grows, then reopen history.
    Verify source mtime invalidation, retained older evidence, and the new turn's
    exact metadata. Use **Refresh history** when offered; it bypasses valid cache.
@@ -165,7 +169,7 @@ Actions and expected results:
    A malformed record or incomplete trailing line must not break thread loading.
 
 Cleanup: archive disposable test threads, restore composer/profile settings, and
-optionally remove only the tested remote model-history cache file. Never edit or
+optionally remove only the tested local model-history cache file. Never edit or
 delete original rollout files or submitted-setting sidecars. Real cross-host RPC
 compatibility and latency require this live check; unit fixtures are insufficient.
 

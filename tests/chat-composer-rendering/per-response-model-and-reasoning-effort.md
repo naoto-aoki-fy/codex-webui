@@ -12,7 +12,9 @@ edit original rollout files. See [architecture](../../docs/turn-generation-metad
 Actions and expected results:
 1. Open the conversation with its rollout-cache entry absent. Response labels
    eventually match native `turn_context` evidence; the compact persistent cache
-   is created under the remote Codex home. Missing fields display unknown.
+   is created under the local WebUI cache root at
+   `app-servers/<sha256(ID)>/model-history/v2/<sha256(threadId)>.json`.
+   Missing fields display unknown.
 2. Reload and restart the web backend, then reopen. The cache is validated by
    source stat and reused; no unchanged rollout transfer occurs.
 3. Complete another turn and reopen. A changed rollout refreshes the cache and
@@ -34,6 +36,35 @@ Actions and expected results:
 
 Cleanup: archive only disposable conversations. Restore permissions/theme and
 network conditions. Do not delete original rollouts or old metadata stores.
+
+## Legacy cache preservation
+
+Use a disposable WebUI profile and thread with validated execution metadata.
+Under the local WebUI cache root, put a formatted version 1 fixture at
+`app-servers/<sha256(ID)>/model-history/v1/<sha256(threadId)>.json`. Keep an
+exact copy outside the cache and start without the corresponding `v2/` file.
+
+1. Open the thread and wait for its response metadata. Compare the legacy file
+   against the copy byte for byte. Inspect the new `v2/` file for version 2 and
+   the validated rollout metadata.
+2. Submit a prompt in Plan mode. Compare the legacy file against the copy again.
+   Verify the new file records `submittedModes[turnId] = "plan"` using the
+   acknowledged turn ID. Restart WebUI with rollout reads blocked and reopen
+   the thread. The Plan badge should appear on that prompt.
+3. Use a second disposable thread with a valid version 2 snapshot at the legacy
+   path and no preferred file. Reopen it and inspect recovery RPCs. Expect one
+   metadata-only `thread/read` and one `fs/getMetadata`, with no `fs/readFile`.
+   Submit another Plan turn and verify the accepted mode is added to the same
+   file under `v1/` and no file appears under `v2/`.
+4. With a fresh version 1 fixture, pause the fixture's rollout `fs/readFile`
+   response after opening history. Submit a Plan turn, then release the
+   unchanged rollout snapshot. Check that the new version 2 file contains both
+   the execution snapshot and the accepted mode, and compare the legacy bytes
+   again. Repeat with a rollout conflict for a submitted mode. The conflicting
+   fallback should stay cleared after a restart.
+
+Cleanup: remove the disposable WebUI profile and fixture copies, archive the
+test threads and restore rollout access.
 
 ## Plan mode on the submitted prompt
 
