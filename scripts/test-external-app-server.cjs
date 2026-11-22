@@ -160,6 +160,7 @@ async function run() {
   }
   mkdirSync(storageEnv.CODEX_HOME)
   for (const [name, raw] of Object.entries(oldFiles)) writeFileSync(join(storageEnv.CODEX_HOME, name), raw)
+  const remoteHome = '/fixture/remote-user'
   const files = new Map()
   const http = createServer()
   const server = new WebSocketServer({ server: http })
@@ -264,7 +265,7 @@ async function run() {
       if (frame.method === 'process/spawn') {
         socket.send(JSON.stringify({ id: frame.id, result: {} }))
         socket.send(JSON.stringify({ method: 'process/exited', params: {
-          processHandle: frame.params.processHandle, exitCode: 0, stdout: '/fixture/remote-user\n', stdoutCapReached: false,
+          processHandle: frame.params.processHandle, exitCode: 0, stdout: remoteHome + '\n', stdoutCapReached: false,
         } }))
         return
       }
@@ -277,6 +278,10 @@ async function run() {
       const result = frame.method === 'initialize' ? { codexHome: '/fixture/core', platformOs: 'linux' }
         : frame.method === 'fs/readFile' && frame.params.path === defaultThread.path
           ? { dataBase64: Buffer.from(questionRollout).toString('base64') }
+        : frame.method === 'fs/readFile' && files.has(frame.params.path)
+          ? { dataBase64: files.get(frame.params.path).toString('base64') }
+        : frame.method === 'fs/getMetadata' && files.has(frame.params.path)
+          ? { isFile: true, isDirectory: false, isSymlink: false }
         : frame.method === 'fs/getMetadata' && frame.params.path === defaultThread.path
           ? { isFile: true, modifiedAtMs: questionStamp }
         : frame.method === 'fs/getMetadata' && frame.params.path === queuedRolloutPath
@@ -320,6 +325,9 @@ async function run() {
       console.log('PASS', command === 'pnpm' ? 'pnpm run dev' : 'built CLI', 'rejects an invalid ID')
     }
     const shortHostname = hostname().split('.', 1)[0]
+    const legacyPath = remoteHome + '/.codex-webui-uploads/codexapp-uploads/' + profileDirectoryName(shortHostname) + '/legacy.png'
+    const legacyBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=', 'base64')
+    files.set(legacyPath, legacyBytes)
     const profileRuns = new Map()
     for (const { dev, flagProfile, envProfile, profile, uploadOverride } of [
       { dev: false, flagProfile: 'fixture-cli', envProfile: 'fixture-vite', profile: 'fixture-cli', uploadOverride: '/fixture/attachments' },
@@ -410,16 +418,25 @@ async function run() {
         const { path: uploaded, error } = await uploadResponse.json()
         assert.equal(uploadResponse.status, 200, error)
         const hash = profileDirectoryName(profile)
-        const uploadRoot = uploadOverride || '/fixture/remote-user/.local/share/codex-webui/uploads'
-        const profileUploadDirectory = uploadRoot + '/codexapp-uploads/' + hash
+        const uploadRoot = uploadOverride || remoteHome + '/.local/share/codex-webui/uploads'
+        const uploadNamespace = uploadRoot + '/codexapp-uploads'
+        const profileUploadDirectory = uploadNamespace + '/' + hash
         const uploadFrames = frames.slice(beforeUpload)
         const homeLookups = uploadFrames.filter(({ method }) => method === 'process/spawn').length
-        const metadataPaths = uploadFrames.filter(({ method }) => method === 'fs/getMetadata').map(({ params }) => params.path)
+        const filesystemFrames = uploadFrames.filter(({ method }) => method?.startsWith('fs/'))
+        const metadataPaths = filesystemFrames.slice(0, -2).map(({ method, params }) => {
+          assert.equal(method, 'fs/getMetadata')
+          return params.path
+        })
         assert.equal(homeLookups, uploadOverride ? 0 : 1)
-        assert.equal(metadataPaths.length, uploadOverride ? 6 : 9)
-        assert.equal(new Set(metadataPaths).size, metadataPaths.length, 'no duplicate metadata queries')
+        const ancestors = uploadOverride ? ['/'] : [
+          remoteHome, remoteHome + '/.local', remoteHome + '/.local/share', remoteHome + '/.local/share/codex-webui',
+        ]
+        assert.deepEqual(metadataPaths.sort(), [
+          ...ancestors, '/fixture', '/fixture/core', uploadRoot, uploadNamespace, profileUploadDirectory,
+        ].sort())
         assert.equal(uploadFrames.some(({ method }) => method === 'config/read'), false)
-        assert.deepEqual(uploadFrames.filter(({ method }) => method?.startsWith('fs/') && method !== 'fs/getMetadata')
+        assert.deepEqual(filesystemFrames.slice(-2)
           .map(({ method, params }) => ({ method, params })), [
           { method: 'fs/createDirectory', params: { path: profileUploadDirectory, recursive: true } },
           { method: 'fs/writeFile', params: { path: uploaded, dataBase64: uploadBytes.toString('base64') } },
@@ -438,6 +455,12 @@ async function run() {
           assert.equal(readFileSync(join(storageEnv.CODEX_HOME, name), 'utf8'), raw)
         }
         console.log('PASS', profile, previousRuns ? 'reuses' : 'initializes', 'preferences and upload accounting with an untouched Codex home')
+        if (profile === shortHostname && previousRuns) {
+          const response = await fetch(url + '/codex-local-image?path=' + encodeURIComponent(legacyPath))
+          assert.equal(response.status, 200)
+          assert.deepEqual(Buffer.from(await response.arrayBuffer()), legacyBytes)
+          console.log('PASS saved image path in the former upload root after restart')
+        }
         const firstWrite = frames.length
         for (const method of ['turn/start', 'turn/steer']) {
           assert.deepEqual(await call(method, { threadId: 'fixture', input: [] }), {
