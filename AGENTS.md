@@ -162,3 +162,31 @@ or implementation strategies.
 - Never create or maintain separate wiki logging/changelog files or logging sections anywhere in the repo. Git commit messages are the main and only chronological log for wiki work and related documentation changes.
 - For query: read `llm-wiki/wiki/index.md` first, then relevant pages.
 - For lint: check orphans and stale/contradictory claims; put follow-up questions in the relevant wiki topic page or a tracked issue, not any log/changelog file.
+
+## Policy Regarding Compatibility and Migration from Previous Versions
+
+This project will, **in principle, not implement migration processes from older versions or maintain backward compatibility.**
+
+### Basic Principles
+
+- Only the specifications of the latest version will be implemented.
+- No processes will be implemented to convert data, settings, APIs, or file formats from older versions to the new specifications.
+- No compatibility layers, fallbacks, or conditional branches will be added to support older specifications.
+- When specifications change, existing implementations will be directly updated to align with the new specifications.
+- Code and tests related to older specifications will be removed once they are no longer needed.
+- No proactive code will be added to anticipate future migrations or compatibility maintenance.
+
+### Handling Specification Changes
+
+1. Treat the latest specification as the only correct specification.
+2. Modify existing code to align with the latest specification.
+3. Unify tests and documentation with the latest specification.
+4. No additional implementations will be performed to ensure compatibility with older versions.
+
+### Important Notes
+
+- If there is a possibility of existing older data or potential impact from disruptive changes, report these risks.
+- Do not perform data deletion or disruptive operations without explicit approval.
+- Even if a migration process seems necessary, do not implement it independently; confirm it beforehand.
+
+**Simplicity and maintainability of implementation will be prioritized over compatibility with older versions.**
