@@ -71,20 +71,23 @@ export function createSelectedThreadGoal(
     const canApply = () => current === baselineRead && currentRevision === revision
     loadingBaseline = true
     goalActivity = 'pending'
+    // A failed read keeps the displayed Goal while pending turns use ordinary notifications.
+    let activity: Exclude<GoalActivity, 'pending'> = 'inactive'
     try {
       const result = await getThreadGoal(id)
       if (!canApply()) return
       goal.value = result
       loadError.value = ''
-      establishBaseline(result?.status === 'active' ? 'active' : 'inactive')
+      if (result?.status === 'active') activity = 'active'
     } catch (cause) {
       if (!canApply()) return
       loadError.value = cause instanceof Error ? cause.message : 'Failed to load goal'
       console.warn('Failed to load thread goal', cause)
-      // Keep the last Goal visible while new turns use ordinary notifications.
-      establishBaseline('inactive')
     } finally {
-      if (current === baselineRead) loadingBaseline = false
+      if (current === baselineRead) {
+        loadingBaseline = false
+        if (canApply()) establishBaseline(activity)
+      }
     }
   }
 

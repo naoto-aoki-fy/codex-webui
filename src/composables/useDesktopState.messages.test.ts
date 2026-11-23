@@ -319,6 +319,42 @@ describe('Goal and pending request notifications', () => {
     expect(attention).toHaveBeenCalledTimes(2)
   })
 
+  it('ignores a failed read when a newer reconnect has already loaded the Goal', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { state } = await setup('complete')
+    const olderRead = deferred<ThreadGoal>()
+    gateway.getThreadGoal.mockReturnValueOnce(olderRead.promise).mockResolvedValueOnce(goal('paused'))
+    notify({ method: 'app-server/reconnected', params: null })
+    notify({ method: 'app-server/reconnected', params: null })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.selectedThreadGoal.goal.value).toEqual(goal('paused'))
+
+    olderRead.reject(new Error('Superseded Goal read'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.selectedThreadGoal.goal.value).toEqual(goal('paused'))
+    expect(state.selectedThreadGoal.loadError.value).toBe('')
+    expect(warn).not.toHaveBeenCalled()
+    expect(gateway.getThreadGoal).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps notification callback failures out of Goal settings', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = new Error('Tab notification callback failed')
+    const onSelectedThreadAttention = vi.fn(() => { throw error })
+    const state = await loadState({ onSelectedThreadAttention })
+    const pendingGoal = deferred<ThreadGoal>()
+    gateway.getThreadGoal.mockReturnValueOnce(pendingGoal.promise)
+    const refresh = state.selectedThreadGoal.refresh()
+    start('ordinary')
+    finish('ordinary')
+
+    pendingGoal.resolve(goal('paused'))
+    await expect(refresh).rejects.toBe(error)
+    expect(state.selectedThreadGoal.goal.value).toEqual(goal('paused'))
+    expect(state.selectedThreadGoal.loadError.value).toBe('')
+    expect(warn).not.toHaveBeenCalled()
+  })
+
   it('treats turns as ordinary after a failed reconnect while an active Goal is still displayed', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { state, attention } = await setup()
