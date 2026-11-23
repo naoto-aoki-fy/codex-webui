@@ -21,7 +21,14 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         await page.route('**/codex-local-image?*', route => route.fulfill({ contentType:'image/png', body:png }))
         const { calls, errors, emit } = await setup(page, (body, _page, url) => {
           if (url.pathname.endsWith('/upload-file')) return { json:{ path:'/remote/uploads/collapse.txt' } }
-          if (url.pathname.endsWith('/server-requests/respond')) return { json:{ ok:true } }
+          if (url.pathname.endsWith('/server-requests/respond')) {
+            if (body.id !== 100) return { json:{ ok:true } }
+            return { json:{ ok:true, saved:true, response:{
+              id:'collapse-question-answer', threadId:'approved-fixture', turnId:'live',
+              submittedAt:'2026-11-20T01:05:00.000Z',
+              questions:[{ id:'q', heading:'Which option?', answers:body.result.answers.q.answers }],
+            } } }
+          }
           if (body.method === 'thread/goal/get') return { json:{ result:{ goal:{ threadId:'approved-fixture', objective:'Keep goal actions accessible', status:'active' } } } }
           if (body.method === 'turn/interrupt') turnActive = false
           if (body.method === 'thread/resume' || body.method === 'thread/read') return { json:{ result:{
@@ -74,6 +81,14 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         assert.equal(await restore.getAttribute('aria-expanded'), 'false')
         assert.equal(await restore.evaluate(el => el === document.activeElement), true)
         const floatingBox = await assertFloating()
+        const goal = page.locator('.thread-goal-summary')
+        await goal.press('Enter')
+        const goalSettings = page.getByRole('dialog', { name:'Goal settings', exact:true })
+        await goalSettings.waitFor()
+        assert.equal(await goalSettings.getByRole('textbox', { name:'Goal objective' }).inputValue(), 'Keep goal actions accessible')
+        await goalSettings.getByRole('button', { name:'Close dialog', exact:true }).click()
+        await goalSettings.waitFor({ state:'hidden' })
+        assert.equal(await goal.evaluate(el => el === document.activeElement), true)
         assert.equal(await page.locator('.thread-composer').evaluate(el => el.getBoundingClientRect().height), 0, 'no compact bar or reserved height')
         assert.equal(await input.isVisible(), false)
         assert.equal(await page.getByRole('button', { name:'Send message', exact:true }).isVisible(), false)
@@ -87,7 +102,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         await page.locator('.content-root').evaluate(el => { el.style.transform = 'translateY(25px)' })
         assert.deepEqual(await restoreBox(), floatingBox, 'restore is independent of transformed chat layout')
         await page.locator('.content-root').evaluate(el => { el.style.transform = '' })
-        await page.keyboard.press('Space')
+        await restore.press('Space')
         await input.waitFor()
         assert.equal(await input.evaluate(el => el === document.activeElement), true)
         assert.equal(await input.inputValue(), '')

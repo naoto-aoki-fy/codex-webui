@@ -266,10 +266,13 @@
                 <ThreadGoalPanel
                   ref="threadGoalPanelRef"
                   :thread-id="selectedThreadId"
-                  :goal="selectedThreadGoal.goal.value"
+                  :goal="threadGoal"
                   :load-error="selectedThreadGoal.loadError.value"
                   :save-goal="selectedThreadGoal.save"
                 />
+                <div v-if="threadGoal && showGoalOutsideComposer" class="thread-composer-active-mode">
+                  <ThreadGoalSummary :goal="threadGoal" @click="threadGoalPanelRef?.edit()" />
+                </div>
                 <ThreadPendingRequestPanel
                   v-if="selectedThreadPendingRequest && selectedThreadPendingRequest.method !== QUESTION_REQUEST"
                   :request="selectedThreadPendingRequest"
@@ -310,7 +313,12 @@
                   @update:selected-reasoning-effort="onSelectReasoningEffort"
                   @update:selected-speed-mode="onSelectSpeedMode"
                   @edit-goal="threadGoalPanelRef?.edit()"
-                  @interrupt="onInterruptTurn" />
+                  @interrupt="onInterruptTurn"
+                >
+                  <template v-if="threadGoal && !showGoalOutsideComposer && !isComposerExpanded" #goal>
+                    <ThreadGoalSummary :goal="threadGoal" @click="threadGoalPanelRef?.edit()" />
+                  </template>
+                </ThreadComposer>
                 <p v-if="composerSendMode.queue.value && (nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value)" class="composer-runtime-error composer-queue-notice" role="alert">
                   {{ nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value }}
                   <button type="button" @click="openNativeQueue">Inspect native prompt queue</button>
@@ -426,6 +434,7 @@ import { newThreadRoute, sidebarHref, threadRoute, type NewThreadTarget } from '
 import ContentHeader from './components/content/ContentHeader.vue'
 import FolderPickerModal from './components/content/FolderPickerModal.vue'
 import ThreadGoalPanel from './components/content/ThreadGoalPanel.vue'
+import ThreadGoalSummary from './components/content/ThreadGoalSummary.vue'
 import ThreadComposer from './components/content/ThreadComposer.vue'
 import ThreadPendingRequestPanel from './components/content/ThreadPendingRequestPanel.vue'
 import RateLimitStatus from './components/content/RateLimitStatus.vue'
@@ -601,6 +610,8 @@ const pendingComposerSubmissions = reactive(new Set<string>())
 const homeThreadComposerRef = ref<ThreadComposerExposed | null>(null)
 const threadGoalPanelRef = ref<InstanceType<typeof ThreadGoalPanel> | null>(null)
 const threadComposerRef = ref<ThreadComposerExposed | null>(null)
+const threadGoal = selectedThreadGoal.goal
+const showGoalOutsideComposer = computed(() => threadComposerRef.value?.isCollapsed || !!selectedThreadPendingRequest.value)
 const threadConversationRef = ref<{ jumpToLatest: () => void } | null>(null)
 const routing = createAppRouteCoordinator({
   get selectedThreadId() { return selectedThreadId; },

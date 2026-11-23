@@ -1267,47 +1267,26 @@
   }
 }
 
-.thread-goal-panel {
-  color: #1f2937;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 10px 14px;
-  margin-bottom: 8px;
+.thread-composer-active-mode { display: flex; gap: 8px; color: #2563eb; }
+.thread-composer-active-mode > button {
+  flex-shrink: 0; cursor: pointer; padding: 5px 8px; border-radius: 6px;
 }
 .thread-goal-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
+  gap: 4px;
   min-width: 0;
   text-align: left;
 }
+.thread-composer-active-mode > .thread-goal-summary { flex-shrink: 1; }
 .thread-goal-summary strong { flex-shrink: 0; white-space: nowrap; }
 .thread-goal-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-goal-summary:hover { background: #f4f4f5; }
 .thread-goal-summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
-.thread-goal-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.thread-goal-editor { display: grid; gap: 10px; }
-.thread-goal-editor textarea {
-  width: 100%; box-sizing: border-box; resize: vertical;
-  background: #fff; color: inherit; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px;
-}
-.thread-goal-panel button, .thread-composer-active-mode button {
-  cursor: pointer; padding: 5px 8px; border-radius: 6px;
-}
-.thread-goal-panel button:disabled { cursor: default; opacity: .5; }
-.thread-composer-active-mode { display: flex; gap: 8px; color: #2563eb; }
 .thread-composer-skill-mentions .thread-composer-file-mention-row { flex-direction: column; align-items: flex-start; }
 .thread-composer-skill-mentions small { opacity: .7; white-space: normal; text-align: left; }
-:root.dark .thread-goal-panel { color: #e2e8f0; background: #1e293b; border-color: #475569; }
+:root.dark .thread-goal-summary:hover { background: #27272a; }
 :root.dark .thread-goal-summary:focus-visible { outline-color: #93c5fd; }
-:root.dark .thread-goal-editor textarea { background: #0f172a; border-color: #475569; }
 :root.dark .thread-composer-active-mode { color: #93c5fd; }
 
 .message-timestamp { margin: 6px 0; font-size: 11px; line-height: 1.5; color: var(--text-muted, #64748b); overflow-wrap: anywhere; }
@@ -1470,6 +1449,25 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .management-dialog pre { max-width: 100%; overflow: auto; }
 .management-dialog .sidebar-settings-account-section { padding: 0; background: transparent; border: 0; }
 .management-dialog .sidebar-settings-account-empty { font-size: 14px; line-height: 1.5; }
+.thread-goal-editor { display: grid; gap: 16px; }
+.thread-goal-field { display: grid; justify-items: start; gap: 6px; font-weight: 500; }
+.thread-goal-editor textarea {
+  width: 100%;
+  min-height: 6rem;
+  resize: vertical;
+  background: #fff;
+  color: inherit;
+  border: 1px solid #d4d4d8;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-weight: 400;
+}
+.thread-goal-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.thread-goal-actions button { border: 1px solid #d4d4d8; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.thread-goal-actions button:hover:not(:disabled) { background: #f4f4f5; }
+.thread-goal-actions button:disabled { opacity: .55; cursor: default; }
+.thread-goal-clear { margin-right: auto; }
+.thread-goal-editor [role="alert"] { color: #be123c; overflow-wrap: anywhere; }
 .settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 32px; min-height: 100%; }
 .settings-categories { display: flex; flex-direction: column; gap: 4px; }
 .settings-categories button { padding: 10px 12px; border: 0; border-radius: 8px; text-align: left; cursor: pointer; }
@@ -1489,6 +1487,10 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 :root.dark .management-dialog-header p { color: #a1a1aa; }
 :root.dark .management-dialog-close:hover, :root.dark .settings-categories button:hover, :root.dark .settings-categories button[aria-current] { background: #27272a; color: #f4f4f5; }
 :root.dark .management-dialog .sidebar-settings-account-section { background: transparent; }
+:root.dark .thread-goal-editor textarea { background: #18181b; border-color: #52525b; }
+:root.dark .thread-goal-actions button { border-color: #52525b; }
+:root.dark .thread-goal-actions button:hover:not(:disabled) { background: #27272a; }
+:root.dark .thread-goal-editor [role="alert"] { color: #fda4af; }
 :root.dark .about-settings-row { border-color: #3f3f46; }
 :root.dark .about-settings-row dt { color: #a1a1aa; }
 :root.dark .about-settings-row a { color: #60a5fa; }
@@ -1498,6 +1500,7 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
   .management-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); border-radius: 12px; }
   .management-dialog-header { padding: 16px; }
   .management-dialog-body { padding: 16px; }
+  .thread-goal-editor textarea { font-size: 16px; }
   .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
   .settings-categories { flex-direction: row; flex-wrap: wrap; }
   .settings-categories button { padding: 8px; }

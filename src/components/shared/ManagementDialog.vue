@@ -2,7 +2,7 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import IconTablerX from '../icons/IconTablerX.vue'
 const props = defineProps<{ open: boolean; title: string; description?: string }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; opened: [] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 let returnFocus: HTMLElement | null = null
 function restoreFocus() {
@@ -13,7 +13,8 @@ watch(() => props.open, async open => {
   if (open && typeof document !== 'undefined') {
     const active = document.activeElement
     if (active instanceof HTMLElement) {
-      returnFocus = active.closest('form')?.querySelector<HTMLElement>('.thread-composer-attach-trigger')
+      const composer = active.closest('.thread-composer-attach, .composer-apps-popover')?.closest('form')
+      returnFocus = composer?.querySelector<HTMLElement>('.thread-composer-attach-trigger')
         ?? active.closest('details')?.querySelector<HTMLElement>('summary') ?? active
     }
   }
@@ -21,6 +22,7 @@ watch(() => props.open, async open => {
   if (!dialog.value || props.open !== open) return
   if (open && !dialog.value.open) {
     dialog.value.showModal()
+    emit('opened')
   } else if (!open && dialog.value.open) {
     dialog.value.close()
     restoreFocus()

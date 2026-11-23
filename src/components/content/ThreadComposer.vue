@@ -92,6 +92,12 @@
         </span>
       </div>
 
+      <div v-if="isPlanModeSelected || input.queueMode.value || $slots.goal" class="thread-composer-active-mode">
+        <button v-if="isPlanModeSelected" type="button" @click="emit('update:selected-collaboration-mode', 'default')">{{ ('Plan') }} ×</button>
+        <button v-if="input.queueMode.value" type="button" @click="input.queueMode.value = false">Queue ×</button>
+        <slot name="goal" />
+      </div>
+
       <div
         class="thread-composer-input-wrap"
         :class="{
@@ -139,10 +145,6 @@
             type="button" @mousedown.prevent="applySkillSuggestion(item)">
             <span>/{{ item.name }}</span><small>{{ item.description }}</small>
           </button>
-        </div>
-        <div v-if="isPlanModeSelected || input.queueMode.value" class="thread-composer-active-mode">
-          <button v-if="isPlanModeSelected" type="button" @click="emit('update:selected-collaboration-mode', 'default')">{{ ('Plan') }} ×</button>
-          <button v-if="input.queueMode.value" type="button" @click="input.queueMode.value = false">Queue ×</button>
         </div>
         <textarea
           ref="inputRef"
@@ -289,6 +291,7 @@
               v-if="activeThreadId && activeThreadId !== '__new-thread__'"
               class="thread-composer-attach-item"
               type="button"
+              aria-haspopup="dialog"
               :disabled="isInteractionDisabled"
               @click="isAttachMenuOpen = false; emit('edit-goal')"
             >
@@ -618,6 +621,7 @@ onMounted(() => {
 })
 
 defineExpose<ThreadComposerExposed>({
+  get isCollapsed() { return isComposerCollapsed.value },
   hydrateDraft: input.hydrateDraft,
   recoverDraft,
   appendTextToDraft: input.appendTextToDraft,

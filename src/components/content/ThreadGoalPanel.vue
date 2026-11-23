@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { THREAD_GOAL_STATUSES, type ThreadGoal, type ThreadGoalStatus } from '../../api/codexGateway'
+import ManagementDialog from '../shared/ManagementDialog.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
 
 const props = defineProps<{
@@ -19,17 +20,23 @@ let generation = 0
 const statusOptions = THREAD_GOAL_STATUSES.map(value => ({ value, label: value.replace(/([A-Z])/g, ' $1').toLowerCase() }))
 
 function edit() {
-  if (busy.value || !props.threadId) return
+  if (!props.threadId) return
   if (editing.value) {
-    objectiveInput.value?.focus()
+    focusObjective()
     return
   }
-  objective.value = props.goal?.objective ?? ''
-  status.value = props.goal?.status ?? 'active'
-  error.value = ''
+  if (!busy.value) {
+    objective.value = props.goal?.objective ?? ''
+    status.value = props.goal?.status ?? 'active'
+    error.value = ''
+  }
   editing.value = true
-  void nextTick(() => objectiveInput.value?.focus())
 }
+
+function focusObjective() {
+  objectiveInput.value?.focus({ preventScroll: true })
+}
+
 async function save(clear = false) {
   if (busy.value || (!clear && !objective.value.trim())) return
   const current = ++generation
@@ -56,22 +63,23 @@ defineExpose({ edit })
 </script>
 
 <template>
-  <section v-if="goal || editing" class="thread-goal-panel" :aria-label="('Goal')">
-    <button v-if="goal && !editing" type="button" class="thread-goal-summary" :title="goal.objective" :aria-label="`${('Edit goal')}: ${goal.objective}`" :aria-expanded="false" @click="edit">
-      <strong>{{ ('Goal') }} · {{ goal.status }}</strong>
-      <span class="thread-goal-preview">— {{ goal.objective }}</span>
-    </button>
+  <ManagementDialog :open="editing" title="Goal settings" @opened="focusObjective" @close="editing = false">
     <form v-if="editing" class="thread-goal-editor" @submit.prevent="save()">
-      <strong>{{ (goal ? 'Edit goal' : 'Set goal') }}</strong>
+      <label class="thread-goal-field">
+        <span>Goal objective</span>
+        <textarea ref="objectiveInput" v-model="objective" :disabled="busy" rows="8" />
+      </label>
+      <div class="thread-goal-field">
+        <span>Status</span>
+        <ComposerDropdown :model-value="status" :options="statusOptions" :disabled="busy" @update:model-value="status = $event as ThreadGoalStatus" />
+      </div>
       <small v-if="goal">{{ goal.tokensUsed.toLocaleString() }} {{ ('tokens') }}<template v-if="goal.tokenBudget !== null"> / {{ goal.tokenBudget.toLocaleString() }}</template> · {{ Math.round(goal.timeUsedSeconds) }}s</small>
-      <textarea ref="objectiveInput" v-model="objective" :aria-label="('Goal objective')" :disabled="busy" rows="3" />
-      <ComposerDropdown :model-value="status" :options="statusOptions" :disabled="busy" @update:model-value="status = $event as ThreadGoalStatus" />
       <p v-if="error || loadError" role="alert">{{ error || loadError }}</p>
       <div class="thread-goal-actions">
-        <button v-if="goal" type="button" :disabled="busy" @click="save(true)">{{ ('Clear goal') }}</button>
-        <button type="button" :disabled="busy" @click="editing = false">{{ ('Cancel') }}</button>
+        <button v-if="goal" class="thread-goal-clear" type="button" :disabled="busy" @click="save(true)">{{ ('Clear goal') }}</button>
+        <button type="button" @click="editing = false">{{ ('Cancel') }}</button>
         <button type="submit" :disabled="busy || !objective.trim()">{{ ('Save goal') }}</button>
       </div>
     </form>
-  </section>
+  </ManagementDialog>
 </template>

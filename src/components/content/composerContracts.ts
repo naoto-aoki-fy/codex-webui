@@ -53,6 +53,7 @@ export type SubmitPayload = {
     }>;
 };
 export type ThreadComposerExposed = {
+    readonly isCollapsed: boolean;
     hydrateDraft: (payload: ComposerDraftPayload) => void;
     recoverDraft: (payload: ComposerDraftPayload) => boolean;
     appendTextToDraft: (text: string) => void;
