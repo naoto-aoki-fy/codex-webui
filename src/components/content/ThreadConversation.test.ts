@@ -319,6 +319,15 @@ describe('conversation Markdown characterization', () => {
     expect(blocks.slice(1)).toEqual([{ kind: 'image', url: 'https://example.test/image.png', alt: 'Alt', markdown: image }])
   })
 
+  it('shows a preview after dedenting from an unfinished list code fence', () => {
+    const { state: s } = setup()
+    const image = '![Alt](https://example.test/image.png)'
+    const markdown = ['- ```md', `  ${image}`, '', image].join('\n')
+    const blocks = s.getMessageBlocks(message(markdown))
+    expect(blocks[0].items[0].children).toEqual([{ kind: 'codeBlock', language: 'md', value: image }])
+    expect(blocks.slice(1)).toEqual([{ kind: 'image', url: 'https://example.test/image.png', alt: 'Alt', markdown: image }])
+  })
+
   it('reuses unchanged blocks and reparses same-ID text or cwd changes', () => {
     const { props, state: s, parseCalls } = setup()
     const first = s.getMessageBlocks(message('first'))

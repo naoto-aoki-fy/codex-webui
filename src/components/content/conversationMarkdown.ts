@@ -839,7 +839,7 @@ export function createConversationMarkdown(deps: {
                         index = nextNonBlankIndex;
                         break;
                     }
-                    index += 1;
+                    index = nextNonBlankIndex;
                     continue;
                 }
                 const nextSameLevelItem = readItem(lines[index]);
@@ -987,24 +987,34 @@ export function createConversationMarkdown(deps: {
         let cursor = 0;
         let offset = 0;
         let fence = '';
+        let fenceParentIndent = -1;
+        let lastNonBlankEnd = 0;
         for (const line of normalized.split('\n')) {
+            const blank = isBlankMarkdownLine(line);
+            const leftListFence = fence !== '' && !blank && leadingIndentWidth(line) <= fenceParentIndent;
+            if (leftListFence) fence = '';
             if (fence) {
                 if (line.trim() === fence) fence = '';
             } else {
                 const listItem = readTaskListItemMatch(line) ?? readUnorderedListItemMatch(line) ?? readOrderedListItemMatch(line);
-                fence = readFenceStart(listItem?.text ?? line.trimStart())?.marker ?? '';
+                const topLevelFence = readFenceStart(line);
+                fence = (topLevelFence ?? readFenceStart(listItem?.text ?? line.trimStart()))?.marker ?? '';
+                // A fence that only exists inside a list cannot hide a preview after the list.
+                fenceParentIndent = topLevelFence ? -1 : listItem?.indent ?? 0;
                 if (!fence && line.includes('![')) {
                     for (const match of line.matchAll(imagePattern)) {
                         const [markdown, alt, url] = match;
                         const imageUrl = toRenderableImageUrl(url.trim());
                         if (!imageUrl) continue;
                         const start = offset + match.index;
-                        blocks.push(...parseTextBlocks(normalized.slice(cursor, start)));
+                        const end = leftListFence && match.index === 0 ? lastNonBlankEnd : start;
+                        blocks.push(...parseTextBlocks(normalized.slice(cursor, end)));
                         blocks.push({ kind: 'image', url: imageUrl, alt: alt.trim(), markdown });
                         cursor = start + markdown.length;
                     }
                 }
             }
+            if (!blank) lastNonBlankEnd = offset + line.length;
             offset += line.length + 1;
         }
         blocks.push(...parseTextBlocks(normalized.slice(cursor)));
