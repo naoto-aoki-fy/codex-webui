@@ -3,9 +3,10 @@ import { clearThreadGoal, getThreadGoal, normalizeThreadGoal, setThreadGoal, typ
 import { asRecord, readString } from './desktopNotificationReaders'
 
 type TurnOutcome = 'completed' | 'failed' | 'interrupted'
+type GoalActivity = 'active' | 'inactive' | 'pending'
 type TurnNotification = {
   // A Goal can be cleared mid-turn. Its current turn still belongs to that Goal.
-  goalActive: boolean | undefined
+  goalActivity: GoalActivity
   failed?: boolean
   notified?: boolean
   outcome?: TurnOutcome
@@ -24,12 +25,12 @@ export function createSelectedThreadGoal(
   let revision = 0
   let baselineRead = 0
   let loadingBaseline = false
-  let baselineKnown = false
+  let goalActivity: GoalActivity = 'pending'
 
   function turnState(turnId: string): TurnNotification {
     let turn = turns.get(turnId)
     if (!turn) {
-      turn = { goalActive: baselineKnown ? goal.value?.status === 'active' : undefined }
+      turn = { goalActivity }
       turns.set(turnId, turn)
       if (turns.size > 64) turns.delete(turns.keys().next().value!)
     }
@@ -44,19 +45,20 @@ export function createSelectedThreadGoal(
   }
 
   function notifyTurnOutcome(turn: TurnNotification): void {
-    if (turn.outcome === 'failed' || (turn.failed && turn.goalActive === true) ||
-      (turn.outcome === 'completed' && turn.goalActive === false) ||
-      (turn.outcome === 'interrupted' && turn.goalActive === true)) {
+    if (turn.outcome === 'failed' || (turn.failed && turn.goalActivity === 'active') ||
+      (turn.outcome === 'completed' && turn.goalActivity === 'inactive') ||
+      (turn.outcome === 'interrupted' && turn.goalActivity === 'active')) {
       notifyOnce(turn, turn.pendingSince)
     }
   }
 
-  function establishBaseline(): void {
-    if (baselineKnown) return
-    baselineKnown = true
+  function establishBaseline(activity: Exclude<GoalActivity, 'pending'>): void {
+    const wasPending = goalActivity === 'pending'
+    goalActivity = activity
+    if (!wasPending) return
     for (const turn of turns.values()) {
-      if (turn.goalActive !== undefined) continue
-      turn.goalActive = goal.value?.status === 'active'
+      if (turn.goalActivity !== 'pending') continue
+      turn.goalActivity = activity
       notifyTurnOutcome(turn)
     }
   }
@@ -68,20 +70,21 @@ export function createSelectedThreadGoal(
     const currentRevision = revision
     const canApply = () => current === baselineRead && currentRevision === revision
     loadingBaseline = true
-    baselineKnown = false
-    loadError.value = ''
+    goalActivity = 'pending'
     try {
       const result = await getThreadGoal(id)
-      if (canApply()) goal.value = result
+      if (!canApply()) return
+      goal.value = result
+      loadError.value = ''
+      establishBaseline(result?.status === 'active' ? 'active' : 'inactive')
     } catch (cause) {
       if (!canApply()) return
-      goal.value = null
       loadError.value = cause instanceof Error ? cause.message : 'Failed to load goal'
+      console.warn('Failed to load thread goal', cause)
+      // Keep the last Goal visible while new turns use ordinary notifications.
+      establishBaseline('inactive')
     } finally {
-      if (current === baselineRead) {
-        loadingBaseline = false
-        if (canApply()) establishBaseline()
-      }
+      if (current === baselineRead) loadingBaseline = false
     }
   }
 
@@ -90,7 +93,7 @@ export function createSelectedThreadGoal(
     revision++
     baselineRead++
     loadingBaseline = false
-    baselineKnown = false
+    goalActivity = 'pending'
     turns.clear()
     goal.value = null
     loadError.value = ''
@@ -108,13 +111,13 @@ export function createSelectedThreadGoal(
     const turn = relatedId ? turnState(relatedId) : undefined
     const changed = status !== previousStatus
     // Resume snapshots carry no turn ID. The first one establishes state silently.
-    const isLive = baselineKnown || Boolean(turnId)
+    const isLive = goalActivity !== 'pending' || Boolean(turnId)
     revision++
     goal.value = next
     loadError.value = ''
-    if (turn && status === 'active') turn.goalActive = true
+    if (turn && status === 'active') turn.goalActivity = 'active'
     if (isLive && changed && status && status !== 'active') notifyOnce(turn)
-    establishBaseline()
+    establishBaseline(status === 'active' ? 'active' : 'inactive')
   }
 
   function observe(notification: RpcNotification): boolean {
@@ -146,7 +149,7 @@ export function createSelectedThreadGoal(
   return {
     goal, loadError, refresh, reset, observe, save,
     ensureBaseline() {
-      if (!baselineKnown && !loadingBaseline) void refresh()
+      if (goalActivity === 'pending' && !loadingBaseline) void refresh()
     },
     startTurn(turnId: string) {
       turnState(turnId)
@@ -156,7 +159,7 @@ export function createSelectedThreadGoal(
       const turn = turnState(turnId)
       if (turn.outcome) return
       turn.outcome = status
-      turn.pendingSince = status !== 'failed' && turn.goalActive === undefined ? performance.now() : undefined
+      turn.pendingSince = status !== 'failed' && turn.goalActivity === 'pending' ? performance.now() : undefined
       notifyTurnOutcome(turn)
     },
     failActiveGoalTurn(turnId: string) {
@@ -164,7 +167,7 @@ export function createSelectedThreadGoal(
       const turn = turnState(turnId)
       if (turn.outcome) return
       turn.failed = true
-      if (turn.goalActive === undefined) turn.pendingSince ??= performance.now()
+      if (turn.goalActivity === 'pending') turn.pendingSince ??= performance.now()
       notifyTurnOutcome(turn)
     },
   }

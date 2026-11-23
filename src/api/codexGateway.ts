@@ -1092,8 +1092,9 @@ function requireThreadGoal(value: unknown): ThreadGoal {
 
 export async function getThreadGoal(threadId: string): Promise<ThreadGoal | null> {
   if (!threadId.trim()) return null
-  const result = await callRpc<{ goal?: unknown }>('thread/goal/get', { threadId: threadId.trim() })
-  return result.goal == null ? null : requireThreadGoal(result.goal)
+  const result = await callRpc<unknown>('thread/goal/get', { threadId: threadId.trim() })
+  const goal = asRecord(result)?.goal
+  return goal === null ? null : requireThreadGoal(goal)
 }
 
 export async function setThreadGoal(threadId: string, changes: { objective?: string; status?: ThreadGoalStatus; tokenBudget?: number | null }): Promise<ThreadGoal> {

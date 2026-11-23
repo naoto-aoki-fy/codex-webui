@@ -23,6 +23,7 @@ const gateway = vi.hoisted(() => ({
   subscribeCodexNotifications: vi.fn(),
   getPendingServerRequests: vi.fn(),
   getThreadGoal: vi.fn(),
+  clearThreadGoal: vi.fn(),
   replyToServerRequest: vi.fn(),
   getThreadTitleCache: vi.fn(),
   getProjects: vi.fn(),
@@ -144,6 +145,7 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const state of states.splice(0)) state.stopPolling()
+  vi.restoreAllMocks()
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
@@ -276,16 +278,113 @@ describe('Goal and pending request notifications', () => {
     expect(attention).toHaveBeenCalledExactlyOnceWith(thread.id)
   })
 
+  it('keeps a completed Goal after a reconnect read fails and applies later snapshots', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { state, attention } = await setup()
+    const selectedGoal = state.selectedThreadGoal
+    start('goal-turn')
+    update('complete', 'goal-turn')
+    finish('goal-turn')
+    expect(attention).toHaveBeenCalledExactlyOnceWith(thread.id)
+    expect(gateway.getThreadGoal).toHaveBeenCalledTimes(1)
+
+    const error = new Error('Goal temporarily unavailable')
+    gateway.getThreadGoal.mockRejectedValueOnce(error)
+    notify({ method: 'app-server/reconnected', params: null })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gateway.getThreadGoal).toHaveBeenCalledTimes(2)
+    expect(selectedGoal.goal.value).toEqual(goal('complete'))
+    expect(selectedGoal.loadError.value).toBe(error.message)
+    expect(warn).toHaveBeenCalledExactlyOnceWith('Failed to load thread goal', error)
+
+    start('ordinary')
+    finish('ordinary')
+    expect(attention).toHaveBeenCalledTimes(2)
+    expect(gateway.getThreadGoal).toHaveBeenCalledTimes(2)
+
+    const recovered = deferred<ThreadGoal>()
+    gateway.getThreadGoal.mockReturnValueOnce(recovered.promise)
+    notify({ method: 'app-server/reconnected', params: null })
+    expect(selectedGoal.loadError.value).toBe(error.message)
+    recovered.resolve(goal('paused'))
+    await recovered.promise
+    expect(selectedGoal.goal.value).toEqual(goal('paused'))
+    expect(selectedGoal.loadError.value).toBe('')
+
+    gateway.getThreadGoal.mockResolvedValueOnce(null)
+    notify({ method: 'app-server/reconnected', params: null })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(selectedGoal.goal.value).toBeNull()
+    expect(gateway.getThreadGoal).toHaveBeenCalledTimes(4)
+    expect(attention).toHaveBeenCalledTimes(2)
+  })
+
+  it('treats turns as ordinary after a failed reconnect while an active Goal is still displayed', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { state, attention } = await setup()
+    const pendingGoal = deferred<ThreadGoal>()
+    gateway.getThreadGoal.mockReturnValueOnce(pendingGoal.promise)
+    notify({ method: 'app-server/reconnected', params: null })
+    start('during-reconnect')
+    finish('during-reconnect')
+    expect(attention).not.toHaveBeenCalled()
+
+    pendingGoal.reject(new Error('Goal unavailable'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.selectedThreadGoal.goal.value).toEqual(goal('active'))
+    expect(attention).toHaveBeenCalledExactlyOnceWith(thread.id, expect.any(Number))
+    start('after-reconnect')
+    finish('after-reconnect')
+    expect(attention.mock.calls[1]).toEqual([thread.id])
+    expect(gateway.getThreadGoal).toHaveBeenCalledTimes(2)
+
+    update('active')
+    expect(state.selectedThreadGoal.loadError.value).toBe('')
+    start('confirmed-goal-turn')
+    finish('confirmed-goal-turn')
+    expect(attention).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['notification', 'operation'])('clears a retained Goal through a successful clear %s', async source => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { state } = await setup('complete')
+    gateway.getThreadGoal.mockRejectedValueOnce(new Error('Goal unavailable'))
+    notify({ method: 'app-server/reconnected', params: null })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state.selectedThreadGoal.goal.value).toEqual(goal('complete'))
+
+    if (source === 'notification') {
+      const stale = deferred<ThreadGoal>()
+      gateway.getThreadGoal.mockReturnValueOnce(stale.promise)
+      notify({ method: 'app-server/reconnected', params: null })
+      clear()
+      stale.reject(new Error('Stale Goal read'))
+      await vi.advanceTimersByTimeAsync(0)
+    } else {
+      gateway.clearThreadGoal.mockResolvedValueOnce(true)
+      await state.selectedThreadGoal.save('', 'complete', true)
+      expect(gateway.clearThreadGoal).toHaveBeenCalledExactlyOnceWith(thread.id)
+    }
+    expect(state.selectedThreadGoal.goal.value).toBeNull()
+    expect(state.selectedThreadGoal.loadError.value).toBe('')
+    expect(console.warn).toHaveBeenCalledTimes(1)
+  })
+
   it.each(['Method not found', 'goals feature is disabled'])('uses ordinary outcomes when the Goal read fails with %s', async message => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
     gateway.getThreadGoal.mockRejectedValue(new Error(message))
     const onSelectedThreadAttention = vi.fn()
-    await loadState({ onSelectedThreadAttention })
+    const state = await loadState({ onSelectedThreadAttention })
+    expect(state.selectedThreadGoal.goal.value).toBeNull()
+    expect(state.selectedThreadGoal.loadError.value).toBe(message)
     start('ordinary')
     finish('ordinary')
     expect(onSelectedThreadAttention).toHaveBeenCalledExactlyOnceWith(thread.id)
+    expect(gateway.getThreadGoal).toHaveBeenCalledTimes(1)
   })
 
-  it('classifies a fast completion using the pending baseline and drops stale reads on navigation', async () => {
+  it.each(['success', 'failure'])('classifies a fast completion and ignores an old thread read on %s', async outcome => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const first = deferred<ThreadGoal>()
     gateway.getThreadGoal.mockReturnValueOnce(first.promise)
     const onSelectedThreadAttention = vi.fn()
@@ -300,10 +399,15 @@ describe('Goal and pending request notifications', () => {
     notify({ method: 'app-server/reconnected', params: null })
     gateway.getThreadGoal.mockResolvedValue(goal('complete', 'other-thread'))
     state.primeSelectedThread('other-thread')
-    stale.resolve(goal('paused'))
+    expect(state.selectedThreadGoal.goal.value).toBeNull()
+    expect(state.selectedThreadGoal.loadError.value).toBe('')
+    if (outcome === 'success') stale.resolve(goal('paused'))
+    else stale.reject(new Error('Old thread Goal unavailable'))
     await vi.advanceTimersByTimeAsync(0)
     update('complete', 'intermediate')
     expect(state.selectedThreadGoal.goal.value).toEqual(goal('complete', 'other-thread'))
+    expect(state.selectedThreadGoal.loadError.value).toBe('')
+    expect(warn).not.toHaveBeenCalled()
     expect(onSelectedThreadAttention).not.toHaveBeenCalled()
   })
 

@@ -1,6 +1,6 @@
 import { getProjects } from './codexGateway'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setThreadPinned, acquireReasoningCatalog, forkThreadFromResponse, reasoningCatalog, getAvailableModelIds, getThreadDetail, resumeThread, startThreadTurn } from './codexGateway'
+import { setThreadPinned, acquireReasoningCatalog, forkThreadFromResponse, reasoningCatalog, getAvailableModelIds, getThreadDetail, getThreadGoal, resumeThread, startThreadTurn } from './codexGateway'
 
 function mockRpcFetch(): { requests: Array<{ method: string, params: Record<string, unknown> }> } {
   const requests: Array<{ method: string, params: Record<string, unknown> }> = []
@@ -28,6 +28,22 @@ function mockRpcFetch(): { requests: Array<{ method: string, params: Record<stri
 
   return { requests }
 }
+
+describe('getThreadGoal response validation', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('returns null for an explicit null Goal', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ result: { goal: null } })))
+    await expect(getThreadGoal('thread-1')).resolves.toBeNull()
+  })
+
+  it.each([{}, { goal: {} }])('rejects a malformed Goal result: %j', async result => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ result })))
+    await expect(getThreadGoal('thread-1')).rejects.toThrow('Thread goal response was malformed')
+  })
+})
 
 describe('startThreadTurn collaboration mode payloads', () => {
   afterEach(() => {
