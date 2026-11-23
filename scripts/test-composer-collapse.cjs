@@ -84,7 +84,9 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         const floatingBox = await assertFloating()
         assert.equal(await goal.innerText(), 'Goal: active')
         assert.equal(await goal.getAttribute('title'), null)
-        await goal.press('Enter')
+        // Some browsers activate buttons without moving focus to them.
+        await goal.evaluate(el => el.addEventListener('mousedown', event => event.preventDefault(), { once:true }))
+        await goal.click()
         const goalSettings = page.getByRole('dialog', { name:'Goal settings', exact:true })
         await goalSettings.waitFor()
         const objective = goalSettings.getByRole('textbox', { name:'Goal objective', exact:true })

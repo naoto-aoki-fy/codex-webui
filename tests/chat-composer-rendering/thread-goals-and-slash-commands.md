@@ -21,7 +21,7 @@
 
 ## Automated Regression
 
-After building, run `APPROVED_DIST_ROOT=. node scripts/test-composer-fullscreen.cjs` and `APPROVED_DIST_ROOT=. node scripts/test-composer-collapse.cjs` against `http://127.0.0.1:4173`. Set `PLAYWRIGHT_CHANNEL=chrome` to use an installed Google Chrome. The fixtures cover the Goal labels, the Plan and Queue row, the full editable objective, and focus restoration in all three composer modes. Screenshots and results are saved in `output/playwright/`.
+After building, run `APPROVED_DIST_ROOT=. node scripts/test-composer-fullscreen.cjs` and `APPROVED_DIST_ROOT=. node scripts/test-composer-collapse.cjs` against `http://127.0.0.1:4173`. Set `PLAYWRIGHT_CHANNEL=chrome` to use an installed Google Chrome. The fixtures cover the Goal labels, the Plan and Queue row, the full editable objective, and focus restoration in all three composer modes. The minimized test also simulates a browser that activates the chip without focusing it first. Screenshots and results are saved in `output/playwright/`.
 
 ## Performance Audit
 

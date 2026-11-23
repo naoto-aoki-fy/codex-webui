@@ -2,6 +2,7 @@
 import type { ThreadGoalStatus } from '../../api/codexGateway'
 
 defineProps<{ status: ThreadGoalStatus }>()
+const emit = defineEmits<{ 'open-settings': [] }>()
 
 const statusLabels: Record<ThreadGoalStatus, string> = {
   active: 'active',
@@ -11,6 +12,13 @@ const statusLabels: Record<ThreadGoalStatus, string> = {
   budgetLimited: 'budget limited',
   complete: 'completed',
 }
+
+function openSettings(event: MouseEvent): void {
+  if (event.currentTarget instanceof HTMLButtonElement) {
+    event.currentTarget.focus({ preventScroll: true })
+  }
+  emit('open-settings')
+}
 </script>
 
 <template>
@@ -18,6 +26,7 @@ const statusLabels: Record<ThreadGoalStatus, string> = {
     type="button"
     class="thread-goal-summary"
     aria-haspopup="dialog"
+    @click="openSettings"
   >
     <strong>Goal:</strong> {{ statusLabels[status] }}
   </button>
