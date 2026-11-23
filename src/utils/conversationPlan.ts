@@ -2,49 +2,77 @@ import type { UiMessage, UiPlanStep } from '../types/codex'
 
 type PlanData = { explanation: string; steps: UiPlanStep[] }
 
+function readFenceMarker(line: string): string {
+  return line.match(/^\s{0,3}(```+|~~~+)\s*([^\s`~][^`]*)?\s*$/u)?.[1] ?? ''
+}
+
 export function parsePlanFromMessageText(text: string): PlanData | null {
   const normalized = text.replace(/\r\n/g, '\n').trim()
   if (!normalized) return null
 
   const steps: UiPlanStep[] = []
   const explanationLines: string[] = []
+  let stepLines: string[] | null = null
+  let stepIndent = 0
+  let blankLines: string[] = []
   let fence = ''
+
+  function finishStep() {
+    if (stepLines) steps[steps.length - 1].step = stepLines.join('\n')
+    stepLines = null
+    blankLines = []
+    fence = ''
+  }
 
   for (const line of normalized.split('\n')) {
     const trimmed = line.trim()
+    const indent = line.match(/^[ \t]*/)?.[0].length ?? 0
+    if (stepLines && (!trimmed || indent >= stepIndent)) {
+      const content = line.slice(stepIndent)
+      if (!trimmed && !fence) {
+        blankLines.push(content)
+        continue
+      }
+      for (const blank of blankLines) stepLines.push(blank)
+      stepLines.push(content)
+      blankLines = []
+      if (fence) {
+        if (content.trim() === fence) fence = ''
+      } else {
+        fence = readFenceMarker(content)
+      }
+      continue
+    }
+    if (stepLines) finishStep()
+
     if (fence) {
       explanationLines.push(line)
       if (trimmed === fence) fence = ''
       continue
     }
 
-    const openingFence = line.match(/^\s{0,3}(```+|~~~+)\s*([^\s`~][^`]*)?\s*$/u)
-    if (openingFence) {
-      fence = openingFence[1]
-      explanationLines.push(line)
+    fence = readFenceMarker(line)
+    if (fence || !trimmed) {
+      if (fence || steps.length === 0) explanationLines.push(line)
       continue
     }
 
-    if (!trimmed) {
-      if (steps.length === 0) explanationLines.push('')
-      continue
-    }
-
-    const match = trimmed.match(/^[-*]\s+\[([ xX~>|-])\]\s+(.+)$/)
+    const match = trimmed.match(/^([-*]\s+)\[([ xX~>|-])\]\s+(.+)$/)
     if (match) {
-      const marker = (match[1] ?? ' ').toLowerCase()
+      const marker = match[2].toLowerCase()
       let status: UiPlanStep['status'] = 'pending'
       if (marker === 'x') status = 'completed'
       if (marker === '~' || marker === '>' || marker === '-') status = 'inProgress'
-      steps.push({
-        step: match[2]?.trim() ?? '',
-        status,
-      })
+      steps.push({ step: '', status })
+      stepIndent = indent + match[1].length
+      stepLines = [match[3]]
+      fence = readFenceMarker(match[3])
       continue
     }
 
     explanationLines.push(line)
   }
+  finishStep()
 
   if (steps.length === 0) return null
   return {
@@ -105,7 +133,7 @@ function buildPlanCopyText(planData: PlanData | null): string {
   }
 
   if (planData.steps.length > 0) {
-    sections.push(planData.steps.map((step) => `- ${planStepCopyMarker(step.status)} ${step.step}`.trim()).join('\n'))
+    sections.push(planData.steps.map((step) => `- ${planStepCopyMarker(step.status)} ${step.step.replace(/\n/g, '\n  ')}`.trim()).join('\n'))
   }
 
   return sections.join('\n\n').trim()

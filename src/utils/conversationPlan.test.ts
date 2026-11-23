@@ -41,6 +41,19 @@ describe('conversation Plan interpretation', () => {
     expect(result.steps).toEqual([{ step: 'Real step', status: 'pending' }])
   })
 
+  it('keeps indented Markdown with its checklist step for rendering and plan copy', () => {
+    const code = '```md\n  - [x] Literal checklist syntax\n\n    Indented text  \n```'
+    const step = `First step\n\n${code}\n> **Note** [guide](https://example.test)`
+    const raw = `- [ ] ${step.replace(/\n/g, '\n  ')}\n- [x] Second step`
+    const result = interpretConversationPlan(message({ text: raw }))
+    expect(result.explanation).toBe('')
+    expect(result.steps).toEqual([
+      { step, status: 'pending' },
+      { step: 'Second step', status: 'completed' },
+    ])
+    expect(result.copyText).toBe(raw)
+  })
+
   it('falls back for empty structured steps and keeps malformed lines as explanation', () => {
     const result = interpretConversationPlan(message({ text: '- [?] invalid\n- [ ] Valid', plan: { explanation: 'ignored', steps: [] } }))
     expect(result.explanation).toBe('- [?] invalid')

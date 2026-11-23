@@ -2,7 +2,7 @@
 
 ## Setup
 
-Open a disposable TestChat conversation with a reply containing the Markdown below. Show the same blocks in a completed plan card. Include a code block inside an ordered list and a quote inside a bullet list.
+Open a disposable TestChat conversation with a reply containing the Markdown below. Show the same blocks in a completed plan card, with a fenced block and a quote indented under a checklist step. Include a code block inside an ordered list and a quote inside a bullet list.
 
 ~~~markdown
 ```ts
