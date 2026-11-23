@@ -23,7 +23,7 @@
       }"
       :style="menuWrapStyle"
     >
-      <div ref="menuRef" class="composer-dropdown-menu">
+      <div ref="menuRef" class="composer-dropdown-menu" :class="{ 'composer-dropdown-menu-constrained': constrainMenuHeight }">
         <div v-if="enableSearch" class="composer-dropdown-search-wrap">
           <input
             ref="searchInputRef"
@@ -78,6 +78,7 @@ const props = defineProps<{
   selectedPrefixIcon?: Component | null
   iconOnly?: boolean
   openDirection?: 'up' | 'down'
+  constrainMenuHeight?: boolean
   menuAlign?: 'start' | 'end'
   enableSearch?: boolean
   searchPlaceholder?: string
@@ -144,6 +145,19 @@ function updateMenuPosition(): void {
   const maxLeft = Math.max(viewportPadding, viewportWidth - menuWidth - viewportPadding)
   const desiredLeft = menuAlign.value === 'end' ? rect.right - menuWidth : rect.left
   const left = clamp(desiredLeft, viewportPadding, maxLeft)
+  const position = { position: 'fixed', left: `${left}px`, right: 'auto', width: `${menuWidth}px` }
+
+  if (props.constrainMenuHeight) {
+    const opensUp = openDirection.value === 'up'
+    const edge = opensUp ? viewportHeight - rect.top + gap : rect.bottom + gap
+    menuWrapStyle.value = {
+      ...position,
+      top: opensUp ? 'auto' : `${edge}px`,
+      bottom: opensUp ? `${edge}px` : 'auto',
+      '--composer-dropdown-menu-max-height': `${Math.max(0, viewportHeight - edge - viewportPadding)}px`,
+    }
+    return
+  }
 
   let top = openDirection.value === 'up'
     ? rect.top - measuredHeight - gap
@@ -154,12 +168,9 @@ function updateMenuPosition(): void {
   top = Math.max(viewportPadding, top)
 
   menuWrapStyle.value = {
-    position: 'fixed',
-    left: `${left}px`,
-    right: 'auto',
+    ...position,
     top: `${top}px`,
     bottom: 'auto',
-    width: `${menuWidth}px`,
   }
 }
 
@@ -278,6 +289,12 @@ onBeforeUnmount(() => {
 
 .composer-dropdown-menu {
   @apply m-0 min-w-56 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg;
+}
+
+.composer-dropdown-menu-constrained {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--composer-dropdown-menu-max-height, none);
 }
 
 .composer-dropdown-search-wrap {

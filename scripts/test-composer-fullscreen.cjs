@@ -1,11 +1,11 @@
 // Build first. APPROVED_DIST_ROOT=. intercepts assets from this checkout as well as protocol calls.
 const { chromium } = require('playwright')
 const { setup, thread, assert, openToolsDialog, openComposerEntry, enableQueueMode } = require('./approved-fixture.cjs')
+const { goalObjective, assertGoalSettingsLayout, openGoalStatusMenu, captureGoalSettings } = require('./goal-settings-fixture.cjs')
 const { mkdirSync, writeFileSync } = require('node:fs')
 const { resolve } = require('node:path')
 const base = 'http://127.0.0.1:4173'
 const longDraft = 'Full-screen writing fixture\n' + 'Keep this draft and all composer settings.\n'.repeat(20)
-const goalObjective = 'Keep Goal available while writing\n' + 'Preserve each line of this long objective.\n'.repeat(24) + 'End of the objective.'
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOcQAAAAASUVORK5CYII=', 'base64')
 async function withinViewport(locator, viewport) {
   const box = await locator.boundingBox()
@@ -103,6 +103,8 @@ async function waitForSubmitEnabled(page) {
       for (const theme of ['light', 'dark']) {
         const page = await browser.newPage({ viewport })
         activePage = page
+        const apiRequests = []
+        page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/codex-api/')) apiRequests.push(request.url()) })
         let uploadPath = '/remote/uploads/fullscreen.txt'
         let pendingSubmission
         let createdThreadCount = 0
@@ -114,7 +116,8 @@ async function waitForSubmitEnabled(page) {
           return response => { pendingSubmission = undefined; release(response) }
         }
         await page.route('**/codex-local-image?*', route => route.fulfill({ contentType:'image/png', body:png }))
-        let savedGoal = { threadId:thread.id, objective:goalObjective, status:'active' }
+        let savedGoal = { threadId:thread.id, objective:goalObjective, status:'active', tokensUsed:1200, tokenBudget:5000, timeUsedSeconds:12 }
+        let rejectGoalSave = false
         const { calls, errors, emit } = await setup(page, async (body, _page, url) => {
           if (url.pathname.endsWith('/upload-file')) return { json:{ path:uploadPath } }
           if (url.pathname.endsWith('/server-requests/respond')) return { json:{ ok:true } }
@@ -124,7 +127,8 @@ async function waitForSubmitEnabled(page) {
             return { json:{ result:{ goal:savedGoal } } }
           }
           if (body.method === 'thread/goal/set') {
-            savedGoal = body.params
+            if (rejectGoalSave) return { status:400, json:{ error:'Fixture rejected the Goal save' } }
+            savedGoal = { ...savedGoal, ...body.params }
             return { json:{ result:{ goal:savedGoal } } }
           }
           if (body.method === 'thread/start') {
@@ -168,15 +172,19 @@ async function waitForSubmitEnabled(page) {
         const activeGoal = await assertGoalRow(page, viewport, 'Goal: active')
         const goalSettings = page.getByRole('dialog', { name:'Goal settings', exact:true })
         const objective = goalSettings.getByRole('textbox', { name:'Goal objective', exact:true })
-        const beforeInlineSettings = calls.length
+        const beforeInlineSettings = apiRequests.length
         await activeGoal.press('Enter')
         await goalSettings.waitFor()
         assert.equal(await objective.inputValue(), goalObjective)
         assert.equal(await objective.evaluate(el => el === document.activeElement), true)
+        await assertGoalSettingsLayout(goalSettings, theme, 'active')
+        await (await openGoalStatusMenu(goalSettings)).getByRole('button', { name:'usage limited', exact:true }).click()
+        await assertGoalSettingsLayout(goalSettings, theme, 'usage limited')
+        const inlineSettingsScreenshot = await captureGoalSettings(page, 'inline', viewport, theme)
         await goalSettings.getByRole('button', { name:'Cancel', exact:true }).click()
         await goalSettings.waitFor({ state:'hidden' })
         assert.equal(await activeGoal.evaluate(el => el === document.activeElement), true)
-        assert.equal(calls.length, beforeInlineSettings, 'inline Goal settings adds no API calls')
+        assert.equal(apiRequests.length, beforeInlineSettings, 'inline Goal settings adds no API calls')
         const inlineGoalScreenshot = resolve(`output/playwright/composer-goal-inline-${viewport.width}-${theme}.png`)
         await page.waitForTimeout(2200)
         await page.screenshot({ path:inlineGoalScreenshot })
@@ -211,6 +219,7 @@ async function waitForSubmitEnabled(page) {
         const fullscreenGoalScreenshot = resolve(`output/playwright/composer-goal-fullscreen-${viewport.width}-${theme}.png`)
         await page.waitForTimeout(2200)
         await page.screenshot({ path:fullscreenGoalScreenshot })
+        const beforeFullscreenSettings = apiRequests.length
         await completedGoal.click()
         await goalSettings.waitFor()
         await withinViewport(objective, viewport)
@@ -221,8 +230,7 @@ async function waitForSubmitEnabled(page) {
         await objective.press('Control+End')
         assert(await objective.evaluate((el, start) => el.scrollTop > start && el.selectionEnd === el.value.length, start), 'the last line of the objective is reachable')
         const goalStatus = goalSettings.locator('.composer-dropdown-trigger')
-        await goalStatus.click()
-        await goalSettings.getByRole('listbox').waitFor()
+        await openGoalStatusMenu(goalSettings)
         await goalStatus.press('Escape')
         await goalSettings.getByRole('listbox').waitFor({ state:'hidden' })
         await goalStatus.press('Escape')
@@ -230,16 +238,63 @@ async function waitForSubmitEnabled(page) {
         assert.equal(await completedGoal.evaluate(el => el === document.activeElement), true)
         assert.equal(await page.locator('.content-root.is-composer-expanded').count(), 1)
         assert.equal(await input.inputValue(), longDraft)
+        assert.equal(apiRequests.length, beforeFullscreenSettings, 'full-screen Goal settings adds no API calls')
         assert.equal(calls.length, beforeExpand, 'Goal notifications and opening or closing settings add no API calls')
         await completedGoal.click()
+        await objective.press('Control+End')
+        await page.keyboard.insertText('\nEdited from the chip.')
         const editedObjective = `${goalObjective}\nEdited from the chip.`
-        await objective.fill(editedObjective)
-        await goalSettings.getByRole('button', { name:'Save goal', exact:true }).click()
+        assert.equal(await objective.inputValue(), editedObjective)
+        await (await openGoalStatusMenu(goalSettings)).getByRole('button', { name:'active', exact:true }).click()
+        await assertGoalSettingsLayout(goalSettings, theme, 'active')
+        const fullscreenSettingsScreenshot = await captureGoalSettings(page, 'fullscreen', viewport, theme)
+        await (await openGoalStatusMenu(goalSettings)).getByRole('button', { name:'usage limited', exact:true }).click()
+        await assertGoalSettingsLayout(goalSettings, theme, 'usage limited')
+        assert.equal(apiRequests.length, beforeFullscreenSettings, 'editing the objective and status makes no API requests before Save')
+        const saveGoal = goalSettings.getByRole('button', { name:'Save goal', exact:true })
+        await saveGoal.click()
         await goalSettings.waitFor({ state:'hidden' })
         assert.deepEqual(calls.slice(beforeExpand).filter(call => call.method === 'thread/goal/set').map(call => call.params), [
-          { threadId:thread.id, objective:editedObjective, status:'complete' },
+          { threadId:thread.id, objective:editedObjective, status:'usageLimited' },
         ])
-        assert.equal(await completedGoal.evaluate(el => el === document.activeElement), true)
+        const limitedGoal = page.getByRole('button', { name:'Goal: usage limited', exact:true })
+        assert.equal(await limitedGoal.evaluate(el => el === document.activeElement), true)
+        const afterSave = apiRequests.length
+        await limitedGoal.click()
+        assert.equal(await objective.inputValue(), editedObjective)
+        assert.equal(await goalStatus.innerText(), 'usage limited')
+        await goalSettings.getByRole('button', { name:'Cancel', exact:true }).click()
+        await goalSettings.waitFor({ state:'hidden' })
+        assert.equal(apiRequests.length, afterSave, 'reopening the saved Goal adds no API calls')
+
+        if (viewport.width === 375) {
+          await limitedGoal.click()
+          await page.setViewportSize({ width:375, height:250 })
+          const body = goalSettings.locator('.management-dialog-body')
+          assert(await body.evaluate(el => el.scrollHeight > el.clientHeight), 'the body scrolls on a short screen')
+          assert.equal(await objective.evaluate(el => el.offsetHeight), 96, 'the objective retains its minimum height')
+          const shortMenu = await openGoalStatusMenu(goalSettings)
+          assert(await shortMenu.evaluate(el => el.scrollHeight > el.clientHeight), 'the upward status menu scrolls when space is limited')
+          await shortMenu.getByRole('button', { name:'active', exact:true }).click()
+          rejectGoalSave = true
+          await saveGoal.click()
+          const error = goalSettings.getByRole('alert')
+          await error.waitFor()
+          assert.match(await error.innerText(), /Fixture rejected the Goal save/)
+          await error.scrollIntoViewIfNeeded()
+          await withinViewport(error, { width:375, height:250 })
+          await withinViewport(goalSettings.locator('small'), { width:375, height:250 })
+          assert(await body.evaluate(el => el.scrollTop > 0), 'scrolling exposes usage, error and actions')
+          const cancel = goalSettings.getByRole('button', { name:'Cancel', exact:true })
+          await cancel.scrollIntoViewIfNeeded()
+          for (const button of [goalSettings.getByRole('button', { name:'Clear goal', exact:true }), cancel, saveGoal]) {
+            await withinViewport(button, { width:375, height:250 })
+          }
+          await cancel.click()
+          await goalSettings.waitFor({ state:'hidden' })
+          assert.equal(await limitedGoal.evaluate(el => el === document.activeElement), true)
+          await page.setViewportSize(viewport)
+        }
         await page.getByRole('button', { name:'Plan ×', exact:true }).click()
         await page.getByRole('button', { name:'Queue ×', exact:true }).click()
         await withinViewport(page.getByRole('button', { name:'Send message', exact:true }), viewport)
@@ -309,7 +364,7 @@ async function waitForSubmitEnabled(page) {
         }
         const beforeExit = calls.length
         await exit.click()
-        await withinViewport(completedGoal, viewport)
+        await withinViewport(limitedGoal, viewport)
         assert.equal(await input.inputValue(), snapshot)
         assert.deepEqual(await input.evaluate(el => [el.selectionStart, el.selectionEnd]), [12, 19])
         assert.equal(await input.evaluate(el => el === window.fullscreenInput), true)
@@ -497,7 +552,7 @@ async function waitForSubmitEnabled(page) {
         detachedHome.assertSingleSubmission()
 
         assert.deepEqual(errors, [])
-        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, screenshot, inlineGoalScreenshot, fullscreenGoalScreenshot, submitScreenshot, composerBox, background, zeroApiToggleCycles:3, apiRequestsFromGoalViewsAndUpdates:0, toggleRoundTripMs:cycles, submissions:6, heldHomeHistoryRequests:acceptedHistoryCalls.length })
+        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, screenshot, inlineGoalScreenshot, fullscreenGoalScreenshot, inlineSettingsScreenshot, fullscreenSettingsScreenshot, submitScreenshot, composerBox, background, zeroApiToggleCycles:3, apiRequestsFromGoalViewsAndUpdates:0, toggleRoundTripMs:cycles, submissions:6, heldHomeHistoryRequests:acceptedHistoryCalls.length })
         console.log('PASS', viewport.width, theme, 'Goal labels, row, objective and focus; full screen, native Enter, attachments, held sends, draft recovery, steering, queue, Home, zero-request cycles')
         await page.close()
       }

@@ -61,15 +61,22 @@ defineExpose({ edit })
 </script>
 
 <template>
-  <ManagementDialog :open="editing" title="Goal settings" :close-disabled="busy" @opened="focusObjective" @close="editing = false">
+  <ManagementDialog :open="editing" title="Goal settings" dialog-class="thread-goal-dialog" :close-disabled="busy" @opened="focusObjective" @close="editing = false">
     <form v-if="editing" class="thread-goal-editor" @submit.prevent="save()">
-      <label class="thread-goal-field">
+      <label class="thread-goal-objective">
         <span>Goal objective</span>
-        <textarea ref="objectiveInput" v-model="objective" :disabled="busy" rows="8" />
+        <textarea ref="objectiveInput" v-model="objective" :disabled="busy" rows="1" />
       </label>
-      <div class="thread-goal-field">
-        <span>Status</span>
-        <ComposerDropdown :model-value="status" :options="statusOptions" :disabled="busy" @update:model-value="status = $event as ThreadGoalStatus" />
+      <div class="thread-goal-status">
+        <span>Status:</span>
+        <ComposerDropdown
+          :model-value="status"
+          :options="statusOptions"
+          :disabled="busy"
+          open-direction="up"
+          constrain-menu-height
+          @update:model-value="status = $event as ThreadGoalStatus"
+        />
       </div>
       <small v-if="goal">{{ goal.tokensUsed.toLocaleString() }} {{ ('tokens') }}<template v-if="goal.tokenBudget !== null"> / {{ goal.tokenBudget.toLocaleString() }}</template> · {{ Math.round(goal.timeUsedSeconds) }}s</small>
       <p v-if="error || loadError" role="alert">{{ error || loadError }}</p>
