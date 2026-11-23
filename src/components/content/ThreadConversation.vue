@@ -2359,7 +2359,7 @@ onBeforeUnmount(() => {
 }
 
 .image-modal-backdrop {
-  @apply fixed inset-0 z-50 bg-black/40 p-6 flex items-center justify-center;
+  @apply fixed inset-0 z-[300] bg-black/40 p-6 flex items-center justify-center;
 }
 
 .image-modal-content {

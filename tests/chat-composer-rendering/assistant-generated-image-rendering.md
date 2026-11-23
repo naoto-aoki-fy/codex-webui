@@ -19,7 +19,14 @@ Codex app-server generated image items render as assistant image previews.
 - Clicking the preview opens the existing image modal
 - The image is served through `/codex-local-image?path=...`
 
+#### Expanded previews over the page header
+1. Open a thread containing a user image attachment, an assistant-generated image, and an image embedded in Markdown. Use tall images so the expanded previews reach the header at each viewport size.
+2. In both light and dark themes, repeat steps 3–5 for each image at desktop (1440×900), tablet (768×1024), and mobile (375×812) sizes.
+3. Click the image. Verify that the portion overlapping the page header stays visible and that the translucent backdrop dims the exposed parts of the header.
+4. Click the preview's close button. Verify that the preview and backdrop disappear, then open and dismiss the header's **Conversation tools** menu.
+5. Reopen the same image and click the backdrop over the **Conversation tools** button, outside the image. Verify that the preview closes and the menu stays closed. Click the same header button again and verify that its menu opens, then dismiss it.
+
 #### Rollback/Cleanup
-- Delete any temporary generated image files if they were created only for this test
+- Delete any temporary image files if they were created only for this test
 
 ---
