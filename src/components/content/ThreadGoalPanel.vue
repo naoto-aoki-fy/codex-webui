@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch, type CSSProperties } from 'vue'
 import { THREAD_GOAL_STATUSES, type ThreadGoal, type ThreadGoalStatus } from '../../api/codexGateway'
 import ManagementDialog from '../shared/ManagementDialog.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
@@ -9,6 +9,7 @@ const props = defineProps<{
   goal: ThreadGoal | null
   loadError: string
   saveGoal: (objective: string, status: ThreadGoalStatus, clear: boolean) => Promise<void>
+  viewportStyle?: CSSProperties
 }>()
 const editing = ref(false)
 const busy = ref(false)
@@ -61,7 +62,15 @@ defineExpose({ edit })
 </script>
 
 <template>
-  <ManagementDialog :open="editing" title="Goal settings" dialog-class="thread-goal-dialog" :close-disabled="busy" @opened="focusObjective" @close="editing = false">
+  <ManagementDialog
+    :open="editing"
+    title="Goal settings"
+    dialog-class="thread-goal-dialog"
+    :dialog-style="viewportStyle"
+    :close-disabled="busy"
+    @opened="focusObjective"
+    @close="editing = false"
+  >
     <form v-if="editing" class="thread-goal-editor" @submit.prevent="save()">
       <label class="thread-goal-objective">
         <span>Goal objective</span>

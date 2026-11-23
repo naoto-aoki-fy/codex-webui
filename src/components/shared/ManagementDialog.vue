@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch, type CSSProperties } from 'vue'
 import IconTablerX from '../icons/IconTablerX.vue'
-const props = defineProps<{ open: boolean; title: string; description?: string; closeDisabled?: boolean; dialogClass?: string }>()
+const props = defineProps<{
+  open: boolean
+  title: string
+  description?: string
+  closeDisabled?: boolean
+  dialogClass?: string
+  dialogStyle?: CSSProperties
+}>()
 const emit = defineEmits<{ close: []; opened: [] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 let returnFocus: HTMLElement | null = null
@@ -49,7 +56,17 @@ onBeforeUnmount(() => { dialog.value?.close(); restoreFocus() })
 </script>
 <template>
   <Teleport to="body">
-    <dialog ref="dialog" class="management-dialog" :class="dialogClass" :aria-label="title" @cancel.prevent="requestClose" @click="backdrop" @keydown.esc.stop @keydown.tab="containFocus">
+    <dialog
+      ref="dialog"
+      class="management-dialog"
+      :class="dialogClass"
+      :style="dialogStyle"
+      :aria-label="title"
+      @cancel.prevent="requestClose"
+      @click="backdrop"
+      @keydown.esc.stop
+      @keydown.tab="containFocus"
+    >
       <header class="management-dialog-header">
         <div><h2>{{ title }}</h2><p v-if="description">{{ description }}</p></div>
         <button type="button" class="management-dialog-close" autofocus aria-label="Close dialog" :disabled="closeDisabled" @click="requestClose"><IconTablerX /></button>

@@ -269,6 +269,7 @@
                   :goal="threadGoal"
                   :load-error="selectedThreadGoal.loadError.value"
                   :save-goal="selectedThreadGoal.save"
+                  :viewport-style="isVirtualKeyboardOpen ? visualViewportStyle : undefined"
                 />
                 <div v-if="threadGoal && showGoalOutsideComposer" class="thread-composer-active-mode">
                   <ThreadGoalSummary :status="threadGoal.status" @open-settings="threadGoalPanelRef?.edit()" />
@@ -890,6 +891,10 @@ const toolbarNewThreadTarget = computed<NewThreadTarget>(() => {
 const toolbarNewThreadHref = computed(() => sidebarHref(router, newThreadRoute(toolbarNewThreadTarget.value)))
 const darkModeMediaQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
 const chatWidthLabel = computed(() => (CHAT_WIDTH_PRESETS[chatWidth.value].label))
+const visualViewportStyle = computed(() => ({
+  '--visual-viewport-height': visualViewportHeight.value > 0 ? `${visualViewportHeight.value}px` : '100dvh',
+  '--visual-viewport-offset-top': `${Math.max(0, visualViewportOffsetTop.value)}px`,
+}))
 const contentStyle = computed(() => {
   const preset = CHAT_WIDTH_PRESETS[chatWidth.value]
   const keyboardInset = Math.max(
@@ -899,8 +904,7 @@ const contentStyle = computed(() => {
   return {
     '--chat-column-max': preset.columnMax,
     '--chat-card-max': preset.cardMax,
-    '--visual-viewport-height': visualViewportHeight.value > 0 ? `${visualViewportHeight.value}px` : '100dvh',
-    '--visual-viewport-offset-top': `${Math.max(0, visualViewportOffsetTop.value)}px`,
+    ...visualViewportStyle.value,
     '--virtual-keyboard-inset': `${keyboardInset}px`,
   }
 })

@@ -140,7 +140,6 @@ function updateMenuPosition(): void {
   const gap = 8
   const maxMenuWidth = Math.max(0, viewportWidth - viewportPadding * 2)
   const measuredWidth = menuRef.value?.offsetWidth ?? menuWrapRef.value?.offsetWidth ?? 224
-  const measuredHeight = menuRef.value?.offsetHeight ?? menuWrapRef.value?.offsetHeight ?? 0
   const menuWidth = Math.min(measuredWidth, maxMenuWidth)
   const maxLeft = Math.max(viewportPadding, viewportWidth - menuWidth - viewportPadding)
   const desiredLeft = menuAlign.value === 'end' ? rect.right - menuWidth : rect.left
@@ -150,15 +149,20 @@ function updateMenuPosition(): void {
   if (props.constrainMenuHeight) {
     const opensUp = openDirection.value === 'up'
     const edge = opensUp ? viewportHeight - rect.top + gap : rect.bottom + gap
+    const visualViewport = window.visualViewport
+    const visualTop = visualViewport?.offsetTop ?? 0
+    const visualBottom = visualTop + (visualViewport?.height ?? viewportHeight)
+    const availableHeight = opensUp ? rect.top - gap - visualTop : visualBottom - edge
     menuWrapStyle.value = {
       ...position,
       top: opensUp ? 'auto' : `${edge}px`,
       bottom: opensUp ? `${edge}px` : 'auto',
-      '--composer-dropdown-menu-max-height': `${Math.max(0, viewportHeight - edge - viewportPadding)}px`,
+      '--composer-dropdown-menu-max-height': `${Math.max(0, availableHeight - viewportPadding)}px`,
     }
     return
   }
 
+  const measuredHeight = menuRef.value?.offsetHeight ?? menuWrapRef.value?.offsetHeight ?? 0
   let top = openDirection.value === 'up'
     ? rect.top - measuredHeight - gap
     : rect.bottom + gap
@@ -174,10 +178,18 @@ function updateMenuPosition(): void {
   }
 }
 
+function refreshAfterVisualViewportChange(): void {
+  void nextTick(updateMenuPosition)
+}
+
 function addLayoutListeners(): void {
   if (isLayoutListenerAttached || typeof window === 'undefined') return
   window.addEventListener('resize', updateMenuPosition)
   window.addEventListener('scroll', updateMenuPosition, true)
+  if (props.constrainMenuHeight) {
+    window.visualViewport?.addEventListener('resize', refreshAfterVisualViewportChange)
+    window.visualViewport?.addEventListener('scroll', refreshAfterVisualViewportChange)
+  }
   isLayoutListenerAttached = true
 }
 
@@ -185,6 +197,8 @@ function removeLayoutListeners(): void {
   if (!isLayoutListenerAttached || typeof window === 'undefined') return
   window.removeEventListener('resize', updateMenuPosition)
   window.removeEventListener('scroll', updateMenuPosition, true)
+  window.visualViewport?.removeEventListener('resize', refreshAfterVisualViewportChange)
+  window.visualViewport?.removeEventListener('scroll', refreshAfterVisualViewportChange)
   isLayoutListenerAttached = false
 }
 

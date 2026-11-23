@@ -1421,7 +1421,7 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 
 
 /* Management uses the same zinc surfaces and Tabler controls as chat. */
-.management-dialog { width: min(1000px, calc(100vw - 48px)); max-width: none; height: min(800px, calc(100dvh - 64px)); max-height: none; margin: auto; padding: 0; border: 1px solid #e4e4e7; border-radius: 16px; background: #fff; color: #3f3f46; box-shadow: 0 24px 70px #0003; font: inherit; font-size: 14px; line-height: 1.5; overflow: hidden; }
+.management-dialog { width: min(1000px, calc(100vw - 48px)); max-width: none; height: min(800px, calc(var(--visual-viewport-height, 100dvh) - 64px)); max-height: none; margin: auto; padding: 0; border: 1px solid #e4e4e7; border-radius: 16px; background: #fff; color: #3f3f46; box-shadow: 0 24px 70px #0003; font: inherit; font-size: 14px; line-height: 1.5; overflow: hidden; }
 .management-dialog[open] { display: flex; flex-direction: column; }
 .management-dialog::backdrop { background: #09090b66; }
 .management-dialog-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 20px 24px; border-bottom: 1px solid #e4e4e7; flex-shrink: 0; }
@@ -1441,11 +1441,16 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .management-dialog pre { max-width: 100%; overflow: auto; }
 .management-dialog .sidebar-settings-account-section { padding: 0; background: transparent; border: 0; }
 .management-dialog .sidebar-settings-account-empty { font-size: 14px; line-height: 1.5; }
+.thread-goal-dialog {
+  inset-block: var(--visual-viewport-offset-top, 0px)
+    max(0px, calc(100% - var(--visual-viewport-height, 100%) - var(--visual-viewport-offset-top, 0px)));
+}
 .thread-goal-dialog .management-dialog-header { align-items: center; padding-block: 0; }
 .thread-goal-dialog .management-dialog-header h2 { margin-block: 8px; }
+.thread-goal-dialog .management-dialog-body { display: flex; flex-direction: column; }
 .thread-goal-editor {
   display: grid;
-  height: 100%;
+  flex: 1;
   grid-template-rows: minmax(min-content, 1fr);
   grid-auto-rows: max-content;
   gap: 16px;
@@ -1500,7 +1505,7 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 :root.dark .about-settings-row button { border-color: #52525b; }
 :root.dark .about-settings-row button:hover { background: #27272a; }
 @media (max-width: 640px) {
-  .management-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); border-radius: 12px; }
+  .management-dialog { width: calc(100vw - 16px); height: calc(var(--visual-viewport-height, 100dvh) - 16px); border-radius: 12px; }
   .management-dialog-header { padding: 16px; }
   .management-dialog-body { padding: 16px; }
   .thread-goal-editor textarea { font-size: 16px; }

@@ -93,6 +93,30 @@ async function waitForSubmitEnabled(page) {
   })
 }
 
+async function setVisualViewport(page, bounds) {
+  await page.evaluate(bounds => {
+    if (bounds) {
+      Object.defineProperties(window.visualViewport, {
+        height: { configurable:true, value:bounds.height },
+        offsetTop: { configurable:true, value:bounds.offsetTop },
+      })
+    } else {
+      delete window.visualViewport.height
+      delete window.visualViewport.offsetTop
+    }
+    window.visualViewport.dispatchEvent(new Event('resize'))
+  }, bounds)
+}
+
+async function scrollToGoalActions(body) {
+  assert(await body.evaluate(el => {
+    el.scrollTop = el.scrollHeight
+    const actions = el.querySelector('.thread-goal-actions').getBoundingClientRect()
+    const remaining = el.getBoundingClientRect().bottom - actions.bottom
+    return Math.abs(remaining - parseFloat(getComputedStyle(el).paddingBottom)) < 1
+  }), 'the action row retains the body padding at the end of the scroll')
+}
+
 ;(async () => {
   mkdirSync('output/playwright', { recursive:true })
   const browser = await chromium.launch({ headless:true, channel:process.env.PLAYWRIGHT_CHANNEL })
@@ -267,6 +291,7 @@ async function waitForSubmitEnabled(page) {
         await goalSettings.waitFor({ state:'hidden' })
         assert.equal(apiRequests.length, afterSave, 'reopening the saved Goal adds no API calls')
 
+        let keyboardSettingsScreenshot
         if (viewport.width === 375) {
           await limitedGoal.click()
           await page.setViewportSize({ width:375, height:250 })
@@ -286,7 +311,7 @@ async function waitForSubmitEnabled(page) {
           await withinViewport(goalSettings.locator('small'), { width:375, height:250 })
           assert(await body.evaluate(el => el.scrollTop > 0), 'scrolling exposes usage, error and actions')
           const cancel = goalSettings.getByRole('button', { name:'Cancel', exact:true })
-          await cancel.scrollIntoViewIfNeeded()
+          await scrollToGoalActions(body)
           for (const button of [goalSettings.getByRole('button', { name:'Clear goal', exact:true }), cancel, saveGoal]) {
             await withinViewport(button, { width:375, height:250 })
           }
@@ -294,6 +319,36 @@ async function waitForSubmitEnabled(page) {
           await goalSettings.waitFor({ state:'hidden' })
           assert.equal(await limitedGoal.evaluate(el => el === document.activeElement), true)
           await page.setViewportSize(viewport)
+
+          const beforeKeyboard = apiRequests.length
+          await limitedGoal.click()
+          const keyboardViewport = { width:375, height:250, offsetTop:40 }
+          await setVisualViewport(page, keyboardViewport)
+          await page.locator('.content-root.is-virtual-keyboard-open').waitFor()
+          const dialogBox = await goalSettings.boundingBox()
+          const visibleBottom = keyboardViewport.offsetTop + keyboardViewport.height
+          assert(dialogBox.y >= keyboardViewport.offsetTop && dialogBox.y + dialogBox.height <= visibleBottom)
+          assert(await body.evaluate(el => el.scrollHeight > el.clientHeight), 'the Goal body scrolls above the keyboard')
+          const keyboardMenu = await openGoalStatusMenu(goalSettings, keyboardViewport.offsetTop)
+          await setVisualViewport(page, { height:235, offsetTop:55 })
+          await page.waitForFunction(() => {
+            const dialog = document.querySelector('.thread-goal-dialog')
+            const popup = dialog.querySelector('.composer-dropdown-menu').getBoundingClientRect()
+            const trigger = dialog.querySelector('.composer-dropdown-trigger').getBoundingClientRect()
+            return popup.top >= window.visualViewport.offsetTop && popup.bottom <= trigger.top - 7
+          })
+          await keyboardMenu.getByRole('button', { name:'budget limited', exact:true }).click()
+          await scrollToGoalActions(body)
+          for (const button of [goalSettings.getByRole('button', { name:'Clear goal', exact:true }), cancel, saveGoal]) {
+            await withinViewport(button, { width:375, height:visibleBottom })
+          }
+          assert.equal(await objective.inputValue(), editedObjective)
+          keyboardSettingsScreenshot = await captureGoalSettings(page, 'keyboard', viewport, theme)
+          await cancel.click()
+          await goalSettings.waitFor({ state:'hidden' })
+          assert.equal(await limitedGoal.evaluate(el => el === document.activeElement), true)
+          assert.equal(apiRequests.length, beforeKeyboard, 'the keyboard viewport and Goal settings add no API calls')
+          await setVisualViewport(page, null)
         }
         await page.getByRole('button', { name:'Plan ×', exact:true }).click()
         await page.getByRole('button', { name:'Queue ×', exact:true }).click()
@@ -344,22 +399,14 @@ async function waitForSubmitEnabled(page) {
         assert.equal(background, theme === 'dark' ? 'oklch(0.141 0.005 285.823)' : 'rgb(255, 255, 255)')
         if (viewport.width === 375) {
           // Simulate the VisualViewport contract used by mobile keyboard handling.
-          await page.evaluate(() => {
-            Object.defineProperty(window.visualViewport, 'height', { configurable:true, value:450 })
-            Object.defineProperty(window.visualViewport, 'offsetTop', { configurable:true, value:40 })
-            window.visualViewport.dispatchEvent(new Event('resize'))
-          })
+          await setVisualViewport(page, { height:450, offsetTop:40 })
           await page.locator('.content-root.is-virtual-keyboard-open').waitFor()
           const keyboardBox = await withinViewport(page.locator('.thread-composer'), { width:375, height:490 })
           assert.equal(keyboardBox.y, 40)
           assert.equal(keyboardBox.height, 450)
           await withinViewport(exit, { width:375, height:490 })
           await withinViewport(page.getByRole('button', { name:'Send message', exact:true }), { width:375, height:490 })
-          await page.evaluate(() => {
-            delete window.visualViewport.height
-            delete window.visualViewport.offsetTop
-            window.visualViewport.dispatchEvent(new Event('resize'))
-          })
+          await setVisualViewport(page, null)
           await page.waitForFunction(() => !document.querySelector('.content-root.is-virtual-keyboard-open'))
         }
         const beforeExit = calls.length
@@ -552,7 +599,7 @@ async function waitForSubmitEnabled(page) {
         detachedHome.assertSingleSubmission()
 
         assert.deepEqual(errors, [])
-        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, screenshot, inlineGoalScreenshot, fullscreenGoalScreenshot, inlineSettingsScreenshot, fullscreenSettingsScreenshot, submitScreenshot, composerBox, background, zeroApiToggleCycles:3, apiRequestsFromGoalViewsAndUpdates:0, toggleRoundTripMs:cycles, submissions:6, heldHomeHistoryRequests:acceptedHistoryCalls.length })
+        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, screenshot, inlineGoalScreenshot, fullscreenGoalScreenshot, inlineSettingsScreenshot, fullscreenSettingsScreenshot, keyboardSettingsScreenshot, submitScreenshot, composerBox, background, zeroApiToggleCycles:3, apiRequestsFromGoalViewsAndUpdates:0, toggleRoundTripMs:cycles, submissions:6, heldHomeHistoryRequests:acceptedHistoryCalls.length })
         console.log('PASS', viewport.width, theme, 'Goal labels, row, objective and focus; full screen, native Enter, attachments, held sends, draft recovery, steering, queue, Home, zero-request cycles')
         await page.close()
       }

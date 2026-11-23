@@ -44,14 +44,14 @@ async function assertGoalSettingsLayout(dialog, theme, status) {
   assert.equal(layout.background, theme === 'dark' ? 'rgb(24, 24, 27)' : 'rgb(255, 255, 255)')
 }
 
-async function openGoalStatusMenu(dialog) {
+async function openGoalStatusMenu(dialog, viewportTop = 0) {
   const trigger = dialog.locator('.composer-dropdown-trigger')
   await trigger.click()
   const menu = dialog.getByRole('listbox')
   await menu.waitFor()
   const menuBox = await dialog.locator('.composer-dropdown-menu').boundingBox()
   const triggerBox = await trigger.boundingBox()
-  assert(menuBox.y >= 0 && menuBox.y + menuBox.height <= triggerBox.y, 'the status menu fits above its trigger')
+  assert(menuBox.y >= viewportTop && menuBox.y + menuBox.height <= triggerBox.y, 'the status menu fits above its trigger')
   return menu
 }
 
