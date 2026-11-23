@@ -99,6 +99,9 @@ async function waitForSubmitEnabled(page) {
           if (url.pathname.endsWith('/server-requests/respond')) return { json:{ ok:true } }
           if (body.method === 'model/list') return { json:{ result:{ data:['fixture-model', 'fixture-alternative'].map(model => ({ id:model, model, supportedReasoningEfforts:['low','high'], defaultReasoningEffort:'low' })), nextCursor:null } } }
           if (body.method === 'skills/list') return { json:{ result:{ data:[{ cwd:'/remote/project', skills:[{ name:'fullscreen-skill', description:'Full-screen skill', path:'/remote/skills/fullscreen-skill/SKILL.md', enabled:true }], errors:[] }] } } }
+          if (body.method === 'thread/goal/get' && body.params.threadId === thread.id) {
+            return { json:{ result:{ goal:{ threadId:thread.id, objective:'Keep Goal available while writing', status:'active' } } } }
+          }
           if (body.method === 'thread/start') {
             const created = { ...thread, id:`fullscreen-new-${++createdThreadCount}`, name:'New fullscreen fixture', projectId:body.params.projectId }
             return { json:{ result:{ thread:created, model:'fixture-model', modelProvider:'fixture' } } }
@@ -140,7 +143,7 @@ async function waitForSubmitEnabled(page) {
         assert.equal(calls.length, beforeExpand, 'expansion adds no API calls')
         assert.equal(await input.evaluate(el => el === window.fullscreenInput && el === document.activeElement), true)
         assert.deepEqual(await input.evaluate(el => [el.selectionStart, el.selectionEnd]), [12, 19])
-        for (const selector of ['.content-header', '.desktop-sidebar', '.desktop-resize-handle', '.content-thread', '.thread-goal-panel', '.new-thread-empty', '.mobile-drawer-backdrop']) {
+        for (const selector of ['.content-header', '.desktop-sidebar', '.desktop-resize-handle', '.content-thread', '.new-thread-empty', '.mobile-drawer-backdrop']) {
           for (const element of await page.locator(selector).all()) assert.equal(await element.isVisible(), false, selector)
         }
         const composerBox = await withinViewport(page.locator('.thread-composer'), viewport)
@@ -151,6 +154,23 @@ async function waitForSubmitEnabled(page) {
         assert((await input.boundingBox()).height > viewport.height * 0.6)
         await withinViewport(exit, viewport)
         await withinViewport(page.getByRole('button', { name:'Send message', exact:true }), viewport)
+        const goal = page.locator('.thread-composer-active-mode .thread-goal-summary')
+        await withinViewport(goal, viewport)
+        await goal.click()
+        const goalSettings = page.getByRole('dialog', { name:'Goal settings', exact:true })
+        await goalSettings.waitFor()
+        assert.equal(await goalSettings.getByRole('textbox', { name:'Goal objective' }).inputValue(), 'Keep Goal available while writing')
+        const goalStatus = goalSettings.locator('.composer-dropdown-trigger')
+        await goalStatus.click()
+        await goalSettings.getByRole('listbox').waitFor()
+        await goalStatus.press('Escape')
+        await goalSettings.getByRole('listbox').waitFor({ state:'hidden' })
+        await goalStatus.press('Escape')
+        await goalSettings.waitFor({ state:'hidden' })
+        assert.equal(await goal.evaluate(el => el === document.activeElement), true)
+        assert.equal(await page.locator('.content-root.is-composer-expanded').count(), 1)
+        assert.equal(await input.inputValue(), longDraft)
+        assert.equal(calls.length, beforeExpand, 'opening and closing Goal adds no API calls')
         await page.locator('.thread-composer-hidden-input').setInputFiles([
           { name:'fullscreen.png', mimeType:'image/png', buffer:png },
           { name:'fullscreen.txt', mimeType:'text/plain', buffer:Buffer.from('preserved attachment') },

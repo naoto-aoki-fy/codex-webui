@@ -1439,6 +1439,7 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 .management-dialog-header p { margin: 4px 0 0; color: #71717a; font-size: 13px; }
 .management-dialog-close { flex-shrink: 0; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
 .management-dialog-close svg { width: 20px; height: 20px; }
+.management-dialog-close:disabled { opacity: .55; cursor: default; }
 .management-dialog-close:hover { background: #f4f4f5; }
 .management-dialog :focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .management-dialog-body { padding: 24px; overflow: auto; min-height: 0; min-width: 0; flex: 1; overscroll-behavior: contain; }

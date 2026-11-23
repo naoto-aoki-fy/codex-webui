@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootRef" class="composer-dropdown" @keydown.esc.stop.prevent="isOpen = false">
+  <div ref="rootRef" class="composer-dropdown" @keydown.esc="onEscape">
     <button
       class="composer-dropdown-trigger"
       type="button"
@@ -182,6 +182,13 @@ function onSelect(value: string): void {
   emit('update:modelValue', value)
   isOpen.value = false
   searchQuery.value = ''
+}
+
+function onEscape(event: KeyboardEvent): void {
+  if (!isOpen.value && !event.defaultPrevented) return
+  event.stopPropagation()
+  event.preventDefault()
+  isOpen.value = false
 }
 
 function onEscapeSearch(): void {

@@ -24,8 +24,10 @@ Full-screen editing and Enter behavior in the shared Home and conversation compo
    and no message sends. Check that text still clears the exit button. Exit full
    screen, turn **Require ⌘ + enter to send** on, clear the draft, expand, and repeat.
 4. Confirm the composer fills the viewport. The header (title and actions), sidebar,
-   conversation history, goal panel, and Home folder/hero content are hidden and
+   conversation history, and Home folder/hero content are hidden and
    cannot receive keyboard focus. The textarea uses the remaining writing space.
+   With a saved Goal, click its chip above the textarea. Close Goal settings and
+   verify the chip regains focus and editing remains full screen.
 5. Attach an image and a file. Open the model, thinking, Skills and **+** menus;
    select a skill and a thinking setting. Check slash suggestions and file mentions
    stay inside the viewport. Drag and drop an additional file into the input.

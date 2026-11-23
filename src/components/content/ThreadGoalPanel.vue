@@ -20,16 +20,14 @@ let generation = 0
 const statusOptions = THREAD_GOAL_STATUSES.map(value => ({ value, label: value.replace(/([A-Z])/g, ' $1').toLowerCase() }))
 
 function edit() {
-  if (!props.threadId) return
+  if (busy.value || !props.threadId) return
   if (editing.value) {
     focusObjective()
     return
   }
-  if (!busy.value) {
-    objective.value = props.goal?.objective ?? ''
-    status.value = props.goal?.status ?? 'active'
-    error.value = ''
-  }
+  objective.value = props.goal?.objective ?? ''
+  status.value = props.goal?.status ?? 'active'
+  error.value = ''
   editing.value = true
 }
 
@@ -63,7 +61,7 @@ defineExpose({ edit })
 </script>
 
 <template>
-  <ManagementDialog :open="editing" title="Goal settings" @opened="focusObjective" @close="editing = false">
+  <ManagementDialog :open="editing" title="Goal settings" :close-disabled="busy" @opened="focusObjective" @close="editing = false">
     <form v-if="editing" class="thread-goal-editor" @submit.prevent="save()">
       <label class="thread-goal-field">
         <span>Goal objective</span>
@@ -77,7 +75,7 @@ defineExpose({ edit })
       <p v-if="error || loadError" role="alert">{{ error || loadError }}</p>
       <div class="thread-goal-actions">
         <button v-if="goal" class="thread-goal-clear" type="button" :disabled="busy" @click="save(true)">{{ ('Clear goal') }}</button>
-        <button type="button" @click="editing = false">{{ ('Cancel') }}</button>
+        <button type="button" :disabled="busy" @click="editing = false">{{ ('Cancel') }}</button>
         <button type="submit" :disabled="busy || !objective.trim()">{{ ('Save goal') }}</button>
       </div>
     </form>

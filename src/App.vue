@@ -315,7 +315,7 @@
                   @edit-goal="threadGoalPanelRef?.edit()"
                   @interrupt="onInterruptTurn"
                 >
-                  <template v-if="threadGoal && !showGoalOutsideComposer && !isComposerExpanded" #goal>
+                  <template v-if="threadGoal && !showGoalOutsideComposer" #goal>
                     <ThreadGoalSummary :goal="threadGoal" @click="threadGoalPanelRef?.edit()" />
                   </template>
                 </ThreadComposer>
