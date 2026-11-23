@@ -34,6 +34,13 @@ describe('conversation Plan interpretation', () => {
     })
   })
 
+  it('preserves fenced plan text and ignores checklist markers inside code', () => {
+    const code = '```md\n  - [x] Example\n\n    Indented line  \n```'
+    const result = interpretConversationPlan(message({ text: `- [ ] Real step\n\n${code}` }))
+    expect(result.explanation).toBe(code)
+    expect(result.steps).toEqual([{ step: 'Real step', status: 'pending' }])
+  })
+
   it('falls back for empty structured steps and keeps malformed lines as explanation', () => {
     const result = interpretConversationPlan(message({ text: '- [?] invalid\n- [ ] Valid', plan: { explanation: 'ignored', steps: [] } }))
     expect(result.explanation).toBe('- [?] invalid')

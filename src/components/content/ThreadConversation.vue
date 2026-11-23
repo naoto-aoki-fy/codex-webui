@@ -1,5 +1,5 @@
 <template>
-  <section class="conversation-root" @contextmenu.capture="onConversationContextMenu">
+  <section class="conversation-root" @contextmenu.capture="onConversationContextMenu" @click="onConversationClick">
     <p v-if="isLoading" class="conversation-loading">Loading messages...</p>
 
     <p
@@ -500,35 +500,12 @@
                         <code v-else class="message-inline-code">{{ segment.value }}</code>
                       </template>
                     </component>
-                    <blockquote v-else-if="block.kind === 'blockquote'" class="message-blockquote">
-                      <template v-for="(segment, segmentIndex) in getInlineSegments(block.value)" :key="`quote-seg-${blockIndex}-${segmentIndex}`">
-                        <span v-if="segment.kind === 'text'">{{ segment.value }}</span>
-                        <strong v-else-if="segment.kind === 'bold'" class="message-bold-text">{{ segment.value }}</strong>
-                        <em v-else-if="segment.kind === 'italic'" class="message-italic-text">{{ segment.value }}</em>
-                        <s v-else-if="segment.kind === 'strikethrough'" class="message-strikethrough-text">{{ segment.value }}</s>
-                        <a
-                          v-else-if="segment.kind === 'file'"
-                          class="message-file-link"
-                          :href="toBrowseUrl(segment.path)"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          :title="segment.path"
-                        >
-                          {{ segment.displayPath }}
-                        </a>
-                        <a
-                          v-else-if="segment.kind === 'url'"
-                          class="message-file-link"
-                          :href="segment.href"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          :title="segment.href"
-                        >
-                          {{ segment.value }}
-                        </a>
-                        <code v-else class="message-inline-code">{{ segment.value }}</code>
-                      </template>
-                    </blockquote>
+                    <component
+                      v-else-if="block.kind === 'codeBlock' || block.kind === 'blockquote'"
+                      :is="block.kind === 'codeBlock' ? 'div' : 'blockquote'"
+                      :class="block.kind === 'codeBlock' ? 'message-code-block' : 'message-blockquote'"
+                      v-html="renderCopyableBlockContentAsHtml(block)"
+                    />
                     <ul v-else-if="block.kind === 'unorderedList'" class="message-list message-list-unordered">
                       <li v-for="(item, itemIndex) in block.items" :key="`ul-${blockIndex}-${itemIndex}`" class="message-list-item">
                         <div class="message-list-item-content" v-html="renderListItemContentAsHtml(item)" />
@@ -537,35 +514,7 @@
                     <ul v-else-if="block.kind === 'taskList'" class="message-list message-task-list">
                       <li v-for="(item, itemIndex) in block.items" :key="`task-${blockIndex}-${itemIndex}`" class="message-task-item">
                         <span class="message-task-checkbox" :data-checked="item.checked">{{ item.checked ? '☑' : '☐' }}</span>
-                        <div class="message-list-item-text">
-                          <template v-for="(segment, segmentIndex) in getInlineSegments(item.text)" :key="`task-seg-${blockIndex}-${itemIndex}-${segmentIndex}`">
-                            <span v-if="segment.kind === 'text'">{{ segment.value }}</span>
-                            <strong v-else-if="segment.kind === 'bold'" class="message-bold-text">{{ segment.value }}</strong>
-                            <em v-else-if="segment.kind === 'italic'" class="message-italic-text">{{ segment.value }}</em>
-                            <s v-else-if="segment.kind === 'strikethrough'" class="message-strikethrough-text">{{ segment.value }}</s>
-                            <a
-                              v-else-if="segment.kind === 'file'"
-                              class="message-file-link"
-                              :href="toBrowseUrl(segment.path)"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              :title="segment.path"
-                            >
-                              {{ segment.displayPath }}
-                            </a>
-                            <a
-                              v-else-if="segment.kind === 'url'"
-                              class="message-file-link"
-                              :href="segment.href"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              :title="segment.href"
-                            >
-                              {{ segment.value }}
-                            </a>
-                            <code v-else class="message-inline-code">{{ segment.value }}</code>
-                          </template>
-                        </div>
+                        <div class="message-list-item-content" v-html="renderListItemContentAsHtml(item)" />
                       </li>
                     </ul>
                     <ol
@@ -656,10 +605,6 @@
                           </tr>
                         </tbody>
                       </table>
-                    </div>
-                    <div v-else-if="block.kind === 'codeBlock'" class="message-code-block">
-                      <div v-if="block.language" class="message-code-language">{{ block.language }}</div>
-                      <pre class="message-code-pre"><code class="hljs" v-html="renderCachedHighlightedCodeAsHtml(block.language, block.value)"></code></pre>
                     </div>
                     <hr v-else-if="block.kind === 'thematicBreak'" class="message-divider" />
                     <p v-else-if="isMarkdownImageFailed(message.id, blockIndex, block.url)" class="message-text">{{ block.markdown }}</p>
@@ -960,6 +905,45 @@ const fileLinkContextMenuX = ref(0)
 const fileLinkContextMenuY = ref(0)
 const fileLinkContextBrowseUrl = ref('')
 const { isMobile } = useMobile()
+
+const pendingBlockCopies = new WeakSet<HTMLButtonElement>()
+const blockCopyResetTimers = new Map<HTMLButtonElement, ReturnType<typeof setTimeout>>()
+
+async function onConversationClick(event: MouseEvent): Promise<void> {
+  if (!(event.target instanceof Element)) return
+  const button = event.target.closest<HTMLButtonElement>('button.message-block-copy-button')
+  if (!button || pendingBlockCopies.has(button)) return
+
+  const block = button.closest('.message-code-block, .message-blockquote')
+  const content = block?.querySelector(':scope > [data-block-copy-content], :scope > pre > [data-block-copy-content]')
+  const label = button.querySelector('.message-copy-label')
+  if (!content || !label) return
+
+  pendingBlockCopies.add(button)
+  clearTimeout(blockCopyResetTimers.get(button))
+  blockCopyResetTimers.delete(button)
+  button.removeAttribute('data-copied')
+  label.textContent = 'Copy'
+
+  let copied = false
+  try {
+    await copyTextToClipboard(content.textContent ?? '')
+    copied = true
+  } catch {
+    // The block remains selectable for manual copying.
+  } finally {
+    pendingBlockCopies.delete(button)
+  }
+
+  if (!button.isConnected) return
+  if (copied) button.dataset.copied = 'true'
+  label.textContent = copied ? 'Copied' : 'Copy failed'
+  blockCopyResetTimers.set(button, setTimeout(() => {
+    button.removeAttribute('data-copied')
+    label.textContent = 'Copy'
+    blockCopyResetTimers.delete(button)
+  }, 1600))
+}
 
 function isCommandMessage(message: UiMessage): boolean {
   return message.messageType === 'commandExecution' && !!message.commandExecution
@@ -1321,7 +1305,7 @@ const {
   getInlineSegments,
   toBrowseUrl,
   getMessageBlocks,
-  renderCachedHighlightedCodeAsHtml,
+  renderCopyableBlockContentAsHtml,
   renderListItemContentAsHtml,
   renderMarkdownBlocksAsHtml,
 } = markdown
@@ -1691,6 +1675,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  for (const timer of blockCopyResetTimers.values()) clearTimeout(timer)
+  blockCopyResetTimers.clear()
   viewport.conversationUnmounted = true
   viewport.invalidateThreadWork()
   if (actions.copiedUserMessageResetTimer) {
@@ -1848,14 +1834,6 @@ onBeforeUnmount(() => {
   .message-toolbar { opacity: 1; }
 }
 
-.message-copy-button {
-  @apply inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white/90 px-1.25 py-0.5 text-[9px] font-medium leading-none text-slate-500 transition hover:border-slate-300 hover:bg-white hover:text-slate-900;
-}
-
-.message-copy-button[data-copied='true'] {
-  @apply border-emerald-200 bg-emerald-50 text-emerald-700;
-}
-
 .message-edit-button {
   @apply inline-flex items-center gap-0.5 px-0.5 py-0 text-[9px] font-medium leading-none text-amber-600/70 transition hover:text-amber-700;
 }
@@ -1865,7 +1843,6 @@ onBeforeUnmount(() => {
   @apply text-[10px];
 }
 
-.message-copy-label,
 .message-edit-label {
   @apply leading-none;
 }
@@ -1960,10 +1937,8 @@ onBeforeUnmount(() => {
 
 .plan-card-markdown :deep(.message-text),
 .plan-card-markdown :deep(.message-heading),
-.plan-card-markdown :deep(.message-blockquote),
 .plan-card-markdown :deep(.message-list),
 .plan-card-markdown :deep(.message-table-wrap),
-.plan-card-markdown :deep(.message-code-block),
 .plan-card-markdown :deep(.message-divider) {
   @apply m-0;
 }
@@ -2000,10 +1975,6 @@ onBeforeUnmount(() => {
   @apply text-xs font-semibold leading-snug uppercase tracking-[0.04em] text-slate-600;
 }
 
-.plan-card-markdown :deep(.message-blockquote) {
-  @apply border-l-4 border-slate-300 pl-4 py-1 text-sm leading-relaxed whitespace-pre-wrap text-slate-700 bg-slate-50/70 rounded-r-lg;
-}
-
 .plan-card-markdown :deep(.message-list) {
   @apply pl-5 text-sm leading-relaxed text-slate-800 flex flex-col gap-1.5;
 }
@@ -2020,14 +1991,6 @@ onBeforeUnmount(() => {
   @apply pl-1;
 }
 
-.plan-card-markdown :deep(.message-list-item-text) {
-  @apply whitespace-pre-wrap;
-}
-
-.plan-card-markdown :deep(.message-list-item-paragraph + .message-list-item-paragraph) {
-  @apply mt-2;
-}
-
 .plan-card-markdown :deep(.message-task-list) {
   @apply list-none pl-0;
 }
@@ -2038,18 +2001,6 @@ onBeforeUnmount(() => {
 
 .plan-card-markdown :deep(.message-task-checkbox) {
   @apply mt-0.5 text-sm leading-none text-slate-500 select-none;
-}
-
-.plan-card-markdown :deep(.message-code-block) {
-  @apply overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-900;
-}
-
-.plan-card-markdown :deep(.message-code-language) {
-  @apply border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-600;
-}
-
-.plan-card-markdown :deep(.message-code-pre) {
-  @apply m-0 overflow-x-auto px-3 py-3 text-[13px] leading-6;
 }
 
 .plan-card-markdown :deep(.message-inline-code) {
@@ -2137,11 +2088,6 @@ onBeforeUnmount(() => {
   @apply text-xs font-semibold leading-snug uppercase tracking-[0.04em] text-slate-600;
 }
 
-.message-blockquote {
-  @apply m-0 border-l-4 border-slate-300 pl-4 py-1 text-sm leading-relaxed whitespace-pre-wrap break-words text-slate-700 bg-slate-50/70 rounded-r-lg;
-  overflow-wrap: anywhere;
-}
-
 .message-list {
   @apply m-0 pl-5 text-sm leading-relaxed text-slate-800 flex flex-col gap-1.5;
 }
@@ -2156,19 +2102,6 @@ onBeforeUnmount(() => {
 
 .message-list-item {
   @apply pl-1;
-}
-
-.message-list-item-content {
-  @apply flex flex-col gap-1.5;
-}
-
-.message-list-item-text {
-  @apply whitespace-pre-wrap break-words;
-  overflow-wrap: anywhere;
-}
-
-.message-list-item-paragraph + .message-list-item-paragraph {
-  @apply mt-2;
 }
 
 .message-task-list {
@@ -2210,45 +2143,8 @@ onBeforeUnmount(() => {
   @apply border-b-0;
 }
 
-.message-bold-text {
-  @apply font-semibold text-slate-900;
-}
-
-.message-italic-text {
-  @apply italic;
-}
-
-.message-strikethrough-text {
-  @apply line-through text-slate-500;
-}
-
 .message-markdown-image {
   @apply w-auto h-auto max-w-[min(560px,85vw)] max-h-[min(460px,62vh)] object-contain bg-white;
-}
-
-.message-inline-code {
-  @apply bg-transparent p-0 font-sans text-[1em] font-semibold text-inherit;
-  line-height: inherit;
-}
-
-.message-code-block {
-  @apply overflow-hidden rounded-xl border border-slate-200 bg-slate-950 text-slate-100;
-}
-
-.message-code-language {
-  @apply border-b border-slate-800 px-3 py-2 text-[11px] font-mono uppercase tracking-[0.08em] text-slate-400;
-}
-
-.message-code-pre {
-  @apply m-0 overflow-x-auto px-3 py-3 text-[13px] leading-relaxed font-mono whitespace-pre;
-}
-
-.message-code-pre :deep(.hljs) {
-  @apply block bg-transparent p-0 text-inherit;
-}
-
-.message-file-link {
-  @apply text-sm leading-relaxed text-[#0969da] no-underline hover:text-[#1f6feb] hover:underline underline-offset-2;
 }
 
 .file-link-context-menu {

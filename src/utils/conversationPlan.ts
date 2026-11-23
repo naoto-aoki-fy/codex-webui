@@ -2,15 +2,29 @@ import type { UiMessage, UiPlanStep } from '../types/codex'
 
 type PlanData = { explanation: string; steps: UiPlanStep[] }
 
-function parsePlanFromMessageText(text: string): { explanation: string; steps: UiPlanStep[] } | null {
+export function parsePlanFromMessageText(text: string): PlanData | null {
   const normalized = text.replace(/\r\n/g, '\n').trim()
   if (!normalized) return null
 
   const steps: UiPlanStep[] = []
   const explanationLines: string[] = []
+  let fence = ''
 
   for (const line of normalized.split('\n')) {
     const trimmed = line.trim()
+    if (fence) {
+      explanationLines.push(line)
+      if (trimmed === fence) fence = ''
+      continue
+    }
+
+    const openingFence = line.match(/^\s{0,3}(```+|~~~+)\s*([^\s`~][^`]*)?\s*$/u)
+    if (openingFence) {
+      fence = openingFence[1]
+      explanationLines.push(line)
+      continue
+    }
+
     if (!trimmed) {
       if (steps.length === 0) explanationLines.push('')
       continue
@@ -29,7 +43,7 @@ function parsePlanFromMessageText(text: string): { explanation: string; steps: U
       continue
     }
 
-    explanationLines.push(trimmed)
+    explanationLines.push(line)
   }
 
   if (steps.length === 0) return null

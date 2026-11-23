@@ -18,6 +18,7 @@ Return to the [manual test index](../../tests.md).
 | [Conversation Context dialog preserves usage indicators](composer-usage-cleanup.md) |
 | [Attachment-only thread persistence](attachment-only-thread-persistence.md) |
 | [Copy individual user messages](copy-user-messages.md) |
+| [Copy individual code blocks and quotes](copy-code-blocks-and-quotes.md) |
 | [Per-response model and reasoning effort](per-response-model-and-reasoning-effort.md) |
 | [Codex thread deep links render as local web thread URLs](codex-thread-deep-links-render-as-local-web-thread-urls.md) |
 | [Bold-wrapped Markdown links render without literal markers](bold-wrapped-markdown-links-render-without-literal-markers.md) |

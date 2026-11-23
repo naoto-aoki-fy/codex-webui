@@ -1,6 +1,7 @@
 import { normalizeExecutionItem } from './executionDetails'
 import { isAppAssetUrl } from '../../appAssetUrl.js'
 import { readMessageTimestamp } from '../../messageTimestamps'
+import { parsePlanFromMessageText } from '../../utils/conversationPlan'
 import type {
   Thread,
   ThreadItem,
@@ -16,8 +17,6 @@ import type {
   UiFileChange,
   UiFileChangeStatus,
   UiMessage,
-  UiPlanData,
-  UiPlanStep,
   UiProjectGroup,
   UiThread,
 } from '../../types/codex'
@@ -193,44 +192,6 @@ function parseUserMessageContent(
   }
 }
 
-function parsePlanText(value: string): UiPlanData | null {
-  const normalized = value.replace(/\r\n/g, '\n').trim()
-  if (!normalized) return null
-
-  const lines = normalized.split('\n')
-  const steps: UiPlanStep[] = []
-  const explanationLines: string[] = []
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) {
-      if (steps.length === 0) explanationLines.push('')
-      continue
-    }
-
-    const match = trimmed.match(/^[-*]\s+\[([ xX~>|-])\]\s+(.+)$/)
-    if (match) {
-      const marker = (match[1] ?? ' ').toLowerCase()
-      const step = match[2]?.trim()
-      if (!step) continue
-      let status: UiPlanStep['status'] = 'pending'
-      if (marker === 'x') status = 'completed'
-      if (marker === '~' || marker === '>' || marker === '-') status = 'inProgress'
-      steps.push({ step, status })
-      continue
-    }
-
-    explanationLines.push(trimmed)
-  }
-
-  if (steps.length === 0) return null
-
-  return {
-    explanation: explanationLines.join('\n').trim() || undefined,
-    steps,
-  }
-}
-
 function countContentLines(value: string): number {
   if (!value) return 0
   const normalized = value.replace(/\r\n/g, '\n')
@@ -381,13 +342,14 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
 
   if (item.type === 'plan') {
     const text = typeof item.text === 'string' ? item.text : ''
+    const plan = parsePlanFromMessageText(text)
     return [
       {
         id: item.id,
         role: 'assistant',
         text,
         messageType: 'plan',
-        plan: parsePlanText(text) ?? undefined,
+        plan: plan ? { steps: plan.steps, explanation: plan.explanation || undefined } : undefined,
       },
     ]
   }

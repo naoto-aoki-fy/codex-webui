@@ -29,14 +29,18 @@ type InlineSegment = {
     displayPath: string;
     downloadName: string;
 };
-type TaskListItem = {
-    text: string;
-    checked: boolean;
-};
 type TableAlignment = 'left' | 'center' | 'right' | null;
 type ListItem = {
     paragraphs: string[];
     children?: MessageBlock[];
+    checked?: boolean;
+};
+type ListItemStart = {
+    indent: number;
+    contentIndent: number;
+    text: string;
+    checked?: boolean;
+    start?: number;
 };
 type MessageBlock = {
     kind: 'paragraph';
@@ -53,7 +57,7 @@ type MessageBlock = {
     items: ListItem[];
 } | {
     kind: 'taskList';
-    items: TaskListItem[];
+    items: ListItem[];
 } | {
     kind: 'orderedList';
     items: ListItem[];
@@ -611,74 +615,42 @@ export function createConversationMarkdown(deps: {
         };
     }
     function readBlockquoteLine(line: string): string | null {
-        const match = line.match(/^\s{0,3}>\s?(.*)$/u);
+        const match = line.match(/^\s{0,3}(?:>[ \t]?)+(.*)$/u);
         if (!match)
             return null;
         return match[1] ?? '';
     }
-    function readUnorderedListItem(line: string): string | null {
-        const match = line.match(/^\s*[-*+]\s+(.+)$/u);
-        return match?.[1]?.trim() ?? null;
-    }
-    function readUnorderedListItemMatch(line: string): {
-        indent: number;
-        text: string;
-    } | null {
-        const match = line.match(/^(\s*)[-*+]\s+(.+)$/u);
+    function readUnorderedListItemMatch(line: string): ListItemStart | null {
+        const match = line.match(/^(\s*)([-*+](?!\s+\[[ xX]\]\s)\s+)(.+)$/u);
         if (!match)
             return null;
         return {
-            indent: leadingIndentWidth(match[1] ?? ''),
-            text: match[2]?.trim() ?? '',
+            indent: leadingIndentWidth(match[1]),
+            contentIndent: leadingIndentWidth(match[1] + match[2].replace(/\S/gu, ' ')),
+            text: match[3].trim(),
         };
     }
-    function readTaskListItem(line: string): TaskListItem | null {
-        const match = line.match(/^\s*[-*+]\s+\[([ xX])\]\s+(.+)$/u);
+    function readTaskListItemMatch(line: string): ListItemStart | null {
+        const match = line.match(/^(\s*)([-*+]\s+)\[([ xX])\]\s+(.+)$/u);
         if (!match)
             return null;
         return {
-            checked: (match[1] ?? ' ').toLowerCase() === 'x',
-            text: match[2]?.trim() ?? '',
+            indent: leadingIndentWidth(match[1]),
+            contentIndent: leadingIndentWidth(match[1] + match[2].replace(/\S/gu, ' ')),
+            text: match[4].trim(),
+            checked: match[3].toLowerCase() === 'x',
         };
     }
-    function readTaskListItemMatch(line: string): {
-        indent: number;
-        item: TaskListItem;
-    } | null {
-        const match = line.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.+)$/u);
+    function readOrderedListItemMatch(line: string): ListItemStart | null {
+        const match = line.match(/^(\s*)((\d+)[.)]\s+)(.+)$/u);
         if (!match)
             return null;
         return {
-            indent: leadingIndentWidth(match[1] ?? ''),
-            item: {
-                checked: (match[2] ?? ' ').toLowerCase() === 'x',
-                text: match[3]?.trim() ?? '',
-            },
+            indent: leadingIndentWidth(match[1]),
+            contentIndent: leadingIndentWidth(match[1] + match[2].replace(/\S/gu, ' ')),
+            start: Number.parseInt(match[3], 10) || 1,
+            text: match[4].trim(),
         };
-    }
-    function readOrderedListItemData(line: string): {
-        indent: number;
-        text: string;
-        start: number;
-    } | null {
-        const match = line.match(/^(\s*)(\d+)[.)]\s+(.+)$/u);
-        if (!match)
-            return null;
-        return {
-            indent: leadingIndentWidth(match[1] ?? ''),
-            start: Number.parseInt(match[2] ?? '1', 10) || 1,
-            text: match[3]?.trim() ?? '',
-        };
-    }
-    function readOrderedListItem(line: string): string | null {
-        return readOrderedListItemData(line)?.text ?? null;
-    }
-    function readOrderedListItemMatch(line: string): {
-        indent: number;
-        text: string;
-        start: number;
-    } | null {
-        return readOrderedListItemData(line);
     }
     function splitMarkdownTableRow(line: string): string[] | null {
         const trimmed = line.trim();
@@ -785,33 +757,6 @@ export function createConversationMarkdown(deps: {
             alignments,
         };
     }
-    function isParagraphBreakingLine(line: string): boolean {
-        return (isBlankMarkdownLine(line) ||
-            readFenceStart(line) !== null ||
-            isThematicBreakLine(line) ||
-            readHeading(line) !== null ||
-            readBlockquoteLine(line) !== null ||
-            readTaskListItem(line) !== null ||
-            readUnorderedListItem(line) !== null ||
-            readOrderedListItem(line) !== null);
-    }
-    function readListParagraph(lines: string[], startIndex: number, baseIndent = -1): {
-        value: string;
-        nextIndex: number;
-    } | null {
-        const paragraphLines: string[] = [];
-        let index = startIndex;
-        while (index < lines.length) {
-            if (isParagraphBreakingLine(lines[index]))
-                break;
-            if (baseIndent >= 0 && leadingIndentWidth(lines[index]) <= baseIndent)
-                break;
-            paragraphLines.push(baseIndent >= 0 ? stripIndentedContent(lines[index], baseIndent + 1) : lines[index]);
-            index += 1;
-        }
-        const value = paragraphLines.join('\n').trim();
-        return value ? { value, nextIndex: index } : null;
-    }
     function findNextNonBlankLineIndex(lines: string[], startIndex: number): number {
         for (let index = startIndex; index < lines.length; index += 1) {
             if (!isBlankMarkdownLine(lines[index]))
@@ -819,61 +764,43 @@ export function createConversationMarkdown(deps: {
         }
         return -1;
     }
-    function readNestedListBlocks(lines: string[], startIndex: number, parentIndent: number, stopAtItem: ((line: string) => {
-        indent: number;
-        text: string;
-    } | null) | null = null, allowLooseChildLists = false): {
+    function readNestedListBlocks(lines: string[], startIndex: number, item: ListItemStart, readItem: (line: string) => ListItemStart | null, allowLooseChildLists: boolean, firstLine?: string): {
         blocks: MessageBlock[];
         nextIndex: number;
-    } | null {
-        const nestedLines: string[] = [];
+    } {
+        const parentIndent = item.indent;
+        const nestedLines = firstLine === undefined ? [] : [firstLine];
         let index = startIndex;
         while (index < lines.length) {
             const line = lines[index];
             if (isBlankMarkdownLine(line)) {
-                const nextNonBlankIndex = findNextNonBlankLineIndex(lines, index + 1);
-                if (nextNonBlankIndex === -1) {
-                    nestedLines.push('');
-                    index = lines.length;
+                const next = findNextNonBlankLineIndex(lines, index + 1);
+                if (next !== -1 && leadingIndentWidth(lines[next]) <= parentIndent)
                     break;
-                }
-                const nextStopItem = stopAtItem?.(lines[nextNonBlankIndex]);
-                if (nextStopItem && nextStopItem.indent === parentIndent)
-                    break;
-                if (leadingIndentWidth(lines[nextNonBlankIndex]) <= parentIndent)
-                    break;
-                nestedLines.push('');
-                index += 1;
+                const end = next === -1 ? lines.length : next;
+                for (; index < end; index += 1)
+                    nestedLines.push(stripIndentedContent(lines[index], item.contentIndent));
                 continue;
             }
-            const stopItem = stopAtItem?.(line);
+            const stopItem = readItem(line);
             if (stopItem && stopItem.indent === parentIndent)
                 break;
             const lineIndent = leadingIndentWidth(line);
-            const isLooseChildList = allowLooseChildLists && (readTaskListItem(line) !== null ||
-                readUnorderedListItem(line) !== null);
+            const isLooseChildList = allowLooseChildLists && (readTaskListItemMatch(line) !== null || readUnorderedListItemMatch(line) !== null);
             if (lineIndent <= parentIndent && !isLooseChildList)
                 break;
             nestedLines.push(lineIndent > parentIndent
-                ? stripIndentedContent(line, parentIndent + 1)
+                ? stripIndentedContent(line, Math.min(lineIndent, item.contentIndent))
                 : line.trimStart());
             index += 1;
         }
-        while (nestedLines.length > 0 && isBlankMarkdownLine(nestedLines[0]))
-            nestedLines.shift();
-        while (nestedLines.length > 0 && isBlankMarkdownLine(nestedLines[nestedLines.length - 1]))
-            nestedLines.pop();
-        if (nestedLines.length === 0)
-            return null;
         return {
             blocks: parseTextBlocks(nestedLines.join('\n')),
             nextIndex: index,
         };
     }
-    function readListItems(lines: string[], startIndex: number, readItem: (line: string) => {
-        indent: number;
-        text: string;
-    } | null, allowLooseChildLists = false): {
+    function readListItems(lines: string[], startIndex: number, readItem: (line: string) => ListItemStart | null, allowLooseChildLists = false): {
+        start: number;
         items: ListItem[];
         nextIndex: number;
     } | null {
@@ -887,9 +814,15 @@ export function createConversationMarkdown(deps: {
             const itemValue = readItem(lines[index]);
             if (itemValue === null || itemValue.indent !== baseIndent)
                 break;
-            const paragraphs = [itemValue.text];
+            const startsWithBlock = readFenceStart(itemValue.text) !== null || readBlockquoteLine(itemValue.text) !== null;
+            const paragraphs = startsWithBlock ? [] : [itemValue.text];
             const children: MessageBlock[] = [];
             index += 1;
+            if (startsWithBlock) {
+                const nested = readNestedListBlocks(lines, index, itemValue, readItem, allowLooseChildLists, itemValue.text);
+                children.push(...nested.blocks);
+                index = nested.nextIndex;
+            }
             while (index < lines.length) {
                 if (isBlankMarkdownLine(lines[index])) {
                     const nextNonBlankIndex = findNextNonBlankLineIndex(lines, index + 1);
@@ -913,27 +846,18 @@ export function createConversationMarkdown(deps: {
                 if (nextSameLevelItem && nextSameLevelItem.indent === baseIndent)
                     break;
                 const hasIndentedChildren = leadingIndentWidth(lines[index]) > baseIndent;
-                const hasLooseChildList = allowLooseChildLists && (readTaskListItem(lines[index]) !== null ||
-                    readUnorderedListItem(lines[index]) !== null);
-                if (hasIndentedChildren || hasLooseChildList) {
-                    const nestedBlocks = readNestedListBlocks(lines, index, baseIndent, readItem, allowLooseChildLists);
-                    if (nestedBlocks) {
-                        children.push(...nestedBlocks.blocks);
-                        index = nestedBlocks.nextIndex;
-                        continue;
-                    }
-                }
-                if (leadingIndentWidth(lines[index]) <= baseIndent)
+                const hasLooseChildList = allowLooseChildLists && (readTaskListItemMatch(lines[index]) !== null || readUnorderedListItemMatch(lines[index]) !== null);
+                if (!hasIndentedChildren && !hasLooseChildList)
                     break;
-                const continuation = readListParagraph(lines, index, baseIndent);
-                if (!continuation)
-                    break;
-                paragraphs.push(continuation.value);
-                index = continuation.nextIndex;
+                const nested = readNestedListBlocks(lines, index, itemValue, readItem, allowLooseChildLists);
+                children.push(...nested.blocks);
+                index = nested.nextIndex;
             }
-            items.push(children.length > 0 ? { paragraphs, children } : { paragraphs });
+            const item: ListItem = children.length > 0 ? { paragraphs, children } : { paragraphs };
+            if (itemValue.checked !== undefined) item.checked = itemValue.checked;
+            items.push(item);
         }
-        return items.length > 0 ? { items, nextIndex: index } : null;
+        return { items, nextIndex: index, start: firstItem.start ?? 1 };
     }
     function isThematicBreakLine(line: string): boolean {
         return /^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/u.test(line.trim());
@@ -1000,7 +924,7 @@ export function createConversationMarkdown(deps: {
                     quoteLines.push(nextQuoteLine);
                     index += 1;
                 }
-                blocks.push({ kind: 'blockquote', value: quoteLines.join('\n').trim() });
+                blocks.push({ kind: 'blockquote', value: quoteLines.join('\n') });
                 continue;
             }
             const table = readTableBlock(lines, index);
@@ -1009,58 +933,23 @@ export function createConversationMarkdown(deps: {
                 index += 2 + table.rows.length;
                 continue;
             }
-            const taskItem = readTaskListItem(lines[index]);
-            if (taskItem !== null) {
-                const items: TaskListItem[] = [];
-                const baseIndent = readTaskListItemMatch(lines[index])?.indent ?? 0;
-                while (index < lines.length) {
-                    const nextItem = readTaskListItemMatch(lines[index]);
-                    if (nextItem === null || nextItem.indent !== baseIndent)
-                        break;
-                    items.push(nextItem.item);
-                    index += 1;
-                }
-                if (items.length > 0) {
-                    blocks.push({ kind: 'taskList', items });
-                    continue;
-                }
+            const taskList = readListItems(lines, index, readTaskListItemMatch);
+            if (taskList) {
+                blocks.push({ kind: 'taskList', items: taskList.items });
+                index = taskList.nextIndex;
+                continue;
             }
-            const unorderedItem = readUnorderedListItem(lines[index]);
-            if (unorderedItem !== null) {
-                const parsedList = readListItems(lines, index, readUnorderedListItemMatch);
-                if (parsedList) {
-                    blocks.push({ kind: 'unorderedList', items: parsedList.items });
-                    index = parsedList.nextIndex;
-                    continue;
-                }
-                if (unorderedItem.length > 0) {
-                    blocks.push({ kind: 'unorderedList', items: [{ paragraphs: [unorderedItem] }] });
-                    index += 1;
-                    continue;
-                }
+            const unorderedList = readListItems(lines, index, readUnorderedListItemMatch);
+            if (unorderedList) {
+                blocks.push({ kind: 'unorderedList', items: unorderedList.items });
+                index = unorderedList.nextIndex;
+                continue;
             }
-            const orderedItem = readOrderedListItem(lines[index]);
-            if (orderedItem !== null) {
-                const orderedItemMatch = readOrderedListItemMatch(lines[index]);
-                const parsedList = readListItems(lines, index, readOrderedListItemMatch, true);
-                if (parsedList) {
-                    blocks.push({
-                        kind: 'orderedList',
-                        items: parsedList.items,
-                        start: orderedItemMatch?.start ?? 1,
-                    });
-                    index = parsedList.nextIndex;
-                    continue;
-                }
-                if (orderedItem.length > 0) {
-                    blocks.push({
-                        kind: 'orderedList',
-                        items: [{ paragraphs: [orderedItem] }],
-                        start: orderedItemMatch?.start ?? 1,
-                    });
-                    index += 1;
-                    continue;
-                }
+            const orderedList = readListItems(lines, index, readOrderedListItemMatch, true);
+            if (orderedList) {
+                blocks.push({ kind: 'orderedList', items: orderedList.items, start: orderedList.start });
+                index = orderedList.nextIndex;
+                continue;
             }
             const paragraphLines: string[] = [];
             while (index < lines.length) {
@@ -1071,9 +960,9 @@ export function createConversationMarkdown(deps: {
                     readHeading(lines[index]) ||
                     readTableBlock(lines, index) ||
                     readBlockquoteLine(lines[index]) !== null ||
-                    readTaskListItem(lines[index]) !== null ||
-                    readUnorderedListItem(lines[index]) !== null ||
-                    readOrderedListItem(lines[index]) !== null)
+                    readTaskListItemMatch(lines[index]) !== null ||
+                    readUnorderedListItemMatch(lines[index]) !== null ||
+                    readOrderedListItemMatch(lines[index]) !== null)
                     break;
                 paragraphLines.push(lines[index]);
                 index += 1;
@@ -1085,70 +974,40 @@ export function createConversationMarkdown(deps: {
         }
         return blocks;
     }
-    function parseNonCodeMessageBlocks(text: string): MessageBlock[] {
-        if (!text.includes('![') || !text.includes('](')) {
-            return parseTextBlocks(text);
+    function parseMessageBlocks(text: string): MessageBlock[] {
+        const normalized = normalizeMarkdownText(text);
+        if (!normalized.includes('![') || !normalized.includes('](')) {
+            const blocks = parseTextBlocks(normalized);
+            return blocks.length > 0 ? blocks : [{ kind: 'paragraph', value: text }];
         }
+
+        // Keep embedded images as message-level previews, including images written inside lists.
         const blocks: MessageBlock[] = [];
         const imagePattern = /!\[([^\]]*)\]\(([^)\n]+)\)/gu;
         let cursor = 0;
-        for (const match of text.matchAll(imagePattern)) {
-            const [fullMatch, altRaw, urlRaw] = match;
-            if (typeof match.index !== 'number')
-                continue;
-            const start = match.index;
-            const end = start + fullMatch.length;
-            const imageUrl = toRenderableImageUrl(urlRaw.trim());
-            if (!imageUrl)
-                continue;
-            if (start > cursor) {
-                blocks.push(...parseTextBlocks(text.slice(cursor, start)));
-            }
-            blocks.push({ kind: 'image', url: imageUrl, alt: altRaw.trim(), markdown: fullMatch });
-            cursor = end;
-        }
-        if (cursor < text.length) {
-            blocks.push(...parseTextBlocks(text.slice(cursor)));
-        }
-        return blocks;
-    }
-    function parseMessageBlocks(text: string): MessageBlock[] {
-        const normalizedText = normalizeMarkdownText(text);
-        const lines = normalizedText.split('\n');
-        const blocks: MessageBlock[] = [];
-        let index = 0;
-        let chunkStart = 0;
-        const flushChunk = (endExclusive: number): void => {
-            if (endExclusive <= chunkStart)
-                return;
-            const chunk = lines.slice(chunkStart, endExclusive).join('\n');
-            blocks.push(...parseNonCodeMessageBlocks(chunk));
-        };
-        while (index < lines.length) {
-            const fence = readFenceStart(lines[index]);
-            if (!fence) {
-                index += 1;
-                continue;
-            }
-            flushChunk(index);
-            index += 1;
-            const codeLines: string[] = [];
-            while (index < lines.length) {
-                if (lines[index].trim() === fence.marker) {
-                    index += 1;
-                    break;
+        let offset = 0;
+        let fence = '';
+        for (const line of normalized.split('\n')) {
+            if (fence) {
+                if (line.trim() === fence) fence = '';
+            } else {
+                const listItem = readTaskListItemMatch(line) ?? readUnorderedListItemMatch(line) ?? readOrderedListItemMatch(line);
+                fence = readFenceStart(listItem?.text ?? line.trimStart())?.marker ?? '';
+                if (!fence && line.includes('![')) {
+                    for (const match of line.matchAll(imagePattern)) {
+                        const [markdown, alt, url] = match;
+                        const imageUrl = toRenderableImageUrl(url.trim());
+                        if (!imageUrl) continue;
+                        const start = offset + match.index;
+                        blocks.push(...parseTextBlocks(normalized.slice(cursor, start)));
+                        blocks.push({ kind: 'image', url: imageUrl, alt: alt.trim(), markdown });
+                        cursor = start + markdown.length;
+                    }
                 }
-                codeLines.push(lines[index]);
-                index += 1;
             }
-            blocks.push({
-                kind: 'codeBlock',
-                language: fence.language,
-                value: codeLines.join('\n'),
-            });
-            chunkStart = index;
+            offset += line.length + 1;
         }
-        flushChunk(lines.length);
+        blocks.push(...parseTextBlocks(normalized.slice(cursor)));
         return blocks.length > 0 ? blocks : [{ kind: 'paragraph', value: text }];
     }
     function getMessageBlocks(message: UiMessage): MessageBlock[] {
@@ -1230,6 +1089,23 @@ export function createConversationMarkdown(deps: {
         })
             .join('');
     }
+    function renderCopyableBlockContentAsHtml(block: Extract<MessageBlock, { kind: 'codeBlock' | 'blockquote' }>): string {
+        const isCode = block.kind === 'codeBlock';
+        const language = isCode && block.language
+            ? `<div class="message-code-language">${escapeHtml(block.language)}</div>`
+            : '';
+        const button = `<button type="button" class="message-copy-button message-block-copy-button" aria-label="Copy ${isCode ? 'code block' : 'quote'}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2zm-4 4a2 2 0 0 1-2-2V8m4 8h10"/>
+            </svg>
+            <span class="message-copy-label" aria-live="polite">Copy</span>
+        </button>`;
+        const toolbar = `<div class="message-block-toolbar">${language}${button}</div>`;
+        const content = isCode
+            ? `<pre class="message-code-pre"><code class="hljs" data-block-copy-content>${renderCachedHighlightedCodeAsHtml(block.language, block.value)}</code></pre>`
+            : `<div class="message-quote-text" data-block-copy-content>${renderInlineSegmentsAsHtml(block.value)}</div>`;
+        return toolbar + content;
+    }
     function renderListItemParagraphsAsHtml(item: ListItem): string {
         return item.paragraphs
             .map((paragraph) => `<div class="message-list-item-text message-list-item-paragraph">${renderInlineSegmentsAsHtml(paragraph)}</div>`)
@@ -1256,7 +1132,7 @@ export function createConversationMarkdown(deps: {
             return `<${tag} class="${classes}">${renderInlineSegmentsAsHtml(block.value)}</${tag}>`;
         }
         if (block.kind === 'blockquote') {
-            return `<blockquote class="message-blockquote">${renderInlineSegmentsAsHtml(block.value)}</blockquote>`;
+            return `<blockquote class="message-blockquote">${renderCopyableBlockContentAsHtml(block)}</blockquote>`;
         }
         if (block.kind === 'unorderedList') {
             const items = block.items
@@ -1268,7 +1144,7 @@ export function createConversationMarkdown(deps: {
             const items = block.items
                 .map((item) => (`<li class="message-task-item">` +
                 `<span class="message-task-checkbox" data-checked="${item.checked ? 'true' : 'false'}">${item.checked ? '☑' : '☐'}</span>` +
-                `<div class="message-list-item-text">${renderInlineSegmentsAsHtml(item.text)}</div>` +
+                `<div class="message-list-item-content">${renderListItemContentAsHtml(item)}</div>` +
                 `</li>`))
                 .join('');
             return `<ul class="message-list message-task-list">${items}</ul>`;
@@ -1292,10 +1168,7 @@ export function createConversationMarkdown(deps: {
             return `<div class="message-table-wrap"><table class="message-table"><thead><tr>${headerCells}</tr></thead>${body}</table></div>`;
         }
         if (block.kind === 'codeBlock') {
-            const language = block.language
-                ? `<div class="message-code-language">${escapeHtml(block.language)}</div>`
-                : '';
-            return `<div class="message-code-block">${language}<pre class="message-code-pre"><code class="hljs">${renderCachedHighlightedCodeAsHtml(block.language, block.value)}</code></pre></div>`;
+            return `<div class="message-code-block">${renderCopyableBlockContentAsHtml(block)}</div>`;
         }
         if (block.kind === 'thematicBreak') {
             return '<hr class="message-divider">';
@@ -1342,6 +1215,7 @@ getInlineSegments,
 toBrowseUrl,
 getMessageBlocks,
 renderCachedHighlightedCodeAsHtml,
+renderCopyableBlockContentAsHtml,
 renderListItemContentAsHtml,
 renderMarkdownBlocksAsHtml,
 clearRenderCaches

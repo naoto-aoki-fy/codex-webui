@@ -33,7 +33,7 @@ function setup(initial: Record<string, unknown> = {}) {
     .replace('function parseMessageBlocks(text: string): MessageBlock[] {', 'function parseMessageBlocks(text: string): MessageBlock[] { recordParse();')
   const markdownCode = ts.transpileModule(markdownSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const instrumentedSource = source
-  const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, loadMoreAbove, conversationListRef, renderWindowStart: viewport.renderWindowStart, isLoadingMore, scheduleConversationScroll: viewport.scheduleConversationScroll, editMessage, forkResponse, bindPendingImageHandlers: viewport.bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput: viewport.autoFollowOutput, messageBlockCache: markdown.messageBlockCache, inlineSegmentCache: markdown.inlineSegmentCache, markdownHtmlCache: markdown.markdownHtmlCache, highlightHtmlCache: markdown.highlightHtmlCache,
+  const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, loadMoreAbove, conversationListRef, renderWindowStart: viewport.renderWindowStart, isLoadingMore, scheduleConversationScroll: viewport.scheduleConversationScroll, editMessage, forkResponse, bindPendingImageHandlers: viewport.bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml: markdown.renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput: viewport.autoFollowOutput, messageBlockCache: markdown.messageBlockCache, inlineSegmentCache: markdown.inlineSegmentCache, markdownHtmlCache: markdown.markdownHtmlCache, highlightHtmlCache: markdown.highlightHtmlCache,
     conversationRows, toggleExecution, isExecutionExpanded, toggleWebSearchGroup, isWebSearchGroupExpanded };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const state = scope.run(() => new Function('exports', 'require', 'defineProps', 'defineEmits', 'defineExpose', 'recordParse', code)({}, (path: string) => {
     if (path.endsWith('/conversationMarkdown')) {
@@ -283,6 +283,40 @@ describe('conversation Markdown characterization', () => {
     expect(s.getMessageBlocks(props.messages[0])).toEqual([{ kind: 'codeBlock', language: 'python', value: 'return True' }])
     expect(s.renderMarkdownBlocksAsHtml(`${fence}python\nreturn True\n${fence}`)).toContain('hljs-keyword')
     expect(s.highlightCacheVersion.value).toBe(1)
+  })
+
+  it('renders copyable blocks inside list items with code whitespace and quote markup intact', () => {
+    const { state: s } = setup()
+    const markdown = [
+      '1. Ordered item',
+      '   ```ts',
+      '     const value = "<tag>";',
+      '     ',
+      '     return value;  ',
+      '   ```',
+      '',
+      '- > **Quote** [reference](https://example.test/docs)',
+      '  > Next line',
+      '',
+      '- [x] Completed item',
+      '  ~~~',
+      '    plain code',
+      '  ~~~',
+    ].join('\n')
+    const html = s.renderMarkdownBlocksAsHtml(markdown)
+    expect(html.match(/class="message-copy-button message-block-copy-button"/gu)).toHaveLength(3)
+    expect(html).toMatch(/<ol [^>]+>.*<pre[^>]+><code[^>]+>  const value = &quot;&lt;tag&gt;&quot;;\n  \n  return value;  <\/code>/su)
+    expect(html).toMatch(/<li[^>]+>.*<blockquote[^>]+>.*<strong[^>]+>Quote<\/strong> <a[^>]+>reference<\/a>\nNext line/su)
+    expect(html).toMatch(/data-checked="true".*<code[^>]+>  plain code<\/code>/su)
+  })
+
+  it('keeps chat image previews while preserving image syntax inside a list code fence', () => {
+    const { state: s } = setup()
+    const image = '![Alt](https://example.test/image.png)'
+    const markdown = ['- Steps', '  ```md', `  ${image}`, '  ```', '', `- Preview ${image}`].join('\n')
+    const blocks = s.getMessageBlocks(message(markdown))
+    expect(blocks[0].items[0].children).toEqual([{ kind: 'codeBlock', language: 'md', value: image }])
+    expect(blocks.slice(1)).toEqual([{ kind: 'image', url: 'https://example.test/image.png', alt: 'Alt', markdown: image }])
   })
 
   it('reuses unchanged blocks and reparses same-ID text or cwd changes', () => {

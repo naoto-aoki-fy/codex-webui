@@ -1,6 +1,7 @@
 function copyTextWithSelectionFallback(text: string): boolean {
   if (typeof document === 'undefined') return false
 
+  const previouslyFocused = document.activeElement as HTMLElement | null
   const textarea = document.createElement('textarea')
   textarea.value = text
   textarea.setAttribute('readonly', 'true')
@@ -9,16 +10,16 @@ function copyTextWithSelectionFallback(text: string): boolean {
   textarea.style.opacity = '0'
   textarea.style.pointerEvents = 'none'
   document.body.appendChild(textarea)
-  textarea.focus()
-  textarea.select()
-  textarea.setSelectionRange(0, text.length)
-
   try {
+    textarea.focus()
+    textarea.select()
+    textarea.setSelectionRange(0, text.length)
     return document.execCommand('copy')
   } catch {
     return false
   } finally {
     document.body.removeChild(textarea)
+    previouslyFocused?.focus({ preventScroll: true })
   }
 }
 

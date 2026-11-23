@@ -478,6 +478,103 @@
   @apply text-zinc-400;
 }
 
+.message-copy-button {
+  @apply inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white/90 px-1.25 py-0.5 text-[9px] font-medium leading-none text-slate-500 transition hover:border-slate-300 hover:bg-white hover:text-slate-900;
+}
+
+.message-copy-button[data-copied='true'] {
+  @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+}
+
+.message-list-item-text {
+  @apply whitespace-pre-wrap break-words;
+  overflow-wrap: anywhere;
+}
+
+.message-list-item-paragraph + .message-list-item-paragraph {
+  @apply mt-2;
+}
+
+.message-bold-text {
+  @apply font-semibold text-slate-900;
+}
+
+.message-italic-text {
+  @apply italic;
+}
+
+.message-strikethrough-text {
+  @apply line-through text-slate-500;
+}
+
+.message-inline-code {
+  @apply bg-transparent p-0 font-sans text-[1em] font-semibold text-inherit;
+  line-height: inherit;
+}
+
+.message-file-link {
+  @apply text-sm leading-relaxed text-[#0969da] no-underline hover:text-[#1f6feb] hover:underline underline-offset-2;
+}
+
+.message-blockquote {
+  @apply m-0 min-w-0 rounded-r-lg border-l-4 border-slate-300 bg-slate-50/70 py-1 pl-4 text-sm leading-relaxed text-slate-700;
+}
+
+.message-quote-text {
+  @apply pr-2 whitespace-pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.message-copy-label {
+  @apply leading-none;
+}
+
+.message-block-toolbar {
+  @apply flex min-w-0 items-center justify-end gap-2 px-2 py-1;
+}
+
+.message-code-block > .message-block-toolbar:has(.message-code-language) {
+  @apply border-b border-slate-800;
+}
+
+.message-block-copy-button {
+  @apply min-h-6 shrink-0 select-none px-2;
+}
+
+.message-block-copy-button svg {
+  @apply size-3;
+}
+
+@media (pointer: coarse) {
+  .message-block-copy-button {
+    @apply min-h-9 px-3;
+  }
+}
+
+.message-code-block {
+  @apply min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-950 text-slate-100;
+}
+
+.message-code-language {
+  @apply mr-auto min-w-0 truncate pl-1 font-mono text-[11px] uppercase tracking-[0.08em] text-slate-400;
+}
+
+.message-code-pre {
+  @apply m-0 overflow-x-auto whitespace-pre px-3 py-3 font-mono text-[13px] leading-relaxed;
+}
+
+.message-code-pre .hljs {
+  @apply block bg-transparent p-0 text-inherit;
+}
+
+.message-list-item-content {
+  @apply flex min-w-0 flex-col gap-1.5;
+}
+
+.message-task-item > .message-list-item-content {
+  @apply flex-1;
+}
+
 :root.dark .message-bold-text {
   @apply text-zinc-100;
 }
@@ -548,7 +645,11 @@
 }
 
 :root.dark .message-code-language {
-  @apply border-zinc-800 text-zinc-400;
+  @apply text-zinc-400;
+}
+
+:root.dark .message-code-block > .message-block-toolbar:has(.message-code-language) {
+  @apply border-zinc-800;
 }
 
 :root.dark .message-divider {
@@ -883,6 +984,22 @@
   @apply text-zinc-200;
 }
 
+.plan-card-markdown .message-code-block {
+  @apply bg-white text-slate-900;
+}
+
+.plan-card-markdown .message-code-block > .message-block-toolbar:has(.message-code-language) {
+  @apply border-slate-200 bg-slate-50;
+}
+
+.plan-card-markdown .message-code-language {
+  @apply font-sans font-medium text-slate-600;
+}
+
+.plan-card-markdown .message-code-pre {
+  @apply leading-6;
+}
+
 :root.dark .plan-card-markdown .message-heading-h6 {
   @apply text-zinc-400;
 }
@@ -908,7 +1025,11 @@
 }
 
 :root.dark .plan-card-markdown .message-code-language {
-  @apply border-zinc-800 bg-zinc-900 text-zinc-400;
+  @apply text-zinc-400;
+}
+
+:root.dark .plan-card-markdown .message-code-block > .message-block-toolbar:has(.message-code-language) {
+  @apply border-zinc-800 bg-zinc-900;
 }
 
 .plan-card-markdown .hljs {
