@@ -5,6 +5,7 @@ const { mkdirSync, writeFileSync } = require('node:fs')
 const { resolve } = require('node:path')
 const base = 'http://127.0.0.1:4173'
 const longDraft = 'Full-screen writing fixture\n' + 'Keep this draft and all composer settings.\n'.repeat(20)
+const goalObjective = 'Keep Goal available while writing\n' + 'Preserve each line of this long objective.\n'.repeat(24) + 'End of the objective.'
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOcQAAAAASUVORK5CYII=', 'base64')
 async function withinViewport(locator, viewport) {
   const box = await locator.boundingBox()
@@ -15,6 +16,25 @@ async function withinViewport(locator, viewport) {
     return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
   }), 'element is not covered')
   return box
+}
+
+async function assertGoalRow(page, viewport, label) {
+  const goal = page.getByRole('button', { name:label, exact:true })
+  await goal.waitFor()
+  const row = page.locator('.thread-composer .thread-composer-active-mode')
+  const plan = row.getByRole('button', { name:'Plan ×', exact:true })
+  const queue = row.getByRole('button', { name:'Queue ×', exact:true })
+  assert.equal(await row.getByRole('button', { name:label, exact:true }).count(), 1)
+  assert.equal(await page.locator('.thread-goal-summary').count(), 1)
+  assert.equal(await goal.innerText(), label)
+  assert.equal(await goal.getAttribute('title'), null)
+  assert.equal(await goal.getAttribute('aria-haspopup'), 'dialog')
+  const [planBox, queueBox, goalBox] = await Promise.all([plan, queue, goal].map(chip => withinViewport(chip, viewport)))
+  assert.equal(planBox.y, queueBox.y)
+  assert.equal(queueBox.y, goalBox.y)
+  assert(planBox.x + planBox.width <= queueBox.x && queueBox.x + queueBox.width <= goalBox.x, 'the chips have separate targets')
+  assert(goalBox.y + goalBox.height <= (await page.locator('.thread-composer-input').boundingBox()).y, 'Goal is above the input')
+  return goal
 }
 
 async function assertEditorClearance(input, controls, viewport) {
@@ -75,7 +95,7 @@ async function waitForSubmitEnabled(page) {
 
 ;(async () => {
   mkdirSync('output/playwright', { recursive:true })
-  const browser = await chromium.launch({ headless:true })
+  const browser = await chromium.launch({ headless:true, channel:process.env.PLAYWRIGHT_CHANNEL })
   const results = []
   let activePage
   try {
@@ -94,13 +114,18 @@ async function waitForSubmitEnabled(page) {
           return response => { pendingSubmission = undefined; release(response) }
         }
         await page.route('**/codex-local-image?*', route => route.fulfill({ contentType:'image/png', body:png }))
+        let savedGoal = { threadId:thread.id, objective:goalObjective, status:'active' }
         const { calls, errors, emit } = await setup(page, async (body, _page, url) => {
           if (url.pathname.endsWith('/upload-file')) return { json:{ path:uploadPath } }
           if (url.pathname.endsWith('/server-requests/respond')) return { json:{ ok:true } }
           if (body.method === 'model/list') return { json:{ result:{ data:['fixture-model', 'fixture-alternative'].map(model => ({ id:model, model, supportedReasoningEfforts:['low','high'], defaultReasoningEffort:'low' })), nextCursor:null } } }
           if (body.method === 'skills/list') return { json:{ result:{ data:[{ cwd:'/remote/project', skills:[{ name:'fullscreen-skill', description:'Full-screen skill', path:'/remote/skills/fullscreen-skill/SKILL.md', enabled:true }], errors:[] }] } } }
           if (body.method === 'thread/goal/get' && body.params.threadId === thread.id) {
-            return { json:{ result:{ goal:{ threadId:thread.id, objective:'Keep Goal available while writing', status:'active' } } } }
+            return { json:{ result:{ goal:savedGoal } } }
+          }
+          if (body.method === 'thread/goal/set') {
+            savedGoal = body.params
+            return { json:{ result:{ goal:savedGoal } } }
           }
           if (body.method === 'thread/start') {
             const created = { ...thread, id:`fullscreen-new-${++createdThreadCount}`, name:'New fullscreen fixture', projectId:body.params.projectId }
@@ -135,6 +160,26 @@ async function waitForSubmitEnabled(page) {
         await assertEditorClearance(input, [minimize, expand], viewport)
         await input.fill(longDraft)
         await assertEditorClearance(input, [minimize, expand], viewport)
+        await enableQueueMode(page)
+        const attachMenu = page.getByRole('button', { name:'Add attachments and settings', exact:true })
+        await attachMenu.click()
+        await page.getByRole('switch', { name:'Enable plan mode', exact:true }).click()
+        await attachMenu.click()
+        const activeGoal = await assertGoalRow(page, viewport, 'Goal: active')
+        const goalSettings = page.getByRole('dialog', { name:'Goal settings', exact:true })
+        const objective = goalSettings.getByRole('textbox', { name:'Goal objective', exact:true })
+        const beforeInlineSettings = calls.length
+        await activeGoal.press('Enter')
+        await goalSettings.waitFor()
+        assert.equal(await objective.inputValue(), goalObjective)
+        assert.equal(await objective.evaluate(el => el === document.activeElement), true)
+        await goalSettings.getByRole('button', { name:'Cancel', exact:true }).click()
+        await goalSettings.waitFor({ state:'hidden' })
+        assert.equal(await activeGoal.evaluate(el => el === document.activeElement), true)
+        assert.equal(calls.length, beforeInlineSettings, 'inline Goal settings adds no API calls')
+        const inlineGoalScreenshot = resolve(`output/playwright/composer-goal-inline-${viewport.width}-${theme}.png`)
+        await page.waitForTimeout(2200)
+        await page.screenshot({ path:inlineGoalScreenshot })
         await input.evaluate(el => { window.fullscreenInput = el; el.setSelectionRange(12, 19) })
         const sidebarVisible = await page.locator('.desktop-sidebar').isVisible()
         const beforeExpand = calls.length
@@ -153,13 +198,28 @@ async function waitForSubmitEnabled(page) {
         assert.equal(composerBox.height, viewport.height)
         assert((await input.boundingBox()).height > viewport.height * 0.6)
         await withinViewport(exit, viewport)
-        await withinViewport(page.getByRole('button', { name:'Send message', exact:true }), viewport)
-        const goal = page.locator('.thread-composer-active-mode .thread-goal-summary')
-        await withinViewport(goal, viewport)
-        await goal.click()
-        const goalSettings = page.getByRole('dialog', { name:'Goal settings', exact:true })
+        await assertGoalRow(page, viewport, 'Goal: active')
+        for (const [status, label] of [
+          ['paused', 'paused'], ['blocked', 'blocked'], ['usageLimited', 'usage limited'],
+          ['budgetLimited', 'budget limited'], ['active', 'active'], ['complete', 'completed'],
+        ]) {
+          savedGoal = { ...savedGoal, status }
+          emit('thread/goal/updated', { threadId:thread.id, goal:savedGoal })
+          await assertGoalRow(page, viewport, `Goal: ${label}`)
+        }
+        const completedGoal = page.getByRole('button', { name:'Goal: completed', exact:true })
+        const fullscreenGoalScreenshot = resolve(`output/playwright/composer-goal-fullscreen-${viewport.width}-${theme}.png`)
+        await page.waitForTimeout(2200)
+        await page.screenshot({ path:fullscreenGoalScreenshot })
+        await completedGoal.click()
         await goalSettings.waitFor()
-        assert.equal(await goalSettings.getByRole('textbox', { name:'Goal objective' }).inputValue(), 'Keep Goal available while writing')
+        await withinViewport(objective, viewport)
+        assert.equal(await objective.inputValue(), goalObjective)
+        assert.equal(await objective.evaluate(el => el === document.activeElement), true)
+        await objective.press('Control+Home')
+        const start = await objective.evaluate(el => el.scrollTop)
+        await objective.press('Control+End')
+        assert(await objective.evaluate((el, start) => el.scrollTop > start && el.selectionEnd === el.value.length, start), 'the last line of the objective is reachable')
         const goalStatus = goalSettings.locator('.composer-dropdown-trigger')
         await goalStatus.click()
         await goalSettings.getByRole('listbox').waitFor()
@@ -167,10 +227,22 @@ async function waitForSubmitEnabled(page) {
         await goalSettings.getByRole('listbox').waitFor({ state:'hidden' })
         await goalStatus.press('Escape')
         await goalSettings.waitFor({ state:'hidden' })
-        assert.equal(await goal.evaluate(el => el === document.activeElement), true)
+        assert.equal(await completedGoal.evaluate(el => el === document.activeElement), true)
         assert.equal(await page.locator('.content-root.is-composer-expanded').count(), 1)
         assert.equal(await input.inputValue(), longDraft)
-        assert.equal(calls.length, beforeExpand, 'opening and closing Goal adds no API calls')
+        assert.equal(calls.length, beforeExpand, 'Goal notifications and opening or closing settings add no API calls')
+        await completedGoal.click()
+        const editedObjective = `${goalObjective}\nEdited from the chip.`
+        await objective.fill(editedObjective)
+        await goalSettings.getByRole('button', { name:'Save goal', exact:true }).click()
+        await goalSettings.waitFor({ state:'hidden' })
+        assert.deepEqual(calls.slice(beforeExpand).filter(call => call.method === 'thread/goal/set').map(call => call.params), [
+          { threadId:thread.id, objective:editedObjective, status:'complete' },
+        ])
+        assert.equal(await completedGoal.evaluate(el => el === document.activeElement), true)
+        await page.getByRole('button', { name:'Plan ×', exact:true }).click()
+        await page.getByRole('button', { name:'Queue ×', exact:true }).click()
+        await withinViewport(page.getByRole('button', { name:'Send message', exact:true }), viewport)
         await page.locator('.thread-composer-hidden-input').setInputFiles([
           { name:'fullscreen.png', mimeType:'image/png', buffer:png },
           { name:'fullscreen.txt', mimeType:'text/plain', buffer:Buffer.from('preserved attachment') },
@@ -237,6 +309,7 @@ async function waitForSubmitEnabled(page) {
         }
         const beforeExit = calls.length
         await exit.click()
+        await withinViewport(completedGoal, viewport)
         assert.equal(await input.inputValue(), snapshot)
         assert.deepEqual(await input.evaluate(el => [el.selectionStart, el.selectionEnd]), [12, 19])
         assert.equal(await input.evaluate(el => el === window.fullscreenInput), true)
@@ -424,8 +497,8 @@ async function waitForSubmitEnabled(page) {
         detachedHome.assertSingleSubmission()
 
         assert.deepEqual(errors, [])
-        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, screenshot, submitScreenshot, composerBox, background, zeroApiToggleCycles:3, toggleRoundTripMs:cycles, submissions:6, heldHomeHistoryRequests:acceptedHistoryCalls.length })
-        console.log('PASS', viewport.width, theme, 'full screen, native Enter, attachments, held sends, draft recovery, steering, queue, Home, zero-request cycles')
+        results.push({ url:`${base}/#/thread/approved-fixture`, viewport, theme, screenshot, inlineGoalScreenshot, fullscreenGoalScreenshot, submitScreenshot, composerBox, background, zeroApiToggleCycles:3, apiRequestsFromGoalViewsAndUpdates:0, toggleRoundTripMs:cycles, submissions:6, heldHomeHistoryRequests:acceptedHistoryCalls.length })
+        console.log('PASS', viewport.width, theme, 'Goal labels, row, objective and focus; full screen, native Enter, attachments, held sends, draft recovery, steering, queue, Home, zero-request cycles')
         await page.close()
       }
     }

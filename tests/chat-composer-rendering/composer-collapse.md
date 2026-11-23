@@ -27,6 +27,9 @@
    Expect 16 px edge spacing plus mobile right/bottom safe-area insets. Verify the
    restore and Stop targets do not cover Jump to latest, goal actions or footer
    notices; dialogs and mobile navigation remain above the floating controls.
+   With an active Goal, focus **Goal: active** and press Enter. Verify **Goal
+   settings** opens with the full objective focused. Close the dialog and verify
+   focus returns to **Goal: active** with the input still minimized.
 3. Enter at least six lines, attach an image and a text file, select a skill and
    change model, thinking, plan, speed and send-mode selections where supported.
    Collapse and restore repeatedly. Expect the exact draft, attachments and

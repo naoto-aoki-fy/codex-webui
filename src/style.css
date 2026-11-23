@@ -1271,16 +1271,7 @@
 .thread-composer-active-mode > button {
   flex-shrink: 0; cursor: pointer; padding: 5px 8px; border-radius: 6px;
 }
-.thread-goal-summary {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  text-align: left;
-}
-.thread-composer-active-mode > .thread-goal-summary { flex-shrink: 1; }
-.thread-goal-summary strong { flex-shrink: 0; white-space: nowrap; }
-.thread-goal-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-goal-summary { white-space: nowrap; }
 .thread-goal-summary:hover { background: #f4f4f5; }
 .thread-goal-summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .thread-composer-skill-mentions .thread-composer-file-mention-row { flex-direction: column; align-items: flex-start; }

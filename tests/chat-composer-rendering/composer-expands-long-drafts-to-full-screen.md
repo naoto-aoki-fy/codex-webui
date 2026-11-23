@@ -26,8 +26,11 @@ Full-screen editing and Enter behavior in the shared Home and conversation compo
 4. Confirm the composer fills the viewport. The header (title and actions), sidebar,
    conversation history, and Home folder/hero content are hidden and
    cannot receive keyboard focus. The textarea uses the remaining writing space.
-   With a saved Goal, click its chip above the textarea. Close Goal settings and
-   verify the chip regains focus and editing remains full screen.
+   With an active Goal and Plan and Queue enabled, verify **Goal: active** sits on
+   their row above the textarea. Click the chip and scroll to the last line of a
+   long objective in **Goal settings**. Close settings and verify the chip regains
+   focus and editing remains full screen. Complete the Goal and verify the label
+   changes to **Goal: completed** on the same row.
 5. Attach an image and a file. Open the model, thinking, Skills and **+** menus;
    select a skill and a thinking setting. Check slash suggestions and file mentions
    stay inside the viewport. Drag and drop an additional file into the input.
@@ -127,7 +130,9 @@ checks the current production assets with intercepted protocol fixtures at
 `http://127.0.0.1:4173`. It verifies button clearance, native line-break insertion,
 zero additional API requests during layout changes and newline insertion, and
 immediate return to the normal layout for held send responses in both themes.
-It also holds the new conversation's history refresh to verify that Home
+It checks the Goal labels, row alignment with Plan and Queue, objective
+editing, and focus restoration in the normal and full-screen composers.
+The fixture holds the new conversation's history refresh to verify that Home
 navigation proceeds after the send acknowledgment.
 Reports and screenshots are saved under
 `output/playwright/composer-fullscreen-*`. This is not live server validation.

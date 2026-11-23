@@ -271,7 +271,7 @@
                   :save-goal="selectedThreadGoal.save"
                 />
                 <div v-if="threadGoal && showGoalOutsideComposer" class="thread-composer-active-mode">
-                  <ThreadGoalSummary :goal="threadGoal" @click="threadGoalPanelRef?.edit()" />
+                  <ThreadGoalSummary :status="threadGoal.status" @click="threadGoalPanelRef?.edit()" />
                 </div>
                 <ThreadPendingRequestPanel
                   v-if="selectedThreadPendingRequest && selectedThreadPendingRequest.method !== QUESTION_REQUEST"
@@ -316,7 +316,7 @@
                   @interrupt="onInterruptTurn"
                 >
                   <template v-if="threadGoal && !showGoalOutsideComposer" #goal>
-                    <ThreadGoalSummary :goal="threadGoal" @click="threadGoalPanelRef?.edit()" />
+                    <ThreadGoalSummary :status="threadGoal.status" @click="threadGoalPanelRef?.edit()" />
                   </template>
                 </ThreadComposer>
                 <p v-if="composerSendMode.queue.value && (nativeQueue.readError.value || nativeQueue.uncertain.value || nativeQueue.recoveryError.value)" class="composer-runtime-error composer-queue-notice" role="alert">

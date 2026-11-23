@@ -1,18 +1,24 @@
 <script setup lang="ts">
-import type { ThreadGoal } from '../../api/codexGateway'
+import type { ThreadGoalStatus } from '../../api/codexGateway'
 
-defineProps<{ goal: ThreadGoal }>()
+defineProps<{ status: ThreadGoalStatus }>()
+
+const statusLabels: Record<ThreadGoalStatus, string> = {
+  active: 'active',
+  paused: 'paused',
+  blocked: 'blocked',
+  usageLimited: 'usage limited',
+  budgetLimited: 'budget limited',
+  complete: 'completed',
+}
 </script>
 
 <template>
   <button
     type="button"
     class="thread-goal-summary"
-    :title="goal.objective"
-    :aria-label="`Edit goal: ${goal.objective}`"
     aria-haspopup="dialog"
   >
-    <strong>Goal</strong>
-    <span class="thread-goal-preview">· {{ goal.status }} — {{ goal.objective }}</span>
+    <strong>Goal:</strong> {{ statusLabels[status] }}
   </button>
 </template>

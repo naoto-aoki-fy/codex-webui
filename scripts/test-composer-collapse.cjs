@@ -7,7 +7,7 @@ const longDraft = 'Unsent composer collapse check\n' + 'Keep this editable draft
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOcQAAAAASUVORK5CYII=', 'base64')
 ;(async () => {
   mkdirSync('output/playwright', { recursive: true })
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL })
   const results = []
   let activePage
   try {
@@ -42,9 +42,10 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         const input = page.locator('.thread-composer-input')
         const collapse = page.getByRole('button', { name:'Minimize message input', exact:true })
         const restore = page.getByRole('button', { name:'Show message input', exact:true })
+        const goal = page.getByRole('button', { name:'Goal: active', exact:true })
         const list = page.locator('.conversation-list')
         await collapse.waitFor()
-        await page.locator('.thread-goal-summary').waitFor()
+        await goal.waitFor()
         assert.equal(await collapse.innerText(), '', 'minimize is an icon with no visible label')
         assert.equal(await collapse.getAttribute('title'), 'Minimize message input')
         assert.equal(await restore.count(), 0, 'inline is the default view')
@@ -66,7 +67,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
             const r = el.getBoundingClientRect()
             return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
           }), true, 'restore is not covered by other controls')
-          const goalBox = await page.locator('.thread-goal-summary').boundingBox()
+          const goalBox = await goal.boundingBox()
           const actionsBox = await page.locator('.thread-composer-floating-actions').boundingBox()
           assert.ok(goalBox.x + goalBox.width <= actionsBox.x - 8, 'goal controls clear the floating buttons')
           return box
@@ -81,11 +82,14 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
         assert.equal(await restore.getAttribute('aria-expanded'), 'false')
         assert.equal(await restore.evaluate(el => el === document.activeElement), true)
         const floatingBox = await assertFloating()
-        const goal = page.locator('.thread-goal-summary')
+        assert.equal(await goal.innerText(), 'Goal: active')
+        assert.equal(await goal.getAttribute('title'), null)
         await goal.press('Enter')
         const goalSettings = page.getByRole('dialog', { name:'Goal settings', exact:true })
         await goalSettings.waitFor()
-        assert.equal(await goalSettings.getByRole('textbox', { name:'Goal objective' }).inputValue(), 'Keep goal actions accessible')
+        const objective = goalSettings.getByRole('textbox', { name:'Goal objective', exact:true })
+        assert.equal(await objective.inputValue(), 'Keep goal actions accessible')
+        assert.equal(await objective.evaluate(el => el === document.activeElement), true)
         await goalSettings.getByRole('button', { name:'Close dialog', exact:true }).click()
         await goalSettings.waitFor({ state:'hidden' })
         assert.equal(await goal.evaluate(el => el === document.activeElement), true)
