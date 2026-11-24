@@ -14,6 +14,7 @@ Return to the [manual test index](../../tests.md).
 | [Revert PR 131 project recency and mobile move mode](revert-pr-131-project-recency-and-mobile-move-mode.md) |
 | [Dark theme for Skills Hub](dark-theme-for-skills-hub.md) |
 | [Feature: Revert PR #16 mobile viewport and chat scroll behavior changes](revert-pr-16-mobile-viewport-and-chat-scroll-behavior-changes.md) |
+| [Mobile viewport during pinch-to-zoom](mobile-pinch-zoom-viewport.md) |
 | [Feature: Revert Renat scrolling/input-layout behavior (without Fast mode changes)](revert-renat-scrolling-input-layout-behavior-without-fast-mode-changes.md) |
 | [Feature: Dark theme command rows in chat remain readable](dark-theme-command-rows-in-chat-remain-readable.md) |
 | [Feature: Home composer vertical alignment matches reference layout](home-composer-vertical-alignment-matches-reference-layout.md) |

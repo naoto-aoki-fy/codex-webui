@@ -726,9 +726,9 @@ const {
   resolveStartPath: async () => newThreadCwd.value.trim() || await resolveProjectBaseDirectory(),
   focusPathInput: () => folderPickerModalRef.value?.focusPathInput(),
 })
-const visualViewportHeight = ref(typeof window !== 'undefined' ? window.visualViewport?.height ?? window.innerHeight : 0)
-const visualViewportOffsetTop = ref(typeof window !== 'undefined' ? window.visualViewport?.offsetTop ?? 0 : 0)
-const layoutViewportHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 0)
+const visualViewportHeight = ref(0)
+const visualViewportOffsetTop = ref(0)
+const layoutViewportHeight = ref(0)
 
 const routeThreadId = computed(() => {
   const rawThreadId = route.params.threadId
@@ -932,9 +932,13 @@ onUnmounted(() => {
 
 function updateVisualViewportState(): void {
   if (typeof window === 'undefined') return
-  layoutViewportHeight.value = Math.max(layoutViewportHeight.value, window.innerHeight)
-  visualViewportHeight.value = window.visualViewport?.height ?? window.innerHeight
-  visualViewportOffsetTop.value = window.visualViewport?.offsetTop ?? 0
+  const viewport = window.visualViewport
+  const isZoomed = viewport != null && viewport.scale !== 1
+  // WebKit can report zoomed dimensions in window.innerHeight during a pinch.
+  const layoutHeight = isZoomed ? document.documentElement.clientHeight : window.innerHeight
+  layoutViewportHeight.value = layoutHeight
+  visualViewportHeight.value = isZoomed ? layoutHeight : viewport?.height ?? layoutHeight
+  visualViewportOffsetTop.value = isZoomed ? 0 : viewport?.offsetTop ?? 0
 }
 
 function onSkillsChanged(): void {
