@@ -148,7 +148,17 @@
         <p v-if="modelPreferencesLoading" class="composer-model-notice" role="status">Loading model preferences…</p>
         <p v-if="modelPreferencesError" class="composer-model-notice" role="alert">Model preferences could not be synchronized. {{ modelPreferencesError }} <button type="button" @click="refreshBackendModelPreferences">Retry</button></p>
         <p v-if="modelPreferenceNotice" class="composer-model-notice" role="status">{{ modelPreferenceNotice }}</p>
-        <p v-if="nativeForkFailure" class="composer-runtime-error" role="alert">{{ nativeForkFailure }}</p>
+        <div v-if="nativeForkFailure" class="composer-runtime-error">
+          <span role="alert">{{ nativeForkFailure }}</span>
+          <button
+            type="button"
+            class="fork-warning-dismiss"
+            aria-label="Dismiss fork warning"
+            @click="nativeForkFailure = ''"
+          >
+            <IconTablerX />
+          </button>
+        </div>
 
         <div v-if="browserConnectionNotice" class="connection-recovery-status" :class="{ 'connection-recovery-success': browserConnectionNotice === 'reconnected' }" role="status" data-connection="browser">
           <strong>WebUI Backend: {{ browserConnectionNotice === 'reconnected' ? 'Reconnected' : 'Disconnected' }}</strong>
@@ -1686,6 +1696,15 @@ watch(isMobile, (mobile) => {
 
 .composer-runtime-error {
   @apply flex w-full items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-800 shadow-sm;
+}
+
+.fork-warning-dismiss {
+  @apply grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-base focus-visible:outline-2 focus-visible:outline-offset-2;
+  color: inherit;
+}
+
+.fork-warning-dismiss:hover {
+  background-color: color-mix(in srgb, currentColor 12%, transparent);
 }
 
 .new-thread-empty {

@@ -47,6 +47,7 @@ Setup: use the source from above with a stopped turn, configured providers P and
 Q, and an app-server supporting native `thread/fork` and inclusive `lastTurnId`.
 For credential-free browser checks, start the current dev server on port 4173
 and run `node scripts/test-fork-methods.cjs` with an installed Playwright browser.
+To use an installed Google Chrome, set `PLAYWRIGHT_CHANNEL=chrome`.
 
 1. Open both the sidebar whole-conversation action and an assistant response's
    Fork toolbar. Check that the main Fork action and adjacent arrow match the
@@ -80,8 +81,22 @@ and run `node scripts/test-fork-methods.cjs` with an installed Playwright browse
 8. Check the actual split buttons and open menus in light and dark themes.
    Confirm that both main/arrow controls are disabled while a fork is pending,
    and portable cancel/confirmation are disabled while injection is pending.
+9. In light theme, start a turn that will stay active long enough to test. While
+   it is running, click Fork on an earlier assistant response. Expect “Finish
+   the current turn before forking from a response” with one visible × at the
+   far right, named “Dismiss fork warning.” Click × and expect the warning and
+   button to disappear immediately, with no API request caused by dismissal.
+   Let the same turn continue, then click Fork on the earlier response again
+   while the turn is still active. Expect the same warning and × to return.
+10. Tab to the dismiss button and press Enter. Expect a visible focus indicator
+    before pressing the key and immediate dismissal afterward. Switch to dark
+    theme, trigger the warning again during an active turn, then Tab to × and
+    press Space. Expect the icon and focus indicator to be visible in dark theme
+    and both the warning and button to disappear. Repeat Space in light theme
+    and Enter in dark theme.
 
-Cleanup: explicitly archive test forks/imports, including incomplete destinations.
+Cleanup: stop the test turn if it is still running, and explicitly archive test
+forks/imports, including incomplete destinations.
 No workspace rollback occurs; never replay an injection with an uncertain outcome.
 
 ## Portable transcript presentation

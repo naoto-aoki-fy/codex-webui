@@ -25,7 +25,7 @@ const source = { id: 'source', name: 'Fork methods source', preview: 'Fork metho
 }
 const mutations = new Set(['conversation-transfer/create', 'thread/fork', 'thread/fork-at-response', 'thread/start', 'thread/inject_items', 'turn/start'])
 
-async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false, importedOnly = false, sameProvider = false, providers = ['P', 'Q'], composerProvider = 'P', longHistory = false } = {}) {
+async function check(browser, entry, method, { prepareFails = false, nativeFails = false, pendingPreparation = false, importedOnly = false, sameProvider = false, providers = ['P', 'Q'], composerProvider = 'P', longHistory = false, dismissWarning = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -129,7 +129,11 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
         modelProvider: params.modelProvider, importedTranscript, importStage: 'ready' })
       result = { threadId: 'imported', model: params.model, modelProvider: params.modelProvider, ...(entry === 'revert' ? { draftText: 'Original question 1' } : {}) }
     }
-    if (rpc === 'turn/start') result = { turn: { id: 'explicit-turn', status: 'inProgress', items: [] } }
+    if (rpc === 'turn/start') {
+      const turn = { id: 'explicit-turn', status: 'inProgress', items: [] }
+      if (dismissWarning) conversation.turns.push(turn)
+      result = { turn }
+    }
     // Keep the confirmation pending long enough to exercise duplicate clicks.
     if (mutations.has(rpc)) await new Promise(resolve => setTimeout(resolve, 150))
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ result }) })
@@ -203,6 +207,50 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     assert.equal(await page.getByRole('button', { name: 'Load earlier messages', exact: true }).count(), 0)
   }
   await page.getByText('Original answer 0', { exact: true }).waitFor()
+  if (dismissWarning) {
+    const apiRequests = []
+    page.on('request', request => {
+      if (request.url().includes('/codex-api/')) apiRequests.push(request.url())
+    })
+    await page.locator('textarea').fill('Keep this turn running')
+    await page.getByRole('button', { name: 'Send message', exact: true }).click()
+    const stop = page.getByRole('button', { name: 'Stop', exact: true })
+    await stop.waitFor()
+    await page.waitForFunction(() => document.querySelector('textarea')?.value === '')
+    const warning = page.getByRole('alert').filter({ hasText: 'Finish the current turn before forking from a response.' })
+    const dismiss = page.getByRole('button', { name: 'Dismiss fork warning', exact: true })
+    const screenshots = []
+    for (const [theme, key] of [['light', null], ['light', 'Enter'], ['dark', 'Space']]) {
+      await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme)
+      const split = await splitButton()
+      await split.locator('.fork-split-main').click()
+      await warning.waitFor()
+      await dismiss.waitFor()
+      assert.equal(await dismiss.count(), 1)
+      if (key) {
+        await dismiss.focus()
+        await page.keyboard.press('Tab')
+        await page.keyboard.press('Shift+Tab')
+        assert.equal(await dismiss.evaluate(button => button.matches(':focus-visible')), true)
+        await page.waitForTimeout(2200)
+        const path = resolve(output, `fork-warning-dismiss-${theme}.png`)
+        await page.screenshot({ path })
+        screenshots.push(path)
+      }
+      const requestCount = apiRequests.length
+      if (key) await page.keyboard.press(key)
+      else await dismiss.click()
+      await warning.waitFor({ state: 'detached' })
+      await dismiss.waitFor({ state: 'detached' })
+      assert.equal(apiRequests.length, requestCount, 'dismissal must not make an API request')
+      assert.equal(await stop.isVisible(), true, 'dismissal must leave the turn running')
+    }
+    assert.deepEqual(calls.filter(call => mutations.has(call.method)).map(call => call.method), ['turn/start'])
+    assert.deepEqual(errors, [])
+    const report = { entry, method, dismissWarning, url: page.url(), viewport: page.viewportSize(), screenshots, assertions: 'passed' }
+    await context.close()
+    return report
+  }
   const composerModelLabel = composerProvider === 'P' ? 'A' : 'Alternate'
   await page.getByRole('button', { name: composerModelLabel, exact: true }).click()
   const sourceModels = composerProvider === 'P' ? ['A', 'P only'] : ['Alternate', 'C', 'D']
@@ -364,7 +412,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
 }
 
 ;(async () => {
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL })
   try {
     const reports = []
     const cases = []
@@ -375,6 +423,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     cases.push(['full', 'portable', { composerProvider: 'Q' }], ['response', 'portable', { composerProvider: 'Q' }])
     cases.push(['revert', 'portable'], ['revert', 'portable', { pendingPreparation: true }])
     cases.push(['response', 'native', { longHistory: true }], ['response', 'portable', { longHistory: true }])
+    cases.push(['response', 'native', { dismissWarning: true }])
     const selected = process.env.FORK_TEST_CASES?.split(',').map(Number)
     for (const [index, args] of cases.entries()) {
       if (selected && !selected.includes(index)) continue
