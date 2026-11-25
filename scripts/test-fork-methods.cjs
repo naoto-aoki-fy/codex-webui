@@ -107,7 +107,7 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     if (rpc === 'thread/fork' || rpc === 'thread/fork-at-response') {
       if (rejectNative) {
         rejectNative = false
-        return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Method not found: thread/fork' }) })
+        return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: `Method not found: thread/fork (${'x'.repeat(200)})` }) })
       }
       assert.equal(params.modelProvider, undefined)
       assert.equal(params.model, undefined)
@@ -318,7 +318,10 @@ async function check(browser, entry, method, { prepareFails = false, nativeFails
     }
     assert.equal(await page.getByRole('dialog', { name: 'Transfer conversation' }).count(), 0, 'native main action must not open the picker')
     if (nativeFails) {
-      await page.getByText('Native Fork failed:', { exact: false }).first().waitFor()
+      const dismiss = page.getByRole('button', { name: 'Dismiss fork warning', exact: true })
+      await dismiss.waitFor()
+      assert.equal(await dismiss.evaluate(button => button.getBoundingClientRect().right <= button.parentElement.getBoundingClientRect().right), true,
+        'a long unbroken warning must leave the dismiss button inside the banner')
       assert.equal(calls.filter(call => call.method === 'conversation-transfer/create').length, 0, 'no silent fallback')
       await choosePortable()
       await selectProvider()

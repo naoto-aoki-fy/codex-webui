@@ -149,7 +149,7 @@
         <p v-if="modelPreferencesError" class="composer-model-notice" role="alert">Model preferences could not be synchronized. {{ modelPreferencesError }} <button type="button" @click="refreshBackendModelPreferences">Retry</button></p>
         <p v-if="modelPreferenceNotice" class="composer-model-notice" role="status">{{ modelPreferenceNotice }}</p>
         <div v-if="nativeForkFailure" class="composer-runtime-error">
-          <span role="alert">{{ nativeForkFailure }}</span>
+          <span class="wrap-anywhere" role="alert">{{ nativeForkFailure }}</span>
           <button
             type="button"
             class="fork-warning-dismiss"
