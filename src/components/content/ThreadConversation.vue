@@ -774,12 +774,11 @@
             <article class="live-overlay-inline" aria-live="polite">
               <p class="live-overlay-label">{{ liveOverlay.activityLabel }}</p>
               <p class="message-generation-metadata">{{ generationMetadataLabel(liveOverlay.generationMetadata) }}</p>
-              <p
+              <div
                 v-if="liveOverlay.reasoningText"
                 class="live-overlay-reasoning"
-              >
-                {{ liveOverlay.reasoningText }}
-              </p>
+                v-html="liveReasoningHtml"
+              />
               <div v-if="liveOverlay.errorText" class="live-overlay-error">
                 <span>{{ liveOverlay.errorText }}</span>
               </div>
@@ -1310,6 +1309,12 @@ const {
   renderMarkdownBlocksAsHtml,
 } = markdown
 
+const liveReasoningHtml = computed(() => {
+  const text = props.liveOverlay?.reasoningText
+  // Keep only the current HTML snapshot as reasoning streams in.
+  return text ? renderMarkdownBlocksAsHtml(text, { cache: false }) : ''
+})
+
 const conversationPlans = computed(() => indexConversationPlans(props.messages))
 
 function readPlan(message: UiMessage) {
@@ -1803,6 +1808,32 @@ onBeforeUnmount(() => {
   display: none;
 }
 
+.live-overlay-reasoning :deep(:is(.message-text, .message-heading, .message-list, .message-file-link, .message-blockquote, .message-code-pre)) {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.live-overlay-reasoning :deep(.message-heading) {
+  @apply font-semibold;
+}
+
+.live-overlay-reasoning :deep(:is(.message-list-unordered, .message-list-ordered)) {
+  @apply pl-5;
+}
+
+.live-overlay-reasoning :deep(.message-list-item-content) {
+  @apply gap-0;
+}
+
+.live-overlay-reasoning :deep(> * + *),
+.live-overlay-reasoning :deep(.message-list-item-paragraph + .message-list-item-paragraph) {
+  @apply mt-1;
+}
+
+.live-overlay-reasoning :deep(.message-code-pre) {
+  @apply px-2 py-1;
+}
+
 .live-overlay-error {
   @apply m-0 flex items-start justify-between gap-3 text-sm leading-5 text-rose-600 whitespace-pre-wrap;
 }
@@ -1979,11 +2010,13 @@ onBeforeUnmount(() => {
   @apply pl-5 text-sm leading-relaxed text-slate-800 flex flex-col gap-1.5;
 }
 
-.plan-card-markdown :deep(.message-list-unordered) {
+.plan-card-markdown :deep(.message-list-unordered),
+.live-overlay-reasoning :deep(.message-list-unordered) {
   @apply list-disc;
 }
 
-.plan-card-markdown :deep(.message-list-ordered) {
+.plan-card-markdown :deep(.message-list-ordered),
+.live-overlay-reasoning :deep(.message-list-ordered) {
   @apply list-decimal;
 }
 
@@ -1995,7 +2028,8 @@ onBeforeUnmount(() => {
   @apply list-none pl-0;
 }
 
-.plan-card-markdown :deep(.message-task-item) {
+.plan-card-markdown :deep(.message-task-item),
+.live-overlay-reasoning :deep(.message-task-item) {
   @apply flex items-start gap-2;
 }
 

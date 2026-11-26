@@ -24,4 +24,29 @@ Projectless new chats show live thinking state and interrupt controls while a tu
 - Stop the temporary Vite server if it was only used for this check.
 - Remove temporary projectless chat folders under `~/Documents/Codex/<today>/` if they are no longer needed.
 
+### Live reasoning Markdown
+
+#### Prerequisites/Setup
+Use a disposable chat with an app-server that emits reasoning deltas, or use the browser notification fixture in `scripts/approved-fixture.cjs` to supply the deltas below. Keep the turn in progress during the check.
+
+#### Steps
+1. In light theme, open the chat and start a turn. Before the first reasoning delta, verify the Thinking label appears and the reasoning section is absent.
+2. With the fixture, emit `item/reasoning/summaryTextDelta` for the active thread and turn, using the same reasoning `itemId` for each entry. Send each JSON string below as a separate `delta` and inspect the overlay after each update. With a live app-server, use a turn whose reasoning includes equivalent Markdown.
+
+   ```json
+   ["## Inspect\n\n**Check", "**\n\n- Compare `a < b", "`\n- <b>literal HTML</b>", "\n\n```\n  first\n    second\n```"]
+   ```
+
+3. Append at least ten list entries in another delta, starting with `\n\n` after the existing Markdown. Scroll within the reasoning section to the last entry, then back to the heading.
+4. Switch to dark theme and repeat the check on a fresh turn.
+5. Complete or stop the turn and confirm the reasoning section disappears.
+
+#### Expected Results
+- `**Check` appears as text until the closing `**` arrives. The word then becomes bold. The list displays bullets, `a < b` renders as inline code when its backtick arrives, and `<b>literal HTML</b>` is visible as text.
+- The heading and list keep compact spacing and small type. The code block keeps both lines and their relative indentation.
+- In both themes, the reasoning section is readable, stays within five lines of height, keeps its top-edge fade, and scrolls to the last entry without expanding the conversation layout.
+
+#### Rollback/Cleanup
+Stop any active test turn and close the disposable chat.
+
 ---

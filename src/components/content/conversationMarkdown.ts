@@ -1185,17 +1185,20 @@ export function createConversationMarkdown(deps: {
         }
         return `<img class="message-image-preview message-markdown-image" src="${escapeHtml(block.url)}" alt="${escapeHtml(block.alt || 'Embedded message image')}" loading="lazy">`;
     }
-    function renderMarkdownBlocksAsHtml(text: string): string {
-        const cacheKey = `${deps.props.cwd}\u0000${highlightCacheVersion.value}\u0000${text}`;
-        const cached = markdownHtmlCache.get(cacheKey);
-        if (cached && cached.text === text && cached.cwd === deps.props.cwd && cached.highlightVersion === highlightCacheVersion.value) {
-            markdownHtmlCache.delete(cacheKey);
-            markdownHtmlCache.set(cacheKey, cached);
-            return cached.html;
+    function renderMarkdownBlocksAsHtml(text: string, { cache = true } = {}): string {
+        const cacheKey = cache ? `${deps.props.cwd}\u0000${highlightCacheVersion.value}\u0000${text}` : null;
+        if (cacheKey !== null) {
+            const cached = markdownHtmlCache.get(cacheKey);
+            if (cached && cached.text === text && cached.cwd === deps.props.cwd && cached.highlightVersion === highlightCacheVersion.value) {
+                markdownHtmlCache.delete(cacheKey);
+                markdownHtmlCache.set(cacheKey, cached);
+                return cached.html;
+            }
         }
         const html = parseMessageBlocks(text)
             .map((block) => renderMessageBlockAsHtml(block))
             .join('');
+        if (cacheKey === null) return html;
         return setBoundedCacheEntry(markdownHtmlCache, cacheKey, {
             text,
             cwd: deps.props.cwd,

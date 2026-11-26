@@ -34,7 +34,7 @@ function setup(initial: Record<string, unknown> = {}) {
   const markdownCode = ts.transpileModule(markdownSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const instrumentedSource = source
   const code = ts.transpileModule(instrumentedSource + `\nreturn { openDiffViewer, closeDiffViewer, selectDiffViewerChange, activeDiffViewerChange, activeDiffViewerSummary, activeDiffViewerChangeKey, isDiffViewerFileListOpen, isFileLinkContextMenuVisible, fileLinkContextBrowseUrl, expandedWorkedIds, expandedCommandIds, failedMarkdownImages, onMarkdownImageError, isMarkdownImageFailed, loadMoreAbove, conversationListRef, renderWindowStart: viewport.renderWindowStart, isLoadingMore, scheduleConversationScroll: viewport.scheduleConversationScroll, editMessage, forkResponse, bindPendingImageHandlers: viewport.bindPendingImageHandlers, getMessageBlocks, renderMarkdownBlocksAsHtml, renderCachedHighlightedCodeAsHtml: markdown.renderCachedHighlightedCodeAsHtml, highlightCacheVersion, visibleMessages, autoFollowOutput: viewport.autoFollowOutput, messageBlockCache: markdown.messageBlockCache, inlineSegmentCache: markdown.inlineSegmentCache, markdownHtmlCache: markdown.markdownHtmlCache, highlightHtmlCache: markdown.highlightHtmlCache,
-    conversationRows, toggleExecution, isExecutionExpanded, toggleWebSearchGroup, isWebSearchGroupExpanded };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+    conversationRows, toggleExecution, isExecutionExpanded, toggleWebSearchGroup, isWebSearchGroupExpanded, liveReasoningHtml };`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const state = scope.run(() => new Function('exports', 'require', 'defineProps', 'defineEmits', 'defineExpose', 'recordParse', code)({}, (path: string) => {
     if (path.endsWith('/conversationMarkdown')) {
       const exports = {}
@@ -256,6 +256,39 @@ describe('conversation thread state isolation', () => {
     s.editMessage('user', 'portable-fork-and-revert')
     expect(emit).toHaveBeenCalledTimes(4)
   })
+})
+
+it('renders live reasoning Markdown as chunks arrive and escapes raw HTML', () => {
+  const liveOverlay = vue.reactive({ activityLabel: 'Thinking', reasoningText: '' })
+  const { state, parseCalls } = setup({ liveOverlay })
+  const { liveReasoningHtml, markdownHtmlCache } = state
+
+  expect(liveReasoningHtml.value).toBe('')
+  expect(parseCalls).not.toHaveBeenCalled()
+
+  liveOverlay.reasoningText += '**Checking'
+  expect(liveReasoningHtml.value).toContain('**Checking')
+  expect(liveReasoningHtml.value).not.toContain('<strong')
+
+  liveOverlay.reasoningText += '**\n\n- Inspect `a < b'
+  expect(liveReasoningHtml.value).toMatch(/<strong[^>]*>Checking<\/strong>/u)
+  expect(liveReasoningHtml.value).toMatch(/<ul[^>]*>.*<li[^>]*>.*Inspect/u)
+  expect(liveReasoningHtml.value).not.toContain('<code')
+
+  liveOverlay.reasoningText += '`\n- <b>literal HTML</b>\n\n```\n  first\n    second\n```'
+  expect(liveReasoningHtml.value).toMatch(/<code[^>]*>a &lt; b<\/code>/u)
+  expect(liveReasoningHtml.value).toContain('&lt;b&gt;literal HTML&lt;/b&gt;')
+  expect(liveReasoningHtml.value).not.toContain('<b>')
+  expect(liveReasoningHtml.value).toMatch(/<pre[^>]*><code[^>]*>  first\n    second<\/code>/u)
+
+  liveOverlay.activityLabel = 'Working'
+  expect(liveReasoningHtml.value).toContain('literal HTML')
+  expect(parseCalls).toHaveBeenCalledTimes(3)
+  expect(markdownHtmlCache.size).toBe(0)
+
+  liveOverlay.reasoningText = ''
+  expect(liveReasoningHtml.value).toBe('')
+  expect(parseCalls).toHaveBeenCalledTimes(3)
 })
 
 describe('conversation Markdown characterization', () => {
