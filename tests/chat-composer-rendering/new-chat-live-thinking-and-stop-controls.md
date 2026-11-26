@@ -44,14 +44,14 @@ Use a disposable chat with an app-server that emits reasoning deltas, or use the
 4. Stream at least ten more items, each with its own `itemId`, and check the time between each notification and its visible update. Scroll within the reasoning section to the last entry, then back to the first.
 5. Switch to dark theme and repeat the streaming and scrolling checks on a fresh turn.
 6. Emit a summary-part event and complete the turn before sending another delta. Start another turn and verify its first reasoning delta appears at the top of the frame.
-7. In each theme, compare the active `Thinking` label and a regular assistant reply with the reasoning overlay while it shows a plain paragraph, a heading, and a list. Use text below the top-edge fade for the visual comparison.
+7. In each theme, stream `normal aaa and **aaa**` into the reasoning overlay alongside a heading and a list. In browser DevTools, compare the computed `color` of the paragraph and its bold `aaa`, and check the bold text's computed `font-weight`. Visually compare the active `Thinking` label and a regular assistant reply with the reasoning text below the top-edge fade.
 
 #### Expected Results
 - `**Check` appears as text until the closing `**` arrives. The word then becomes bold. The list displays bullets, `a < b` renders as inline code when its backtick arrives, and `<b>literal HTML</b>` is visible as text.
 - The heading and list keep compact spacing and small type. The code block keeps both lines and their relative indentation.
 - Whitespace-only reasoning stays hidden. The two reasoning titles appear in separate paragraphs with the same spacing in all three boundary cases. Completing a turn clears the reasoning section and any pending paragraph break.
 - In both themes, the reasoning section is readable, stays within five lines of height, keeps its top-edge fade, and scrolls to the last entry without expanding the conversation layout.
-- Reasoning paragraphs, headings, and lists share the same subdued text color in both themes. The activity label has stronger contrast, and the regular assistant reply stays readable at its usual contrast.
+- Reasoning paragraphs, headings, lists, and bold text share the same subdued text color in both themes. The bold `aaa` has the same computed color as the surrounding text and a computed font weight of `600`. The activity label has stronger contrast, and the regular assistant reply stays readable at its usual contrast.
 
 #### Rollback/Cleanup
 Stop any active test turn and close the disposable chat.
