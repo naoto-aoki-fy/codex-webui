@@ -670,7 +670,11 @@
 }
 
 :root.dark .live-overlay-reasoning {
-  @apply text-zinc-500;
+  @apply text-zinc-500/90;
+}
+
+:root .live-overlay-reasoning :is(.message-text, .message-heading, .message-list) {
+  color: inherit;
 }
 
 :root.dark .cmd-row {

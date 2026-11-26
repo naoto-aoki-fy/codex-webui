@@ -1794,7 +1794,7 @@ onBeforeUnmount(() => {
 }
 
 .live-overlay-reasoning {
-  @apply m-0 text-sm leading-5 text-zinc-500 whitespace-pre-wrap break-words;
+  @apply m-0 text-sm leading-5 text-zinc-500/90 whitespace-pre-wrap break-words;
   display: block;
   max-height: calc(1.25rem * 5);
   overflow: auto;
