@@ -28,10 +28,10 @@ import { orderModelIdsByUsage, buildModelCatalogIds, resolveModelPreference } fr
 import { groupThreadsByProject, UNASSIGNED_PROJECT } from '../utils/desktopProjectGroups'
 import type { Project } from '../server/protocol/0.167.2/v2/Project'
 import { clientMessageId } from '../utils/clientMessageId'
-import { readPlanUpdate, asRecord, readString, readNumber, readThreadTokenUsageUpdate, extractThreadIdFromNotification, readTurnErrorMessage, readNotificationErrorState, readTurnActivity, liveReasoningMessageId, readReasoningStartedItemId, readReasoningDelta, readReasoningSectionBreakMessageId, readReasoningCompletedId, readAgentMessageStartedId, readAgentMessageDelta, readAgentMessageCompleted, readCompletedImageView, readCommandOutputDelta, isAgentContentEvent, type TurnActivityState } from './desktopNotificationReaders'
+import { readPlanUpdate, asRecord, readString, readNumber, readThreadTokenUsageUpdate, extractThreadIdFromNotification, readTurnErrorMessage, readNotificationErrorState, readTurnActivity, readReasoningDelta, readReasoningSectionBreakMessageId, readAgentMessageDelta, readAgentMessageCompleted, readCompletedImageView, readCommandOutputDelta, isAgentContentEvent, type TurnActivityState } from './desktopNotificationReaders'
 import { NEW_THREAD_MODEL_CONTEXT, normalizeStoredModelId, createStringKeyedRecord, cloneStringKeyedRecord, omitStringKeyedRecordKey, pruneThreadContextStateMap, isNewThreadContextId, toThreadContextId, loadSelectedModelMap, saveSelectedModelMap, loadSelectedCollaborationModeMap, readSelectedCollaborationMode, writeSelectedCollaborationModeForContext, saveSelectedCollaborationModeMap } from './desktopStatePersistence'
 import { areStringArraysEqual, areMessageArraysEqual, normalizeMessageText, isOptimisticUserMessage, hasEquivalentUserMessage, upsertMessage } from '../utils/desktopMessageReconciliation'
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatTurnDuration, parseIsoTimestamp } from '../utils/turnTiming'
 import { createConversationTransfer, unarchiveThread, archiveThread, forkThread, forkThreadFromResponse, getAvailableCollaborationModes, getAccountRateLimits, renameThread, getAvailableModelIds, acquireReasoningCatalog, reasoningCatalog, reasoningOptions, resolveReasoningEffort, findReasoningModel, getCurrentModelConfig, getSkillsList, getBackgroundThreadListLimit, pickCodexRateLimitSnapshot, revertThreadHistory, validateThreadRevert, getThreadDetailForRevert, invalidateResumeThread, resumeThreadSubscription, getThreadGroupsPage, getProjects, setCodexSpeedMode, type RpcNotification, type SkillInfo } from '../api/codexGateway'
 import { CodexApiError } from '../api/codexErrors'
@@ -69,6 +69,12 @@ function isThreadNotFoundError(error: unknown): boolean {
 type TurnSummaryState = {
   turnId: string
   durationMs: number
+}
+
+type LiveReasoningState = {
+  text: string
+  lastMessageId: string
+  pendingParagraph: boolean
 }
 
 type TurnErrorState = {
@@ -209,7 +215,7 @@ export function useDesktopState({ onSelectedThreadAttention }: {
   const liveItemOrder = createLiveItemOrder()
   const livePlanMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveAgentMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
-  const liveReasoningTextByThreadId = ref<Record<string, string>>({})
+  const liveReasoningByThreadId = reactive(new Map<string, LiveReasoningState>())
   const liveCommandsByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveFileChangeMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const inProgressById = ref<Record<string, boolean>>({})
@@ -504,7 +510,6 @@ export function useDesktopState({ onSelectedThreadAttention }: {
   let projectOperationPromise: Promise<void> = Promise.resolve()
   let projectListRequest: Promise<void> | null = null
   let projectsNeedRefresh = true
-  let activeReasoningItemId = ''
   const pendingTurnStartsById = new Map<string, TurnStartedInfo>()
 
   const allThreads = computed(() => flattenThreads(projectGroups.value))
@@ -544,8 +549,9 @@ export function useDesktopState({ onSelectedThreadAttention }: {
 
     const isInProgress = inProgressById.value[threadId] === true
     const activity = isInProgress ? turnActivityByThreadId.value[threadId] : undefined
-    const reasoningText = isInProgress
-      ? (liveReasoningTextByThreadId.value[threadId] ?? '').trim()
+    const streamedReasoning = liveReasoningByThreadId.get(threadId)?.text ?? ''
+    const reasoningText = isInProgress && /\S/u.test(streamedReasoning)
+      ? streamedReasoning
       : ''
     const liveErrorText = (turnErrorByThreadId.value[threadId]?.message ?? '').trim()
     let latestPersistedTurnErrorText = ''
@@ -710,7 +716,6 @@ export function useDesktopState({ onSelectedThreadAttention }: {
       selectedCollaborationModeByContext.value,
       nextThreadId,
     )
-    activeReasoningItemId = ''
   }
 
   function setSelectedModelIdForThread(threadId: string, modelId: string): void {
@@ -1148,7 +1153,9 @@ export function useDesktopState({ onSelectedThreadAttention }: {
     history.questionResponsesByThreadId.value = pruneThreadStateMap(history.questionResponsesByThreadId.value, activeThreadIds)
     history.persistedMessagesByThreadId.value = pruneThreadStateMap(history.persistedMessagesByThreadId.value, activeThreadIds)
     liveAgentMessagesByThreadId.value = pruneThreadStateMap(liveAgentMessagesByThreadId.value, activeThreadIds)
-    liveReasoningTextByThreadId.value = pruneThreadStateMap(liveReasoningTextByThreadId.value, activeThreadIds)
+    for (const threadId of liveReasoningByThreadId.keys()) {
+      if (!activeThreadIds.has(threadId)) liveReasoningByThreadId.delete(threadId)
+    }
     liveCommandsByThreadId.value = pruneThreadStateMap(liveCommandsByThreadId.value, activeThreadIds)
     liveFileChangeMessagesByThreadId.value = pruneThreadStateMap(liveFileChangeMessagesByThreadId.value, activeThreadIds)
     turnSummaryByThreadId.value = pruneThreadStateMap(turnSummaryByThreadId.value, activeThreadIds)
@@ -1479,32 +1486,21 @@ export function useDesktopState({ onSelectedThreadAttention }: {
     setLiveFileChangeMessagesForThread(threadId, next)
   }
 
-  function setLiveReasoningText(threadId: string, text: string): void {
-    if (!threadId) return
-    const normalized = text.trim()
-    const previous = liveReasoningTextByThreadId.value[threadId] ?? ''
-    if (normalized.length === 0) {
-      if (!previous) return
-      liveReasoningTextByThreadId.value = omitKey(liveReasoningTextByThreadId.value, threadId)
-      return
-    }
-    if (previous === normalized) return
-    liveReasoningTextByThreadId.value = {
-      ...liveReasoningTextByThreadId.value,
-      [threadId]: normalized,
-    }
-  }
-
-  function appendLiveReasoningText(threadId: string, delta: string): void {
-    if (!threadId) return
-    const previous = liveReasoningTextByThreadId.value[threadId] ?? ''
-    setLiveReasoningText(threadId, `${previous}${delta}`)
+  function appendLiveReasoningText(threadId: string, messageId: string, delta: string): void {
+    const previous = liveReasoningByThreadId.get(threadId)
+    const text = previous?.text ?? ''
+    const startsParagraph = previous && (previous.pendingParagraph || previous.lastMessageId !== messageId)
+    const separator = startsParagraph && /\S/u.test(text) && !text.endsWith('\n\n') ? '\n\n' : ''
+    liveReasoningByThreadId.set(threadId, {
+      text: text + separator + delta,
+      lastMessageId: messageId,
+      pendingParagraph: false,
+    })
   }
 
   function clearLiveReasoningForThread(threadId: string): void {
     if (!threadId) return
-    if (!(threadId in liveReasoningTextByThreadId.value)) return
-    liveReasoningTextByThreadId.value = omitKey(liveReasoningTextByThreadId.value, threadId)
+    liveReasoningByThreadId.delete(threadId)
   }
 
   function clearLivePlansForThread(threadId: string): void {
@@ -1524,9 +1520,6 @@ export function useDesktopState({ onSelectedThreadAttention }: {
     clearLivePlansForThread(threadId)
     clearLiveReasoningForThread(threadId)
     setTurnActivityForThread(threadId, null)
-    if (threadId === selectedThreadId.value) {
-      activeReasoningItemId = ''
-    }
     if (liveCommandsByThreadId.value[threadId]) {
       liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
     }
@@ -2050,6 +2043,7 @@ export function useDesktopState({ onSelectedThreadAttention }: {
       }
       maybeUnblockInterruptForActiveTurn(startedTurn.threadId, startedTurn.turnId)
       clearLivePlansForThread(startedTurn.threadId)
+      clearLiveReasoningForThread(startedTurn.threadId)
       clearLiveFileChangesForThread(startedTurn.threadId)
       setTurnSummaryForThread(startedTurn.threadId, null)
       setTurnErrorForThread(startedTurn.threadId, null)
@@ -2084,6 +2078,7 @@ export function useDesktopState({ onSelectedThreadAttention }: {
         activeTurnIdByThreadId.value = omitKey(activeTurnIdByThreadId.value, completedTurn.threadId)
       }
       setThreadInProgress(completedTurn.threadId, false)
+      clearLiveReasoningForThread(completedTurn.threadId)
       setTurnActivityForThread(completedTurn.threadId, null)
       turns.clearPendingTurnRequest(completedTurn.threadId)
     }
@@ -2109,6 +2104,7 @@ export function useDesktopState({ onSelectedThreadAttention }: {
             selectedThreadGoal.failActiveGoalTurn(readString(asRecord(notification.params)?.turnId) || activeTurnIdByThreadId.value[errorThreadId] || '')
           }
           setThreadInProgress(errorThreadId, false)
+          clearLiveReasoningForThread(errorThreadId)
           setTurnActivityForThread(errorThreadId, null)
           turns.clearPendingTurnRequest(errorThreadId)
           if (activeTurnIdByThreadId.value[errorThreadId]) {
@@ -2139,11 +2135,6 @@ export function useDesktopState({ onSelectedThreadAttention }: {
 
     if (!notificationThreadId || notificationThreadId !== selectedThreadId.value) return
 
-    const startedAgentMessageId = readAgentMessageStartedId(notification)
-    if (startedAgentMessageId) {
-      activeReasoningItemId = ''
-    }
-
     const liveAgentMessageDelta = readAgentMessageDelta(notification)
     if (liveAgentMessageDelta) {
       const existing = (liveAgentMessagesByThreadId.value[notificationThreadId] ?? [])
@@ -2170,29 +2161,14 @@ export function useDesktopState({ onSelectedThreadAttention }: {
 
     }
 
-    const startedReasoningItemId = readReasoningStartedItemId(notification)
-    if (startedReasoningItemId) {
-      activeReasoningItemId = startedReasoningItemId
-    }
-
     const liveReasoningDelta = readReasoningDelta(notification)
     if (liveReasoningDelta) {
-      appendLiveReasoningText(notificationThreadId, liveReasoningDelta.delta)
+      appendLiveReasoningText(notificationThreadId, liveReasoningDelta.messageId, liveReasoningDelta.delta)
     }
 
-    const sectionBreakMessageId = readReasoningSectionBreakMessageId(notification)
-    if (sectionBreakMessageId) {
-      const current = liveReasoningTextByThreadId.value[notificationThreadId] ?? ''
-      if (current.trim().length > 0 && !current.endsWith('\n\n')) {
-        setLiveReasoningText(notificationThreadId, `${current}\n\n`)
-      }
-    }
-
-    const completedReasoningMessageId = readReasoningCompletedId(notification)
-    if (completedReasoningMessageId) {
-      if (completedReasoningMessageId === liveReasoningMessageId(activeReasoningItemId)) {
-        activeReasoningItemId = ''
-      }
+    if (readReasoningSectionBreakMessageId(notification)) {
+      const current = liveReasoningByThreadId.get(notificationThreadId)
+      if (current) current.pendingParagraph = true
     }
 
     if (notification.method === 'item/started' || notification.method === 'item/completed') {
@@ -2237,13 +2213,10 @@ export function useDesktopState({ onSelectedThreadAttention }: {
     }
 
     if (isAgentContentEvent(notification)) {
-      activeReasoningItemId = ''
       clearLiveReasoningForThread(notificationThreadId)
     }
 
     if (notification.method === 'turn/completed') {
-      activeReasoningItemId = ''
-      clearLiveReasoningForThread(notificationThreadId)
       if (liveCommandsByThreadId.value[notificationThreadId]) {
         liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, notificationThreadId)
       }
@@ -2256,7 +2229,6 @@ export function useDesktopState({ onSelectedThreadAttention }: {
         if (turnErrorMessage) {
           clearLivePlansForThread(completedThreadId)
           setLiveAgentMessagesForThread(completedThreadId, [])
-          clearLiveReasoningForThread(completedThreadId)
           if (liveCommandsByThreadId.value[completedThreadId]) {
             liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, completedThreadId)
           }
@@ -2989,7 +2961,6 @@ export function useDesktopState({ onSelectedThreadAttention }: {
       }
     }
     delayedTurnSyncTimerByThreadId.clear()
-    activeReasoningItemId = ''
     // Invalidate history cache metadata together with the cleared message payload.
     // Keep resume state, which tracks server sessions rather than cached payloads.
     history.loadedMessagesByThreadId.value = {}
@@ -3002,7 +2973,7 @@ export function useDesktopState({ onSelectedThreadAttention }: {
     history.persistedMessagesByThreadId.value = {}
     livePlanMessagesByThreadId.value = {}
     liveAgentMessagesByThreadId.value = {}
-    liveReasoningTextByThreadId.value = {}
+    liveReasoningByThreadId.clear()
     liveCommandsByThreadId.value = {}
     liveFileChangeMessagesByThreadId.value = {}
     turnIndexByTurnIdByThreadId.value = {}

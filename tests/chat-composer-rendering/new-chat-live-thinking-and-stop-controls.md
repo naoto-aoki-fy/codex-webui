@@ -26,6 +26,9 @@ Projectless new chats show live thinking state and interrupt controls while a tu
 
 ### Live reasoning Markdown
 
+#### Feature/Change Name
+Live reasoning preserves streamed Markdown and starts a new paragraph at a summary part or reasoning item boundary.
+
 #### Prerequisites/Setup
 Use a disposable chat with an app-server that emits reasoning deltas, or use the browser notification fixture in `scripts/approved-fixture.cjs` to supply the deltas below. Keep the turn in progress during the check.
 
@@ -37,13 +40,15 @@ Use a disposable chat with an app-server that emits reasoning deltas, or use the
    ["## Inspect\n\n**Check", "**\n\n- Compare `a < b", "`\n- <b>literal HTML</b>", "\n\n```\n  first\n    second\n```"]
    ```
 
-3. Append at least ten list entries in another delta, starting with `\n\n` after the existing Markdown. Scroll within the reasoning section to the last entry, then back to the heading.
-4. Switch to dark theme and repeat the check on a fresh turn.
-5. Complete or stop the turn and confirm the reasoning section disappears.
+3. Start a fresh turn and emit a whitespace-only delta, then stream `Checking install size estimates` in one item. Emit `item/reasoning/summaryPartAdded` for that item, followed by `Setting up release fixtures` in a second delta for the same item. Repeat on fresh turns with the second delta using a different `itemId`, once without a summary-part event and once with a summary-part event for the new item.
+4. Stream at least ten more items, each with its own `itemId`, and check the time between each notification and its visible update. Scroll within the reasoning section to the last entry, then back to the first.
+5. Switch to dark theme and repeat the streaming and scrolling checks on a fresh turn.
+6. Emit a summary-part event and complete the turn before sending another delta. Start another turn and verify its first reasoning delta appears at the top of the frame.
 
 #### Expected Results
 - `**Check` appears as text until the closing `**` arrives. The word then becomes bold. The list displays bullets, `a < b` renders as inline code when its backtick arrives, and `<b>literal HTML</b>` is visible as text.
 - The heading and list keep compact spacing and small type. The code block keeps both lines and their relative indentation.
+- Whitespace-only reasoning stays hidden. The two reasoning titles appear in separate paragraphs with the same spacing in all three boundary cases. Completing a turn clears the reasoning section and any pending paragraph break.
 - In both themes, the reasoning section is readable, stays within five lines of height, keeps its top-edge fade, and scrolls to the last entry without expanding the conversation layout.
 
 #### Rollback/Cleanup

@@ -465,6 +465,93 @@ describe('live error overlay', () => {
   })
 })
 
+describe('live reasoning notifications', () => {
+  const threadId = 'thread-reasoning'
+  let state: ReturnType<typeof useDesktopState>
+  let notify: (notification: { method: string; params: Record<string, unknown> }) => void
+
+  function emit(method: string, params: Record<string, unknown>) {
+    notify({ method, params: { threadId, turnId: 'turn-1', ...params } })
+  }
+
+  function delta(itemId: string, text: string, method = 'summaryTextDelta') {
+    emit(`item/reasoning/${method}`, { itemId, delta: text })
+  }
+
+  function paragraph(itemId: string, summaryIndex: number) {
+    emit('item/reasoning/summaryPartAdded', { itemId, summaryIndex })
+  }
+
+  function reasoningText() {
+    return state.selectedLiveOverlay.value?.reasoningText
+  }
+
+  beforeEach(() => {
+    installTestWindow()
+    gatewayMocks.subscribeCodexNotifications.mockImplementation((handler) => {
+      notify = handler
+      return vi.fn()
+    })
+    gatewayMocks.getPendingServerRequests.mockResolvedValue([])
+    state = useDesktopState()
+    state.primeSelectedThread(threadId)
+    state.startPolling()
+    emit('turn/started', { turn: { id: 'turn-1', status: 'inProgress' } })
+  })
+
+  afterEach(() => state.stopPolling())
+
+  it.each([
+    ['a summary part within the same item', 'first', true, 1],
+    ['an item ID change', 'second', false, 0],
+    ['an item ID change with a summary part', 'second', true, 0],
+  ] as const)('starts one new paragraph for %s', (_label, nextItemId, addPart, summaryIndex) => {
+    delta('first', 'Checking install size estimates')
+    if (addPart) paragraph(nextItemId, summaryIndex)
+    expect(reasoningText()).toBe('Checking install size estimates')
+
+    delta(nextItemId, 'Setting up release fixtures')
+    expect(reasoningText()).toBe('Checking install size estimates\n\nSetting up release fixtures')
+  })
+
+  it('joins split words and bold syntax and preserves whitespace-only fragments', () => {
+    delta('first', ' \t')
+    delta('first', '\n')
+    expect(reasoningText()).toBe('')
+
+    delta('first', '**Check')
+    delta('first', 'ing')
+    delta('first', ' ', 'textDelta')
+    delta('first', 'estimates**')
+    delta('first', '  ')
+    expect(reasoningText()).toBe(' \t\n**Checking estimates**  ')
+  })
+
+  it('preserves fenced code line breaks and indentation and reuses an existing paragraph break', () => {
+    delta('first', '```\n')
+    delta('first', '  ')
+    delta('first', 'first\n')
+    delta('first', '    second\n')
+    delta('first', '```\n\n')
+    paragraph('first', 1)
+    delta('first', 'After the code')
+    expect(reasoningText()).toBe('```\n  first\n    second\n```\n\nAfter the code')
+  })
+
+  it('drops a pending paragraph and its text at turn completion', () => {
+    delta('first', 'Checking install size estimates')
+    paragraph('first', 1)
+    state.primeSelectedThread('other-thread')
+    emit('turn/completed', { turn: { id: 'turn-1', status: 'completed' } })
+    state.primeSelectedThread(threadId)
+    expect(state.selectedLiveOverlay.value).toBeNull()
+
+    emit('turn/started', { turn: { id: 'turn-2', status: 'inProgress' } })
+    emit('item/reasoning/summaryTextDelta', { turnId: 'turn-2', itemId: 'first', delta: 'Setting up release fixtures' })
+    expect(reasoningText()).toBe('Setting up release fixtures')
+  })
+})
+
 describe('Codex model selection', () => {
 
   it('uses only the Codex catalog without rewriting inert legacy choices', async () => {
