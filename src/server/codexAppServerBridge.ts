@@ -1,6 +1,7 @@
 import { questionResponses } from './questionResponses.js'
 import { QUESTION_REPLY_NOT_SENT } from '../questionResponses.js'
 import { ModelPreferencesStore } from './modelPreferencesStore.js'
+import { GoalTemplateStore } from './goalTemplateStore.js'
 import { createModelPreferenceUsage } from './modelPreferenceUsage.js'
 import type { ModelPreferences } from '../modelPreferences.js'
 import { createConversationTransfers } from './conversationTransfer.js'
@@ -493,6 +494,7 @@ function getSharedBridgeState(): SharedBridgeState {
 
 export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   const connectionProfile = getConnectionProfileId()
+  const goalTemplates = new GoalTemplateStore(connectionProfile)
   const sharedState = getSharedBridgeState()
   sharedState.owners = (sharedState.owners ?? 0) + 1
   let released = false
@@ -608,6 +610,40 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 	          await sendRpcJson(400, { error: 'Invalid body: expected { method, params? }' })
 	          return
 	        }
+
+        if (body.method.startsWith('goal-templates/')) {
+          const params = asRecord(body.params)
+          if (params?.connectionProfile !== connectionProfile) {
+            await sendRpcJson(409, { error: 'App Server ID changed. Reload before using Goal templates.' })
+            return
+          }
+          const name = readNonEmptyString(params.name).trim()
+          switch (body.method) {
+            case 'goal-templates/list':
+              await sendRpcJson(200, { result: await goalTemplates.list() })
+              break
+            case 'goal-templates/save':
+              if (!name || typeof params.body !== 'string' || !params.body.trim()) {
+                await sendRpcJson(400, { error: 'A template name and Goal text are required.' })
+                break
+              }
+              await sendRpcJson(200, {
+                result: await goalTemplates.save({ name, body: params.body }, params.overwrite === true),
+              })
+              break
+            case 'goal-templates/delete':
+              if (!name) {
+                await sendRpcJson(400, { error: 'A template name is required.' })
+                break
+              }
+              await goalTemplates.delete(name)
+              await sendRpcJson(200, { result: null })
+              break
+            default:
+              await sendRpcJson(400, { error: 'Unknown Goal template method' })
+          }
+          return
+        }
 
         if (body.method.startsWith('model-preferences/')) {
           const result = body.method === 'model-preferences/read' ? await modelPreferences.read()

@@ -4,6 +4,10 @@ export function setInitialConnectionProfile(id: string): void {
   profile = id
 }
 
+export function getBrowserConnectionProfile(): string | undefined {
+  return profile
+}
+
 export function profileStorageKey(key: string): string {
   if (!profile) return `codex-unbound.${key}`
   const encoded = encodeURIComponent(profile).replace(/\./g, '%2E')

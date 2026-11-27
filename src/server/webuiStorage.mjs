@@ -58,6 +58,7 @@ export const storageNames = {
   global: 'global',
   state: 'state.json',
   modelPreferences: 'model-preferences.json',
+  goalTemplates: 'goal-templates.json',
   authSessions: 'auth-sessions.json',
   uploads: 'uploads',
   inventory: 'inventory.json',

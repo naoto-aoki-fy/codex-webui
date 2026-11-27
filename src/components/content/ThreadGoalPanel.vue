@@ -3,9 +3,11 @@ import { onBeforeUnmount, ref, watch, type CSSProperties } from 'vue'
 import { THREAD_GOAL_STATUSES, type ThreadGoal, type ThreadGoalStatus } from '../../api/codexGateway'
 import ManagementDialog from '../shared/ManagementDialog.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
+import ThreadGoalTemplates from './ThreadGoalTemplates.vue'
 
 const props = defineProps<{
   threadId: string
+  connectionEpoch: number
   goal: ThreadGoal | null
   loadError: string
   saveGoal: (objective: string, status: ThreadGoalStatus, clear: boolean) => Promise<void>
@@ -36,13 +38,18 @@ function focusObjective() {
   objectiveInput.value?.focus({ preventScroll: true })
 }
 
+function useTemplate(body: string) {
+  objective.value = body
+  focusObjective()
+}
+
 async function save(clear = false) {
   if (busy.value || (!clear && !objective.value.trim())) return
   const current = ++generation
   busy.value = true
   error.value = ''
   try {
-    await props.saveGoal(objective.value.trim(), status.value, clear)
+    await props.saveGoal(objective.value, status.value, clear)
     if (current !== generation) return
     editing.value = false
   } catch (cause) {
@@ -87,6 +94,13 @@ defineExpose({ edit })
           @update:model-value="status = $event as ThreadGoalStatus"
         />
       </div>
+      <ThreadGoalTemplates
+        :thread-id="threadId"
+        :connection-epoch="connectionEpoch"
+        :objective="objective"
+        :disabled="busy"
+        @use-template="useTemplate"
+      />
       <small v-if="goal">{{ goal.tokensUsed.toLocaleString() }} {{ ('tokens') }}<template v-if="goal.tokenBudget !== null"> / {{ goal.tokenBudget.toLocaleString() }}</template> · {{ Math.round(goal.timeUsedSeconds) }}s</small>
       <p v-if="error || loadError" role="alert">{{ error || loadError }}</p>
       <div class="thread-goal-actions">

@@ -276,6 +276,7 @@
                 <ThreadGoalPanel
                   ref="threadGoalPanelRef"
                   :thread-id="selectedThreadId"
+                  :connection-epoch="operationEpoch"
                   :goal="threadGoal"
                   :load-error="selectedThreadGoal.loadError.value"
                   :save-goal="selectedThreadGoal.save"

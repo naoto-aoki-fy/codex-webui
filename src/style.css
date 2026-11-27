@@ -1596,9 +1596,26 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 }
 .thread-goal-status { display: flex; align-items: center; gap: 6px; font-weight: 500; white-space: nowrap; }
 .thread-goal-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
-.thread-goal-actions button { border: 1px solid #d4d4d8; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
-.thread-goal-actions button:hover:not(:disabled) { background: #f4f4f5; }
-.thread-goal-actions button:disabled { opacity: .55; cursor: default; }
+.thread-goal-template-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.thread-goal-actions button, .thread-goal-templates button { border: 1px solid #d4d4d8; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.thread-goal-actions button:hover:not(:disabled), .thread-goal-templates button:hover:not(:disabled) { background: #f4f4f5; }
+.thread-goal-actions button:disabled, .thread-goal-templates button:disabled { opacity: .55; cursor: default; }
+.thread-goal-templates { display: grid; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.thread-goal-template-panel { display: grid; gap: 8px; }
+.thread-goal-template-panel label { display: grid; gap: 6px; font-weight: 500; }
+.thread-goal-template-panel input {
+  width: 100%;
+  border: 1px solid #d4d4d8;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  padding: 6px 12px;
+  font-weight: 400;
+}
+.thread-goal-template-list { display: grid; gap: 6px; max-height: 12rem; overflow: auto; padding: 3px; }
+.thread-goal-template-list li { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.thread-goal-template-list li button:first-child { min-width: 0; text-align: left; }
+.thread-goal-template-list li button:last-child { margin-left: auto; }
 .thread-goal-clear { margin-right: auto; }
 .thread-goal-editor [role="alert"] { color: #be123c; overflow-wrap: anywhere; }
 .settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 32px; min-height: 100%; }
@@ -1620,9 +1637,9 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
 :root.dark .management-dialog-header p { color: #a1a1aa; }
 :root.dark .management-dialog-close:hover, :root.dark .settings-categories button:hover, :root.dark .settings-categories button[aria-current] { background: #27272a; color: #f4f4f5; }
 :root.dark .management-dialog .sidebar-settings-account-section { background: transparent; }
-:root.dark .thread-goal-editor textarea { background: #18181b; border-color: #52525b; }
-:root.dark .thread-goal-actions button { border-color: #52525b; }
-:root.dark .thread-goal-actions button:hover:not(:disabled) { background: #27272a; }
+:root.dark .thread-goal-editor textarea, :root.dark .thread-goal-template-panel input { background: #18181b; border-color: #52525b; }
+:root.dark .thread-goal-actions button, :root.dark .thread-goal-templates button { border-color: #52525b; }
+:root.dark .thread-goal-actions button:hover:not(:disabled), :root.dark .thread-goal-templates button:hover:not(:disabled) { background: #27272a; }
 :root.dark .thread-goal-editor [role="alert"] { color: #fda4af; }
 :root.dark .about-settings-row { border-color: #3f3f46; }
 :root.dark .about-settings-row dt { color: #a1a1aa; }
@@ -1633,7 +1650,7 @@ body:has(.transfer-picker) > .sdm-overlay { z-index: 1100; }
   .management-dialog { width: calc(100vw - 16px); height: calc(var(--visual-viewport-height, 100dvh) - 16px); border-radius: 12px; }
   .management-dialog-header { padding: 16px; }
   .management-dialog-body { padding: 16px; }
-  .thread-goal-editor textarea { font-size: 16px; }
+  .thread-goal-editor textarea, .thread-goal-template-panel input { font-size: 16px; }
   .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
   .settings-categories { flex-direction: row; flex-wrap: wrap; }
   .settings-categories button { padding: 8px; }

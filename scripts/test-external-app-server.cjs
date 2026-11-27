@@ -175,6 +175,42 @@ async function verifyCachedPlanInBrowser(backend, threadId, loadRollout, release
   })
 }
 
+async function verifyGoalTemplates(call, profile, previousRuns, dataDirectory, frames) {
+  const request = (operation, params) => call('goal-templates/' + operation, { connectionProfile: profile, ...params })
+  const list = async () => {
+    const { status, body } = await request('list')
+    assert.equal(status, 200)
+    return body.result
+  }
+  const retained = { name: 'Daily Goal', body: `\nUpdated in ${profile}\n  Keep indentation.\n` }
+  const frameCount = frames.length
+  if (previousRuns) {
+    assert.deepEqual(await list(), [retained])
+    console.log('PASS', profile, 'Goal templates persist across backend process restart')
+    return
+  }
+
+  assert.deepEqual(await list(), [])
+  assert.equal((await request('save', { name: ' ', body: 'Objective' })).status, 400)
+  assert.equal((await request('save', { name: 'Blank', body: '\n ' })).status, 400)
+  assert.equal((await request('delete', { name: ' ' })).status, 400)
+  assert.equal((await request('save', { ...retained, connectionProfile: profile + '-other' })).status, 409)
+
+  const original = { name: retained.name, body: 'First line\nSecond line' }
+  const separate = { name: 'Another Goal', body: 'Saved concurrently' }
+  const saved = await Promise.all([request('save', original), request('save', separate)])
+  assert.deepEqual(saved, Array(2).fill({ status: 200, body: { result: { saved: true } } }))
+  assert.deepEqual((await list()).sort((a, b) => a.name.localeCompare(b.name)), [separate, original])
+  assert.deepEqual((await request('save', retained)).body.result, { saved: false })
+  assert.equal((await list()).find(template => template.name === original.name).body, original.body)
+  assert.deepEqual((await request('save', { ...retained, overwrite: true })).body.result, { saved: true })
+  assert.equal((await request('delete', { name: separate.name })).status, 200)
+  assert.deepEqual(await list(), [retained])
+  assert.deepEqual(JSON.parse(readFileSync(join(dataDirectory, 'goal-templates.json'), 'utf8')), { templates: [retained] })
+  assert.equal(frames.length, frameCount)
+  console.log('PASS', profile, 'isolated Goal templates, concurrent saves, duplicate confirmation, overwrite and individual delete')
+}
+
 async function run() {
   const unix = process.env.CODEXAPP_FIXTURE_TRANSPORT === 'unix'
   const verifyBrowser = process.env.CODEXAPP_FIXTURE_BROWSER === '1'
@@ -438,6 +474,8 @@ async function run() {
           return (await response.json()).result
         }
         const previousRuns = profileRuns.get(profile) ?? 0
+        await verifyGoalTemplates(call, profile, previousRuns,
+          join(resolveWebuiStorage(storageEnv).data, 'app-servers', profileDirectoryName(profile)), frames)
         const preferred = { providerId: 'fixture-provider', modelId: profile, reasoningEffort: 'high', collaborationMode: 'default' }
         assert.deepEqual((await preferences('read')).preferred, previousRuns ? preferred : null)
         assert.equal(connections, before, 'profile bootstrap and preferences do not contact the App Server')
