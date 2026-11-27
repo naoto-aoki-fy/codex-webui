@@ -49,7 +49,7 @@ async function save(clear = false) {
   busy.value = true
   error.value = ''
   try {
-    await props.saveGoal(objective.value, status.value, clear)
+    await props.saveGoal(objective.value.trim(), status.value, clear)
     if (current !== generation) return
     editing.value = false
   } catch (cause) {

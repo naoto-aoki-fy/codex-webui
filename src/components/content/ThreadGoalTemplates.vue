@@ -19,7 +19,7 @@ const saveTrigger = ref<HTMLButtonElement | null>(null)
 const listTrigger = ref<HTMLButtonElement | null>(null)
 const confirmationCancel = ref<HTMLButtonElement | null>(null)
 const templates = ref<GoalTemplate[]>([])
-const confirmation = ref<{ action: 'overwrite'; template: GoalTemplate } | { action: 'delete'; name: string } | null>(null)
+const confirmation = ref<{ action: 'overwrite' | 'delete'; name: string } | null>(null)
 const pending = ref(false)
 const error = ref('')
 let request: AbortController | null = null
@@ -84,11 +84,12 @@ function toggleList() {
   }
 }
 
-function save(template = { name: name.value.trim(), body: props.objective }, overwrite = false) {
+function save(overwriteName?: string) {
+  const template = { name: overwriteName ?? name.value.trim(), body: props.objective }
   if (!template.name || !template.body.trim()) return
-  void run<SaveGoalTemplateResult>('save', { ...template, overwrite }, result => {
+  void run<SaveGoalTemplateResult>('save', { ...template, overwrite: overwriteName !== undefined }, result => {
     if (!result.saved) {
-      confirmation.value = { action: 'overwrite', template }
+      confirmation.value = { action: 'overwrite', name: template.name }
       return
     }
     reset()
@@ -144,10 +145,10 @@ function useTemplate(template: GoalTemplate) {
     </div>
 
     <div v-if="confirmation?.action === 'overwrite'" class="thread-goal-template-panel">
-      <p>Overwrite the saved template “{{ confirmation.template.name }}”?</p>
+      <p>Overwrite the saved template “{{ confirmation.name }}”?</p>
       <div class="thread-goal-template-buttons">
         <button ref="confirmationCancel" type="button" :disabled="disabled || pending" @click="dismissConfirmation">Use a different name</button>
-        <button type="button" :disabled="disabled || pending" @click="save(confirmation.template, true)">Overwrite template</button>
+        <button type="button" :disabled="disabled || pending || !objective.trim()" @click="save(confirmation.name)">Overwrite template</button>
       </div>
     </div>
     <div v-else-if="panel === 'save'" class="thread-goal-template-panel">

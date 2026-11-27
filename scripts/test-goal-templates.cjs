@@ -94,8 +94,9 @@ async function verify(page, viewport, theme) {
   await button(templateName).click()
   assert.equal(await objective.inputValue(), original)
   assert.equal(await dialog.locator('.composer-dropdown-trigger').innerText(), 'blocked')
-  const edited = original + '\nCheck the logs before finishing.\n'
-  await objective.fill(edited)
+  const draft = original + '\nCheck the logs before finishing.\n'
+  const edited = draft.trim()
+  await objective.fill(draft)
   await button('Save goal').click()
   await dialog.waitFor({ state: 'hidden' })
   assert.deepEqual(goalSaves(), [{ threadId: secondThread.id, objective: edited, status: 'blocked' }])
@@ -127,9 +128,13 @@ async function verify(page, viewport, theme) {
   await button('Save template').click()
   await nameInput.waitFor({ state: 'hidden' })
   await saveTemplate(templateName)
+  const overwriteDraft = edited + '\nUpdated during confirmation.\n'
+  await button('Overwrite template').waitFor()
+  await objective.fill(overwriteDraft)
   await button('Overwrite template').click()
   await button('Overwrite template').waitFor({ state: 'hidden' })
-  assert.equal(templates.get(templateName), edited)
+  assert.equal(templates.get(templateName), overwriteDraft)
+  await objective.fill(edited)
 
   await button('Saved templates').click()
   await button('Delete ' + templateName).click()
